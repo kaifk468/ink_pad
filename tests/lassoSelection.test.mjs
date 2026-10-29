@@ -109,6 +109,169 @@ test('moves a selected connector by the exact offset while leaving other items i
   assert.equal(moved[1], unrelated)
 })
 
+test('moving a connector cannot translate its two rectangle-locked endpoints', () => {
+  const left = rectangle(1, 20, 40, 100, 80)
+  const right = rectangle(2, 240, 60, 120, 90)
+  const connector = model.createConnector(3,
+    { x: 120, y: 80, pressure: 0.7 }, { x: 240, y: 105, pressure: 0.8 }, '#202124', 4,
+    { rectangleId: left.id, offsetX: 100, offsetY: 40 }, { rectangleId: right.id, offsetX: 0, offsetY: 45 })
+  const moved = model.translateSelectedItems([left, right, connector], new Set(['connector:3']), 15, 20)[2]
+  assert.deepEqual(moved.start, connector.start)
+  assert.deepEqual(moved.end, connector.end)
+  assert.deepEqual(moved.startAttachment, connector.startAttachment)
+  assert.deepEqual(moved.endAttachment, connector.endAttachment)
+  assert.equal(moved, connector)
+})
+
+test('moving a connector keeps its attached endpoint fixed and translates a free endpoint exactly', () => {
+  const box = rectangle(1, 20, 40, 100, 80)
+  const connector = model.createConnector(2,
+    { x: 120, y: 80, pressure: 1 }, { x: 220, y: 180, pressure: 1 }, '#202124', 4,
+    { rectangleId: box.id, offsetX: 100, offsetY: 40 })
+  const moved = model.translateSelectedItems([box, connector], new Set(['connector:2']), 15, 20)[1]
+  assert.deepEqual(moved.start, connector.start)
+  assert.deepEqual(moved.startAttachment, connector.startAttachment)
+  assert.deepEqual(moved.end, { x: 235, y: 200, pressure: 1 })
+  assert.equal(moved.endAttachment, undefined)
+})
+
+test('undo and redo of moving a connector preserve endpoint attachment IDs and anchors', () => {
+  const box = rectangle(1, 20, 40, 100, 80)
+  const connector = model.createConnector(2,
+    { x: 120, y: 80, pressure: 1 }, { x: 220, y: 180, pressure: 1 }, '#202124', 4,
+    { rectangleId: box.id, offsetX: 100, offsetY: 40 }, undefined, 'dependency')
+  const original = [box, connector]
+  const history = new model.CanvasSnapshotHistory()
+  history.record(original)
+  const moved = model.translateSelectedItems(original, new Set(['connector:2']), 15, 20)
+  assert.deepEqual(history.undo(moved), original)
+  const redone = history.redo(original)
+  assert.deepEqual(redone, moved)
+  assert.equal(redone[1].startAttachment.rectangleId, box.id)
+  assert.deepEqual(redone[1].startAttachment, { rectangleId: box.id, offsetX: 100, offsetY: 40 })
+})
+
+test('changing a relationship type does not unlock connector endpoint anchors', () => {
+  const box = rectangle(1, 20, 40, 100, 80)
+  const connector = model.createConnector(2,
+    { x: 120, y: 80, pressure: 1 }, { x: 220, y: 180, pressure: 1 }, '#202124', 4,
+    { rectangleId: box.id, offsetX: 100, offsetY: 40 }, undefined, 'inheritance')
+  const updated = model.updateConnectorRelationship([box, connector], connector.id, 'composition')
+  const moved = model.translateSelectedItems(updated, new Set(['connector:2']), 18, -12)
+  assert.deepEqual(moved[1].start, connector.start)
+  assert.deepEqual(moved[1].startAttachment, connector.startAttachment)
+  assert.equal(moved[1].relationshipType, 'composition')
+})
+
+test('resize handle hit testing recognizes rectangle corners and edge midpoints', () => {
+  const box = rectangle(1, 20, 40, 100, 80)
+  assert.equal(model.hitTestRectangleResizeHandle(box, { x: 20, y: 40, pressure: 1 }), 'nw')
+  assert.equal(model.hitTestRectangleResizeHandle(box, { x: 120, y: 80, pressure: 1 }), 'e')
+  assert.equal(model.hitTestRectangleResizeHandle(box, { x: 70, y: 80, pressure: 1 }), null)
+})
+
+test('resizing a rectangle updates its dimensions and keeps attached connectors on the boundary', () => {
+  const box = rectangle(1, 20, 40, 100, 80)
+  const otherBox = rectangle(2, 300, 40, 100, 80)
+  const connector = model.createConnector(3,
+    { x: 120, y: 80, pressure: 0.7 }, { x: 300, y: 80, pressure: 0.8 }, '#3568d4', 4,
+    { rectangleId: box.id, offsetX: 100, offsetY: 40 }, { rectangleId: otherBox.id, offsetX: 0, offsetY: 40 })
+  const bounds = model.getResizedRectangleBounds(box, 'e', 25, 0)
+  assert.deepEqual(bounds, { x: 20, y: 40, width: 125, height: 80 })
+  const resized = model.resizeRectangleItems([box, otherBox, connector], box.id, bounds)
+  assert.deepEqual(resized[0], { ...box, width: 125 })
+  assert.deepEqual(resized[2].start, { x: 145, y: 80, pressure: 0.7 })
+  assert.deepEqual(resized[2].startAttachment, { rectangleId: box.id, offsetX: 125, offsetY: 40 })
+  assert.deepEqual(resized[2].end, connector.end)
+  assert.deepEqual(resized[2].endAttachment, connector.endAttachment)
+  assert.equal(resized[1], otherBox)
+})
+
+test('resize history undo and redo restore rectangle dimensions and attached endpoint anchors', () => {
+  const box = rectangle(1, 20, 40, 100, 80)
+  const connector = model.createConnector(2,
+    { x: 120, y: 80, pressure: 1 }, { x: 240, y: 80, pressure: 1 }, '#202124', 4,
+    { rectangleId: box.id, offsetX: 100, offsetY: 40 })
+  const original = [box, connector]
+  const history = new model.CanvasSnapshotHistory()
+  history.record(original)
+  const resized = model.resizeRectangleItems(original, box.id, model.getResizedRectangleBounds(box, 'se', 30, 20))
+  assert.deepEqual(history.undo(resized), original)
+  assert.deepEqual(history.redo(original), resized)
+  assert.deepEqual(resized[1].startAttachment, { rectangleId: box.id, offsetX: 130, offsetY: 50 })
+  assert.deepEqual(resized[1].start, { x: 150, y: 90, pressure: 1 })
+})
+
+test('lasso group bounds include selected rectangles, handwriting, and connectors', () => {
+  const first = rectangle(1, 20, 40, 100, 80)
+  const second = rectangle(2, 220, 60, 100, 100)
+  const writing = stroke(4, [[120, 100], [150, 110]])
+  const connector = model.createConnector(3,
+    { x: 120, y: 80, pressure: 1 }, { x: 220, y: 110, pressure: 1 }, '#202124', 4,
+    { rectangleId: first.id, offsetX: 100, offsetY: 40 }, { rectangleId: second.id, offsetX: 0, offsetY: 50 })
+  const selection = new Set(['rectangle:1', 'rectangle:2', 'stroke:4', 'connector:3'])
+  assert.deepEqual(model.getCanvasSelectionBounds([first, second, writing, connector], selection), {
+    x: 18, y: 38, width: 304, height: 124,
+  })
+})
+
+test('collective lasso resizing scales rectangles, handwriting, and connectors together', () => {
+  const first = rectangle(1, 20, 40, 100, 80)
+  const second = rectangle(2, 220, 60, 100, 100)
+  const writing = stroke(4, [[120, 100], [150, 110]])
+  const connector = model.createConnector(3,
+    { x: 120, y: 80, pressure: 1 }, { x: 220, y: 110, pressure: 1 }, '#3568d4', 4,
+    { rectangleId: first.id, offsetX: 100, offsetY: 40 }, { rectangleId: second.id, offsetX: 0, offsetY: 50 }, 'inheritance')
+  const unrelated = stroke(5, [[500, 500], [520, 520]])
+  const items = [first, second, writing, connector, unrelated]
+  const selection = new Set(['rectangle:1', 'rectangle:2', 'stroke:4', 'connector:3'])
+  const newBounds = { x: 18, y: 38, width: 608, height: 248 }
+  const resized = model.resizeSelectedItems(items, selection, newBounds)
+
+  assert.deepEqual(resized[0], { ...first, x: 22, y: 42, width: 200, height: 160, strokeWidth: 8 })
+  assert.deepEqual(resized[1], { ...second, x: 422, y: 82, width: 200, height: 200, strokeWidth: 8 })
+  assert.deepEqual(resized[2].points.map(({ x, y }) => [x, y]), [[222, 162], [282, 182]])
+  assert.equal(resized[2].width, 8)
+  assert.deepEqual(resized[3].start, { x: 222, y: 122, pressure: 1 })
+  assert.deepEqual(resized[3].end, { x: 422, y: 182, pressure: 1 })
+  assert.deepEqual(resized[3].startAttachment, { rectangleId: first.id, offsetX: 200, offsetY: 80 })
+  assert.deepEqual(resized[3].endAttachment, { rectangleId: second.id, offsetX: 0, offsetY: 100 })
+  assert.equal(resized[3].relationshipType, 'inheritance')
+  assert.equal(resized[4], unrelated)
+})
+
+test('group resize updates attached connectors even when they are outside the lasso selection', () => {
+  const box = rectangle(1, 20, 40, 100, 80)
+  const connector = model.createConnector(2,
+    { x: 120, y: 80, pressure: 1 }, { x: 300, y: 80, pressure: 1 }, '#202124', 4,
+    { rectangleId: box.id, offsetX: 100, offsetY: 40 })
+  const writing = stroke(3, [[50, 60], [70, 80]])
+  const items = [box, connector, writing]
+  const selection = new Set(['rectangle:1', 'stroke:3'])
+  const resized = model.resizeSelectedItems(items, selection, { x: 18, y: 38, width: 208, height: 168 })
+  assert.deepEqual(resized[0], { ...box, x: 22, y: 42, width: 200, height: 160, strokeWidth: 8 })
+  assert.deepEqual(resized[1].start, { x: 222, y: 122, pressure: 1 })
+  assert.deepEqual(resized[1].startAttachment, { rectangleId: box.id, offsetX: 200, offsetY: 80 })
+  assert.equal(resized[1].end.x, connector.end.x)
+  assert.deepEqual(resized[2].points.map(({ x, y }) => [x, y]), [[82, 82], [122, 122]])
+})
+
+test('group resize undo and redo restore all objects and attached connector anchors', () => {
+  const box = rectangle(1, 20, 40, 100, 80)
+  const writing = stroke(3, [[50, 60], [70, 80]])
+  const connector = model.createConnector(2,
+    { x: 120, y: 80, pressure: 1 }, { x: 300, y: 80, pressure: 1 }, '#202124', 4,
+    { rectangleId: box.id, offsetX: 100, offsetY: 40 })
+  const original = [box, connector, writing]
+  const history = new model.CanvasSnapshotHistory()
+  history.record(original)
+  const selection = new Set(['rectangle:1', 'stroke:3'])
+  const resized = model.resizeSelectedItems(original, selection, { x: 18, y: 38, width: 208, height: 168 })
+  assert.deepEqual(history.undo(resized), original)
+  assert.deepEqual(history.redo(original), resized)
+  assert.deepEqual(resized[1].startAttachment, { rectangleId: box.id, offsetX: 200, offsetY: 80 })
+})
+
 test('snapshot history undoes and redoes a connector movement and creation', () => {
   const history = new model.CanvasSnapshotHistory()
   const connector = model.createConnector(1, { x: 20, y: 30, pressure: 1 }, { x: 180, y: 130, pressure: 1 }, '#202124', 4)

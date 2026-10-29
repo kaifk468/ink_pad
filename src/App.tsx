@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CanvasSnapshotHistory, canvasItemKey, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getConnectorRenderSpec, getConnectorSymbolGeometry, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
-import type { CanvasItem, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke } from './canvasModel'
+import { createPortal } from 'react-dom'
+import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getConnectorRenderSpec, getConnectorSymbolGeometry, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
+import type { CanvasItem, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
+import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEIGHT, SHEET_WIDTH, THREE_FINGER_PAN_THRESHOLD, WORKSPACE_BOUNDS, centerViewportOnPoint, clampPointToBounds, clampTranslationToBounds, clampViewportToBounds, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, getNavigatorPanels, getPageOverviewGeometry, getTouchNavigationGestureMode, isPointWithinBounds, minimapToCanvasPoint, panThreeFingerViewport, type MinimapGeometry, type TouchNavigationGestureMode, type ViewBounds, type Viewport, screenToCanvasPoint, zoomTwoFingerViewport } from './viewport'
 
 const COLORS = [
   { name: 'Ink black', value: '#202124' },
@@ -17,6 +19,10 @@ const SHAPE_HOLD_JITTER_PX = 7
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const toolbarRef = useRef<HTMLElement>(null)
+  const eraserControlRef = useRef<HTMLDivElement>(null)
+  const minimapRef = useRef<HTMLCanvasElement>(null)
+  const pageOverviewRef = useRef<HTMLCanvasElement>(null)
   const strokesRef = useRef<CanvasItem[]>([])
   const historyRef = useRef(new CanvasSnapshotHistory())
   const activeStrokeRef = useRef<Stroke | null>(null)
@@ -30,6 +36,7 @@ function App() {
   const shapePreviewRef = useRef<CanvasItem | null>(null)
   const selectedRectangleIdRef = useRef<number | null>(null)
   const activeDragRef = useRef<{ pointerId: number; itemKey: string; start: Point; originalItems: CanvasItem[]; moved: boolean } | null>(null)
+  const activeResizeRef = useRef<{ pointerId: number; rectangleId: number | null; selectedKeys: Set<string> | null; handle: RectangleResizeHandle; start: Point; originalBounds: RectangleBounds; originalItems: CanvasItem[]; moved: boolean } | null>(null)
   const activeLassoRef = useRef<{ pointerId: number; points: Point[] } | null>(null)
   const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean } | null>(null)
   const selectedKeysRef = useRef<Set<string>>(new Set())
@@ -41,6 +48,11 @@ function App() {
   const holdAnchorRef = useRef<Point | null>(null)
   const lastSignificantMoveAtRef = useRef(0)
   const frameRef = useRef<number | null>(null)
+  const viewportRef = useRef<Viewport>({ scale: DEFAULT_ZOOM, offsetX: 0, offsetY: 0 })
+  const touchPointsRef = useRef(new Map<number, Point>())
+  const touchGestureRef = useRef<{ mode: TouchNavigationGestureMode; viewport: Viewport; center: Point; distance: number } | null>(null)
+  const minimapDragPointerRef = useRef<{ pointerId: number; bounds: ViewBounds; geometry: MinimapGeometry } | null>(null)
+  const pageOverviewDragPointerRef = useRef<number | null>(null)
   const [color, setColor] = useState(COLORS[0].value)
   const [width, setWidth] = useState(4)
   const [eraser, setEraser] = useState(false)
@@ -56,8 +68,16 @@ function App() {
   const [eraserSize, setEraserSize] = useState(28)
   const [objectEraser, setObjectEraser] = useState(false)
   const [eraserMenuOpen, setEraserMenuOpen] = useState(false)
+  const [eraserPopoverPosition, setEraserPopoverPosition] = useState<{ left: number; top: number; width: number } | null>(null)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
+  const [zoomPercent, setZoomPercent] = useState(DEFAULT_ZOOM * 100)
+  const [pageOverviewExpanded, setPageOverviewExpanded] = useState(false)
+  const navigatorPanels = getNavigatorPanels(pageOverviewExpanded)
+
+  const getCurrentMinimapBounds = useCallback((): ViewBounds => {
+    return { ...WORKSPACE_BOUNDS }
+  }, [])
 
   const updateSelectedItems = (keys: string[]) => {
     selectedKeysRef.current = new Set(keys)
@@ -135,7 +155,7 @@ function App() {
   const scheduleShapePreview = (point?: Point) => {
     if (eraser || objectEraser) return
     const anchor = holdAnchorRef.current
-    if (holdTimerRef.current !== null && point && anchor && Math.hypot(point.x - anchor.x, point.y - anchor.y) < SHAPE_HOLD_JITTER_PX) return
+    if (holdTimerRef.current !== null && point && anchor && Math.hypot(point.x - anchor.x, point.y - anchor.y) < SHAPE_HOLD_JITTER_PX / viewportRef.current.scale) return
     clearShapeHoldTimer()
     if (point) holdAnchorRef.current = point
     holdTimerRef.current = window.setTimeout(() => {
@@ -155,19 +175,19 @@ function App() {
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
       if (item.kind === 'rectangle') {
-        const pad = Math.max(8, item.strokeWidth * 2)
+        const pad = Math.max(8 / viewportRef.current.scale, item.strokeWidth * 2)
         if (point.x >= item.x - pad && point.x <= item.x + item.width + pad && point.y >= item.y - pad && point.y <= item.y + item.height + pad) return index
         continue
       }
       if (item.kind === 'connector') {
-        if (itemHitTest(item, point, Math.max(18, item.strokeWidth * 3))) return index
+        if (itemHitTest(item, point, Math.max(18 / viewportRef.current.scale, item.strokeWidth * 3))) return index
         continue
       }
       const stroke = item
       // Eraser marks are operations on earlier ink, not independently selectable objects.
       if (stroke.erase || !stroke.points.length) continue
       // Freehand paths and arrows are removed as one action when any segment is touched.
-      const hitRadius = Math.max(18, stroke.width * 3)
+      const hitRadius = Math.max(18 / viewportRef.current.scale, stroke.width * 3)
       if (stroke.points.length === 1 && Math.hypot(point.x - stroke.points[0].x, point.y - stroke.points[0].y) <= hitRadius) return index
       for (let segment = 1; segment < stroke.points.length; segment += 1) {
         const start = stroke.points[segment - 1]
@@ -187,7 +207,7 @@ function App() {
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
       if (item.kind !== 'rectangle') continue
-      const pad = Math.max(8, item.strokeWidth * 2)
+      const pad = Math.max(8 / viewportRef.current.scale, item.strokeWidth * 2)
       if (point.x >= item.x - pad && point.x <= item.x + item.width + pad && point.y >= item.y - pad && point.y <= item.y + item.height + pad) return item
     }
     return null
@@ -196,7 +216,7 @@ function App() {
   const hitTestConnector = (point: Point) => {
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
-      if (item.kind === 'connector' && itemHitTest(item, point)) return item
+      if (item.kind === 'connector' && itemHitTest(item, point, Math.max(12 / viewportRef.current.scale, item.strokeWidth * 2))) return item
     }
     return null
   }
@@ -416,6 +436,154 @@ function App() {
     else drawStroke(ctx, item)
   }, [drawConnector, drawRectangle, drawStroke])
 
+  const drawMinimapItems = useCallback((ctx: CanvasRenderingContext2D, geometry: MinimapGeometry) => {
+    const toMiniX = (x: number) => x * geometry.scale + geometry.offsetX
+    const toMiniY = (y: number) => y * geometry.scale + geometry.offsetY
+    ctx.save()
+    for (const item of canvasItemsForRendering(strokesRef.current)) {
+      if (item.kind === 'rectangle') {
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.strokeStyle = item.strokeColor
+        ctx.lineWidth = Math.max(1, item.strokeWidth * geometry.scale)
+        ctx.strokeRect(toMiniX(item.x), toMiniY(item.y), item.width * geometry.scale, item.height * geometry.scale)
+      } else if (item.kind === 'connector') {
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.strokeStyle = item.strokeColor
+        ctx.lineWidth = Math.max(1, item.strokeWidth * geometry.scale)
+        ctx.beginPath()
+        ctx.moveTo(toMiniX(item.start.x), toMiniY(item.start.y))
+        ctx.lineTo(toMiniX(item.end.x), toMiniY(item.end.y))
+        ctx.stroke()
+      } else if (item.points.length > 0) {
+        ctx.globalCompositeOperation = item.erase ? 'destination-out' : 'source-over'
+        ctx.strokeStyle = item.erase ? '#000000' : item.color
+        ctx.fillStyle = item.erase ? '#000000' : item.color
+        ctx.lineWidth = Math.max(1, item.width * geometry.scale)
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.beginPath()
+        ctx.moveTo(toMiniX(item.points[0].x), toMiniY(item.points[0].y))
+        item.points.slice(1).forEach((point) => ctx.lineTo(toMiniX(point.x), toMiniY(point.y)))
+        if (item.points.length === 1) {
+          ctx.arc(toMiniX(item.points[0].x), toMiniY(item.points[0].y), Math.max(0.5, item.width * geometry.scale / 2), 0, Math.PI * 2)
+          ctx.fill()
+        } else ctx.stroke()
+      }
+    }
+    ctx.restore()
+  }, [])
+
+  const renderNavigator = useCallback(() => {
+    const minimap = minimapRef.current
+    const mainCanvas = canvasRef.current
+    const ctx = minimap?.getContext('2d')
+    if (!minimap || !mainCanvas || !ctx) return
+    const rect = minimap.getBoundingClientRect()
+    if (!rect.width || !rect.height) return
+    const dpr = Math.max(1, window.devicePixelRatio || 1)
+    const pixelWidth = Math.round(rect.width * dpr)
+    const pixelHeight = Math.round(rect.height * dpr)
+    if (minimap.width !== pixelWidth || minimap.height !== pixelHeight) {
+      minimap.width = pixelWidth
+      minimap.height = pixelHeight
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.clearRect(0, 0, rect.width, rect.height)
+    ctx.fillStyle = '#f1f3f7'
+    ctx.fillRect(0, 0, rect.width, rect.height)
+    const activeDrag = minimapDragPointerRef.current
+    const bounds = activeDrag?.bounds ?? getCurrentMinimapBounds()
+    const geometry = activeDrag?.geometry ?? getMinimapGeometry(rect.width, rect.height, bounds)
+    const workspaceX = WORKSPACE_BOUNDS.x * geometry.scale + geometry.offsetX
+    const workspaceY = WORKSPACE_BOUNDS.y * geometry.scale + geometry.offsetY
+    const workspaceWidth = WORKSPACE_BOUNDS.width * geometry.scale
+    const workspaceHeight = WORKSPACE_BOUNDS.height * geometry.scale
+    const pageX = SHEET_BOUNDS.x * geometry.scale + geometry.offsetX
+    const pageY = SHEET_BOUNDS.y * geometry.scale + geometry.offsetY
+    const pageWidth = SHEET_WIDTH * geometry.scale
+    const pageHeight = SHEET_HEIGHT * geometry.scale
+    ctx.fillStyle = '#e9ebf0'
+    ctx.fillRect(workspaceX, workspaceY, workspaceWidth, workspaceHeight)
+    ctx.strokeStyle = '#c5cad4'
+    ctx.lineWidth = 1
+    ctx.strokeRect(workspaceX + 0.5, workspaceY + 0.5, workspaceWidth - 1, workspaceHeight - 1)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
+    ctx.strokeStyle = '#cfd4df'
+    ctx.lineWidth = 1
+    ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
+
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(workspaceX, workspaceY, workspaceWidth, workspaceHeight)
+    ctx.clip()
+    drawMinimapItems(ctx, geometry)
+    ctx.restore()
+    const mainRect = mainCanvas.getBoundingClientRect()
+    const viewport = viewportRef.current
+    const viewX = -viewport.offsetX / viewport.scale
+    const viewY = -viewport.offsetY / viewport.scale
+    const viewWidth = mainRect.width / viewport.scale
+    const viewHeight = mainRect.height / viewport.scale
+    ctx.save()
+    ctx.fillStyle = 'rgba(65, 91, 204, .12)'
+    ctx.strokeStyle = '#415bca'
+    ctx.lineWidth = 1.5
+    ctx.fillRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
+    ctx.strokeRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
+    ctx.restore()
+  }, [drawMinimapItems, getCurrentMinimapBounds])
+
+  const renderPageOverview = useCallback(() => {
+    const overview = pageOverviewRef.current
+    const mainCanvas = canvasRef.current
+    const ctx = overview?.getContext('2d')
+    if (!overview || !mainCanvas || !ctx) return
+    const rect = overview.getBoundingClientRect()
+    if (!rect.width || !rect.height) return
+    const dpr = Math.max(1, window.devicePixelRatio || 1)
+    const pixelWidth = Math.round(rect.width * dpr)
+    const pixelHeight = Math.round(rect.height * dpr)
+    if (overview.width !== pixelWidth || overview.height !== pixelHeight) {
+      overview.width = pixelWidth
+      overview.height = pixelHeight
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.clearRect(0, 0, rect.width, rect.height)
+    ctx.fillStyle = '#f1f3f7'
+    ctx.fillRect(0, 0, rect.width, rect.height)
+    const geometry = getPageOverviewGeometry(rect.width, rect.height)
+    const pageX = SHEET_BOUNDS.x * geometry.scale + geometry.offsetX
+    const pageY = SHEET_BOUNDS.y * geometry.scale + geometry.offsetY
+    const pageWidth = SHEET_WIDTH * geometry.scale
+    const pageHeight = SHEET_HEIGHT * geometry.scale
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(pageX, pageY, pageWidth, pageHeight)
+    ctx.clip()
+    drawMinimapItems(ctx, geometry)
+
+    const canvasRect = mainCanvas.getBoundingClientRect()
+    const viewport = viewportRef.current
+    const viewX = -viewport.offsetX / viewport.scale
+    const viewY = -viewport.offsetY / viewport.scale
+    const viewWidth = canvasRect.width / viewport.scale
+    const viewHeight = canvasRect.height / viewport.scale
+    ctx.fillStyle = 'rgba(65, 91, 204, .12)'
+    ctx.strokeStyle = '#415bca'
+    ctx.lineWidth = 1.5
+    ctx.fillRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
+    ctx.strokeRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
+    ctx.restore()
+    ctx.strokeStyle = '#aeb6c7'
+    ctx.lineWidth = 1
+    ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
+  }, [drawMinimapItems])
+
   const setSelectedRectangle = (id: number | null) => {
     selectedRectangleIdRef.current = id
   }
@@ -424,7 +592,32 @@ function App() {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
+    const dpr = Math.max(1, window.devicePixelRatio || 1)
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
+    const viewport = viewportRef.current
+    ctx.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
+    ctx.save()
+    ctx.shadowColor = 'rgba(35, 42, 54, .16)'
+    ctx.shadowBlur = 14
+    ctx.shadowOffsetY = 3
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(SHEET_BOUNDS.x, SHEET_BOUNDS.y, SHEET_WIDTH, SHEET_HEIGHT)
+    ctx.restore()
+    ctx.save()
+    ctx.strokeStyle = '#d4d7de'
+    ctx.lineWidth = 1
+    ctx.strokeRect(WORKSPACE_BOUNDS.x + 0.5, WORKSPACE_BOUNDS.y + 0.5, WORKSPACE_BOUNDS.width - 1, WORKSPACE_BOUNDS.height - 1)
+    ctx.restore()
+    ctx.save()
+    ctx.strokeStyle = '#d9dce2'
+    ctx.lineWidth = 1
+    ctx.strokeRect(SHEET_BOUNDS.x + 0.5, SHEET_BOUNDS.y + 0.5, SHEET_WIDTH - 1, SHEET_HEIGHT - 1)
+    ctx.restore()
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
+    ctx.clip()
     strokesRef.current.forEach((item) => {
       if (!selectedKeysRef.current.has(canvasItemKey(item))) return
       if (item.kind === 'rectangle') {
@@ -479,6 +672,36 @@ function App() {
       ctx.strokeRect(selected.x - 5, selected.y - 5, selected.width + 10, selected.height + 10)
       ctx.restore()
     }
+    const soleSelectedRectangle = selectedRectangleIdRef.current !== null
+      ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === selectedRectangleIdRef.current)
+      : selectedKeysRef.current.size === 1
+        ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && selectedKeysRef.current.has(canvasItemKey(item)))
+        : undefined
+    const groupBounds = !soleSelectedRectangle && selectedKeysRef.current.size > 1
+      ? getCanvasSelectionBounds(strokesRef.current, selectedKeysRef.current)
+      : null
+    const resizeBounds = soleSelectedRectangle ?? groupBounds ?? undefined
+    if (groupBounds) {
+      ctx.save()
+      ctx.strokeStyle = '#5269df'
+      ctx.lineWidth = 2
+      ctx.setLineDash([6, 4])
+      ctx.strokeRect(groupBounds.x - 5, groupBounds.y - 5, groupBounds.width + 10, groupBounds.height + 10)
+      ctx.restore()
+    }
+    if (resizeBounds) {
+      ctx.save()
+      ctx.fillStyle = '#ffffff'
+      ctx.strokeStyle = '#5269df'
+      ctx.lineWidth = 2
+      for (const { point } of getRectangleResizeHandles(resizeBounds)) {
+        ctx.beginPath()
+        ctx.rect(point.x - 5, point.y - 5, 10, 10)
+        ctx.fill()
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
     const lasso = activeLassoRef.current
     if (lasso && lasso.points.length > 1) {
       ctx.save()
@@ -494,7 +717,21 @@ function App() {
       ctx.stroke()
       ctx.restore()
     }
-  }, [color, drawConnector, drawItem, drawStroke, width])
+    ctx.restore()
+    renderNavigator()
+    renderPageOverview()
+  }, [color, drawConnector, drawItem, drawStroke, renderNavigator, renderPageOverview, width])
+
+  const applyViewport = (viewport: Viewport) => {
+    const canvas = canvasRef.current
+    const rect = canvas?.getBoundingClientRect()
+    const boundedViewport = rect
+      ? clampViewportToBounds(viewport, rect.width, rect.height)
+      : viewport
+    viewportRef.current = boundedViewport
+    setZoomPercent(Math.round(boundedViewport.scale * 100))
+    renderAll()
+  }
 
   const scheduleRender = useCallback(() => {
     if (frameRef.current !== null) return
@@ -511,6 +748,8 @@ function App() {
     const dpr = Math.max(1, window.devicePixelRatio || 1)
     canvas.width = Math.round(rect.width * dpr)
     canvas.height = Math.round(rect.height * dpr)
+    viewportRef.current = clampViewportToBounds(viewportRef.current, rect.width, rect.height)
+    setZoomPercent(Math.round(viewportRef.current.scale * 100))
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -530,13 +769,200 @@ function App() {
     }
   }, [resizeCanvas])
 
-  const getPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
+  useEffect(() => {
+    renderAll()
+  }, [pageOverviewExpanded, renderAll])
+
+  useEffect(() => {
+    if (!eraserMenuOpen) return
+    const updateEraserPopoverPosition = () => {
+      const anchor = eraserControlRef.current?.getBoundingClientRect()
+      if (!anchor) return
+      const width = Math.min(202, Math.max(0, window.innerWidth - 24))
+      const left = Math.max(12, Math.min(window.innerWidth - width - 12, anchor.right - width))
+      const estimatedHeight = 150
+      const belowTop = anchor.bottom + 12
+      const top = belowTop + estimatedHeight <= window.innerHeight - 12
+        ? belowTop
+        : Math.max(12, anchor.top - estimatedHeight - 12)
+      setEraserPopoverPosition({ left, top, width })
+    }
+    updateEraserPopoverPosition()
+    const toolbar = toolbarRef.current
+    toolbar?.addEventListener('scroll', updateEraserPopoverPosition, { passive: true })
+    window.addEventListener('resize', updateEraserPopoverPosition)
+    return () => {
+      toolbar?.removeEventListener('scroll', updateEraserPopoverPosition)
+      window.removeEventListener('resize', updateEraserPopoverPosition)
+    }
+  }, [eraserMenuOpen])
+
+  const getScreenPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
     const rect = event.currentTarget.getBoundingClientRect()
     return {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
       pressure: event.pressure,
     }
+  }
+
+  const getPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => screenToCanvasPoint(getScreenPoint(event), viewportRef.current)
+
+  const getBoundedPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => clampPointToBounds(getPoint(event))
+
+  const translateWithinWorkspace = (items: CanvasItem[], keys: Set<string>, dx: number, dy: number): CanvasItem[] => {
+    const bounds = getCanvasSelectionBounds(items, keys)
+    if (!bounds) return translateSelectedItems(items, keys, dx, dy)
+    const translation = clampTranslationToBounds(bounds, dx, dy)
+    return translateSelectedItems(items, keys, translation.dx, translation.dy)
+  }
+
+  const snapConnectorEndpointWithinWorkspace = (point: Point) => {
+    const snapped = snapConnectorEndpoint(point, strokesRef.current, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale)
+    return snapped && isPointWithinBounds(snapped.point) ? snapped : null
+  }
+
+  const fitCanvasView = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    applyViewport(fitViewportToBounds(WORKSPACE_BOUNDS, rect.width, rect.height))
+  }
+
+  const fitDrawingView = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const bounds = getCanvasSelectionBounds(strokesRef.current, new Set(strokesRef.current.map(canvasItemKey)))
+    if (!bounds) {
+      fitCanvasView()
+      return
+    }
+    const rect = canvas.getBoundingClientRect()
+    applyViewport(fitViewportToBounds(bounds, rect.width, rect.height, 48))
+  }
+
+  const resetView = () => applyViewport({ scale: DEFAULT_ZOOM, offsetX: 0, offsetY: 0 })
+
+  const getMinimapCanvasPoint = (event: React.PointerEvent<HTMLCanvasElement>, geometry: MinimapGeometry): Point => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return minimapToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, geometry)
+  }
+
+  const jumpToMinimapPoint = (point: Point, bounds: ViewBounds) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    applyViewport(centerViewportOnPoint(viewportRef.current, point, rect.width, rect.height, bounds))
+  }
+
+  const onMinimapPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = event.currentTarget.getBoundingClientRect()
+    const bounds = getCurrentMinimapBounds()
+    const geometry = getMinimapGeometry(rect.width, rect.height, bounds)
+    minimapDragPointerRef.current = { pointerId: event.pointerId, bounds, geometry }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    jumpToMinimapPoint(getMinimapCanvasPoint(event, geometry), bounds)
+  }
+
+  const onMinimapPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = minimapDragPointerRef.current
+    if (drag?.pointerId !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    jumpToMinimapPoint(getMinimapCanvasPoint(event, drag.geometry), drag.bounds)
+  }
+
+  const onMinimapPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (minimapDragPointerRef.current?.pointerId === event.pointerId) {
+      minimapDragPointerRef.current = null
+      renderAll()
+    }
+  }
+
+  const getPageOverviewCanvasPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const geometry = getPageOverviewGeometry(rect.width, rect.height)
+    const point = minimapToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, geometry)
+    return {
+      ...point,
+      x: Math.max(SHEET_BOUNDS.x, Math.min(SHEET_BOUNDS.x + SHEET_WIDTH, point.x)),
+      y: Math.max(SHEET_BOUNDS.y, Math.min(SHEET_BOUNDS.y + SHEET_HEIGHT, point.y)),
+    }
+  }
+
+  const jumpToPageOverviewPoint = (point: Point) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    applyViewport(centerViewportOnPoint(viewportRef.current, point, rect.width, rect.height))
+  }
+
+  const onPageOverviewPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    pageOverviewDragPointerRef.current = event.pointerId
+    event.currentTarget.setPointerCapture(event.pointerId)
+    jumpToPageOverviewPoint(getPageOverviewCanvasPoint(event))
+  }
+
+  const onPageOverviewPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (pageOverviewDragPointerRef.current !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    jumpToPageOverviewPoint(getPageOverviewCanvasPoint(event))
+  }
+
+  const onPageOverviewPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (pageOverviewDragPointerRef.current === event.pointerId) pageOverviewDragPointerRef.current = null
+  }
+
+  const beginTouchGesture = () => {
+    const mode = getTouchNavigationGestureMode(touchPointsRef.current.size)
+    if (!mode) {
+      touchGestureRef.current = null
+      return
+    }
+    const points = [...touchPointsRef.current.values()]
+    const [first, second] = points
+    touchGestureRef.current = {
+      mode,
+      viewport: { ...viewportRef.current },
+      center: {
+        x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+        y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+        pressure: 1,
+      },
+      distance: mode === 'pinch-zoom' ? Math.hypot(second.x - first.x, second.y - first.y) : 0,
+    }
+  }
+
+  const updateTouchPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    touchPointsRef.current.set(event.pointerId, getScreenPoint(event))
+    const gesture = touchGestureRef.current
+    if (!gesture || getTouchNavigationGestureMode(touchPointsRef.current.size) !== gesture.mode) return false
+    const points = [...touchPointsRef.current.values()]
+    if (gesture.mode === 'pinch-zoom') {
+      const [first, second] = points
+      const distance = Math.hypot(second.x - first.x, second.y - first.y)
+      applyViewport(zoomTwoFingerViewport(gesture.viewport, gesture.center, gesture.distance, distance, MIN_ZOOM, MAX_ZOOM))
+    } else {
+      const center = {
+        x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+        y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+        pressure: 1,
+      }
+      if (Math.hypot(center.x - gesture.center.x, center.y - gesture.center.y) >= THREE_FINGER_PAN_THRESHOLD) {
+        applyViewport(panThreeFingerViewport(gesture.viewport, gesture.center, center))
+      }
+    }
+    return true
+  }
+
+  const finishTouchPointer = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    touchPointsRef.current.delete(event.pointerId)
+    beginTouchGesture()
   }
 
   const finishStroke = useCallback((pointerId: number) => {
@@ -566,13 +992,37 @@ function App() {
     scheduleRender()
   }, [scheduleRender, shapeMode])
 
+  const appendStrokeSample = (pointerId: number, point: Point): boolean => {
+    const stroke = activeStrokeRef.current
+    if (!stroke) return false
+    const previous = stroke.points[stroke.points.length - 1]
+    const clippedPoint = clipSegmentToBounds(previous, point)
+    if (clippedPoint && Math.hypot(clippedPoint.x - previous.x, clippedPoint.y - previous.y) > 0.5) {
+      stroke.points.push(clippedPoint)
+    }
+    if (!isPointWithinBounds(point)) {
+      finishStroke(pointerId)
+      return false
+    }
+    return true
+  }
+
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (event.pointerType !== 'pen' || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null) return
+    if (event.pointerType === 'touch') {
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      touchPointsRef.current.set(event.pointerId, getScreenPoint(event))
+      beginTouchGesture()
+      return
+    }
+    if (event.pointerType !== 'pen' || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null) return
     event.preventDefault()
-    const point = getPoint(event)
+    const rawPoint = getPoint(event)
+    if (!isPointWithinBounds(rawPoint)) return
+    const point = getBoundedPoint(event)
     if (connectorMode) {
       event.currentTarget.setPointerCapture(event.pointerId)
-      const snappedStart = snapConnectorEndpoint(point, strokesRef.current)
+      const snappedStart = snapConnectorEndpointWithinWorkspace(point)
       activeConnectorRef.current = {
         pointerId: event.pointerId,
         start: snappedStart?.point ?? point,
@@ -584,7 +1034,26 @@ function App() {
     }
     if (lassoMode) {
       const selectedItems = strokesRef.current.filter((item) => selectedKeysRef.current.has(canvasItemKey(item)))
-      const hitSelected = [...selectedItems].reverse().some((item) => itemHitTest(item, point))
+      const singleSelectedRectangle = selectedItems.length === 1 && selectedItems[0].kind === 'rectangle' ? selectedItems[0] : null
+      const selectedBounds = singleSelectedRectangle
+        ? { x: singleSelectedRectangle.x, y: singleSelectedRectangle.y, width: singleSelectedRectangle.width, height: singleSelectedRectangle.height }
+        : selectedItems.length > 1 ? getCanvasSelectionBounds(strokesRef.current, selectedKeysRef.current) : null
+      const resizeHandle = selectedBounds ? hitTestRectangleResizeHandle(selectedBounds, point, 14 / viewportRef.current.scale) : null
+      if (selectedBounds && resizeHandle) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        activeResizeRef.current = {
+          pointerId: event.pointerId,
+          rectangleId: singleSelectedRectangle?.id ?? null,
+          selectedKeys: singleSelectedRectangle ? null : new Set(selectedKeysRef.current),
+          handle: resizeHandle,
+          start: point,
+          originalBounds: { ...selectedBounds },
+          originalItems: cloneCanvasItems(strokesRef.current),
+          moved: false,
+        }
+        return
+      }
+      const hitSelected = [...selectedItems].reverse().some((item) => itemHitTest(item, point, 12 / viewportRef.current.scale))
       if (selectedKeysRef.current.size > 0 && hitSelected) {
         event.currentTarget.setPointerCapture(event.pointerId)
         lassoDragRef.current = {
@@ -602,6 +1071,24 @@ function App() {
       return
     }
     if (selectionMode) {
+      const currentlySelectedRectangle = selectedRectangleIdRef.current === null
+        ? null
+        : strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === selectedRectangleIdRef.current) ?? null
+      const selectedHandle = currentlySelectedRectangle ? hitTestRectangleResizeHandle(currentlySelectedRectangle, point, 14 / viewportRef.current.scale) : null
+      if (currentlySelectedRectangle && selectedHandle) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        activeResizeRef.current = {
+          pointerId: event.pointerId,
+          rectangleId: currentlySelectedRectangle.id,
+          selectedKeys: null,
+          handle: selectedHandle,
+          start: point,
+          originalBounds: { x: currentlySelectedRectangle.x, y: currentlySelectedRectangle.y, width: currentlySelectedRectangle.width, height: currentlySelectedRectangle.height },
+          originalItems: cloneCanvasItems(strokesRef.current),
+          moved: false,
+        }
+        return
+      }
       const rectangle = hitTestRectangle(point)
       const connector = rectangle ? null : hitTestConnector(point)
       setSelectedRectangle(rectangle?.id ?? null)
@@ -651,28 +1138,60 @@ function App() {
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (touchPointsRef.current.has(event.pointerId)) {
+      event.preventDefault()
+      updateTouchPoint(event)
+      return
+    }
     const activeConnector = activeConnectorRef.current
     if (activeConnector?.pointerId === event.pointerId) {
       event.preventDefault()
-      const point = getPoint(event)
-      const snappedEnd = snapConnectorEndpoint(point, strokesRef.current)
+      const point = getBoundedPoint(event)
+      const snappedEnd = snapConnectorEndpointWithinWorkspace(point)
       activeConnector.end = snappedEnd?.point ?? point
       activeConnector.endAttachment = snappedEnd?.attachment
       scheduleRender()
       return
     }
+    const activeResize = activeResizeRef.current
+    if (activeResize?.pointerId === event.pointerId) {
+      event.preventDefault()
+      const point = getBoundedPoint(event)
+      const bounds = getResizedRectangleBounds(
+        activeResize.originalBounds,
+        activeResize.handle,
+        point.x - activeResize.start.x,
+        point.y - activeResize.start.y,
+      )
+      const original = activeResize.originalBounds
+      const unchanged = bounds.x === original.x && bounds.y === original.y
+        && bounds.width === original.width && bounds.height === original.height
+      if (!activeResize.moved && unchanged) return
+      const nextItems = activeResize.rectangleId !== null
+        ? resizeRectangleItems(activeResize.originalItems, activeResize.rectangleId, bounds)
+        : resizeSelectedItems(activeResize.originalItems, activeResize.selectedKeys ?? new Set(), bounds)
+      if (!activeResize.moved) {
+        saveHistory()
+        activeResize.moved = true
+      }
+      strokesRef.current = nextItems
+      renderAll()
+      return
+    }
     const lassoDrag = lassoDragRef.current
     if (lassoDrag?.pointerId === event.pointerId) {
       event.preventDefault()
-      const point = getPoint(event)
+      const point = getBoundedPoint(event)
       const deltaX = point.x - lassoDrag.start.x
       const deltaY = point.y - lassoDrag.start.y
       if (!lassoDrag.moved && Math.hypot(deltaX, deltaY) < 2) return
+      const nextItems = translateWithinWorkspace(lassoDrag.originalItems, lassoDrag.keys, deltaX, deltaY)
+      if (!lassoDrag.moved && nextItems.every((item, index) => item === lassoDrag.originalItems[index])) return
       if (!lassoDrag.moved) {
         saveHistory()
         lassoDrag.moved = true
       }
-      strokesRef.current = translateSelectedItems(lassoDrag.originalItems, lassoDrag.keys, deltaX, deltaY)
+      strokesRef.current = nextItems
       renderAll()
       return
     }
@@ -682,7 +1201,7 @@ function App() {
       const samples = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent]
       for (const sample of samples) {
         const rect = event.currentTarget.getBoundingClientRect()
-        const point = { x: sample.clientX - rect.left, y: sample.clientY - rect.top, pressure: sample.pressure }
+        const point = clampPointToBounds(screenToCanvasPoint({ x: sample.clientX - rect.left, y: sample.clientY - rect.top, pressure: sample.pressure }, viewportRef.current))
         const previous = activeLasso.points[activeLasso.points.length - 1]
         if (Math.hypot(point.x - previous.x, point.y - previous.y) >= 1.5) activeLasso.points.push(point)
       }
@@ -692,15 +1211,17 @@ function App() {
     const drag = activeDragRef.current
     if (drag?.pointerId === event.pointerId) {
       event.preventDefault()
-      const point = getPoint(event)
+      const point = getBoundedPoint(event)
       const deltaX = point.x - drag.start.x
       const deltaY = point.y - drag.start.y
       if (!drag.moved && Math.hypot(deltaX, deltaY) < 2) return
+      const nextItems = translateWithinWorkspace(drag.originalItems, new Set([drag.itemKey]), deltaX, deltaY)
+      if (!drag.moved && nextItems.every((item, index) => item === drag.originalItems[index])) return
       if (!drag.moved) {
         saveHistory()
         drag.moved = true
       }
-      strokesRef.current = translateSelectedItems(drag.originalItems, new Set([drag.itemKey]), deltaX, deltaY)
+      strokesRef.current = nextItems
       renderAll()
       return
     }
@@ -709,11 +1230,12 @@ function App() {
     const samples = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent]
     for (const sample of samples) {
       const rect = event.currentTarget.getBoundingClientRect()
-      activeStrokeRef.current.points.push({
+      const point = screenToCanvasPoint({
         x: sample.clientX - rect.left,
         y: sample.clientY - rect.top,
         pressure: sample.pressure,
-      })
+      }, viewportRef.current)
+      if (!appendStrokeSample(event.pointerId, point)) return
     }
     const latestPoint = activeStrokeRef.current.points[activeStrokeRef.current.points.length - 1]
     if (!holdAnchorRef.current || Math.hypot(latestPoint.x - holdAnchorRef.current.x, latestPoint.y - holdAnchorRef.current.y) >= SHAPE_HOLD_JITTER_PX) {
@@ -725,10 +1247,14 @@ function App() {
   }
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (touchPointsRef.current.has(event.pointerId) || event.pointerType === 'touch') {
+      finishTouchPointer(event)
+      return
+    }
     const activeConnector = activeConnectorRef.current
     if (activeConnector?.pointerId === event.pointerId) {
-      const point = getPoint(event)
-      const snappedEnd = snapConnectorEndpoint(point, strokesRef.current)
+      const point = getBoundedPoint(event)
+      const snappedEnd = snapConnectorEndpointWithinWorkspace(point)
       activeConnector.end = snappedEnd?.point ?? point
       activeConnector.endAttachment = snappedEnd?.attachment
       if (Math.hypot(activeConnector.end.x - activeConnector.start.x, activeConnector.end.y - activeConnector.start.y) >= 2) {
@@ -748,9 +1274,14 @@ function App() {
       renderAll()
       return
     }
+    if (activeResizeRef.current?.pointerId === event.pointerId) {
+      activeResizeRef.current = null
+      renderAll()
+      return
+    }
     const activeLasso = activeLassoRef.current
     if (activeLasso?.pointerId === event.pointerId) {
-      const finalPoint = getPoint(event)
+      const finalPoint = getBoundedPoint(event)
       const previous = activeLasso.points[activeLasso.points.length - 1]
       if (Math.hypot(finalPoint.x - previous.x, finalPoint.y - previous.y) >= 1.5) activeLasso.points.push(finalPoint)
       activeLassoRef.current = null
@@ -769,11 +1300,8 @@ function App() {
     }
     if (activePointerRef.current === event.pointerId && activeStrokeRef.current) {
       const finalPoint = getPoint(event)
-      const points = activeStrokeRef.current.points
-      const previousPoint = points[points.length - 1]
-      const movement = Math.hypot(finalPoint.x - previousPoint.x, finalPoint.y - previousPoint.y)
-      if (movement > 0.5) points.push(finalPoint)
-      if (holdAnchorRef.current && Math.hypot(finalPoint.x - holdAnchorRef.current.x, finalPoint.y - holdAnchorRef.current.y) >= SHAPE_HOLD_JITTER_PX) {
+      appendStrokeSample(event.pointerId, finalPoint)
+      if (activeStrokeRef.current && holdAnchorRef.current && Math.hypot(finalPoint.x - holdAnchorRef.current.x, finalPoint.y - holdAnchorRef.current.y) >= SHAPE_HOLD_JITTER_PX) {
         lastSignificantMoveAtRef.current = performance.now()
       }
     }
@@ -781,8 +1309,17 @@ function App() {
   }
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (touchPointsRef.current.has(event.pointerId) || event.pointerType === 'touch') {
+      finishTouchPointer(event)
+      return
+    }
     if (activeConnectorRef.current?.pointerId === event.pointerId) {
       activeConnectorRef.current = null
+      renderAll()
+      return
+    }
+    if (activeResizeRef.current?.pointerId === event.pointerId) {
+      activeResizeRef.current = null
       renderAll()
       return
     }
@@ -809,6 +1346,7 @@ function App() {
     strokesRef.current = []
     activeStrokeRef.current = null
     activeConnectorRef.current = null
+    activeResizeRef.current = null
     shapePreviewRef.current = null
     activeLassoRef.current = null
     lassoDragRef.current = null
@@ -835,8 +1373,59 @@ function App() {
           onLostPointerCapture={onPointerEnd}
         />
         {!hasInk && <div className="canvas-hint" aria-hidden="true">Draw here with your S Pen</div>}
+        <aside className={`viewport-navigator${navigatorPanels.includes('page') ? ' expanded' : ''}`} aria-label="Canvas navigation">
+          <div className="navigator-header">
+            <span className="navigator-map-label">Workspace</span>
+            <button
+              className="navigator-expand-button"
+              type="button"
+              aria-label={pageOverviewExpanded ? 'Collapse page overview' : 'Expand page overview'}
+              aria-expanded={pageOverviewExpanded}
+              title={pageOverviewExpanded ? 'Hide page overview' : 'Show page overview'}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => { event.stopPropagation(); setPageOverviewExpanded((expanded) => !expanded) }}
+            >
+              <span aria-hidden="true">{pageOverviewExpanded ? '−' : '+'}</span>
+            </button>
+          </div>
+          <div className={`navigator-maps${navigatorPanels.includes('page') ? ' expanded' : ''}`}>
+            <div className="navigator-map-section">
+              <canvas
+                ref={minimapRef}
+                className="navigator-map"
+                aria-label="Workspace overview. Click or drag to navigate the full drawing area."
+                onPointerDown={onMinimapPointerDown}
+                onPointerMove={onMinimapPointerMove}
+                onPointerUp={onMinimapPointerEnd}
+                onPointerCancel={onMinimapPointerEnd}
+                onLostPointerCapture={onMinimapPointerEnd}
+              />
+            </div>
+            {navigatorPanels.includes('page') && (
+              <div className="navigator-page-section">
+                <span className="navigator-map-label">Page</span>
+                <canvas
+                  ref={pageOverviewRef}
+                  className="navigator-page-map"
+                  aria-label="Page overview. Click or drag to navigate the white page."
+                  onPointerDown={onPageOverviewPointerDown}
+                  onPointerMove={onPageOverviewPointerMove}
+                  onPointerUp={onPageOverviewPointerEnd}
+                  onPointerCancel={onPageOverviewPointerEnd}
+                  onLostPointerCapture={onPageOverviewPointerEnd}
+                />
+              </div>
+            )}
+          </div>
+          <div className="navigator-controls">
+            <output className="zoom-indicator" aria-label="Current zoom">{zoomPercent}%</output>
+            <button type="button" onClick={fitCanvasView}>Fit canvas</button>
+            <button type="button" onClick={fitDrawingView}>Fit drawing</button>
+            <button type="button" onClick={resetView}>Reset</button>
+          </div>
+        </aside>
       </section>
-      <header className="toolbar" aria-label="Drawing tools">
+      <header ref={toolbarRef} className="toolbar" aria-label="Drawing tools">
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true"><span /></span>
           <span className="brand-name">Ink Pad</span>
@@ -846,7 +1435,7 @@ function App() {
         <button className={`tool-button shape-button${shapeMode ? ' selected' : ''}`} type="button" aria-pressed={shapeMode} title="Straight lines snap on hold automatically. Toggle for rectangles and arrows." onClick={() => { setShapeMode((value) => !value); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser(false) }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="10" height="10" rx="1"/><path d="M10 19h9m0 0-4-4m4 4-4 4"/></svg><span>Shapes</span>
         </button>
-        <button className={`tool-button selection-button${selectionMode ? ' selected' : ''}`} type="button" aria-pressed={selectionMode} title="Select and move rectangles" onClick={() => { const next = !selectionMode; setSelectionMode(next); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }}>
+        <button className={`tool-button selection-button${selectionMode ? ' selected' : ''}`} type="button" aria-pressed={selectionMode} title="Select, move, and resize rectangles" onClick={() => { const next = !selectionMode; setSelectionMode(next); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v16l4.3-4.1 3.2 6.1 2.5-1.3-3.1-6.1H18L5 3Z"/><rect x="15.5" y="3.5" width="5" height="5" rx="1"/></svg><span>Select</span>
         </button>
         <button className={`tool-button lasso-button${lassoMode ? ' selected' : ''}`} type="button" aria-pressed={lassoMode} title="Draw a loop to select and move multiple items" onClick={() => { const next = !lassoMode; setLassoMode(next); setSelectionMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); setSelectedRectangle(null); clearLassoSelection() }}>
@@ -917,19 +1506,27 @@ function App() {
         <button className="history-button" type="button" onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h2"/></svg>
         </button>
-        <div className="eraser-control">
-        <button className={`tool-button eraser-button${eraser ? ' selected' : ''}`} type="button" aria-pressed={eraser} aria-expanded={eraserMenuOpen} onClick={() => { setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser((value) => !value); setEraserMenuOpen((value) => !value) }}>
+        <div ref={eraserControlRef} className="eraser-control">
+        <button className={`tool-button eraser-button${eraser ? ' selected' : ''}`} type="button" aria-label="Eraser" title="Eraser" aria-pressed={eraser} aria-expanded={eraserMenuOpen} onClick={() => { setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser((value) => !value); setEraserMenuOpen((value) => !value) }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8.2 4.8 9.9 0a1.5 1.5 0 0 1 1.1 2.6l-9.8 9.8a1.5 1.5 0 0 1-2.1 0l-4.1-4.1a1.5 1.5 0 0 1 0-2.1l7.2-7.2a1.5 1.5 0 0 1 1.1-.4Z"/><path d="m8.1 17.2 3.6 3.6h8"/></svg>
           <span>Eraser</span>
         </button>
-        {eraserMenuOpen && <div className="eraser-popover" role="group" aria-label="Eraser options">
-          <span className="popover-label">Size</span>
-          <div className="eraser-sizes">{ERASER_SIZES.map((size) => <button className={`eraser-size${eraserSize === size && !objectEraser ? ' selected' : ''}`} type="button" key={size} aria-label={`${size} pixel eraser`} aria-pressed={eraserSize === size && !objectEraser} onClick={() => { setEraserSize(size); setObjectEraser(false); setEraser(true) }}><span style={{ width: Math.max(7, Math.min(20, size / 3)), height: Math.max(7, Math.min(20, size / 3)) }} /></button>)}</div>
-          <button className={`object-eraser${objectEraser ? ' selected' : ''}`} type="button" aria-pressed={objectEraser} onClick={() => { setObjectEraser((value) => !value); setEraser(true) }}>Delete whole shape</button>
-        </div>}
         </div>
         <button className="clear-button" type="button" onClick={clearCanvas} disabled={!hasInk}>Clear</button>
       </header>
+      {eraserMenuOpen && eraserPopoverPosition && createPortal(
+        <div
+          className="eraser-popover"
+          role="group"
+          aria-label="Eraser options"
+          style={{ left: eraserPopoverPosition.left, top: eraserPopoverPosition.top, width: eraserPopoverPosition.width }}
+        >
+          <span className="popover-label">Size</span>
+          <div className="eraser-sizes">{ERASER_SIZES.map((size) => <button className={`eraser-size${eraserSize === size && !objectEraser ? ' selected' : ''}`} type="button" key={size} aria-label={`${size} pixel eraser`} aria-pressed={eraserSize === size && !objectEraser} onClick={() => { setEraserSize(size); setObjectEraser(false); setEraser(true) }}><span style={{ width: Math.max(7, Math.min(20, size / 3)), height: Math.max(7, Math.min(20, size / 3)) }} /></button>)}</div>
+          <button className={`object-eraser${objectEraser ? ' selected' : ''}`} type="button" aria-pressed={objectEraser} onClick={() => { setObjectEraser((value) => !value); setEraser(true) }}>Delete whole shape</button>
+        </div>,
+        document.body,
+      )}
     </main>
   )
 }

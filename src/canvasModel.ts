@@ -1,6 +1,8 @@
 export type Point = { x: number; y: number; pressure: number }
 export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line' }
 export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number }
+export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
+export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
 export type ConnectorAttachment = { rectangleId: number; offsetX: number; offsetY: number }
 export type ConnectorRelationshipType = 'association' | 'inheritance' | 'dependency' | 'aggregation' | 'composition'
 export type ConnectorObject = {
@@ -142,6 +144,24 @@ function closestPointOnSegment(point: Point, a: Point, b: Point): Point {
   return { x: a.x + t * dx, y: a.y + t * dy, pressure: point.pressure }
 }
 
+function nearestRectangleBoundaryPoint(rectangle: RectangleObject, point: Point): Point {
+  const left = rectangle.x
+  const right = rectangle.x + rectangle.width
+  const top = rectangle.y
+  const bottom = rectangle.y + rectangle.height
+  const candidates = [
+    closestPointOnSegment(point, { x: left, y: top, pressure: point.pressure }, { x: right, y: top, pressure: point.pressure }),
+    closestPointOnSegment(point, { x: left, y: bottom, pressure: point.pressure }, { x: right, y: bottom, pressure: point.pressure }),
+    closestPointOnSegment(point, { x: left, y: top, pressure: point.pressure }, { x: left, y: bottom, pressure: point.pressure }),
+    closestPointOnSegment(point, { x: right, y: top, pressure: point.pressure }, { x: right, y: bottom, pressure: point.pressure }),
+  ]
+  return candidates.reduce((closest, candidate) => (
+    Math.hypot(point.x - candidate.x, point.y - candidate.y) < Math.hypot(point.x - closest.x, point.y - closest.y)
+      ? candidate
+      : closest
+  ))
+}
+
 export function snapConnectorEndpoint(
   point: Point,
   items: CanvasItem[],
@@ -151,24 +171,13 @@ export function snapConnectorEndpoint(
   let closestDistance = tolerance
   for (const item of items) {
     if (item.kind !== 'rectangle') continue
-    const left = item.x
-    const right = item.x + item.width
-    const top = item.y
-    const bottom = item.y + item.height
-    const candidates = [
-      closestPointOnSegment(point, { x: left, y: top, pressure: point.pressure }, { x: right, y: top, pressure: point.pressure }),
-      closestPointOnSegment(point, { x: left, y: bottom, pressure: point.pressure }, { x: right, y: bottom, pressure: point.pressure }),
-      closestPointOnSegment(point, { x: left, y: top, pressure: point.pressure }, { x: left, y: bottom, pressure: point.pressure }),
-      closestPointOnSegment(point, { x: right, y: top, pressure: point.pressure }, { x: right, y: bottom, pressure: point.pressure }),
-    ]
-    for (const candidate of candidates) {
-      const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y)
-      if (distance <= closestDistance) {
-        closestDistance = distance
-        closest = {
-          point: candidate,
-          attachment: { rectangleId: item.id, offsetX: candidate.x - item.x, offsetY: candidate.y - item.y },
-        }
+    const candidate = nearestRectangleBoundaryPoint(item, point)
+    const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y)
+    if (distance <= closestDistance) {
+      closestDistance = distance
+      closest = {
+        point: candidate,
+        attachment: { rectangleId: item.id, offsetX: candidate.x - item.x, offsetY: candidate.y - item.y },
       }
     }
   }
@@ -177,6 +186,217 @@ export function snapConnectorEndpoint(
 
 export function canvasItemKey(item: CanvasItem): string {
   return `${item.kind}:${item.id}`
+}
+
+export function getRectangleResizeHandles(rectangle: RectangleBounds): Array<{ handle: RectangleResizeHandle; point: Point }> {
+  const middleX = rectangle.x + rectangle.width / 2
+  const middleY = rectangle.y + rectangle.height / 2
+  const right = rectangle.x + rectangle.width
+  const bottom = rectangle.y + rectangle.height
+  return [
+    { handle: 'nw', point: { x: rectangle.x, y: rectangle.y, pressure: 1 } },
+    { handle: 'n', point: { x: middleX, y: rectangle.y, pressure: 1 } },
+    { handle: 'ne', point: { x: right, y: rectangle.y, pressure: 1 } },
+    { handle: 'e', point: { x: right, y: middleY, pressure: 1 } },
+    { handle: 'se', point: { x: right, y: bottom, pressure: 1 } },
+    { handle: 's', point: { x: middleX, y: bottom, pressure: 1 } },
+    { handle: 'sw', point: { x: rectangle.x, y: bottom, pressure: 1 } },
+    { handle: 'w', point: { x: rectangle.x, y: middleY, pressure: 1 } },
+  ]
+}
+
+export function hitTestRectangleResizeHandle(rectangle: RectangleBounds, point: Point, tolerance = 14): RectangleResizeHandle | null {
+  let closest: RectangleResizeHandle | null = null
+  let closestDistance = tolerance
+  for (const { handle, point: center } of getRectangleResizeHandles(rectangle)) {
+    const distance = Math.hypot(point.x - center.x, point.y - center.y)
+    if (distance <= closestDistance) {
+      closest = handle
+      closestDistance = distance
+    }
+  }
+  return closest
+}
+
+export function getResizedRectangleBounds(
+  rectangle: RectangleBounds,
+  handle: RectangleResizeHandle,
+  dx: number,
+  dy: number,
+  minimumSize = 32,
+): RectangleBounds {
+  let left = rectangle.x
+  let right = rectangle.x + rectangle.width
+  let top = rectangle.y
+  let bottom = rectangle.y + rectangle.height
+  if (handle.includes('w')) left = Math.min(right - minimumSize, rectangle.x + dx)
+  if (handle.includes('e')) right = Math.max(left + minimumSize, rectangle.x + rectangle.width + dx)
+  if (handle.includes('n')) top = Math.min(bottom - minimumSize, rectangle.y + dy)
+  if (handle.includes('s')) bottom = Math.max(top + minimumSize, rectangle.y + rectangle.height + dy)
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
+export function resizeRectangleItems(items: CanvasItem[], rectangleId: number, bounds: RectangleBounds): CanvasItem[] {
+  const original = items.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === rectangleId)
+  if (!original || original.width <= 0 || original.height <= 0) return items
+  const resized = { ...original, ...bounds }
+  const scaleX = resized.width / original.width
+  const scaleY = resized.height / original.height
+  return items.map((item) => {
+    if (item.kind === 'rectangle' && item.id === rectangleId) return resized
+    if (item.kind !== 'connector') return item
+    const resizeEndpoint = (point: Point, attachment?: ConnectorAttachment) => {
+      if (!attachment || attachment.rectangleId !== rectangleId) return { point, attachment }
+      const offsetX = attachment.offsetX * scaleX
+      const offsetY = attachment.offsetY * scaleY
+      return {
+        point: { ...point, x: resized.x + offsetX, y: resized.y + offsetY },
+        attachment: { ...attachment, offsetX, offsetY },
+      }
+    }
+    const start = resizeEndpoint(item.start, item.startAttachment)
+    const end = resizeEndpoint(item.end, item.endAttachment)
+    if (start.point === item.start && end.point === item.end) return item
+    return {
+      ...item,
+      start: start.point,
+      end: end.point,
+      ...(start.attachment ? { startAttachment: start.attachment } : {}),
+      ...(end.attachment ? { endAttachment: end.attachment } : {}),
+    }
+  })
+}
+
+export function getCanvasSelectionBounds(items: CanvasItem[], selectedKeys: ReadonlySet<string>): RectangleBounds | null {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  const include = (x: number, y: number, padding = 0) => {
+    minX = Math.min(minX, x - padding)
+    minY = Math.min(minY, y - padding)
+    maxX = Math.max(maxX, x + padding)
+    maxY = Math.max(maxY, y + padding)
+  }
+  for (const item of items) {
+    if (!selectedKeys.has(canvasItemKey(item))) continue
+    if (item.kind === 'rectangle') {
+      include(item.x, item.y, item.strokeWidth / 2)
+      include(item.x + item.width, item.y + item.height, item.strokeWidth / 2)
+    } else if (item.kind === 'connector') {
+      include(item.start.x, item.start.y, item.strokeWidth / 2)
+      include(item.end.x, item.end.y, item.strokeWidth / 2)
+      const geometry = getConnectorSymbolGeometry(item)
+      if (geometry) {
+        include(geometry.sideA.x, geometry.sideA.y, item.strokeWidth / 2)
+        include(geometry.sideB.x, geometry.sideB.y, item.strokeWidth / 2)
+        include(geometry.far.x, geometry.far.y, item.strokeWidth / 2)
+      }
+    } else if (!item.erase) {
+      for (const point of item.points) include(point.x, point.y, item.width / 2)
+      if (item.shape === 'arrow' && item.points.length >= 2) {
+        const [start, end] = item.points
+        const angle = Math.atan2(end.y - start.y, end.x - start.x)
+        const headLength = Math.max(12, item.width * 3.5)
+        include(end.x - headLength * Math.cos(angle - Math.PI / 6), end.y - headLength * Math.sin(angle - Math.PI / 6), item.width / 2)
+        include(end.x - headLength * Math.cos(angle + Math.PI / 6), end.y - headLength * Math.sin(angle + Math.PI / 6), item.width / 2)
+      }
+    }
+  }
+  if (!Number.isFinite(minX)) return null
+  const minimumSize = 16
+  if (maxX - minX < minimumSize) {
+    const centerX = (minX + maxX) / 2
+    minX = centerX - minimumSize / 2
+    maxX = centerX + minimumSize / 2
+  }
+  if (maxY - minY < minimumSize) {
+    const centerY = (minY + maxY) / 2
+    minY = centerY - minimumSize / 2
+    maxY = centerY + minimumSize / 2
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+}
+
+export function resizeSelectedItems(items: CanvasItem[], selectedKeys: ReadonlySet<string>, bounds: RectangleBounds): CanvasItem[] {
+  const originalBounds = getCanvasSelectionBounds(items, selectedKeys)
+  if (!originalBounds) return items
+  const scaleX = bounds.width / originalBounds.width
+  const scaleY = bounds.height / originalBounds.height
+  const strokeScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2
+  const transformPoint = (point: Point): Point => ({
+    ...point,
+    x: bounds.x + (point.x - originalBounds.x) * scaleX,
+    y: bounds.y + (point.y - originalBounds.y) * scaleY,
+  })
+  const selectedRectangles = new Map(items
+    .filter((item): item is RectangleObject => item.kind === 'rectangle' && selectedKeys.has(canvasItemKey(item)))
+    .map((rectangle) => [rectangle.id, {
+      ...rectangle,
+      x: bounds.x + (rectangle.x - originalBounds.x) * scaleX,
+      y: bounds.y + (rectangle.y - originalBounds.y) * scaleY,
+      width: rectangle.width * scaleX,
+      height: rectangle.height * scaleY,
+      strokeWidth: rectangle.strokeWidth * strokeScale,
+    }]))
+  const stationaryRectangles = new Map(items
+    .filter((item): item is RectangleObject => item.kind === 'rectangle' && !selectedKeys.has(canvasItemKey(item)))
+    .map((rectangle) => [rectangle.id, rectangle]))
+
+  return items.map((item) => {
+    const selected = selectedKeys.has(canvasItemKey(item))
+    if (item.kind === 'rectangle') return selected ? selectedRectangles.get(item.id)! : item
+    if (item.kind === 'stroke') {
+      return selected
+        ? { ...item, points: item.points.map(transformPoint), width: item.width * strokeScale }
+        : item
+    }
+
+    const transformEndpoint = (point: Point, attachment?: ConnectorAttachment) => {
+      const resizedRectangle = attachment ? selectedRectangles.get(attachment.rectangleId) : undefined
+      if (resizedRectangle && attachment) {
+        const originalRectangle = items.find((candidate): candidate is RectangleObject => candidate.kind === 'rectangle' && candidate.id === attachment.rectangleId)
+        if (originalRectangle) {
+          const offsetX = attachment.offsetX * (resizedRectangle.width / originalRectangle.width)
+          const offsetY = attachment.offsetY * (resizedRectangle.height / originalRectangle.height)
+          return {
+            point: { ...point, x: resizedRectangle.x + offsetX, y: resizedRectangle.y + offsetY },
+            attachment: { ...attachment, offsetX, offsetY },
+          }
+        }
+      }
+      if (selected) {
+        const scaledPoint = transformPoint(point)
+        const stationaryRectangle = attachment ? stationaryRectangles.get(attachment.rectangleId) : undefined
+        if (attachment && stationaryRectangle) {
+          const boundaryPoint = nearestRectangleBoundaryPoint(stationaryRectangle, scaledPoint)
+          return {
+            point: boundaryPoint,
+            attachment: {
+              rectangleId: stationaryRectangle.id,
+              offsetX: boundaryPoint.x - stationaryRectangle.x,
+              offsetY: boundaryPoint.y - stationaryRectangle.y,
+            },
+          }
+        }
+        return { point: scaledPoint, attachment: undefined }
+      }
+      return { point, attachment }
+    }
+    const startRectangleSelected = !!item.startAttachment && selectedRectangles.has(item.startAttachment.rectangleId)
+    const endRectangleSelected = !!item.endAttachment && selectedRectangles.has(item.endAttachment.rectangleId)
+    if (!selected && !startRectangleSelected && !endRectangleSelected) return item
+    const start = transformEndpoint(item.start, item.startAttachment)
+    const end = transformEndpoint(item.end, item.endAttachment)
+    return {
+      ...item,
+      start: start.point,
+      end: end.point,
+      strokeWidth: selected ? item.strokeWidth * strokeScale : item.strokeWidth,
+      ...(start.attachment ? { startAttachment: start.attachment } : { startAttachment: undefined }),
+      ...(end.attachment ? { endAttachment: end.attachment } : { endAttachment: undefined }),
+    }
+  })
 }
 
 export function cloneCanvasItems(items: CanvasItem[]): CanvasItem[] {
@@ -200,6 +420,9 @@ export function translateSelectedItems(items: CanvasItem[], selectedKeys: Readon
   const selectedRectangles = new Map(items
     .filter((item): item is RectangleObject => item.kind === 'rectangle' && selectedRectangleIds.has(item.id))
     .map((rectangle) => [rectangle.id, rectangle]))
+  const rectanglesById = new Map(items
+    .filter((item): item is RectangleObject => item.kind === 'rectangle')
+    .map((rectangle) => [rectangle.id, rectangle]))
   return items.map((item) => {
     const itemSelected = selectedKeys.has(canvasItemKey(item))
     if (item.kind === 'rectangle') return itemSelected ? { ...item, x: item.x + dx, y: item.y + dy } : item
@@ -217,14 +440,26 @@ export function translateSelectedItems(items: CanvasItem[], selectedKeys: Readon
           }
         }
         if (connectorSelected) {
-          // A connector moved independently of its attached rectangle becomes free at
-          // that endpoint; it must not retain a link that no longer describes its geometry.
-          return { point: { ...point, x: point.x + dx, y: point.y + dy }, attachment: undefined }
+          const attachedRectangle = attachment ? rectanglesById.get(attachment.rectangleId) : undefined
+          if (attachment && attachedRectangle) {
+            // Rectangle-local offsets are locked boundary anchors. Dragging the
+            // connector cannot slide an attached endpoint along its rectangle.
+            return { point, attachment }
+          }
+          const translatedPoint = { ...point, x: point.x + dx, y: point.y + dy }
+          // Preserve a valid attachment during connector translation. If its rectangle
+          // no longer exists, drop the stale reference and keep the endpoint free.
+          return { point: translatedPoint, attachment: undefined }
         }
         return { point, attachment }
       }
       const start = moveEndpoint(item.start, item.startAttachment)
       const end = moveEndpoint(item.end, item.endAttachment)
+      const samePoint = (a: Point, b: Point) => a.x === b.x && a.y === b.y && a.pressure === b.pressure
+      const sameAttachment = (a?: ConnectorAttachment, b?: ConnectorAttachment) => a?.rectangleId === b?.rectangleId
+        && a?.offsetX === b?.offsetX && a?.offsetY === b?.offsetY
+      if (samePoint(start.point, item.start) && samePoint(end.point, item.end)
+        && sameAttachment(start.attachment, item.startAttachment) && sameAttachment(end.attachment, item.endAttachment)) return item
       return {
         ...item,
         start: start.point,
