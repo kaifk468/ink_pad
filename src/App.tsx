@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { createEraserStroke, getEraserSweepPoints, isPenHoverEraseInput } from './eraserInput'
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getConnectorRenderSpec, getConnectorSymbolGeometry, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
 import type { CanvasItem, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
+import { SHAPE_RECOGNITION_HOLD_MS, recognizeRectangleOnHold, recognizeRectangleStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEIGHT, SHEET_WIDTH, THREE_FINGER_PAN_THRESHOLD, WORKSPACE_BOUNDS, centerViewportOnPoint, clampPointToBounds, clampTranslationToBounds, clampViewportToBounds, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, getNavigatorPanels, getPageOverviewGeometry, getTouchNavigationGestureMode, isPointWithinBounds, minimapToCanvasPoint, panThreeFingerViewport, type MinimapGeometry, type TouchNavigationGestureMode, type ViewBounds, type Viewport, screenToCanvasPoint, zoomTwoFingerViewport } from './viewport'
 
 const COLORS = [
@@ -14,11 +16,24 @@ const COLORS = [
 ]
 const WIDTHS = [2, 4, 7, 11]
 const ERASER_SIZES = [14, 28, 48, 72]
-const SHAPE_HOLD_MS = 450
 const SHAPE_HOLD_JITTER_PX = 7
+
+function getReusableCanvasLayer(
+  layerRef: { current: HTMLCanvasElement | null },
+  width: number,
+  height: number,
+): HTMLCanvasElement {
+  if (!layerRef.current) layerRef.current = document.createElement('canvas')
+  if (layerRef.current.width !== width) layerRef.current.width = width
+  if (layerRef.current.height !== height) layerRef.current.height = height
+  return layerRef.current
+}
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const inkLayerRef = useRef<HTMLCanvasElement | null>(null)
+  const minimapInkLayerRef = useRef<HTMLCanvasElement | null>(null)
+  const pageOverviewInkLayerRef = useRef<HTMLCanvasElement | null>(null)
   const toolbarRef = useRef<HTMLElement>(null)
   const eraserControlRef = useRef<HTMLDivElement>(null)
   const minimapRef = useRef<HTMLCanvasElement>(null)
@@ -26,6 +41,8 @@ function App() {
   const strokesRef = useRef<CanvasItem[]>([])
   const historyRef = useRef(new CanvasSnapshotHistory())
   const activeStrokeRef = useRef<Stroke | null>(null)
+  const hoverErasePointerRef = useRef<number | null>(null)
+  const activeObjectEraserRef = useRef<{ pointerId: number; lastPoint: Point; changed: boolean } | null>(null)
   const activeConnectorRef = useRef<{
     pointerId: number
     start: Point
@@ -161,14 +178,25 @@ function App() {
     holdTimerRef.current = window.setTimeout(() => {
       const stroke = activeStrokeRef.current
       if (!stroke) return
-      const recognizedShapes = shapeMode ? recognizeShape(stroke) : stroke
-      const recognized = recognizedShapes.kind === 'rectangle' || (recognizedShapes.kind === 'stroke' && recognizedShapes.shape) ? recognizedShapes : recognizeLine(stroke)
+      let recognized: CanvasItem
+      if (shapeMode) {
+        const recognizedShape = recognizeShape(stroke)
+        recognized = recognizedShape.kind === 'rectangle' || (recognizedShape.kind === 'stroke' && recognizedShape.shape)
+          ? recognizedShape
+          : recognizeLine(stroke)
+      } else {
+        const rectangle = recognizeRectangleOnHold(stroke, SHAPE_RECOGNITION_HOLD_MS, nextRectangleIdRef.current)
+        if (rectangle) {
+          nextRectangleIdRef.current += 1
+          recognized = rectangle
+        } else recognized = recognizeLine(stroke)
+      }
       if (recognized.kind === 'rectangle' || (recognized.kind === 'stroke' && recognized.shape)) {
         shapePreviewRef.current = recognized
         renderAll()
       }
       holdTimerRef.current = null
-    }, SHAPE_HOLD_MS)
+    }, SHAPE_RECOGNITION_HOLD_MS)
   }
 
   const hitTestObject = (point: Point) => {
@@ -203,6 +231,21 @@ function App() {
     return -1
   }
 
+  const deleteWholeObjectAtPoint = (point: Point): boolean => {
+    const objectIndex = hitTestObject(point)
+    if (objectIndex === -1) return false
+    const gesture = activeObjectEraserRef.current
+    if (!gesture?.changed) saveHistory()
+    const [removedItem] = strokesRef.current.splice(objectIndex, 1)
+    if (removedItem?.kind === 'rectangle') {
+      strokesRef.current = detachConnectorsFromRectangles(strokesRef.current, new Set([removedItem.id]))
+    }
+    if (gesture) gesture.changed = true
+    setHasInk(strokesRef.current.length > 0)
+    reconcileSelectedItems()
+    return true
+  }
+
   const hitTestRectangle = (point: Point) => {
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
@@ -223,37 +266,13 @@ function App() {
 
   const recognizeShape = (stroke: Stroke): CanvasItem => {
     const points = stroke.points
+    const rectangle = recognizeRectangleStroke(stroke, nextRectangleIdRef.current)
+    if (rectangle) {
+      nextRectangleIdRef.current += 1
+      return rectangle
+    }
     if (points.length < 6 || stroke.erase) return stroke
     const first = points[0]
-    const last = points[points.length - 1]
-    const xs = points.map((point) => point.x)
-    const ys = points.map((point) => point.y)
-    const left = Math.min(...xs)
-    const right = Math.max(...xs)
-    const top = Math.min(...ys)
-    const bottom = Math.max(...ys)
-    const boxWidth = right - left
-    const boxHeight = bottom - top
-    const diagonal = Math.hypot(boxWidth, boxHeight)
-
-    // A roughly closed loop with four broad sides becomes a clean class box.
-    if (diagonal > 36 && Math.hypot(first.x - last.x, first.y - last.y) < diagonal * 0.32) {
-      let pathLength = 0
-      for (let i = 1; i < points.length; i += 1) pathLength += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
-      const perimeter = 2 * (boxWidth + boxHeight)
-      if (boxWidth > 38 && boxHeight > 30 && pathLength / perimeter > 0.68 && pathLength / perimeter < 1.65) {
-        return {
-          kind: 'rectangle',
-          id: nextRectangleIdRef.current++,
-          x: left,
-          y: top,
-          width: boxWidth,
-          height: boxHeight,
-          strokeColor: stroke.color,
-          strokeWidth: stroke.width,
-        }
-      }
-    }
 
     // Recognize a one-stroke arrow: tail → tip → first wing → tip → second wing.
     let tipIndex = 1
@@ -514,11 +533,20 @@ function App() {
     ctx.lineWidth = 1
     ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
 
+    const inkLayer = getReusableCanvasLayer(minimapInkLayerRef, pixelWidth, pixelHeight)
+    const inkContext = inkLayer.getContext('2d')
+    if (!inkContext) return
+    inkContext.setTransform(1, 0, 0, 1, 0, 0)
+    inkContext.clearRect(0, 0, pixelWidth, pixelHeight)
+    inkContext.setTransform(dpr, 0, 0, dpr, 0, 0)
+    drawMinimapItems(inkContext, geometry)
+
     ctx.save()
     ctx.beginPath()
     ctx.rect(workspaceX, workspaceY, workspaceWidth, workspaceHeight)
     ctx.clip()
-    drawMinimapItems(ctx, geometry)
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.drawImage(inkLayer, 0, 0)
     ctx.restore()
     const mainRect = mainCanvas.getBoundingClientRect()
     const viewport = viewportRef.current
@@ -561,11 +589,21 @@ function App() {
     const pageHeight = SHEET_HEIGHT * geometry.scale
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
+    const inkLayer = getReusableCanvasLayer(pageOverviewInkLayerRef, pixelWidth, pixelHeight)
+    const inkContext = inkLayer.getContext('2d')
+    if (!inkContext) return
+    inkContext.setTransform(1, 0, 0, 1, 0, 0)
+    inkContext.clearRect(0, 0, pixelWidth, pixelHeight)
+    inkContext.setTransform(dpr, 0, 0, dpr, 0, 0)
+    drawMinimapItems(inkContext, geometry)
+
     ctx.save()
     ctx.beginPath()
     ctx.rect(pageX, pageY, pageWidth, pageHeight)
     ctx.clip()
-    drawMinimapItems(ctx, geometry)
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.drawImage(inkLayer, 0, 0)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
     const canvasRect = mainCanvas.getBoundingClientRect()
     const viewport = viewportRef.current
@@ -592,6 +630,9 @@ function App() {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
+    const inkLayer = getReusableCanvasLayer(inkLayerRef, canvas.width, canvas.height)
+    const inkContext = inkLayer.getContext('2d')
+    if (!inkContext) return
     const dpr = Math.max(1, window.devicePixelRatio || 1)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -636,11 +677,22 @@ function App() {
         ctx.restore()
       }
     })
-    canvasItemsForRendering(strokesRef.current).forEach((item) => drawItem(ctx, item))
+    inkContext.setTransform(1, 0, 0, 1, 0, 0)
+    inkContext.clearRect(0, 0, inkLayer.width, inkLayer.height)
+    inkContext.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
+    inkContext.save()
+    inkContext.beginPath()
+    inkContext.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
+    inkContext.clip()
+    canvasItemsForRendering(strokesRef.current).forEach((item) => drawItem(inkContext, item))
     if (activeStrokeRef.current) {
       const preview = shapePreviewRef.current
-      drawItem(ctx, preview ?? activeStrokeRef.current)
+      drawItem(inkContext, preview ?? activeStrokeRef.current)
     }
+    inkContext.restore()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.drawImage(inkLayer, 0, 0)
+    ctx.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
     const activeConnector = activeConnectorRef.current
     if (activeConnector) {
       drawConnector(ctx, createConnector(0, activeConnector.start, activeConnector.end, color, width), '#5574ed', width + 5)
@@ -973,8 +1025,12 @@ function App() {
       let stroke = shapePreviewRef.current
       if (!stroke) {
         const heldStroke = activeStrokeRef.current
-        const heldLongEnough = performance.now() - lastSignificantMoveAtRef.current >= SHAPE_HOLD_MS
-        const recognizedShape = shapeMode ? recognizeShape(heldStroke) : heldStroke
+        const heldForMs = performance.now() - lastSignificantMoveAtRef.current
+        const heldLongEnough = heldForMs >= SHAPE_RECOGNITION_HOLD_MS
+        const recognizedShape = shapeMode
+          ? recognizeShape(heldStroke)
+          : recognizeRectangleOnHold(heldStroke, heldForMs, nextRectangleIdRef.current) ?? heldStroke
+        if (!shapeMode && recognizedShape.kind === 'rectangle') nextRectangleIdRef.current += 1
         stroke = recognizedShape.kind === 'rectangle' || (recognizedShape.kind === 'stroke' && recognizedShape.shape)
           ? recognizedShape
           : heldLongEnough ? recognizeLine(heldStroke) : heldStroke
@@ -986,6 +1042,7 @@ function App() {
     activeConnectorRef.current = null
     shapePreviewRef.current = null
     activePointerRef.current = null
+    if (hoverErasePointerRef.current === pointerId) hoverErasePointerRef.current = null
     activeDragRef.current = null
     holdAnchorRef.current = null
     lastSignificantMoveAtRef.current = 0
@@ -1015,6 +1072,7 @@ function App() {
       beginTouchGesture()
       return
     }
+    if (event.pointerType === 'pen' && hoverErasePointerRef.current === event.pointerId) finishStroke(event.pointerId)
     if (event.pointerType !== 'pen' || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null) return
     event.preventDefault()
     const rawPoint = getPoint(event)
@@ -1107,30 +1165,17 @@ function App() {
       return
     }
     if (eraser && objectEraser) {
-      const objectIndex = hitTestObject(point)
-      if (objectIndex !== -1) {
-        saveHistory()
-        const [removedItem] = strokesRef.current.splice(objectIndex, 1)
-        if (removedItem?.kind === 'rectangle') {
-          strokesRef.current = detachConnectorsFromRectangles(strokesRef.current, new Set([removedItem.id]))
-        }
-        setHasInk(strokesRef.current.length > 0)
-        reconcileSelectedItems()
-        renderAll()
-      }
+      event.currentTarget.setPointerCapture(event.pointerId)
+      activeObjectEraserRef.current = { pointerId: event.pointerId, lastPoint: point, changed: false }
+      if (deleteWholeObjectAtPoint(point)) renderAll()
       return
     }
     event.currentTarget.setPointerCapture(event.pointerId)
     activePointerRef.current = event.pointerId
     lastSignificantMoveAtRef.current = performance.now()
-    activeStrokeRef.current = {
-      kind: 'stroke',
-      id: nextStrokeIdRef.current++,
-      points: [point],
-      color,
-      width: eraser ? eraserSize : width,
-      erase: eraser,
-    }
+    activeStrokeRef.current = eraser
+      ? createEraserStroke(nextStrokeIdRef.current++, point, color, eraserSize)
+      : { kind: 'stroke', id: nextStrokeIdRef.current++, points: [point], color, width, erase: false }
     shapePreviewRef.current = null
     holdAnchorRef.current = point
     scheduleShapePreview(point)
@@ -1142,6 +1187,48 @@ function App() {
       event.preventDefault()
       updateTouchPoint(event)
       return
+    }
+    const objectEraseGesture = activeObjectEraserRef.current
+    if (objectEraseGesture?.pointerId === event.pointerId) {
+      event.preventDefault()
+      const samples = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent]
+      let changed = false
+      for (const sample of samples) {
+        const rect = event.currentTarget.getBoundingClientRect()
+        const point = screenToCanvasPoint({
+          x: sample.clientX - rect.left,
+          y: sample.clientY - rect.top,
+          pressure: sample.pressure,
+        }, viewportRef.current)
+        const maxSpacing = 6 / viewportRef.current.scale
+        for (const sweepPoint of getEraserSweepPoints(objectEraseGesture.lastPoint, point, maxSpacing)) {
+          if (isPointWithinBounds(sweepPoint) && deleteWholeObjectAtPoint(sweepPoint)) changed = true
+        }
+        objectEraseGesture.lastPoint = point
+      }
+      if (changed) renderAll()
+      return
+    }
+    if (isPenHoverEraseInput(event.pointerType, event.buttons, eraser, objectEraser)
+      && activePointerRef.current === null
+      && touchPointsRef.current.size === 0
+      && activeConnectorRef.current === null
+      && activeResizeRef.current === null
+      && activeLassoRef.current === null
+      && lassoDragRef.current === null
+      && activeDragRef.current === null) {
+      const point = getPoint(event)
+      if (isPointWithinBounds(point) && hitTestObject(point) !== -1) {
+        event.preventDefault()
+        activePointerRef.current = event.pointerId
+        hoverErasePointerRef.current = event.pointerId
+        activeStrokeRef.current = createEraserStroke(nextStrokeIdRef.current++, point, color, eraserSize)
+        shapePreviewRef.current = null
+        holdAnchorRef.current = point
+        lastSignificantMoveAtRef.current = performance.now()
+        scheduleRender()
+        return
+      }
     }
     const activeConnector = activeConnectorRef.current
     if (activeConnector?.pointerId === event.pointerId) {
@@ -1251,6 +1338,14 @@ function App() {
       finishTouchPointer(event)
       return
     }
+    if (hoverErasePointerRef.current === event.pointerId) {
+      finishStroke(event.pointerId)
+      return
+    }
+    if (activeObjectEraserRef.current?.pointerId === event.pointerId) {
+      activeObjectEraserRef.current = null
+      return
+    }
     const activeConnector = activeConnectorRef.current
     if (activeConnector?.pointerId === event.pointerId) {
       const point = getBoundedPoint(event)
@@ -1313,6 +1408,14 @@ function App() {
       finishTouchPointer(event)
       return
     }
+    if (hoverErasePointerRef.current === event.pointerId) {
+      finishStroke(event.pointerId)
+      return
+    }
+    if (activeObjectEraserRef.current?.pointerId === event.pointerId) {
+      activeObjectEraserRef.current = null
+      return
+    }
     if (activeConnectorRef.current?.pointerId === event.pointerId) {
       activeConnectorRef.current = null
       renderAll()
@@ -1352,11 +1455,17 @@ function App() {
     lassoDragRef.current = null
     updateSelectedItems([])
     activePointerRef.current = null
+    hoverErasePointerRef.current = null
+    activeObjectEraserRef.current = null
     holdAnchorRef.current = null
     setSelectedRectangle(null)
     clearShapeHoldTimer()
     setHasInk(false)
     renderAll()
+  }
+
+  const onPointerLeave = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (hoverErasePointerRef.current === event.pointerId) finishStroke(event.pointerId)
   }
 
   return (
@@ -1371,6 +1480,7 @@ function App() {
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerEnd}
           onLostPointerCapture={onPointerEnd}
+          onPointerLeave={onPointerLeave}
         />
         {!hasInk && <div className="canvas-hint" aria-hidden="true">Draw here with your S Pen</div>}
         <aside className={`viewport-navigator${navigatorPanels.includes('page') ? ' expanded' : ''}`} aria-label="Canvas navigation">
@@ -1432,7 +1542,7 @@ function App() {
           <span className="brand-divider" />
           <span className="tool-label">Pen</span>
         </div>
-        <button className={`tool-button shape-button${shapeMode ? ' selected' : ''}`} type="button" aria-pressed={shapeMode} title="Straight lines snap on hold automatically. Toggle for rectangles and arrows." onClick={() => { setShapeMode((value) => !value); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser(false) }}>
+        <button className={`tool-button shape-button${shapeMode ? ' selected' : ''}`} type="button" aria-pressed={shapeMode} title="Straight lines and rectangles recognize on hold automatically. Toggle for arrows." onClick={() => { setShapeMode((value) => !value); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser(false) }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="10" height="10" rx="1"/><path d="M10 19h9m0 0-4-4m4 4-4 4"/></svg><span>Shapes</span>
         </button>
         <button className={`tool-button selection-button${selectionMode ? ' selected' : ''}`} type="button" aria-pressed={selectionMode} title="Select, move, and resize rectangles" onClick={() => { const next = !selectionMode; setSelectionMode(next); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }}>
