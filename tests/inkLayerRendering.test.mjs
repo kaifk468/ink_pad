@@ -74,9 +74,9 @@ test('workspace and page overviews composite erased item rendering over their ow
 
   assert.match(navigator, /drawMinimapItems\(inkContext, geometry\)/)
   assert.match(navigator, /getReusableCanvasLayer\(minimapInkLayerRef, pixelWidth, pixelHeight\)/)
-  assert.match(navigator, /ctx\.fillStyle = '#e9ebf0'[\s\S]*?ctx\.fillStyle = '#ffffff'[\s\S]*?ctx\.drawImage\(inkLayer, 0, 0\)/)
+  assert.match(navigator, /ctx\.fillStyle = '#e9ebf0'[\s\S]*?ctx\.fillStyle = PAGE_BACKGROUND_COLORS\[pageBackground\][\s\S]*?drawPageTemplateOverview\(ctx, pageTemplate,[\s\S]*?ctx\.drawImage\(inkLayer, 0, 0\)/)
   assert.match(pageOverview, /drawMinimapItems\(inkContext, geometry\)/)
   assert.match(pageOverview, /getReusableCanvasLayer\(pageOverviewInkLayerRef, pixelWidth, pixelHeight\)/)
-  assert.match(pageOverview, /ctx\.fillStyle = '#ffffff'[\s\S]*?ctx\.drawImage\(inkLayer, 0, 0\)/)
+  assert.match(pageOverview, /ctx\.fillStyle = PAGE_BACKGROUND_COLORS\[pageBackground\][\s\S]*?drawPageTemplateOverview\(ctx, pageTemplate,[\s\S]*?ctx\.drawImage\(inkLayer, 0, 0\)/)
   assert.match(appSource, /ctx\.globalCompositeOperation = item\.erase \? 'destination-out' : 'source-over'/)
 })

@@ -46,8 +46,8 @@ test('toolbar stays inside narrow, medium, and wide viewports and scrolls instea
 })
 
 test('responsive rules keep every existing tool control rendered and horizontally reachable', () => {
-  const toolSelectors = ['shape-button', 'selection-button', 'lasso-button', 'connector-button', 'eraser-button']
-  const controlSelectors = [...toolSelectors, 'clear-selection-button', 'relationship-controls', 'color-group', 'thickness-group', 'history-button', 'clear-button']
+  const toolSelectors = ['pen-button', 'shape-button', 'selection-button', 'lasso-button', 'connector-button', 'eraser-button']
+  const controlSelectors = [...toolSelectors, 'clear-selection-button', 'relationship-controls', 'color-group', 'thickness-group', 'stroke-display-control', 'page-template-control', 'history-button', 'clear-button']
   for (const selector of toolSelectors) {
     assert.match(app, new RegExp(`className=\{\`tool-button ${selector}`))
   }
@@ -58,4 +58,30 @@ test('responsive rules keep every existing tool control rendered and horizontall
       assert.doesNotMatch(body, new RegExp(`\\.${selector}\\s*\\{[^}]*display:\\s*none`, 's'))
     }
   }
+})
+
+test('toolbar uses compact spacing and exposes clear selected states for existing modes', () => {
+  assert.match(toolbar, /gap:\s*5px/)
+  assert.match(toolbar, /min-height:\s*68px/)
+  assert.match(app, /aria-label="Pen"[\s\S]*?aria-pressed=\{penModeActive\}/)
+  assert.match(app, /penModeActive \? ' selected' : ''/)
+  assert.match(app, /aria-pressed=\{eraser\}/)
+  assert.match(app, /aria-pressed=\{lassoMode\}/)
+  assert.match(app, /aria-pressed=\{connectorMode \|\| umlConnectorType !== null\}/)
+  assert.match(app, /aria-label="Raw stroke display"[\s\S]*?aria-pressed=\{strokeDisplayMode === 'raw'\}/)
+  assert.match(app, /aria-label="Smooth stroke display"[\s\S]*?aria-pressed=\{strokeDisplayMode === 'smooth'\}/)
+  assert.match(styles, /\.stroke-mode-button\.selected\s*\{[^}]*background:\s*#e8edff/)
+})
+
+test('toolbar follows the reference grouping with stacked tool labels and existing controls only', () => {
+  assert.match(styles, /\.tool-button\s*\{[^}]*flex-direction:\s*column/s)
+  assert.match(styles, /\.history-button\s*\{[^}]*flex-direction:\s*column/s)
+  assert.match(app, /<span>Undo<\/span>[\s\S]*?<span>Redo<\/span>/)
+  assert.match(app, /<span>Smooth<\/span>[\s\S]*?<span>Raw<\/span>/)
+  assert.match(styles, /\.pen-button\s*\{\s*order:\s*3/)
+  assert.match(styles, /\.eraser-control\s*\{\s*order:\s*4/)
+  assert.match(styles, /\.lasso-button\s*\{\s*order:\s*5/)
+  assert.match(styles, /\.connector-button\s*\{\s*order:\s*6/)
+  assert.match(styles, /\.shape-button\s*\{\s*order:\s*7/)
+  assert.doesNotMatch(app, /aria-label="Ruler"|aria-label="Text tool"|aria-label="Image tool"|aria-label="More tools"/)
 })

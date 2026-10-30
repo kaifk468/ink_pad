@@ -4,7 +4,7 @@ export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: num
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
 export type ConnectorAttachment = { rectangleId: number; offsetX: number; offsetY: number }
-export type ConnectorRelationshipType = 'association' | 'inheritance' | 'dependency' | 'aggregation' | 'composition'
+export type ConnectorRelationshipType = 'association' | 'directed-association' | 'inheritance' | 'realization' | 'dependency' | 'aggregation' | 'composition'
 export type ConnectorObject = {
   kind: 'connector'
   id: number
@@ -53,8 +53,12 @@ export type ConnectorRenderSpec = {
 
 export function getConnectorRenderSpec(connector: ConnectorObject): ConnectorRenderSpec {
   switch (connector.relationshipType) {
+    case 'directed-association':
+      return { lineStyle: 'solid', symbol: 'open-arrow', endpoint: connector.reversed ? 'start' : 'end' }
     case 'inheritance':
       return { lineStyle: 'solid', symbol: 'hollow-triangle', endpoint: connector.reversed ? 'start' : 'end' }
+    case 'realization':
+      return { lineStyle: 'dashed', symbol: 'hollow-triangle', endpoint: connector.reversed ? 'start' : 'end' }
     case 'dependency':
       return { lineStyle: 'dashed', symbol: 'open-arrow', endpoint: connector.reversed ? 'start' : 'end' }
     case 'aggregation':

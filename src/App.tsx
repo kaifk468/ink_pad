@@ -4,6 +4,13 @@ import { createEraserStroke, getEraserSweepPoints, isPenHoverEraseInput } from '
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getConnectorRenderSpec, getConnectorSymbolGeometry, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
 import type { CanvasItem, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
+import { filterDisplayPoints } from './oneEuroFilter'
+import { buildMidpointCurve } from './strokeCurves'
+import { loadStrokeDisplayMode, saveStrokeDisplayMode, type StrokeDisplayMode } from './strokeDisplayMode'
+import { shouldAppendStrokeSample } from './strokeSampling'
+import { PerformanceDiagnostics, type StrokeDiagnosticRow } from './performanceDiagnostics'
+import { drawPageTemplate, drawPageTemplateOverview, loadPageTemplate, savePageTemplate, type PageTemplate } from './pageTemplates'
+import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeRectangleOnHold, recognizeRectangleStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEIGHT, SHEET_WIDTH, THREE_FINGER_PAN_THRESHOLD, WORKSPACE_BOUNDS, centerViewportOnPoint, clampPointToBounds, clampTranslationToBounds, clampViewportToBounds, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, getNavigatorPanels, getPageOverviewGeometry, getTouchNavigationGestureMode, isPointWithinBounds, minimapToCanvasPoint, panThreeFingerViewport, type MinimapGeometry, type TouchNavigationGestureMode, type ViewBounds, type Viewport, screenToCanvasPoint, zoomTwoFingerViewport } from './viewport'
 
@@ -17,6 +24,16 @@ const COLORS = [
 const WIDTHS = [2, 4, 7, 11]
 const ERASER_SIZES = [14, 28, 48, 72]
 const SHAPE_HOLD_JITTER_PX = 7
+const PERFORMANCE_DIAGNOSTICS_ENABLED = import.meta.env.DEV
+const UML_CONNECTOR_TOOLS: Array<{ type: ConnectorRelationshipType; label: string }> = [
+  { type: 'association', label: 'Association' },
+  { type: 'directed-association', label: 'Directed association' },
+  { type: 'inheritance', label: 'Inheritance' },
+  { type: 'realization', label: 'Realization' },
+  { type: 'aggregation', label: 'Aggregation' },
+  { type: 'composition', label: 'Composition' },
+  { type: 'dependency', label: 'Dependency' },
+]
 
 function getReusableCanvasLayer(
   layerRef: { current: HTMLCanvasElement | null },
@@ -29,17 +46,38 @@ function getReusableCanvasLayer(
   return layerRef.current
 }
 
+function UmlConnectorIcon({ type }: { type: ConnectorRelationshipType }) {
+  const dashed = type === 'realization' || type === 'dependency'
+  const marker = type === 'inheritance' || type === 'realization'
+    ? <path d="M27 7 19 2 19 12Z" fill="var(--uml-marker-fill, #ffffff)" />
+    : type === 'directed-association' || type === 'dependency'
+      ? <path d="m20 2 7 5-7 5" fill="none" />
+      : type === 'aggregation' || type === 'composition'
+        ? <path d="M2 7 8 2 14 7 8 12Z" fill={type === 'composition' ? 'currentColor' : '#ffffff'} />
+        : null
+  const line = type === 'aggregation' || type === 'composition' ? 'M14 7H28' : marker ? 'M2 7H19' : 'M2 7H28'
+  return (
+    <svg className={`uml-tool-icon${dashed ? ' dashed' : ''}`} viewBox="0 0 30 14" aria-hidden="true">
+      <path className="uml-tool-line" d={line} />
+      {marker}
+    </svg>
+  )
+}
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const inkLayerRef = useRef<HTMLCanvasElement | null>(null)
   const minimapInkLayerRef = useRef<HTMLCanvasElement | null>(null)
   const pageOverviewInkLayerRef = useRef<HTMLCanvasElement | null>(null)
   const toolbarRef = useRef<HTMLElement>(null)
+  const umlToolboxRef = useRef<HTMLDivElement>(null)
   const eraserControlRef = useRef<HTMLDivElement>(null)
   const minimapRef = useRef<HTMLCanvasElement>(null)
   const pageOverviewRef = useRef<HTMLCanvasElement>(null)
   const strokesRef = useRef<CanvasItem[]>([])
   const historyRef = useRef(new CanvasSnapshotHistory())
+  const performanceDiagnosticsRef = useRef<PerformanceDiagnostics | null>(null)
+  if (PERFORMANCE_DIAGNOSTICS_ENABLED && performanceDiagnosticsRef.current === null) performanceDiagnosticsRef.current = new PerformanceDiagnostics()
   const activeStrokeRef = useRef<Stroke | null>(null)
   const hoverErasePointerRef = useRef<number | null>(null)
   const activeObjectEraserRef = useRef<{ pointerId: number; lastPoint: Point; changed: boolean } | null>(null)
@@ -47,6 +85,7 @@ function App() {
     pointerId: number
     start: Point
     end: Point
+    relationshipType: ConnectorRelationshipType
     startAttachment?: ConnectorObject['startAttachment']
     endAttachment?: ConnectorObject['endAttachment']
   } | null>(null)
@@ -70,14 +109,22 @@ function App() {
   const touchGestureRef = useRef<{ mode: TouchNavigationGestureMode; viewport: Viewport; center: Point; distance: number } | null>(null)
   const minimapDragPointerRef = useRef<{ pointerId: number; bounds: ViewBounds; geometry: MinimapGeometry } | null>(null)
   const pageOverviewDragPointerRef = useRef<number | null>(null)
+  const umlToolboxDragRef = useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number; moved: boolean } | null>(null)
+  const suppressMinimizedToolboxClickRef = useRef(false)
   const [color, setColor] = useState(COLORS[0].value)
   const [width, setWidth] = useState(4)
+  const [strokeDisplayMode, setStrokeDisplayMode] = useState<StrokeDisplayMode>(() => loadStrokeDisplayMode())
+  const [pageTemplate, setPageTemplate] = useState<PageTemplate>(() => loadPageTemplate())
+  const [pageBackground, setPageBackground] = useState<PageBackground>(() => loadPageBackground())
   const [eraser, setEraser] = useState(false)
   const [hasInk, setHasInk] = useState(false)
   const [shapeMode, setShapeMode] = useState(false)
   const [selectionMode, setSelectionMode] = useState(false)
   const [lassoMode, setLassoMode] = useState(false)
   const [connectorMode, setConnectorMode] = useState(false)
+  const [umlConnectorType, setUmlConnectorType] = useState<ConnectorRelationshipType | null>(null)
+  const [umlToolboxPosition, setUmlToolboxPosition] = useState<{ left: number; top: number } | null>(null)
+  const [umlToolboxMinimized, setUmlToolboxMinimized] = useState(false)
   const [selectedItemCount, setSelectedItemCount] = useState(0)
   const [selectedConnectorId, setSelectedConnectorId] = useState<number | null>(null)
   const [selectedConnectorType, setSelectedConnectorType] = useState<ConnectorRelationshipType | null>(null)
@@ -89,8 +136,11 @@ function App() {
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
   const [zoomPercent, setZoomPercent] = useState(DEFAULT_ZOOM * 100)
+  const [performanceDiagnosticsOpen, setPerformanceDiagnosticsOpen] = useState(false)
+  const [performanceRows, setPerformanceRows] = useState<StrokeDiagnosticRow[]>([])
   const [pageOverviewExpanded, setPageOverviewExpanded] = useState(false)
   const navigatorPanels = getNavigatorPanels(pageOverviewExpanded)
+  const penModeActive = !eraser && !shapeMode && !selectionMode && !lassoMode && !connectorMode && umlConnectorType === null
 
   const getCurrentMinimapBounds = useCallback((): ViewBounds => {
     return { ...WORKSPACE_BOUNDS }
@@ -126,6 +176,14 @@ function App() {
     renderAll()
   }
 
+  useEffect(() => {
+    if (connectorMode || eraser || shapeMode || selectionMode || lassoMode) setUmlConnectorType(null)
+  }, [connectorMode, eraser, shapeMode, selectionMode, lassoMode])
+
+  useEffect(() => {
+    setUmlConnectorType(null)
+  }, [color])
+
   const reverseSelectedConnector = () => {
     if (selectedConnectorId === null || selectedConnectorType === null || selectedConnectorType === 'association') return
     saveHistory()
@@ -138,6 +196,17 @@ function App() {
     updateSelectedItems([])
     setSelectedRectangle(null)
     renderAll()
+  }
+
+  const selectPenMode = () => {
+    setEraser(false)
+    setEraserMenuOpen(false)
+    setShapeMode(false)
+    setSelectionMode(false)
+    setLassoMode(false)
+    setConnectorMode(false)
+    setUmlConnectorType(null)
+    clearLassoSelection()
   }
 
   const undo = () => {
@@ -322,7 +391,7 @@ function App() {
   }
 
   const drawStroke = useCallback((ctx: CanvasRenderingContext2D, stroke: Stroke) => {
-    const { points } = stroke
+    const points = stroke.erase || stroke.shape || strokeDisplayMode === 'raw' ? stroke.points : filterDisplayPoints(stroke.points)
     if (!points.length) return
     ctx.save()
     ctx.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over'
@@ -361,21 +430,30 @@ function App() {
       ctx.beginPath()
       ctx.arc(p.x, p.y, (stroke.width * pressureScale) / 2, 0, Math.PI * 2)
       ctx.fill()
-    } else {
-      for (let i = 1; i < points.length; i += 1) {
-        const previous = points[i - 1]
-        const current = points[i]
+    } else if (stroke.erase || strokeDisplayMode === 'raw') {
+      for (let index = 1; index < points.length; index += 1) {
+        const previous = points[index - 1]
+        const current = points[index]
         const pressure = (previous.pressure + current.pressure) / 2
-        const pressureScale = pressure > 0 ? 0.35 + pressure * 0.9 : 1
-        ctx.lineWidth = stroke.width * pressureScale
+        ctx.lineWidth = stroke.width * (pressure > 0 ? 0.35 + pressure * 0.9 : 1)
         ctx.beginPath()
         ctx.moveTo(previous.x, previous.y)
         ctx.lineTo(current.x, current.y)
         ctx.stroke()
       }
+    } else {
+      for (const segment of buildMidpointCurve(points)) {
+        const pressureScale = segment.pressure > 0 ? 0.35 + segment.pressure * 0.9 : 1
+        ctx.lineWidth = stroke.width * pressureScale
+        ctx.beginPath()
+        ctx.moveTo(segment.from.x, segment.from.y)
+        if (segment.curved && segment.control) ctx.quadraticCurveTo(segment.control.x, segment.control.y, segment.to.x, segment.to.y)
+        else ctx.lineTo(segment.to.x, segment.to.y)
+        ctx.stroke()
+      }
     }
     ctx.restore()
-  }, [])
+  }, [strokeDisplayMode])
 
   const drawRectangle = useCallback((ctx: CanvasRenderingContext2D, rectangle: RectangleObject) => {
     ctx.save()
@@ -527,8 +605,9 @@ function App() {
     ctx.strokeStyle = '#c5cad4'
     ctx.lineWidth = 1
     ctx.strokeRect(workspaceX + 0.5, workspaceY + 0.5, workspaceWidth - 1, workspaceHeight - 1)
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = PAGE_BACKGROUND_COLORS[pageBackground]
     ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
+    drawPageTemplateOverview(ctx, pageTemplate, { x: pageX, y: pageY, width: pageWidth, height: pageHeight })
     ctx.strokeStyle = '#cfd4df'
     ctx.lineWidth = 1
     ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
@@ -561,7 +640,7 @@ function App() {
     ctx.fillRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.strokeRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.restore()
-  }, [drawMinimapItems, getCurrentMinimapBounds])
+  }, [drawMinimapItems, getCurrentMinimapBounds, pageBackground, pageTemplate])
 
   const renderPageOverview = useCallback(() => {
     const overview = pageOverviewRef.current
@@ -587,8 +666,9 @@ function App() {
     const pageY = SHEET_BOUNDS.y * geometry.scale + geometry.offsetY
     const pageWidth = SHEET_WIDTH * geometry.scale
     const pageHeight = SHEET_HEIGHT * geometry.scale
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = PAGE_BACKGROUND_COLORS[pageBackground]
     ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
+    drawPageTemplateOverview(ctx, pageTemplate, { x: pageX, y: pageY, width: pageWidth, height: pageHeight })
     const inkLayer = getReusableCanvasLayer(pageOverviewInkLayerRef, pixelWidth, pixelHeight)
     const inkContext = inkLayer.getContext('2d')
     if (!inkContext) return
@@ -620,13 +700,16 @@ function App() {
     ctx.strokeStyle = '#aeb6c7'
     ctx.lineWidth = 1
     ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
-  }, [drawMinimapItems])
+  }, [drawMinimapItems, pageBackground, pageTemplate])
 
   const setSelectedRectangle = (id: number | null) => {
     selectedRectangleIdRef.current = id
   }
 
   const renderAll = useCallback(() => {
+    const diagnostics = performanceDiagnosticsRef.current
+    const measureFrame = diagnostics?.isStrokeActive() ?? false
+    const renderStartedAt = measureFrame ? performance.now() : 0
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
@@ -642,8 +725,9 @@ function App() {
     ctx.shadowColor = 'rgba(35, 42, 54, .16)'
     ctx.shadowBlur = 14
     ctx.shadowOffsetY = 3
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = PAGE_BACKGROUND_COLORS[pageBackground]
     ctx.fillRect(SHEET_BOUNDS.x, SHEET_BOUNDS.y, SHEET_WIDTH, SHEET_HEIGHT)
+    drawPageTemplate(ctx, pageTemplate)
     ctx.restore()
     ctx.save()
     ctx.strokeStyle = '#d4d7de'
@@ -687,7 +771,9 @@ function App() {
     canvasItemsForRendering(strokesRef.current).forEach((item) => drawItem(inkContext, item))
     if (activeStrokeRef.current) {
       const preview = shapePreviewRef.current
+      const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
       drawItem(inkContext, preview ?? activeStrokeRef.current)
+      if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
     }
     inkContext.restore()
     ctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -695,8 +781,9 @@ function App() {
     ctx.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
     const activeConnector = activeConnectorRef.current
     if (activeConnector) {
-      drawConnector(ctx, createConnector(0, activeConnector.start, activeConnector.end, color, width), '#5574ed', width + 5)
-      drawConnector(ctx, createConnector(0, activeConnector.start, activeConnector.end, color, width))
+      const previewConnector = createConnector(0, activeConnector.start, activeConnector.end, color, width, undefined, undefined, activeConnector.relationshipType)
+      drawConnector(ctx, previewConnector, '#5574ed', width + 5)
+      drawConnector(ctx, previewConnector)
       const snapPoints = [
         activeConnector.startAttachment ? activeConnector.start : null,
         activeConnector.endAttachment ? activeConnector.end : null,
@@ -770,9 +857,14 @@ function App() {
       ctx.restore()
     }
     ctx.restore()
+    const minimapStartedAt = measureFrame ? performance.now() : 0
     renderNavigator()
+    if (measureFrame) diagnostics?.recordMinimapRender(performance.now() - minimapStartedAt)
+    const pageOverviewStartedAt = measureFrame ? performance.now() : 0
     renderPageOverview()
-  }, [color, drawConnector, drawItem, drawStroke, renderNavigator, renderPageOverview, width])
+    if (measureFrame) diagnostics?.recordPageOverviewRender(performance.now() - pageOverviewStartedAt)
+    if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
+  }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageTemplate, renderNavigator, renderPageOverview, width])
 
   const applyViewport = (viewport: Viewport) => {
     const canvas = canvasRef.current
@@ -786,9 +878,13 @@ function App() {
   }
 
   const scheduleRender = useCallback(() => {
-    if (frameRef.current !== null) return
+    const diagnostics = performanceDiagnosticsRef.current
+    const alreadyPending = frameRef.current !== null
+    diagnostics?.recordFrameRequest(performance.now(), alreadyPending)
+    if (alreadyPending) return
     frameRef.current = requestAnimationFrame(() => {
       frameRef.current = null
+      diagnostics?.recordFrameCallback(performance.now())
       renderAll()
     })
   }, [renderAll])
@@ -826,13 +922,36 @@ function App() {
   }, [pageOverviewExpanded, renderAll])
 
   useEffect(() => {
+    saveStrokeDisplayMode(strokeDisplayMode)
+    renderAll()
+  }, [renderAll, strokeDisplayMode])
+
+  useEffect(() => {
+    savePageTemplate(pageTemplate)
+    renderAll()
+  }, [pageTemplate, renderAll])
+
+  useEffect(() => {
+    savePageBackground(pageBackground)
+    renderAll()
+  }, [pageBackground, renderAll])
+
+  useEffect(() => {
+    if (!PERFORMANCE_DIAGNOSTICS_ENABLED || !performanceDiagnosticsOpen) return
+    const updateRows = () => setPerformanceRows(performanceDiagnosticsRef.current?.snapshot() ?? [])
+    updateRows()
+    const timer = window.setInterval(updateRows, 250)
+    return () => window.clearInterval(timer)
+  }, [performanceDiagnosticsOpen])
+
+  useEffect(() => {
     if (!eraserMenuOpen) return
     const updateEraserPopoverPosition = () => {
       const anchor = eraserControlRef.current?.getBoundingClientRect()
       if (!anchor) return
-      const width = Math.min(202, Math.max(0, window.innerWidth - 24))
+      const width = Math.min(258, Math.max(0, window.innerWidth - 24))
       const left = Math.max(12, Math.min(window.innerWidth - width - 12, anchor.right - width))
-      const estimatedHeight = 150
+      const estimatedHeight = 250
       const belowTop = anchor.bottom + 12
       const top = belowTop + estimatedHeight <= window.innerHeight - 12
         ? belowTop
@@ -861,6 +980,59 @@ function App() {
   const getPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => screenToCanvasPoint(getScreenPoint(event), viewportRef.current)
 
   const getBoundedPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => clampPointToBounds(getPoint(event))
+
+  const startUmlToolboxDrag = <T extends HTMLElement,>(event: React.PointerEvent<T>) => {
+    event.stopPropagation()
+    const toolbox = umlToolboxRef.current
+    if (!toolbox) return
+    const bounds = toolbox.getBoundingClientRect()
+    suppressMinimizedToolboxClickRef.current = false
+    umlToolboxDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: bounds.left, top: bounds.top, moved: false }
+    setUmlToolboxPosition({ left: bounds.left, top: bounds.top })
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const moveUmlToolbox = <T extends HTMLElement,>(event: React.PointerEvent<T>) => {
+    const drag = umlToolboxDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 4) drag.moved = true
+    const bounds = umlToolboxRef.current?.getBoundingClientRect()
+    const width = bounds?.width ?? 168
+    const height = bounds?.height ?? 320
+    const left = Math.max(8, Math.min(window.innerWidth - width - 8, drag.left + event.clientX - drag.startX))
+    const top = Math.max(8, Math.min(window.innerHeight - height - 8, drag.top + event.clientY - drag.startY))
+    setUmlToolboxPosition({ left, top })
+  }
+
+  const endUmlToolboxDrag = <T extends HTMLElement,>(event: React.PointerEvent<T>) => {
+    if (umlToolboxDragRef.current?.pointerId !== event.pointerId) return
+    event.stopPropagation()
+    suppressMinimizedToolboxClickRef.current = umlToolboxMinimized && umlToolboxDragRef.current.moved
+    umlToolboxDragRef.current = null
+  }
+
+  const restoreUmlToolbox = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    if (suppressMinimizedToolboxClickRef.current) {
+      suppressMinimizedToolboxClickRef.current = false
+      event.preventDefault()
+      return
+    }
+    setUmlToolboxMinimized(false)
+  }
+
+  const selectUmlConnectorTool = (relationshipType: ConnectorRelationshipType) => {
+    setUmlConnectorType(relationshipType)
+    setConnectorMode(false)
+    setShapeMode(false)
+    setSelectionMode(false)
+    setLassoMode(false)
+    setEraser(false)
+    setEraserMenuOpen(false)
+    clearLassoSelection()
+  }
 
   const translateWithinWorkspace = (items: CanvasItem[], keys: Set<string>, dx: number, dy: number): CanvasItem[] => {
     const bounds = getCanvasSelectionBounds(items, keys)
@@ -1021,6 +1193,8 @@ function App() {
     if (activePointerRef.current !== pointerId) return
     clearShapeHoldTimer()
     if (activeStrokeRef.current) {
+      const pointCount = activeStrokeRef.current.points.length
+      performanceDiagnosticsRef.current?.finishStroke(pointCount, performance.now())
       saveHistory()
       let stroke = shapePreviewRef.current
       if (!stroke) {
@@ -1054,7 +1228,7 @@ function App() {
     if (!stroke) return false
     const previous = stroke.points[stroke.points.length - 1]
     const clippedPoint = clipSegmentToBounds(previous, point)
-    if (clippedPoint && Math.hypot(clippedPoint.x - previous.x, clippedPoint.y - previous.y) > 0.5) {
+    if (clippedPoint && shouldAppendStrokeSample(previous, clippedPoint, viewportRef.current.scale)) {
       stroke.points.push(clippedPoint)
     }
     if (!isPointWithinBounds(point)) {
@@ -1078,13 +1252,14 @@ function App() {
     const rawPoint = getPoint(event)
     if (!isPointWithinBounds(rawPoint)) return
     const point = getBoundedPoint(event)
-    if (connectorMode) {
+    if (connectorMode || umlConnectorType !== null) {
       event.currentTarget.setPointerCapture(event.pointerId)
       const snappedStart = snapConnectorEndpointWithinWorkspace(point)
       activeConnectorRef.current = {
         pointerId: event.pointerId,
         start: snappedStart?.point ?? point,
         end: point,
+        relationshipType: umlConnectorType ?? 'association',
         startAttachment: snappedStart?.attachment,
       }
       renderAll()
@@ -1176,6 +1351,7 @@ function App() {
     activeStrokeRef.current = eraser
       ? createEraserStroke(nextStrokeIdRef.current++, point, color, eraserSize)
       : { kind: 'stroke', id: nextStrokeIdRef.current++, points: [point], color, width, erase: false }
+    if (!eraser) performanceDiagnosticsRef.current?.startStroke(strokeDisplayMode, performance.now(), event.nativeEvent.timeStamp)
     shapePreviewRef.current = null
     holdAnchorRef.current = point
     scheduleShapePreview(point)
@@ -1315,6 +1491,7 @@ function App() {
     if (activePointerRef.current !== event.pointerId || !activeStrokeRef.current) return
     event.preventDefault()
     const samples = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent]
+    performanceDiagnosticsRef.current?.recordPointerMove(event.nativeEvent.timeStamp, samples.length, performance.now())
     for (const sample of samples) {
       const rect = event.currentTarget.getBoundingClientRect()
       const point = screenToCanvasPoint({
@@ -1362,6 +1539,7 @@ function App() {
           width,
           activeConnector.startAttachment,
           activeConnector.endAttachment,
+          activeConnector.relationshipType,
         ))
         setHasInk(true)
       }
@@ -1473,7 +1651,7 @@ function App() {
       <section className="canvas-stage" aria-label="Drawing canvas">
         <canvas
           ref={canvasRef}
-          className={`drawing-canvas${selectionMode ? ' selecting' : ''}${connectorMode ? ' connecting' : ''}`}
+          className={`drawing-canvas${selectionMode ? ' selecting' : ''}${connectorMode || umlConnectorType !== null ? ' connecting' : ''}`}
           aria-label="White drawing canvas. Use an S Pen to draw."
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -1483,6 +1661,70 @@ function App() {
           onPointerLeave={onPointerLeave}
         />
         {!hasInk && <div className="canvas-hint" aria-hidden="true">Draw here with your S Pen</div>}
+        <aside
+          ref={umlToolboxRef}
+          className={`uml-toolbox${umlToolboxMinimized ? ' minimized' : ''}`}
+          aria-label="UML connector tools"
+          style={umlToolboxPosition ? { left: umlToolboxPosition.left, top: umlToolboxPosition.top, transform: 'none' } : undefined}
+        >
+          {umlToolboxMinimized ? (
+            <button
+              className="uml-toolbox-restore"
+              type="button"
+              aria-label="Restore UML connector tools"
+              title="Restore UML connector tools (drag to move)"
+              onPointerDown={startUmlToolboxDrag}
+              onPointerMove={moveUmlToolbox}
+              onPointerUp={endUmlToolboxDrag}
+              onPointerCancel={endUmlToolboxDrag}
+              onLostPointerCapture={endUmlToolboxDrag}
+              onClick={restoreUmlToolbox}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="6" rx="1"/><rect x="14" y="14" width="7" height="6" rx="1"/><path d="m9 9 6 6"/></svg>
+            </button>
+          ) : (
+            <>
+              <div
+                className="uml-toolbox-header"
+                onPointerDown={startUmlToolboxDrag}
+                onPointerMove={moveUmlToolbox}
+                onPointerUp={endUmlToolboxDrag}
+                onPointerCancel={endUmlToolboxDrag}
+                onLostPointerCapture={endUmlToolboxDrag}
+              >
+                <span>UML connectors</span>
+                <span className="uml-toolbox-header-actions">
+                  <span className="uml-toolbox-grip" aria-hidden="true">⠿</span>
+                  <button
+                    className="uml-toolbox-minimize"
+                    type="button"
+                    aria-label="Minimize UML toolbox"
+                    title="Minimize"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => setUmlToolboxMinimized(true)}
+                  >−</button>
+                </span>
+              </div>
+              <div className="uml-toolbox-tools">
+                {UML_CONNECTOR_TOOLS.map(({ type, label }) => (
+                  <button
+                    key={type}
+                    className={`uml-tool-button${umlConnectorType === type ? ' selected' : ''}`}
+                    type="button"
+                    aria-label={`${label} connector`}
+                    aria-pressed={umlConnectorType === type}
+                    title={`Draw a ${label.toLowerCase()} connector`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => selectUmlConnectorTool(type)}
+                  >
+                    <UmlConnectorIcon type={type} />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </aside>
         <aside className={`viewport-navigator${navigatorPanels.includes('page') ? ' expanded' : ''}`} aria-label="Canvas navigation">
           <div className="navigator-header">
             <span className="navigator-map-label">Workspace</span>
@@ -1539,9 +1781,19 @@ function App() {
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true"><span /></span>
           <span className="brand-name">Ink Pad</span>
-          <span className="brand-divider" />
-          <span className="tool-label">Pen</span>
         </div>
+        <button className="history-button" type="button" onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-2"/></svg>
+          <span>Undo</span>
+        </button>
+        <button className="history-button" type="button" onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h2"/></svg>
+          <span>Redo</span>
+        </button>
+        <span className="toolbar-spacer toolbar-tools-spacer" />
+        <button className={`tool-button pen-button${penModeActive ? ' selected' : ''}`} type="button" aria-label="Pen" aria-pressed={penModeActive} title="Freehand pen" onClick={selectPenMode}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 11.8-11.8a2.1 2.1 0 0 1 3 3L7 20l-4 1z"/><path d="m13.5 6.5 4 4"/></svg><span>Pen</span>
+        </button>
         <button className={`tool-button shape-button${shapeMode ? ' selected' : ''}`} type="button" aria-pressed={shapeMode} title="Straight lines and rectangles recognize on hold automatically. Toggle for arrows." onClick={() => { setShapeMode((value) => !value); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser(false) }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="10" height="10" rx="1"/><path d="M10 19h9m0 0-4-4m4 4-4 4"/></svg><span>Shapes</span>
         </button>
@@ -1551,10 +1803,10 @@ function App() {
         <button className={`tool-button lasso-button${lassoMode ? ' selected' : ''}`} type="button" aria-pressed={lassoMode} title="Draw a loop to select and move multiple items" onClick={() => { const next = !lassoMode; setLassoMode(next); setSelectionMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); setSelectedRectangle(null); clearLassoSelection() }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12c0-4.1 3.1-7 7.3-7 3.8 0 6.7 2.2 6.7 5.7 0 3.8-3.2 7.3-7.1 7.3-3.8 0-6.9-2.1-6.9-6Z"/><path d="M17.5 17.5 20 20"/></svg><span>Lasso</span>
         </button>
-        <button className={`tool-button connector-button${connectorMode ? ' selected' : ''}`} type="button" aria-pressed={connectorMode} title="Draw a straight UML relationship connector with the S Pen" onClick={() => { const next = !connectorMode; setConnectorMode(next); setLassoMode(false); setSelectionMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }}>
+        <button className={`tool-button connector-button${connectorMode || umlConnectorType !== null ? ' selected' : ''}`} type="button" aria-pressed={connectorMode || umlConnectorType !== null} title="Draw a straight UML relationship connector with the S Pen" onClick={() => { const next = !connectorMode; setConnectorMode(next); setLassoMode(false); setSelectionMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="6" height="6" rx="1"/><rect x="14.5" y="14" width="6" height="6" rx="1"/><path d="m9.5 8.5 5 6"/></svg><span>Connector</span>
         </button>
-        <button className="clear-selection-button" type="button" disabled={selectedItemCount === 0} onClick={clearLassoSelection}>Clear selection</button>
+        {selectedItemCount > 0 && <button className="clear-selection-button" type="button" onClick={clearLassoSelection}>Clear selection</button>}
         {selectedConnectorId !== null && selectedConnectorType !== null && <div className="relationship-controls" role="group" aria-label="Selected connector relationship">
           <label className="relationship-label" htmlFor="connector-relationship-type">Relationship</label>
           <select
@@ -1565,7 +1817,9 @@ function App() {
             onChange={(event) => changeSelectedConnectorType(event.target.value as ConnectorRelationshipType)}
           >
             <option value="association">Association</option>
+            <option value="directed-association">Directed association</option>
             <option value="inheritance">Inheritance</option>
+            <option value="realization">Realization</option>
             <option value="dependency">Dependency</option>
             <option value="aggregation">Aggregation</option>
             <option value="composition">Composition</option>
@@ -1582,6 +1836,7 @@ function App() {
             <span>Reverse</span>
           </button>
         </div>}
+        <span className="toolbar-spacer toolbar-settings-spacer" />
         <div className="tool-group color-group" aria-label="Pen color">
           {COLORS.map((item) => (
             <button
@@ -1609,21 +1864,72 @@ function App() {
             ><span style={{ width: Math.min(size * 2.2, 20), height: Math.min(size * 2.2, 20) }} /></button>
           ))}
         </div>
-        <span className="toolbar-spacer" />
-        <button className="history-button" type="button" onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-2"/></svg>
-        </button>
-        <button className="history-button" type="button" onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h2"/></svg>
-        </button>
+        <div className="stroke-display-control" role="group" aria-label="Stroke display mode">
+          <button className={`stroke-mode-button${strokeDisplayMode === 'smooth' ? ' selected' : ''}`} type="button" aria-label="Smooth stroke display" aria-pressed={strokeDisplayMode === 'smooth'} title="Display smoothed curved strokes" onClick={() => setStrokeDisplayMode('smooth')}>
+            <svg viewBox="0 0 24 16" aria-hidden="true"><path d="M1 12c4 0 4-8 8-8s4 8 8 8 4-4 6-4"/></svg><span>Smooth</span>
+          </button>
+          <button className={`stroke-mode-button${strokeDisplayMode === 'raw' ? ' selected' : ''}`} type="button" aria-label="Raw stroke display" aria-pressed={strokeDisplayMode === 'raw'} title="Display raw straight stroke segments" onClick={() => setStrokeDisplayMode('raw')}>
+            <svg viewBox="0 0 24 16" aria-hidden="true"><path d="m1 12 7-8 7 8 8-7"/></svg><span>Raw</span>
+          </button>
+        </div>
+        <label className="page-template-control">
+          <span>Page</span>
+          <select
+            className="page-template-select"
+            aria-label="Page template"
+            value={pageTemplate}
+            onChange={(event) => setPageTemplate(event.target.value as PageTemplate)}
+          >
+            <option value="blank">Blank</option>
+            <option value="lined">Lined</option>
+            <option value="dotted">Dotted</option>
+          </select>
+        </label>
+        <label className="page-template-control page-background-control">
+          <span>Color</span>
+          <select
+            className="page-template-select"
+            aria-label="Sheet background color"
+            value={pageBackground}
+            onChange={(event) => setPageBackground(event.target.value as PageBackground)}
+          >
+            <option value="white">White</option>
+            <option value="warm">Warm</option>
+            <option value="blue">Blue</option>
+            <option value="yellow">Yellow</option>
+            <option value="green">Green</option>
+          </select>
+          <span className="page-color-swatch" aria-hidden="true" style={{ backgroundColor: PAGE_BACKGROUND_COLORS[pageBackground] }} />
+        </label>
         <div ref={eraserControlRef} className="eraser-control">
         <button className={`tool-button eraser-button${eraser ? ' selected' : ''}`} type="button" aria-label="Eraser" title="Eraser" aria-pressed={eraser} aria-expanded={eraserMenuOpen} onClick={() => { setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser((value) => !value); setEraserMenuOpen((value) => !value) }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8.2 4.8 9.9 0a1.5 1.5 0 0 1 1.1 2.6l-9.8 9.8a1.5 1.5 0 0 1-2.1 0l-4.1-4.1a1.5 1.5 0 0 1 0-2.1l7.2-7.2a1.5 1.5 0 0 1 1.1-.4Z"/><path d="m8.1 17.2 3.6 3.6h8"/></svg>
           <span>Eraser</span>
         </button>
         </div>
+        {PERFORMANCE_DIAGNOSTICS_ENABLED && <button className={`perf-diagnostics-toggle${performanceDiagnosticsOpen ? ' selected' : ''}`} type="button" aria-expanded={performanceDiagnosticsOpen} aria-controls="inkpad-performance-panel" onClick={() => setPerformanceDiagnosticsOpen((open) => !open)}>Perf</button>}
         <button className="clear-button" type="button" onClick={clearCanvas} disabled={!hasInk}>Clear</button>
       </header>
+      {PERFORMANCE_DIAGNOSTICS_ENABLED && performanceDiagnosticsOpen && <section id="inkpad-performance-panel" className="performance-panel" aria-label="Development performance diagnostics">
+        <div className="performance-panel-header">
+          <div><strong>InkPad stroke diagnostics</strong><span>Development only · averages from up to 40 completed strokes per group</span></div>
+          <div className="performance-panel-actions">
+            <button type="button" onClick={() => { performanceDiagnosticsRef.current?.reset(); setPerformanceRows(performanceDiagnosticsRef.current?.snapshot() ?? []) }}>Reset</button>
+            <button type="button" aria-label="Close performance diagnostics" onClick={() => setPerformanceDiagnosticsOpen(false)}>×</button>
+          </div>
+        </div>
+        <div className="performance-table-scroll"><table>
+          <thead><tr><th>Mode / length</th><th>N</th><th>Mean ms</th><th>Points</th><th>Moves/s</th><th>Event Δt</th><th>Samples/move</th><th>RAF wait</th><th>RAF merged</th><th>Render all</th><th>Live stroke</th><th>Minimap</th><th>Page view</th><th>Event→render</th></tr></thead>
+          <tbody>{performanceRows.map((row) => <tr key={`${row.mode}-${row.length}`}>
+            <th>{row.mode === 'raw' ? 'Raw' : 'Smooth'} · {row.length}</th><td>{row.strokes}</td><td>{row.avgDurationMs.toFixed(0)}</td><td>{row.avgPoints.toFixed(0)}</td>
+            <td>{row.avgPointerHz ? row.avgPointerHz.toFixed(1) : '—'}</td><td>{row.avgPointerIntervalMs ? row.avgPointerIntervalMs.toFixed(2) : '—'}</td><td>{row.avgSamplesPerMove ? row.avgSamplesPerMove.toFixed(2) : '—'}</td>
+            <td>{row.avgFrameWaitMs ? row.avgFrameWaitMs.toFixed(2) : '—'}</td><td>{row.avgCoalescedFrameRequests.toFixed(2)}</td><td>{row.avgRenderAllMs ? row.avgRenderAllMs.toFixed(2) : '—'}</td>
+            <td>{row.avgActiveStrokeRenderMs ? row.avgActiveStrokeRenderMs.toFixed(2) : '—'}</td><td>{row.avgMinimapMs ? row.avgMinimapMs.toFixed(2) : '—'}</td>
+            <td>{row.avgPageOverviewMs ? row.avgPageOverviewMs.toFixed(2) : '—'}</td><td>{row.avgEventToRenderMs ? row.avgEventToRenderMs.toFixed(2) : '—'}</td>
+          </tr>)}</tbody>
+        </table></div>
+        <p>Short ≤120 retained points; long &gt;120. Event→render is handler-entry to render completion (not digitizer-to-photon latency). Measurements are summarized on pen-up.</p>
+      </section>}
       {eraserMenuOpen && eraserPopoverPosition && createPortal(
         <div
           className="eraser-popover"
@@ -1631,9 +1937,17 @@ function App() {
           aria-label="Eraser options"
           style={{ left: eraserPopoverPosition.left, top: eraserPopoverPosition.top, width: eraserPopoverPosition.width }}
         >
-          <span className="popover-label">Size</span>
-          <div className="eraser-sizes">{ERASER_SIZES.map((size) => <button className={`eraser-size${eraserSize === size && !objectEraser ? ' selected' : ''}`} type="button" key={size} aria-label={`${size} pixel eraser`} aria-pressed={eraserSize === size && !objectEraser} onClick={() => { setEraserSize(size); setObjectEraser(false); setEraser(true) }}><span style={{ width: Math.max(7, Math.min(20, size / 3)), height: Math.max(7, Math.min(20, size / 3)) }} /></button>)}</div>
-          <button className={`object-eraser${objectEraser ? ' selected' : ''}`} type="button" aria-pressed={objectEraser} onClick={() => { setObjectEraser((value) => !value); setEraser(true) }}>Delete whole shape</button>
+          <div className="eraser-mode-options" role="group" aria-label="Eraser mode">
+            <button className={`eraser-mode-card${!objectEraser ? ' selected' : ''}`} type="button" aria-pressed={!objectEraser} onClick={() => { setObjectEraser(false); setEraser(true) }}>
+              <svg viewBox="0 0 36 24" aria-hidden="true"><path d="M3 17c5-10 9 7 15-2s9-6 15-8" /></svg><span>Stroke Eraser</span>
+            </button>
+            <button className={`eraser-mode-card${objectEraser ? ' selected' : ''}`} type="button" aria-pressed={objectEraser} onClick={() => { setObjectEraser(true); setEraser(true) }}>
+              <svg viewBox="0 0 36 24" aria-hidden="true"><rect x="7" y="3" width="22" height="18" strokeDasharray="3 2" /></svg><span>Whole Eraser</span>
+            </button>
+          </div>
+          <div className="eraser-size-heading"><label className="popover-label" htmlFor="eraser-size-range">Size</label><output htmlFor="eraser-size-range">{eraserSize} px</output></div>
+          <input id="eraser-size-range" className="eraser-size-range" aria-label="Eraser size" type="range" min="8" max="96" step="1" value={eraserSize} onChange={(event) => { setEraserSize(Number(event.target.value)); setObjectEraser(false); setEraser(true) }} />
+          <div className="eraser-sizes" aria-label="Eraser size presets">{ERASER_SIZES.map((size) => <button className={`eraser-size${eraserSize === size && !objectEraser ? ' selected' : ''}`} type="button" key={size} aria-label={`${size} pixel eraser preset`} aria-pressed={eraserSize === size && !objectEraser} onClick={() => { setEraserSize(size); setObjectEraser(false); setEraser(true) }}><span style={{ width: Math.max(7, Math.min(20, size / 3)), height: Math.max(7, Math.min(20, size / 3)) }} /></button>)}</div>
         </div>,
         document.body,
       )}

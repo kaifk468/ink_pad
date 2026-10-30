@@ -427,7 +427,9 @@ test('snapshot undo and redo preserve rectangle movement and connector attachmen
 test('renders all UML relationship types with the expected line and endpoint decoration', () => {
   const expected = {
     association: { lineStyle: 'solid', symbol: 'none', endpoint: null },
+    'directed-association': { lineStyle: 'solid', symbol: 'open-arrow', endpoint: 'end' },
     inheritance: { lineStyle: 'solid', symbol: 'hollow-triangle', endpoint: 'end' },
+    realization: { lineStyle: 'dashed', symbol: 'hollow-triangle', endpoint: 'end' },
     dependency: { lineStyle: 'dashed', symbol: 'open-arrow', endpoint: 'end' },
     aggregation: { lineStyle: 'solid', symbol: 'hollow-diamond', endpoint: 'start' },
     composition: { lineStyle: 'solid', symbol: 'filled-diamond', endpoint: 'start' },
@@ -435,6 +437,33 @@ test('renders all UML relationship types with the expected line and endpoint dec
   for (const [relationshipType, renderSpec] of Object.entries(expected)) {
     const connector = model.createConnector(1, { x: 0, y: 0, pressure: 1 }, { x: 100, y: 50, pressure: 1 }, '#202124', 4, undefined, undefined, relationshipType)
     assert.deepEqual(model.getConnectorRenderSpec(connector), renderSpec)
+  }
+})
+
+test('new UML connector types remain first-class objects with snapped rectangle attachments and history', () => {
+  const first = rectangle(41, 0, 0, 100, 80)
+  const second = rectangle(42, 240, 0, 100, 80)
+  const start = model.snapConnectorEndpoint({ x: 98, y: 40, pressure: 0.7 }, [first], 8)
+  const end = model.snapConnectorEndpoint({ x: 242, y: 40, pressure: 0.8 }, [second], 8)
+  assert.ok(start)
+  assert.ok(end)
+
+  for (const relationshipType of ['directed-association', 'realization']) {
+    const connector = model.createConnector(43, start.point, end.point, '#202124', 4,
+      start.attachment, end.attachment, relationshipType)
+    assert.equal(connector.kind, 'connector')
+    assert.equal(connector.relationshipType, relationshipType)
+    assert.equal(connector.startAttachment.rectangleId, first.id)
+    assert.equal(connector.endAttachment.rectangleId, second.id)
+    const items = [first, second, connector]
+    const history = new model.CanvasSnapshotHistory()
+    history.record(items)
+    const moved = model.translateSelectedItems(items, new Set(['rectangle:41']), 20, 10)
+    assert.deepEqual(moved[2].start, { ...connector.start, x: connector.start.x + 20, y: connector.start.y + 10 })
+    assert.deepEqual(moved[2].end, connector.end)
+    assert.equal(moved[2].startAttachment.rectangleId, first.id)
+    assert.deepEqual(history.undo(moved), items)
+    assert.deepEqual(history.redo(items), moved)
   }
 })
 
