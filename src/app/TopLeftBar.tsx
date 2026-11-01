@@ -29,7 +29,7 @@ type TopLeftBarProps = {
   notice: string | null
   storage: StorageInfo
   onOpenStorage: () => void
-  diagnostics: { enabled: boolean; open: boolean; onToggle: () => void }
+  diagnostics: { enabled: boolean; open: boolean; onToggle: () => void; onFillTestInk: (targetPoints: number) => void; onRemoveTestInk: () => void }
 }
 
 const PAGE_TEMPLATE_CHOICES: Array<{ value: PageTemplate; label: string }> = [
@@ -130,6 +130,18 @@ export function TopLeftBar(props: TopLeftBarProps) {
             <button className={`menu-row perf-diagnostics-toggle${props.diagnostics.open ? ' selected' : ''}`} type="button" aria-expanded={props.diagnostics.open} aria-controls="inkpad-performance-panel" onClick={() => { props.diagnostics.onToggle(); setMenuOpen(false) }}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M21 19H3"/></svg>
               <span className="menu-row-label">Perf</span><span className="menu-row-hint">Developer only</span>
+            </button>
+            <button className="menu-row" type="button" onClick={() => { props.diagnostics.onFillTestInk(6000); setMenuOpen(false) }}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c3-4 5 4 8 0s5 4 8 0M4 16c3-4 5 4 8 0s5 4 8 0"/></svg>
+              <span className="menu-row-label">Test ink: light</span><span className="menu-row-hint">Developer only</span>
+            </button>
+            <button className="menu-row" type="button" onClick={() => { props.diagnostics.onFillTestInk(30000); setMenuOpen(false) }}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6c3-4 5 4 8 0s5 4 8 0M4 12c3-4 5 4 8 0s5 4 8 0M4 18c3-4 5 4 8 0s5 4 8 0"/></svg>
+              <span className="menu-row-label">Test ink: dense</span><span className="menu-row-hint">Developer only</span>
+            </button>
+            <button className="menu-row" type="button" onClick={() => { props.diagnostics.onRemoveTestInk(); setMenuOpen(false) }}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg>
+              <span className="menu-row-label">Remove test ink</span><span className="menu-row-hint">Developer only</span>
             </button>
           </>}
         </div>}

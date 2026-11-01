@@ -14,6 +14,7 @@ import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type Pa
 import { getNextIds } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
+import { createTestInk, isTestInk } from './testInk'
 import { DEFAULT_DIRECT_MAX_VISIBLE_POINTS, chooseDrawMode, countVisiblePoints, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
 import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer } from './app/canvasRenderer'
 import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
@@ -1959,6 +1960,31 @@ function App() {
     }
   }
 
+  // Development only (menu > Fill view with test ink): adds handwriting-like strokes over the current view, or removes them again.
+  const fillTestInk = (targetPoints: number) => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    cancelTextEditor()
+    const strokes = createTestInk(viewRectOf(viewportRef.current, rect.width, rect.height), SHEET_BOUNDS, targetPoints, nextStrokeIdRef.current)
+    if (!strokes.length) return
+    nextStrokeIdRef.current += strokes.length
+    saveHistory()
+    strokesRef.current = [...strokesRef.current, ...strokes]
+    setHasInk(true)
+    renderAll()
+  }
+
+  const removeTestInk = () => {
+    const kept = strokesRef.current.filter((item) => !isTestInk(item))
+    if (kept.length === strokesRef.current.length) return
+    cancelTextEditor()
+    saveHistory()
+    strokesRef.current = kept
+    reconcileSelectedItems()
+    setHasInk(kept.length > 0)
+    renderAll()
+  }
+
   const clearCanvas = () => {
     cancelTextEditor()
     if (!strokesRef.current.length) return
@@ -2184,7 +2210,7 @@ function App() {
         notice={fileNotice}
         storage={storage}
         onOpenStorage={() => setStoragePanelOpen(true)}
-        diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open) }}
+        diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open), onFillTestInk: fillTestInk, onRemoveTestInk: removeTestInk }}
       />
       <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
       <AccountButton />
