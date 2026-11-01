@@ -1,6 +1,6 @@
 # InkPad Project Context
 
-## Current Status — 2026-11-01
+## Current Status — 2026-11-02
 
 - **Canvas:** the white sheet is 2500 × 1500 units at (0, 0); the drawable workspace is 2750 × 1650, from (-125, -75) to (2625, 1575). Existing items remain in canvas coordinates.
 - **Viewport:** default zoom 1×, limits 0.1×–3×. Two-finger touch is pinch zoom; three-finger touch pans; one-finger touch is ignored for drawing/navigation. S Pen input is converted to canvas coordinates.
@@ -369,3 +369,10 @@
 - `src/testInk.ts`: `createTestInk(view, page, targetPoints, firstId, seed)` (deterministic, kept inside the view and the sheet), reserved ink colour `#1f2023` (not in the palette) marks test strokes for `isTestInk`.
 - Test ink is real document content, so it is autosaved with the diagram: use a new diagram, then "Remove test ink" (or Undo) before keeping it.
 - Checks run: 256 tests pass, `tsc -b` clean, build OK (laptop). Developer build in headless Chrome: light fill stays in direct mode, dense fill switches to cached, writing over it works, remove returns to direct, no page errors.
+
+## Erase cleanup (2026-11-02)
+- Found on the tablet: after erasing ink, writing stayed slow. The pixel eraser only adds an `erase: true` stroke that cuts holes (destination-out) in earlier ink, so erased strokes kept being drawn and counted as visible points.
+- `src/app/eraserCompaction.ts` `compactAfterErase(items, nextId)` runs in `finishStroke` right after the eraser stroke is added (same undo step, so one Undo restores everything): pen strokes completely under the eraser are deleted; the hidden middle of a partly erased stroke is cut out (the stroke is split, the first piece keeps its id, the ends stay under the eraser); eraser strokes that touch no earlier ink, text, rectangle or connector are deleted (older ones too, once their ink is gone).
+- Conservative: a point counts as hidden only if the whole pen line (up to 1.25x width, plus 2 units) lies inside the eraser, using pressure-scaled eraser width per segment; segments between hidden points are sampled every 6 units. Shape strokes (arrow/line) are never trimmed. Rectangles are treated as touched wherever they sit in the list, because connectors redraw their boxes.
+- Needs a tablet check: erase a dense test-ink area, then write; speed should return, and erased edges should look the same as before.
+- Checks run: 265 tests pass (9 new in `tests/eraserCompaction.test.mjs`), `tsc -b` clean.

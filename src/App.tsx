@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, getEraserSweepPoints, isPenHoverEraseInput } from './eraserInput'
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
 import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
@@ -1401,6 +1402,7 @@ function App() {
           : heldLongEnough ? recognizeLine(heldStroke) : heldStroke
       }
       strokesRef.current.push(stroke)
+      if (stroke.kind === 'stroke' && stroke.erase) strokesRef.current = compactAfterErase(strokesRef.current, () => nextStrokeIdRef.current++)
       setHasInk(true)
     }
     activeStrokeRef.current = null
