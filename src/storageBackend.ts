@@ -8,7 +8,7 @@ import { cleanFolderName, folderAndDescendantIds } from './folderTree'
  * on a device folder), and a folder's parentId is the id of the folder that contains it.
  */
 export type StorageBackend = {
-  kind: 'browser' | 'device'
+  kind: 'browser' | 'device' | 'drive'
   list(): Promise<{ documents: DocumentSummary[]; folders: FolderRecord[] }>
   load(id: string): Promise<InkPadDocument | null>
   /** Saves a diagram. id null = new diagram in folderId. Returns the id, which can change when the title or location changes. */

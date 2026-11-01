@@ -1,0 +1,226 @@
+import { DOCUMENT_FILE_EXTENSION, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
+import type { DocumentSummary, FolderRecord } from './documentStore'
+import { fileBase, sanitizeName } from './deviceStore'
+import { cleanFolderName, folderAndDescendantIds } from './folderTree'
+import type { StorageBackend } from './storageBackend'
+
+/**
+ * Storage in the person's own Google Drive, inside the hidden "app data" area (scope drive.appdata):
+ * only InkPad can see these files, and they do not clutter the normal Drive file list.
+ * Folders are real Drive folders and each diagram is a "<title>.inkpad" file, so the hierarchy is
+ * the same as in the browser and device-folder storage. Ids are Drive file ids, which stay the
+ * same when a diagram or folder is renamed or moved.
+ */
+
+export const GOOGLE_CLIENT_ID = '422120639138-p86fdlt7qg2fqp5sb1c6c59nevketg6e.apps.googleusercontent.com'
+export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
+
+const FILES_URL = 'https://www.googleapis.com/drive/v3/files'
+const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files'
+const FOLDER_MIME = 'application/vnd.google-apps.folder'
+const ROOT_ALIAS = 'appDataFolder'
+
+/** Thrown when Google needs the person to sign in again (token missing, expired or refused). */
+export class DriveAuthError extends Error {
+  constructor(message = 'Sign in to Google again to keep saving.') {
+    super(message)
+    this.name = 'DriveAuthError'
+  }
+}
+
+export class DriveHttpError extends Error {
+  status: number
+  constructor(status: number) {
+    super(status === 403 ? 'Google Drive refused the request (is the Drive API enabled?).' : status === 429 ? 'Google Drive is busy. Try again in a moment.' : `Google Drive error (${status}).`)
+    this.name = 'DriveHttpError'
+    this.status = status
+  }
+}
+
+export type DriveEnv = {
+  /** Returns a valid access token. force = get a fresh one even if the cached one looks valid. */
+  getToken(force?: boolean): Promise<string>
+  fetch: (url: string, init?: RequestInit) => Promise<Response>
+}
+
+type DriveFile = {
+  id: string
+  name: string
+  mimeType?: string
+  parents?: string[]
+  modifiedTime?: string
+  appProperties?: Record<string, string>
+}
+
+async function call(env: DriveEnv, url: string, init: RequestInit = {}, retry = true): Promise<Response> {
+  const token = await env.getToken()
+  const response = await env.fetch(url, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` } })
+  if (response.status === 401) {
+    if (!retry) throw new DriveAuthError()
+    await env.getToken(true)
+    return call(env, url, init, false)
+  }
+  if (!response.ok) throw new DriveHttpError(response.status)
+  return response
+}
+
+function multipart(metadata: object, content: string) {
+  const boundary = `inkpad${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+  const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`
+  return { body, headers: { 'Content-Type': `multipart/related; boundary=${boundary}` } }
+}
+
+async function listAll(env: DriveEnv): Promise<DriveFile[]> {
+  const files: DriveFile[] = []
+  let pageToken: string | undefined
+  do {
+    const params = new URLSearchParams({
+      spaces: ROOT_ALIAS,
+      q: 'trashed = false',
+      pageSize: '1000',
+      fields: 'nextPageToken,files(id,name,mimeType,parents,modifiedTime,appProperties)',
+    })
+    if (pageToken) params.set('pageToken', pageToken)
+    const data = await (await call(env, `${FILES_URL}?${params}`)).json() as { files?: DriveFile[]; nextPageToken?: string }
+    files.push(...(data.files ?? []))
+    pageToken = data.nextPageToken
+  } while (pageToken)
+  return files
+}
+
+/** Splits a listing into folders and diagrams. A parent that is not one of our folders is the top level. */
+function organise(files: DriveFile[]) {
+  const folderFiles = files.filter((file) => file.mimeType === FOLDER_MIME)
+  const folderIds = new Set(folderFiles.map((file) => file.id))
+  const parentOf = (file: DriveFile) => file.parents?.find((parent) => folderIds.has(parent)) ?? null
+  const folders: FolderRecord[] = folderFiles.map((file) => ({ id: file.id, name: file.name, parentId: parentOf(file), createdAt: file.modifiedTime ?? '' }))
+  const diagramFiles = files.filter((file) => file.mimeType !== FOLDER_MIME && file.name.toLowerCase().endsWith(DOCUMENT_FILE_EXTENSION))
+  const documents: DocumentSummary[] = diagramFiles.map((file) => ({
+    id: file.id,
+    title: fileBase(file.name),
+    updatedAt: file.modifiedTime ?? '',
+    itemCount: Number(file.appProperties?.itemCount) || 0,
+    folderId: parentOf(file),
+  }))
+  return { folders, documents, parentOf, diagramFiles }
+}
+
+export function createDriveBackend(env: DriveEnv): StorageBackend {
+  // When this device last loaded or saved each diagram. If Drive holds a newer version when we save,
+  // another device changed it, so its version is kept as a copy before we overwrite it.
+  const knownModified = new Map<string, string>()
+
+  async function getMeta(id: string): Promise<DriveFile | null> {
+    try {
+      const params = new URLSearchParams({ fields: 'id,name,parents,modifiedTime' })
+      return await (await call(env, `${FILES_URL}/${encodeURIComponent(id)}?${params}`)).json() as DriveFile
+    } catch (error) {
+      if (error instanceof DriveHttpError && error.status === 404) return null
+      throw error
+    }
+  }
+
+  async function create(name: string, folderId: string | null, content: string, itemCount: number): Promise<string> {
+    const { body, headers } = multipart({ name, mimeType: 'application/json', parents: [folderId ?? ROOT_ALIAS], appProperties: { itemCount: String(itemCount) } }, content)
+    const result = await (await call(env, `${UPLOAD_URL}?uploadType=multipart&fields=id,modifiedTime`, { method: 'POST', headers, body })).json() as DriveFile
+    if (result.modifiedTime) knownModified.set(result.id, result.modifiedTime)
+    return result.id
+  }
+
+  return {
+    kind: 'drive',
+    async list() {
+      const { folders, documents } = organise(await listAll(env))
+      return { documents, folders }
+    },
+    async load(id) {
+      const meta = await getMeta(id)
+      if (!meta) return null
+      const text = await (await call(env, `${FILES_URL}/${encodeURIComponent(id)}?alt=media`)).text()
+      const result = parseDocument(text)
+      if (!result.ok) throw new Error(result.error)
+      if (meta.modifiedTime) knownModified.set(id, meta.modifiedTime)
+      return result.document
+    },
+    async save(id, document: InkPadDocument, folderId) {
+      const name = `${sanitizeName(document.title)}${DOCUMENT_FILE_EXTENSION}`
+      const content = stringifyDocument(document)
+      const itemCount = document.items.length
+      if (!id) return create(name, folderId, content, itemCount)
+      const known = knownModified.get(id)
+      const remote = await getMeta(id)
+      if (!remote) return create(name, folderId, content, itemCount) // deleted elsewhere: keep the work as a new file
+      if (known && remote.modifiedTime && remote.modifiedTime !== known) {
+        const stamp = new Date(remote.modifiedTime).toISOString().slice(0, 16).replace('T', ' ')
+        await call(env, `${FILES_URL}/${encodeURIComponent(id)}/copy?fields=id`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: `${fileBase(remote.name)} (other device ${stamp})${DOCUMENT_FILE_EXTENSION}`, parents: remote.parents }),
+        })
+      }
+      const { body, headers } = multipart({ name, appProperties: { itemCount: String(itemCount) } }, content)
+      const result = await (await call(env, `${UPLOAD_URL}/${encodeURIComponent(id)}?uploadType=multipart&fields=id,modifiedTime`, { method: 'PATCH', headers, body })).json() as DriveFile
+      if (result.modifiedTime) knownModified.set(id, result.modifiedTime)
+      return id
+    },
+    async remove(id) {
+      try {
+        await call(env, `${FILES_URL}/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      } catch (error) {
+        if (!(error instanceof DriveHttpError && error.status === 404)) throw error
+      }
+      knownModified.delete(id)
+    },
+    async move(id, folderId) {
+      const { parentOf, diagramFiles } = organise(await listAll(env))
+      const file = diagramFiles.find((entry) => entry.id === id)
+      if (!file) throw new Error('That diagram no longer exists.')
+      if (parentOf(file) === folderId) return id
+      const params = new URLSearchParams({ addParents: folderId ?? ROOT_ALIAS, removeParents: (file.parents ?? []).join(','), fields: 'id,modifiedTime' })
+      const result = await (await call(env, `${FILES_URL}/${encodeURIComponent(id)}?${params}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json() as DriveFile
+      if (result.modifiedTime && knownModified.has(id)) knownModified.set(id, result.modifiedTime)
+      return id
+    },
+    async createFolder(name, parentId, reuse = false) {
+      const clean = cleanFolderName(name)
+      if (reuse) {
+        const existing = organise(await listAll(env)).folders.find((folder) => (folder.parentId ?? null) === parentId && folder.name.toLowerCase() === clean.toLowerCase())
+        if (existing) return existing.id
+      }
+      const result = await (await call(env, `${FILES_URL}?fields=id`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: clean, mimeType: FOLDER_MIME, parents: [parentId ?? ROOT_ALIAS] }),
+      })).json() as DriveFile
+      return result.id
+    },
+    async renameFolder(id, name) {
+      await call(env, `${FILES_URL}/${encodeURIComponent(id)}?fields=id`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: cleanFolderName(name) }),
+      })
+      return null
+    },
+    async deleteFolder(id) {
+      const { folders, documents } = organise(await listAll(env))
+      const ids = folderAndDescendantIds(folders, id)
+      const inside = new Set(ids)
+      const deleted: string[] = []
+      const quietDelete = async (target: string) => {
+        try { await call(env, `${FILES_URL}/${encodeURIComponent(target)}`, { method: 'DELETE' }) } catch (error) {
+          if (!(error instanceof DriveHttpError && error.status === 404)) throw error
+        }
+      }
+      for (const entry of documents) {
+        if (entry.folderId && inside.has(entry.folderId)) {
+          await quietDelete(entry.id)
+          knownModified.delete(entry.id)
+          deleted.push(entry.id)
+        }
+      }
+      for (const folderId of [...ids].reverse()) await quietDelete(folderId)
+      return deleted
+    },
+  }
+}

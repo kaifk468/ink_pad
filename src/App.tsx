@@ -100,7 +100,7 @@ function App() {
 
   const {
     filePanelOpen, setFilePanelOpen, refreshLibrary, docTitle, saveStatus, fileNotice, library, folders, currentDocId,
-    storage, chooseDeviceFolder, reconnectDeviceFolder, useBrowserStorage, copyBrowserToDevice,
+    storage, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile,
@@ -2030,6 +2030,7 @@ function App() {
         storage={storage}
         onChooseDeviceFolder={() => void chooseDeviceFolder()}
         onReconnectDeviceFolder={() => void reconnectDeviceFolder()}
+        onConnectDrive={() => void connectDrive()}
         onUseBrowserStorage={() => void useBrowserStorage()}
         onCopyBrowserToDevice={() => void copyBrowserToDevice()}
         onClose={() => setFilePanelOpen(false)}

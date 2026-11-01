@@ -4,6 +4,8 @@ import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, p
 import { downloadBlob, loadCurrentDocumentId, saveCurrentDocumentId, type DocumentSummary, type FolderRecord } from '../documentStore'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
 import { folderAndDescendantIds } from '../folderTree'
+import { DriveAuthError, createDriveBackend } from '../googleDrive'
+import { REFRESH_WINDOW_MS, driveAuth } from '../googleAuth'
 import { copyAllBetweenBackends, createBrowserBackend, type StorageBackend } from '../storageBackend'
 import type { SaveStatus } from '../FilePanel'
 import { PAGE_BACKGROUND_COLORS } from '../pageBackground'
@@ -25,32 +27,43 @@ export type DocumentHost = {
 
 const AUTOSAVE_DELAY_MS = 1200
 const DEVICE_CURRENT_KEY = 'inkpad.currentDocument.device'
+const DRIVE_CURRENT_KEY = 'inkpad.currentDocument.drive'
+const STARTUP_SIGN_IN_WAIT_MS = 6000
 
 export type StorageInfo = {
-  kind: 'browser' | 'device'
+  kind: 'browser' | 'device' | 'drive'
   /** Name of the chosen device folder, when kind is 'device'. */
   folderName: string | null
-  /** The device folder is remembered but the browser needs a tap to allow access again. */
+  /** The device folder or Google sign-in is remembered but needs a tap to be allowed again. */
   locked: boolean
   /** This browser can pick a device folder (needs a secure address and Chrome or Edge). */
   supported: boolean
 }
 
-function readDeviceCurrentId(): string | null {
-  try { return window.localStorage.getItem(DEVICE_CURRENT_KEY) } catch { return null }
+function readKeyedCurrentId(key: string): string | null {
+  try { return window.localStorage.getItem(key) } catch { return null }
 }
-function writeDeviceCurrentId(id: string | null) {
+function writeKeyedCurrentId(key: string, id: string | null) {
   try {
-    if (id) window.localStorage.setItem(DEVICE_CURRENT_KEY, id)
-    else window.localStorage.removeItem(DEVICE_CURRENT_KEY)
+    if (id) window.localStorage.setItem(key, id)
+    else window.localStorage.removeItem(key)
   } catch { /* the diagram just will not reopen automatically */ }
 }
-function writeStorageMode(mode: 'browser' | 'device') {
+type StorageMode = 'browser' | 'device' | 'drive'
+function writeStorageMode(mode: StorageMode) {
   try { window.localStorage.setItem(STORAGE_MODE_KEY, mode) } catch { /* ignore */ }
 }
-function readStorageMode(): 'browser' | 'device' {
-  try { return window.localStorage.getItem(STORAGE_MODE_KEY) === 'device' ? 'device' : 'browser' } catch { return 'browser' }
+function readStorageMode(): StorageMode {
+  try {
+    const stored = window.localStorage.getItem(STORAGE_MODE_KEY)
+    return stored === 'device' || stored === 'drive' ? stored : 'browser'
+  } catch { return 'browser' }
 }
+const createAppDriveBackend = () => createDriveBackend({ getToken: (force) => driveAuth.getToken(force), fetch: (url, init) => window.fetch(url, init) })
+const withTimeout = <T,>(work: Promise<T>, ms: number): Promise<T> => new Promise<T>((resolve, reject) => {
+  const timer = window.setTimeout(() => reject(new DriveAuthError()), ms)
+  work.then((value) => { window.clearTimeout(timer); resolve(value) }, (error) => { window.clearTimeout(timer); reject(error) })
+})
 const errorText = (error: unknown, fallback: string) => (error instanceof Error && error.message ? error.message : fallback)
 
 export function useDocuments(host: DocumentHost) {
@@ -78,8 +91,17 @@ export function useDocuments(host: DocumentHost) {
   const autosaveTimerRef = useRef<number | null>(null)
   filePanelOpenRef.current = filePanelOpen
 
-  const readCurrentId = () => (backendRef.current.kind === 'device' ? readDeviceCurrentId() : loadCurrentDocumentId())
-  const writeCurrentId = (id: string | null) => { if (backendRef.current.kind === 'device') writeDeviceCurrentId(id); else saveCurrentDocumentId(id) }
+  const readCurrentId = () => {
+    const kind = backendRef.current.kind
+    return kind === 'device' ? readKeyedCurrentId(DEVICE_CURRENT_KEY) : kind === 'drive' ? readKeyedCurrentId(DRIVE_CURRENT_KEY) : loadCurrentDocumentId()
+  }
+  const writeCurrentId = (id: string | null) => {
+    const kind = backendRef.current.kind
+    if (kind === 'device') writeKeyedCurrentId(DEVICE_CURRENT_KEY, id)
+    else if (kind === 'drive') writeKeyedCurrentId(DRIVE_CURRENT_KEY, id)
+    else saveCurrentDocumentId(id)
+  }
+  const unsavedWhileLockedRef = useRef(false)
 
   const buildCurrentDocument = (): InkPadDocument => {
     const page = hostRef.current.getPage()
@@ -126,7 +148,15 @@ export function useDocuments(host: DocumentHost) {
       setCurrentDocId(newId)
       setSaveStatus('saved')
       if (filePanelOpenRef.current || previousId === null || previousId !== newId) void refreshLibrary()
-    } catch {
+    } catch (error) {
+      if (error instanceof DriveAuthError && backendRef.current === backend) {
+        // Google sign-in lapsed: stop autosaving, remember the sheet is unsaved, and ask for a tap.
+        readyRef.current = false
+        unsavedWhileLockedRef.current = true
+        setStorage((current) => ({ ...current, locked: true }))
+        setSaveStatus('locked')
+        return
+      }
       setSaveStatus('error')
     }
   }
@@ -363,6 +393,23 @@ export function useDocuments(host: DocumentHost) {
   useEffect(() => {
     let cancelled = false
     void (async () => {
+      if (readStorageMode() === 'drive') {
+        backendRef.current = createAppDriveBackend()
+        setStorage({ kind: 'drive', folderName: null, locked: false, supported: isDeviceFolderSupported() })
+        try {
+          await withTimeout(driveAuth.getToken(), STARTUP_SIGN_IN_WAIT_MS)
+        } catch {
+          if (cancelled) return
+          // The browser needs a tap before Google sign-in can open again.
+          setStorage({ kind: 'drive', folderName: null, locked: true, supported: isDeviceFolderSupported() })
+          setSaveStatus('locked')
+          setFilePanelOpen(true)
+          return
+        }
+        if (cancelled) return
+        await finishStartup(() => cancelled)
+        return
+      }
       if (readStorageMode() === 'device' && isDeviceFolderSupported()) {
         let handle: DirHandle | null = null
         try { handle = await loadDeviceHandle() } catch { handle = null }
@@ -431,25 +478,51 @@ export function useDocuments(host: DocumentHost) {
 
   /** After a restart the browser asks for a tap before the remembered folder can be used again. */
   const reconnectDeviceFolder = async () => {
-    const handle = deviceHandleRef.current
-    if (!handle) return
-    if (!(await requestDevicePermission(handle))) {
-      setFileNotice('Permission was not given. Tap Reconnect and choose Allow.')
-      return
+    if (backendRef.current.kind === 'drive') {
+      try {
+        await driveAuth.getToken(true)
+      } catch {
+        setFileNotice('Google sign-in did not finish. Tap Sign in again and choose your account.')
+        return
+      }
+    } else {
+      const handle = deviceHandleRef.current
+      if (!handle) return
+      if (!(await requestDevicePermission(handle))) {
+        setFileNotice('Permission was not given. Tap Reconnect and choose Allow.')
+        return
+      }
     }
     setFileNotice(null)
     setStorage((current) => ({ ...current, locked: false }))
     setSaveStatus('idle')
     await finishStartup()
-    // A sheet drawn while the folder was locked is saved as a new diagram now.
-    if (!docIdRef.current && hostRef.current.getItems().length > 0) await persistNow()
+    // A sheet drawn while storage was locked is saved now (as a new diagram if it never had a home).
+    if ((!docIdRef.current || unsavedWhileLockedRef.current) && hostRef.current.getItems().length > 0) await persistNow()
+    unsavedWhileLockedRef.current = false
     await refreshLibrary()
+  }
+
+  /** Signs in to Google and keeps diagrams in the person's own Drive (hidden app-data area). */
+  const connectDrive = async () => {
+    setFileNotice(null)
+    try {
+      await driveAuth.getToken(true)
+    } catch {
+      setFileNotice('Google sign-in did not finish. Nothing was changed.')
+      return
+    }
+    await persistNow() // finish saving to the storage being left
+    writeStorageMode('drive')
+    setSaveStatus('idle')
+    await switchBackend(createAppDriveBackend(), null)
   }
 
   const useBrowserStorage = async () => {
     setFileNotice(null)
     await persistNow()
-    try { await saveDeviceHandle(null) } catch { /* nothing to forget */ }
+    if (backendRef.current.kind === 'drive') driveAuth.signOut()
+    else { try { await saveDeviceHandle(null) } catch { /* nothing to forget */ } }
     writeStorageMode('browser')
     setSaveStatus('idle')
     await switchBackend(createBrowserBackend(), null)
@@ -457,18 +530,30 @@ export function useDocuments(host: DocumentHost) {
 
   /** Copies every browser diagram and folder into the device folder. The browser copies are kept. */
   const copyBrowserToDevice = async () => {
-    if (backendRef.current.kind !== 'device') return
+    if (backendRef.current.kind === 'browser') return
     setFileNotice(null)
     try {
       const result = await copyAllBetweenBackends(createBrowserBackend(), backendRef.current)
       setFileNotice(result.diagrams === 0 && result.failed === 0
         ? 'There were no diagrams in this browser to copy.'
-        : `Copied ${result.diagrams} diagram${result.diagrams === 1 ? '' : 's'} and ${result.folders} folder${result.folders === 1 ? '' : 's'} into the device folder.${result.failed ? ` ${result.failed} could not be copied.` : ''}`)
+        : `Copied ${result.diagrams} diagram${result.diagrams === 1 ? '' : 's'} and ${result.folders} folder${result.folders === 1 ? '' : 's'} into ${backendRef.current.kind === 'drive' ? 'Google Drive' : 'the device folder'}.${result.failed ? ` ${result.failed} could not be copied.` : ''}`)
     } catch (error) {
-      setFileNotice(errorText(error, 'Could not copy into the device folder.'))
+      setFileNotice(errorText(error, 'Could not copy the browser diagrams.'))
     }
     void refreshLibrary()
   }
+
+  // Google tokens last about an hour and the sign-in window only opens after a tap, so renew on a tap shortly before expiry.
+  useEffect(() => {
+    let renewing = false
+    const renew = () => {
+      if (backendRef.current.kind !== 'drive' || renewing || !driveAuth.hasToken() || driveAuth.msLeft() > REFRESH_WINDOW_MS) return
+      renewing = true
+      void driveAuth.getToken(true).catch(() => { /* the next save asks for a sign-in if this failed */ }).finally(() => { renewing = false })
+    }
+    window.addEventListener('pointerup', renew)
+    return () => window.removeEventListener('pointerup', renew)
+  }, [])
 
   useEffect(() => {
     const flush = () => { if (document.visibilityState === 'hidden') void persistNow() }
@@ -482,7 +567,7 @@ export function useDocuments(host: DocumentHost) {
 
   return {
     filePanelOpen, setFilePanelOpen, refreshLibrary, docTitle, saveStatus, fileNotice, library, folders, currentDocId,
-    storage, chooseDeviceFolder, reconnectDeviceFolder, useBrowserStorage, copyBrowserToDevice,
+    storage, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile,
