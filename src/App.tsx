@@ -36,7 +36,35 @@ import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEI
 
 const DOUBLE_TAP_MS = 400
 const MINIMAP_LIVE_REFRESH_MS = 300
+const GESTURE_SETTLE_MS = 140
 const ZOOM_STEP = 1.25
+
+type DeviceRect = { x: number; y: number; width: number; height: number }
+
+/** The canvas area (device pixels) a growing stroke can touch: its bounding box plus line width and curve overshoot. */
+function getDirtyRect(points: Point[], strokeWidth: number, viewport: Viewport, dpr: number, canvasWidth: number, canvasHeight: number): DeviceRect | null {
+  if (!points.length) return null
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  let longestSegment = 0
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]
+    if (point.x < minX) minX = point.x
+    if (point.y < minY) minY = point.y
+    if (point.x > maxX) maxX = point.x
+    if (point.y > maxY) maxY = point.y
+    if (index > 0) longestSegment = Math.max(longestSegment, Math.hypot(point.x - points[index - 1].x, point.y - points[index - 1].y))
+  }
+  const pad = ((strokeWidth * 0.7 + longestSegment * 0.5) * viewport.scale + 4) * dpr + 4
+  const x0 = Math.max(0, Math.floor((minX * viewport.scale + viewport.offsetX) * dpr - pad))
+  const y0 = Math.max(0, Math.floor((minY * viewport.scale + viewport.offsetY) * dpr - pad))
+  const x1 = Math.min(canvasWidth, Math.ceil((maxX * viewport.scale + viewport.offsetX) * dpr + pad))
+  const y1 = Math.min(canvasHeight, Math.ceil((maxY * viewport.scale + viewport.offsetY) * dpr + pad))
+  if (x1 <= x0 || y1 <= y0) return null
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+}
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -49,6 +77,9 @@ function App() {
   const historyLayerRef = useRef<HTMLCanvasElement | null>(null)
   const historyCacheRef = useRef<{ items: CanvasItem[]; count: number; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
   const minimapRenderedAtRef = useRef(0)
+  // True while a pinch or three-finger pan is moving: the page is shown as a moved copy of a saved picture, then redrawn sharply once it settles.
+  const viewportGestureRef = useRef(false)
+  const gestureSettleTimerRef = useRef<number | null>(null)
   const toolbarRef = useRef<HTMLElement>(null)
   const umlToolboxRef = useRef<HTMLDivElement>(null)
   const eraserControlRef = useRef<HTMLDivElement>(null)
@@ -638,9 +669,31 @@ function App() {
     const inkContext = inkLayer.getContext('2d')
     if (!inkContext) return
     const dpr = benchmarkBackground?.dpr ?? Math.max(1, window.devicePixelRatio || 1)
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
     const viewport = benchmarkBackground?.viewport ?? viewportRef.current
+    const editingTextId = textEditorRef.current?.itemId ?? null
+    const items = strokesRef.current
+    const liveStroke = activeStrokeRef.current
+    const penStrokeFrame = !benchmarkBackground && editingTextId === null && liveStroke !== null && liveStroke.kind === 'stroke' && !liveStroke.erase
+    const gestureFrame = !benchmarkBackground && editingTextId === null && viewportGestureRef.current
+    const cacheable = penStrokeFrame || gestureFrame
+    const cache = historyCacheRef.current
+    const cacheUsable = cacheable && cache !== null && historyLayerRef.current !== null && cache.items === items && cache.count === items.length
+      && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height
+    const sameViewport = cacheUsable && cache.scale === viewport.scale && cache.offsetX === viewport.offsetX && cache.offsetY === viewport.offsetY
+    // With a pen stroke over a saved picture of the page, only the area around the stroke changes, so only that area is repainted.
+    // Mid-gesture the saved picture is drawn straight onto the canvas, skipping the ink layer.
+    const directGesture = cacheUsable && gestureFrame && !sameViewport
+    const dirty = penStrokeFrame && sameViewport && !gestureFrame && liveStroke && !liveStroke.shape && shapePreviewRef.current === null
+      ? getDirtyRect(liveStroke.points, liveStroke.width, viewport, dpr, canvas.width, canvas.height)
+      : null
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    if (dirty) {
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(dirty.x, dirty.y, dirty.width, dirty.height)
+      ctx.clip()
+    }
+    ctx.clearRect(dirty?.x ?? 0, dirty?.y ?? 0, dirty?.width ?? canvas.width, dirty?.height ?? canvas.height)
     ctx.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
     // The sheet color, template and shadow live in a CSS layer behind this transparent canvas, so the canvas never
     // repaints a patterned sheet. The layer follows the same viewport transform used for every canvas draw below.
@@ -694,25 +747,26 @@ function App() {
       }
     })
     inkContext.setTransform(1, 0, 0, 1, 0, 0)
-    inkContext.clearRect(0, 0, inkLayer.width, inkLayer.height)
+    if (dirty) {
+      inkContext.save()
+      inkContext.beginPath()
+      inkContext.rect(dirty.x, dirty.y, dirty.width, dirty.height)
+      inkContext.clip()
+    }
+    if (!directGesture) inkContext.clearRect(dirty?.x ?? 0, dirty?.y ?? 0, dirty?.width ?? inkLayer.width, dirty?.height ?? inkLayer.height)
     inkContext.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
     inkContext.save()
     inkContext.beginPath()
     inkContext.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
     inkContext.clip()
     const historyInkStartedAt = measureFrame ? performance.now() : 0
-    const editingTextId = textEditorRef.current?.itemId ?? null
-    const liveStroke = activeStrokeRef.current
-    const cacheable = !benchmarkBackground && editingTextId === null && liveStroke !== null && liveStroke.kind === 'stroke' && !liveStroke.erase
-    const cache = historyCacheRef.current
-    const items = strokesRef.current
-    const cacheValid = cacheable && cache !== null && historyLayerRef.current !== null && cache.items === items && cache.count === items.length
-      && cache.scale === viewport.scale && cache.offsetX === viewport.offsetX && cache.offsetY === viewport.offsetY
-      && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height
-    if (cacheValid && historyLayerRef.current) {
+    if (directGesture) {
+      // nothing to draw into the ink layer; the saved picture is composited below
+    } else if (sameViewport && cache && historyLayerRef.current) {
       inkContext.save()
       inkContext.setTransform(1, 0, 0, 1, 0, 0)
-      inkContext.drawImage(historyLayerRef.current, 0, 0)
+      if (dirty) inkContext.drawImage(historyLayerRef.current, dirty.x, dirty.y, dirty.width, dirty.height, dirty.x, dirty.y, dirty.width, dirty.height)
+      else inkContext.drawImage(historyLayerRef.current, 0, 0)
       inkContext.restore()
     } else {
       canvasItemsForRendering(items).forEach((item) => { if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(inkContext, item) })
@@ -737,9 +791,15 @@ function App() {
       if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
     }
     inkContext.restore()
+    if (dirty) inkContext.restore()
     const compositeStartedAt = measureFrame ? performance.now() : 0
     ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.drawImage(inkLayer, 0, 0)
+    if (directGesture && cache && historyLayerRef.current) {
+      const k = viewport.scale / cache.scale
+      ctx.setTransform(k, 0, 0, k, dpr * (viewport.offsetX - k * cache.offsetX), dpr * (viewport.offsetY - k * cache.offsetY))
+      ctx.drawImage(historyLayerRef.current, 0, 0)
+    } else if (dirty) ctx.drawImage(inkLayer, dirty.x, dirty.y, dirty.width, dirty.height, dirty.x, dirty.y, dirty.width, dirty.height)
+    else ctx.drawImage(inkLayer, 0, 0)
     if (measureFrame) diagnostics?.recordCompositeRender(performance.now() - compositeStartedAt)
     ctx.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
     const activeConnector = activeConnectorRef.current
@@ -820,11 +880,12 @@ function App() {
       ctx.restore()
     }
     ctx.restore()
+    if (dirty) ctx.restore()
     if (measureFrame) diagnostics?.recordMainCanvasRender(performance.now() - mainCanvasStartedAt)
     const minimapStartedAt = measureFrame ? performance.now() : 0
     // The minimap redraws every item, so while a stroke is being written it is refreshed a few times a second at most.
     const minimapNow = performance.now()
-    if (!activeStrokeRef.current || minimapNow - minimapRenderedAtRef.current > MINIMAP_LIVE_REFRESH_MS) {
+    if ((!activeStrokeRef.current && !gestureFrame) || minimapNow - minimapRenderedAtRef.current > MINIMAP_LIVE_REFRESH_MS) {
       minimapRenderedAtRef.current = minimapNow
       renderNavigator()
     }
@@ -832,7 +893,7 @@ function App() {
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
   }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageTemplate, renderNavigator, width])
 
-  const applyViewport = (viewport: Viewport) => {
+  const applyViewport = (viewport: Viewport, gesture = false) => {
     if (textEditorRef.current) commitTextEditor()
     const canvas = canvasRef.current
     const rect = canvas?.getBoundingClientRect()
@@ -841,6 +902,18 @@ function App() {
       : viewport
     viewportRef.current = boundedViewport
     setZoomPercent(Math.round(boundedViewport.scale * 100))
+    if (gesture) {
+      // Pinch and pan: at most one cheap frame per display frame, then one sharp redraw when the fingers settle.
+      viewportGestureRef.current = true
+      if (gestureSettleTimerRef.current !== null) window.clearTimeout(gestureSettleTimerRef.current)
+      gestureSettleTimerRef.current = window.setTimeout(() => {
+        gestureSettleTimerRef.current = null
+        viewportGestureRef.current = false
+        renderAll()
+      }, GESTURE_SETTLE_MS)
+      scheduleRender()
+      return
+    }
     renderAll()
   }
 
@@ -1179,7 +1252,7 @@ function App() {
     if (gesture.mode === 'pinch-zoom') {
       const [first, second] = points
       const distance = Math.hypot(second.x - first.x, second.y - first.y)
-      applyViewport(zoomTwoFingerViewport(gesture.viewport, gesture.center, gesture.distance, distance, MIN_ZOOM, MAX_ZOOM))
+      applyViewport(zoomTwoFingerViewport(gesture.viewport, gesture.center, gesture.distance, distance, MIN_ZOOM, MAX_ZOOM), true)
     } else {
       const center = {
         x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
@@ -1187,7 +1260,7 @@ function App() {
         pressure: 1,
       }
       if (Math.hypot(center.x - gesture.center.x, center.y - gesture.center.y) >= THREE_FINGER_PAN_THRESHOLD) {
-        applyViewport(panThreeFingerViewport(gesture.viewport, gesture.center, center))
+        applyViewport(panThreeFingerViewport(gesture.viewport, gesture.center, center), true)
       }
     }
     return true
