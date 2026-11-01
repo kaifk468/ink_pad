@@ -327,3 +327,10 @@
 - Still unexplained / next: blank frame gap median is 22 ms (about 45 fps on a 90 Hz panel) while ink work is about 1 ms, so the remaining cost is probably canvas compositing at this resolution, not JavaScript. Ideas, in order: draw the live stroke on its own small canvas above the page so nothing full-screen is copied per frame; request a low-latency (desynchronized) canvas. Needs a new tablet capture after this build to confirm the stalls are gone.
 - 239 tests pass (cloud and laptop); laptop `tsc -b` clean; `vite build` passes in a clean copy.
 
+
+## Lag, round 4 — fast autosave (2026-11-01)
+- Tablet capture after round 3: renderAll p95 1.5 ms, dense page ≈ blank page, but 16 long tasks (p50 55 ms) remained; profiling traced them to autosave (IndexedDB structured clone of 70k+ points + JSON work).
+- `documentFormat.ts`: `stringifyDocument` caches each stroke's JSON in a WeakMap (strokes are immutable once committed), `shareStrokes` option avoids deep-cloning strokes when building the document.
+- `documentStore.ts`: documents are stored as one JSON string (put of a string ≈ 8 ms vs ≈ 58 ms for the object); legacy object records still load (`documentFromRecord`), summaries come from record fields.
+- Verified: old-format page opens in the new build, new-format page reopens after reload, 243 tests pass, `tsc -b` clean.
+- Device-only check still needed: redeploy, capture Perf on a dense page; expect long tasks to fall from 16 toward 0.

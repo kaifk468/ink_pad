@@ -112,6 +112,7 @@ export function useDocuments(host: DocumentHost) {
       template: page.template,
       background: page.background,
       items: hostRef.current.getItems(),
+      shareStrokes: true,
     })
   }
 

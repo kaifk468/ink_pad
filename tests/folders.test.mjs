@@ -48,7 +48,7 @@ test('storage keeps the document format and adds folder stores without touching 
   assert.match(store, /createObjectStore\(FOLDER_STORE/)
   assert.match(store, /createObjectStore\(PLACEMENT_STORE/)
   assert.match(store, /if \(!request\.result\.objectStoreNames\.contains\(STORE\)\)/)
-  assert.match(store, /folderId: folderOf\.get\(id\) \?\? null/)
+  assert.match(store, /folderOf\.get\(record\.id\) \?\? null/)
   assert.match(store, /store\.delete\(id\), PLACEMENT_STORE/)
   const format = await read('documentFormat.ts')
   assert.doesNotMatch(format, /folderId/)

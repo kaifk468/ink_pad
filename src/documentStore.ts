@@ -1,4 +1,4 @@
-import type { InkPadDocument } from './documentFormat'
+import { parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
 
 /** Browser-local library of diagrams (IndexedDB). One record per diagram, keyed by id. */
 const DB_NAME = 'inkpad'
@@ -11,7 +11,32 @@ const CURRENT_KEY = 'inkpad.currentDocument'
 export type DocumentSummary = { id: string; title: string; updatedAt: string; itemCount: number; folderId: string | null }
 export type FolderRecord = { id: string; name: string; parentId: string | null; createdAt: string }
 type PlacementRecord = { docId: string; folderId: string }
-type StoredDocument = { id: string; document: InkPadDocument }
+/**
+ * A diagram is stored as its JSON text plus a small summary, because the browser copies a plain string far faster than a
+ * large nested object (the copy blocks the page, and used to freeze writing on big diagrams). Older records hold the
+ * document object itself; both shapes are read.
+ */
+export type StoredDocument = { id: string; json?: string; title?: string; updatedAt?: string; itemCount?: number; document?: InkPadDocument }
+
+export function toStoredRecord(id: string, document: InkPadDocument): StoredDocument {
+  return { id, json: stringifyDocument(document), title: document.title, updatedAt: document.updatedAt, itemCount: document.items.length }
+}
+
+export function documentFromRecord(record: StoredDocument | undefined): InkPadDocument | null {
+  if (!record) return null
+  if (record.json !== undefined) {
+    const parsed = parseDocument(record.json)
+    if (!parsed.ok) throw new Error(parsed.error)
+    return parsed.document
+  }
+  return record.document ?? null
+}
+
+export function summaryFromRecord(record: StoredDocument, folderId: string | null): DocumentSummary {
+  if (record.json !== undefined) return { id: record.id, title: record.title ?? '', updatedAt: record.updatedAt ?? '', itemCount: record.itemCount ?? 0, folderId }
+  const document = record.document
+  return { id: record.id, title: document?.title ?? '', updatedAt: document?.updatedAt ?? '', itemCount: document?.items.length ?? 0, folderId }
+}
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -51,12 +76,12 @@ export function createDocumentId(): string {
 }
 
 export async function saveStoredDocument(id: string, document: InkPadDocument): Promise<void> {
-  await run('readwrite', (store) => store.put({ id, document } satisfies StoredDocument))
+  await run('readwrite', (store) => store.put(toStoredRecord(id, document)))
 }
 
 export async function loadStoredDocument(id: string): Promise<InkPadDocument | null> {
   const record = await run<StoredDocument | undefined>('readonly', (store) => store.get(id))
-  return record?.document ?? null
+  return documentFromRecord(record)
 }
 
 export async function deleteStoredDocument(id: string): Promise<void> {
@@ -74,7 +99,7 @@ export async function listStoredDocuments(): Promise<DocumentSummary[]> {
   }
   const folderOf = new Map(placements.map((entry) => [entry.docId, entry.folderId]))
   return records
-    .map(({ id, document }) => ({ id, title: document.title, updatedAt: document.updatedAt, itemCount: document.items.length, folderId: folderOf.get(id) ?? null }))
+    .map((record) => summaryFromRecord(record, folderOf.get(record.id) ?? null))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 

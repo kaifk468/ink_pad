@@ -30,6 +30,8 @@ export type DocumentInput = {
   template: DocumentPageTemplate
   background: DocumentPageBackground
   items: CanvasItem[]
+  /** Reuse finished strokes as they are instead of copying them (committed strokes are never changed afterwards). Used for autosave. */
+  shareStrokes?: boolean
 }
 
 export type ParseResult =
@@ -55,12 +57,27 @@ export function createDocument(input: DocumentInput, now = new Date().toISOStrin
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
     page: { template: input.template, background: input.background },
-    items: input.items.map(cloneItem),
+    items: input.items.map((item) => (input.shareStrokes && item.kind === 'stroke' ? item : cloneItem(item))),
   }
 }
 
+// A finished stroke never changes, so its JSON text is made once and reused by every later save.
+const strokeJson = new WeakMap<object, string>()
+
+/** The document as JSON text, identical to JSON.stringify(document) but only serializing strokes it has not seen before. */
 export function stringifyDocument(document: InkPadDocument): string {
-  return JSON.stringify(document)
+  const head = JSON.stringify({ ...document, items: [] })
+  if (!head.endsWith('"items":[]}')) return JSON.stringify(document)
+  const parts = document.items.map((item) => {
+    if (item.kind !== 'stroke') return JSON.stringify(item)
+    let text = strokeJson.get(item)
+    if (text === undefined) {
+      text = JSON.stringify(item)
+      strokeJson.set(item, text)
+    }
+    return text
+  })
+  return `${head.slice(0, -2)}${parts.join(',')}]}`
 }
 
 /** Largest used id per kind + 1, so new items never collide with loaded ones. */
