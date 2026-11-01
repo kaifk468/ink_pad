@@ -52,6 +52,8 @@ type DeviceRect = { x: number; y: number; width: number; height: number }
 const DRAW_SWITCHES = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
 const LIVE_OVERLAY_ENABLED = DRAW_SWITCHES.get('overlay') !== 'off'
 const PAGE_CACHE_ENABLED = DRAW_SWITCHES.get('cache') !== 'off'
+// ?desync=on asks the browser for its low-latency canvas path (skips waiting for the compositor) for the live-stroke overlay.
+const LIVE_OVERLAY_DESYNCHRONIZED = DRAW_SWITCHES.get('desync') === 'on'
 
 /** The canvas area (device pixels) a growing stroke can touch: its bounding box plus line width and curve overshoot. */
 function getDirtyRect(points: Point[], strokeWidth: number, viewport: Viewport, dpr: number, canvasWidth: number, canvasHeight: number): DeviceRect | null {
@@ -724,7 +726,7 @@ function App() {
     // the screen is redrawn or copied: each frame only repaints the stroke's own area on that canvas. The page canvas is
     // painted once when the stroke starts and once when it ends. Anything else (eraser, shapes, pinch) uses the page canvas.
     const liveCanvas = LIVE_OVERLAY_ENABLED ? liveCanvasRef.current : null
-    const liveContext = dirtyRect && liveCanvas ? liveCanvas.getContext('2d') : null
+    const liveContext = dirtyRect && liveCanvas ? liveCanvas.getContext('2d', LIVE_OVERLAY_DESYNCHRONIZED ? { desynchronized: true } : undefined) : null
     const overlayCapable = liveContext !== null && liveCanvas !== null && liveStroke !== null
     const drawLiveStroke = (rect: DeviceRect) => {
       if (!liveContext || !liveStroke) return

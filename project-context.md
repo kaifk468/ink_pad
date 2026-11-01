@@ -348,3 +348,11 @@
   - Original: renderAll p50 5.7-11.9 ms, latest-sample-to-render p50 9-16 ms, frame gap p50 11-17 ms / p95 17-22 ms, 0 long tasks, 1 long animation frame, pen delivered at ~74-92 Hz with 1 sample per move.
   - Input handling code is identical between the builds, so the different pen rate comes from the device/session, not our code. Not yet explained why the current build's frame cadence is slower despite far less JS work (suspects: browser paint/composite cost of the extra layers, or the device lowering clocks/refresh when the page does little work).
 - Next: capture the current build with default, `?overlay=off`, `?cache=off` on equal empty pages and compare frame gap and long animation frames.
+
+## Three-way capture on the tablet: default vs ?overlay=off vs ?cache=off (2026-11-01)
+- Equal-ish pages (25-80 strokes), Raw mode, DPR 2.125, pen at ~360 Hz in all three:
+  - default: renderAll p50 0.3-0.4 ms, latest-sample-to-render p50 ~5 ms, frame gap p50 22 ms (p95 33), 0 long tasks, 8 long animation frames.
+  - ?overlay=off: renderAll 0.6-0.9 ms, latest-sample-to-render ~5.5 ms, frame gap p50 16.7 (short) / 22 (long), 16 long animation frames.
+  - ?cache=off (full redraw each frame, like the original): renderAll 7-10 ms, latest-sample-to-render 11-14 ms, frame gap p50 11 ms (~90 Hz), 2 long tasks, 21 long animation frames.
+- Reading: the less work a frame does, the slower the browser/tablet delivers frames (cadence halves to ~45 Hz). Latency to screen is best in the default build but ink updates only every other display frame. Cause of the halved cadence is outside our JS (compositor/GPU/OS frame pacing) - not proven.
+- Added `?desync=on` (opt-in): requests Chrome's low-latency canvas path for the live-stroke overlay. Rendering unchanged (pixel hash identical). Device-only check needed.

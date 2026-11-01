@@ -64,3 +64,8 @@ test('the overlay and the page cache can be switched off from the address for on
   assert.match(app, /DRAW_SWITCHES\.get\('cache'\) !== 'off'/)
   assert.match(app, /const liveCanvas = LIVE_OVERLAY_ENABLED \? liveCanvasRef\.current : null/)
 })
+
+test('the low-latency canvas hint is opt-in and only for the live-stroke overlay', () => {
+  assert.match(app, /LIVE_OVERLAY_DESYNCHRONIZED = DRAW_SWITCHES\.get\('desync'\) === 'on'/)
+  assert.match(app, /liveCanvas\.getContext\('2d', LIVE_OVERLAY_DESYNCHRONIZED \? \{ desynchronized: true \} : undefined\)/)
+})
