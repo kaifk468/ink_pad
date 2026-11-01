@@ -376,3 +376,7 @@
 - Conservative: a point counts as hidden only if the whole pen line (up to 1.25x width, plus 2 units) lies inside the eraser, using pressure-scaled eraser width per segment; segments between hidden points are sampled every 6 units. Shape strokes (arrow/line) are never trimmed. Rectangles are treated as touched wherever they sit in the list, because connectors redraw their boxes.
 - Needs a tablet check: erase a dense test-ink area, then write; speed should return, and erased edges should look the same as before.
 - Checks run: 265 tests pass (9 new in `tests/eraserCompaction.test.mjs`), `tsc -b` clean.
+
+## Draw readout (2026-11-02)
+- Dev-only `?debug=on` on the address shows a small readout at the bottom-left of the canvas: active draw path (direct/cached), visible ink points, items, eraser points and erasers on the page. It updates between strokes and is used to see whether a page that looks empty after erasing still counts as heavy.
+- Headless reproduction (2x dense test ink, then erase every row with the stroke eraser or the whole-object eraser): draw path returns to direct and visible points drop to ~2-4k, so no stale cache/mode/overlay state was found. Ink the pen leaves behind (screen edges, gaps between sweeps) still counts, and above ~7,800 visible points the page stays on the cached path.

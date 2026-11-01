@@ -45,7 +45,7 @@ test('the drawing path changes only past the limit, with room before it changes 
 })
 
 test('renderAll picks the path from the visible ink, only between strokes, and skips off-screen strokes when redrawing', () => {
-  assert.match(app, /if \(!benchmarkBackground && liveStroke === null\) \{\s*const nextMode = chooseDrawMode\(drawModeRef\.current, countVisiblePoints\(items, view\), DIRECT_MAX_VISIBLE_POINTS\)/)
+  assert.match(app, /if \(!benchmarkBackground && liveStroke === null\) \{\s*const visiblePoints = countVisiblePoints\(items, view\)[\s\S]*?const nextMode = chooseDrawMode\(drawModeRef\.current, visiblePoints, DIRECT_MAX_VISIBLE_POINTS\)/)
   assert.match(app, /const cacheAllowed = !benchmarkBackground && editingTextId === null && PAGE_CACHE_ENABLED && drawMode === 'cached'/)
   assert.match(app, /const liveCanvas = LIVE_OVERLAY_ENABLED && drawMode === 'cached' \? liveCanvasRef\.current : null/)
   assert.match(app, /if \(!isItemVisible\(item, view\)\) return/)

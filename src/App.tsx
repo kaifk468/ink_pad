@@ -95,6 +95,7 @@ function App() {
   // reused each frame, so a frame costs the same however much is written. Dropped as soon as the stroke ends.
   const historyLayerRef = useRef<HTMLCanvasElement | null>(null)
   const liveCanvasRef = useRef<HTMLCanvasElement>(null)
+  const drawReadoutRef = useRef<HTMLDivElement>(null)
   const liveOverlayActiveRef = useRef(false)
   const drawModeRef = useRef<DrawMode>('direct')
   const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
@@ -704,7 +705,18 @@ function App() {
     const view = viewRectOf(viewport, viewCssWidth, viewCssHeight)
     // Which drawing path to use depends on how much ink is in view, and only changes between strokes.
     if (!benchmarkBackground && liveStroke === null) {
-      const nextMode = chooseDrawMode(drawModeRef.current, countVisiblePoints(items, view), DIRECT_MAX_VISIBLE_POINTS)
+      const visiblePoints = countVisiblePoints(items, view)
+      const nextMode = chooseDrawMode(drawModeRef.current, visiblePoints, DIRECT_MAX_VISIBLE_POINTS)
+      if (import.meta.env.DEV) {
+        canvas.dataset.visiblePoints = String(visiblePoints)
+        const readout = drawReadoutRef.current
+        if (readout) {
+          let erasers = 0
+          let eraserPoints = 0
+          for (const item of items) if (item.kind === 'stroke' && item.erase) { erasers += 1; eraserPoints += item.points.length }
+          readout.textContent = `draw: ${nextMode} · visible ink points ${visiblePoints} · eraser points on page ${eraserPoints} · items ${items.length} · erasers ${erasers}`
+        }
+      }
       if (nextMode !== drawModeRef.current) {
         drawModeRef.current = nextMode
         canvas.dataset.drawMode = nextMode
@@ -2071,6 +2083,7 @@ function App() {
           onPointerLeave={onPointerLeave}
         />
         <canvas ref={liveCanvasRef} className="live-canvas" aria-hidden="true" />
+        {import.meta.env.DEV && DRAW_SWITCHES.get('debug') === 'on' && <div ref={drawReadoutRef} className="draw-readout" aria-hidden="true" />}
         {textEditor && <TextEditorOverlay
           key={`${textEditor.itemId ?? 'new'}:${textEditor.x}:${textEditor.y}`}
           editor={textEditor}
