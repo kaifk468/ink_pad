@@ -82,6 +82,8 @@ function App() {
   // While one pen stroke is being drawn, everything already on the page is painted once into this layer and
   // reused each frame, so a frame costs the same however much is written. Dropped as soon as the stroke ends.
   const historyLayerRef = useRef<HTMLCanvasElement | null>(null)
+  const liveCanvasRef = useRef<HTMLCanvasElement>(null)
+  const liveOverlayActiveRef = useRef(false)
   const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
   const minimapRenderedAtRef = useRef(0)
   // True while a pinch or three-finger pan is moving: the page is shown as a moved copy of a saved picture, then redrawn sharply once it settles.
@@ -710,9 +712,50 @@ function App() {
     // With a pen stroke over a saved picture of the page, only the area around the stroke changes, so only that area is repainted.
     // Mid-gesture the saved picture is drawn straight onto the canvas, skipping the ink layer.
     const directGesture = cacheUsable && gestureFrame && !sameViewport
-    const dirty = penStrokeFrame && sameViewport && !gestureFrame && liveStroke && !liveStroke.shape && shapePreviewRef.current === null
+    const dirtyRect = penStrokeFrame && sameViewport && !gestureFrame && liveStroke && !liveStroke.shape && shapePreviewRef.current === null
       ? getDirtyRect(liveStroke.points, liveStroke.width, viewport, dpr, canvas.width, canvas.height)
       : null
+    // The stroke being written lives on its own transparent canvas above the page, so while writing, nothing the size of
+    // the screen is redrawn or copied: each frame only repaints the stroke's own area on that canvas. The page canvas is
+    // painted once when the stroke starts and once when it ends. Anything else (eraser, shapes, pinch) uses the page canvas.
+    const liveCanvas = liveCanvasRef.current
+    const liveContext = dirtyRect && liveCanvas ? liveCanvas.getContext('2d') : null
+    const overlayCapable = liveContext !== null && liveCanvas !== null && liveStroke !== null
+    const drawLiveStroke = (rect: DeviceRect) => {
+      if (!liveContext || !liveStroke) return
+      liveContext.setTransform(1, 0, 0, 1, 0, 0)
+      liveContext.clearRect(rect.x, rect.y, rect.width, rect.height)
+      liveContext.save()
+      liveContext.beginPath()
+      liveContext.rect(rect.x, rect.y, rect.width, rect.height)
+      liveContext.clip()
+      liveContext.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
+      liveContext.beginPath()
+      liveContext.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
+      liveContext.clip()
+      drawItem(liveContext, liveStroke)
+      liveContext.restore()
+    }
+    if (overlayCapable && liveOverlayActiveRef.current && liveCanvas!.width === canvas.width && liveCanvas!.height === canvas.height) {
+      const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
+      drawLiveStroke(dirtyRect!)
+      if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
+      const minimapNow = performance.now()
+      if (minimapNow - minimapRenderedAtRef.current > MINIMAP_LIVE_REFRESH_MS) {
+        minimapRenderedAtRef.current = minimapNow
+        renderNavigator()
+      }
+      if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
+      return
+    }
+    if (liveOverlayActiveRef.current) {
+      const staleContext = liveCanvas?.getContext('2d')
+      if (staleContext && liveCanvas) { staleContext.setTransform(1, 0, 0, 1, 0, 0); staleContext.clearRect(0, 0, liveCanvas.width, liveCanvas.height) }
+      liveOverlayActiveRef.current = false
+    }
+    // The frame that starts the overlay paints the page without the stroke; the stroke itself then goes on the overlay.
+    const startOverlay = overlayCapable
+    const dirty = startOverlay ? null : dirtyRect
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     if (dirty) {
       ctx.save()
@@ -811,7 +854,7 @@ function App() {
       }
     }
     if (measureFrame) diagnostics?.recordHistoryInkRender(performance.now() - historyInkStartedAt)
-    if (activeStrokeRef.current) {
+    if (activeStrokeRef.current && !startOverlay) {
       const preview = shapePreviewRef.current
       const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
       drawItem(inkContext, preview ?? activeStrokeRef.current)
@@ -828,6 +871,14 @@ function App() {
     } else if (dirty) ctx.drawImage(inkLayer, dirty.x, dirty.y, dirty.width, dirty.height, dirty.x, dirty.y, dirty.width, dirty.height)
     else ctx.drawImage(inkLayer, 0, 0)
     if (measureFrame) diagnostics?.recordCompositeRender(performance.now() - compositeStartedAt)
+    if (startOverlay && liveCanvas && dirtyRect) {
+      if (liveCanvas.width !== canvas.width) liveCanvas.width = canvas.width
+      if (liveCanvas.height !== canvas.height) liveCanvas.height = canvas.height
+      const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
+      drawLiveStroke({ x: 0, y: 0, width: liveCanvas.width, height: liveCanvas.height })
+      liveOverlayActiveRef.current = true
+      if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
+    }
     ctx.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
     const activeConnector = activeConnectorRef.current
     if (activeConnector) {
@@ -1968,6 +2019,7 @@ function App() {
           onLostPointerCapture={onPointerEnd}
           onPointerLeave={onPointerLeave}
         />
+        <canvas ref={liveCanvasRef} className="live-canvas" aria-hidden="true" />
         {textEditor && <TextEditorOverlay
           key={`${textEditor.itemId ?? 'new'}:${textEditor.x}:${textEditor.y}`}
           editor={textEditor}
