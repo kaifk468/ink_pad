@@ -39,6 +39,13 @@ const MINIMAP_LIVE_REFRESH_MS = 300
 const GESTURE_SETTLE_MS = 140
 const ZOOM_STEP = 1.25
 
+/** True when the saved page picture was drawn from exactly these items (same objects in the same order). */
+function sameItems(snapshot: CanvasItem[], items: CanvasItem[], count: number): boolean {
+  if (snapshot.length !== count || items.length < count) return false
+  for (let index = 0; index < count; index += 1) if (snapshot[index] !== items[index]) return false
+  return true
+}
+
 type DeviceRect = { x: number; y: number; width: number; height: number }
 
 /** The canvas area (device pixels) a growing stroke can touch: its bounding box plus line width and curve overshoot. */
@@ -75,7 +82,7 @@ function App() {
   // While one pen stroke is being drawn, everything already on the page is painted once into this layer and
   // reused each frame, so a frame costs the same however much is written. Dropped as soon as the stroke ends.
   const historyLayerRef = useRef<HTMLCanvasElement | null>(null)
-  const historyCacheRef = useRef<{ items: CanvasItem[]; count: number; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
+  const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
   const minimapRenderedAtRef = useRef(0)
   // True while a pinch or three-finger pan is moving: the page is shown as a moved copy of a saved picture, then redrawn sharply once it settles.
   const viewportGestureRef = useRef(false)
@@ -675,11 +682,31 @@ function App() {
     const liveStroke = activeStrokeRef.current
     const penStrokeFrame = !benchmarkBackground && editingTextId === null && liveStroke !== null && liveStroke.kind === 'stroke' && !liveStroke.erase
     const gestureFrame = !benchmarkBackground && editingTextId === null && viewportGestureRef.current
-    const cacheable = penStrokeFrame || gestureFrame
+    // The picture of everything already on the page is kept between frames and between strokes. A finished pen stroke is
+    // added to it directly, so neither starting nor ending a stroke redraws the whole page.
+    const cacheAllowed = !benchmarkBackground && editingTextId === null
     const cache = historyCacheRef.current
-    const cacheUsable = cacheable && cache !== null && historyLayerRef.current !== null && cache.items === items && cache.count === items.length
-      && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height
-    const sameViewport = cacheUsable && cache.scale === viewport.scale && cache.offsetX === viewport.offsetX && cache.offsetY === viewport.offsetY
+    const historyLayerNow = historyLayerRef.current
+    const cacheBase = cacheAllowed && cache !== null && historyLayerNow !== null
+      && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height && cache.mode === strokeDisplayMode
+    const viewportSame = cacheBase && cache!.scale === viewport.scale && cache!.offsetX === viewport.offsetX && cache!.offsetY === viewport.offsetY
+    let itemsMatch = cacheBase && sameItems(cache!.snapshot, items, items.length)
+    if (cacheBase && !itemsMatch && viewportSame && items.length === cache!.snapshot.length + 1 && items[items.length - 1].kind === 'stroke' && sameItems(cache!.snapshot, items, cache!.snapshot.length)) {
+      const historyContext = historyLayerNow!.getContext('2d')
+      if (historyContext) {
+        historyContext.save()
+        historyContext.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
+        historyContext.beginPath()
+        historyContext.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
+        historyContext.clip()
+        drawItem(historyContext, items[items.length - 1])
+        historyContext.restore()
+        cache!.snapshot = items.slice()
+        itemsMatch = true
+      }
+    }
+    const cacheUsable = itemsMatch
+    const sameViewport = cacheUsable && viewportSame
     // With a pen stroke over a saved picture of the page, only the area around the stroke changes, so only that area is repainted.
     // Mid-gesture the saved picture is drawn straight onto the canvas, skipping the ink layer.
     const directGesture = cacheUsable && gestureFrame && !sameViewport
@@ -770,14 +797,14 @@ function App() {
       inkContext.restore()
     } else {
       canvasItemsForRendering(items).forEach((item) => { if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(inkContext, item) })
-      if (cacheable) {
+      if (cacheAllowed) {
         const historyLayer = getReusableCanvasLayer(historyLayerRef, canvas.width, canvas.height)
         const historyContext = historyLayer.getContext('2d')
         if (historyContext) {
           historyContext.setTransform(1, 0, 0, 1, 0, 0)
           historyContext.clearRect(0, 0, historyLayer.width, historyLayer.height)
           historyContext.drawImage(inkLayer, 0, 0)
-          historyCacheRef.current = { items, count: items.length, scale: viewport.scale, offsetX: viewport.offsetX, offsetY: viewport.offsetY, dpr, width: canvas.width, height: canvas.height }
+          historyCacheRef.current = { snapshot: items.slice(), mode: strokeDisplayMode, scale: viewport.scale, offsetX: viewport.offsetX, offsetY: viewport.offsetY, dpr, width: canvas.width, height: canvas.height }
         }
       } else {
         historyCacheRef.current = null
@@ -891,7 +918,7 @@ function App() {
     }
     if (measureFrame) diagnostics?.recordMinimapRender(performance.now() - minimapStartedAt)
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
-  }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageTemplate, renderNavigator, width])
+  }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageTemplate, renderNavigator, strokeDisplayMode, width])
 
   const applyViewport = (viewport: Viewport, gesture = false) => {
     if (textEditorRef.current) commitTextEditor()

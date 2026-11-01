@@ -4,17 +4,20 @@ import { readFile } from 'node:fs/promises'
 
 const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
 
-test('while a pen stroke is drawn, the ink already on the page is cached instead of redrawn every frame', () => {
+test('the ink already on the page is kept as a picture between frames and between strokes', () => {
   assert.match(app, /historyLayerRef/)
   assert.match(app, /historyCacheRef/)
-  // only a plain pen stroke uses the cache; erasers, benchmarks and text editing always redraw everything
-  assert.match(app, /const penStrokeFrame = !benchmarkBackground && editingTextId === null && liveStroke !== null && liveStroke\.kind === 'stroke' && !liveStroke\.erase/)
-  // the cache is only reused for the same items, viewport, pixel density and canvas size
-  for (const key of ['cache.items === items', 'cache.count === items.length', 'cache.scale === viewport.scale', 'cache.offsetX === viewport.offsetX', 'cache.offsetY === viewport.offsetY', 'cache.dpr === dpr', 'cache.width === canvas.width', 'cache.height === canvas.height']) {
+  // never used for benchmark runs or while a text label is being edited
+  assert.match(app, /const cacheAllowed = !benchmarkBackground && editingTextId === null/)
+  // reused only for the same items (same objects, same order), display mode, pixel density and canvas size
+  for (const key of ['sameItems(cache!.snapshot, items, items.length)', 'cache.mode === strokeDisplayMode', 'cache.dpr === dpr', 'cache.width === canvas.width', 'cache.height === canvas.height', 'cache!.scale === viewport.scale', 'cache!.offsetX === viewport.offsetX', 'cache!.offsetY === viewport.offsetY']) {
     assert.ok(app.includes(key), key)
   }
-  // outside a pen stroke the cache is dropped
-  assert.match(app, /historyCacheRef\.current = null/)
+  // a finished pen stroke is drawn onto the picture instead of redrawing the whole page
+  assert.match(app, /items\.length === cache!\.snapshot\.length \+ 1 && items\[items\.length - 1\]\.kind === 'stroke'/)
+  assert.match(app, /drawItem\(historyContext, items\[items\.length - 1\]\)/)
+  // no longer thrown away when the stroke ends
+  assert.doesNotMatch(app, /cacheable/)
 })
 
 test('the minimap is not redrawn on every frame while writing', () => {
