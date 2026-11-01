@@ -4,3 +4,4 @@ dist/
 _to_delete/
 Claude outputs/
 .claude/settings.local.json
+.claude/settings.json
