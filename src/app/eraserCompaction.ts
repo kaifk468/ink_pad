@@ -161,21 +161,51 @@ function trimStroke(stroke: Stroke, segments: EraserSegment[], nextId: () => num
   return result
 }
 
+const simplified = new WeakSet<object>()
+
+/**
+ * The pen reports a point every millisecond or two, so one eraser sweep holds hundreds of points far closer together than the
+ * eraser is wide. Points closer than a third of the eraser width to the last kept one change the swept area by well under a pixel
+ * and are dropped. The first and last point are always kept.
+ */
+export function simplifyEraserStroke(stroke: Stroke): Stroke {
+  if (simplified.has(stroke) || stroke.points.length <= 2) return stroke
+  const spacing = Math.max(2, stroke.width * 0.3)
+  const points = stroke.points
+  const kept: Point[] = [points[0]]
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const last = kept[kept.length - 1]
+    if (Math.hypot(points[index].x - last.x, points[index].y - last.y) >= spacing) kept.push(points[index])
+  }
+  kept.push(points[points.length - 1])
+  const result = kept.length < points.length ? { ...stroke, points: kept } : stroke
+  simplified.add(result)
+  return result
+}
+
 /**
  * Applies the cleanup for the eraser stroke that was just added at the end of `items`. Returns the same array when nothing
  * could be removed, otherwise a new array (stroke objects that were not touched are reused).
  */
 export function compactAfterErase(items: CanvasItem[], nextId: () => number): CanvasItem[] {
-  const last = items[items.length - 1]
-  if (!last || last.kind !== 'stroke' || !last.erase || last.points.length === 0) return items
+  const finished = items[items.length - 1]
+  if (!finished || finished.kind !== 'stroke' || !finished.erase || finished.points.length === 0) return items
+  const last = simplifyEraserStroke(finished)
   const { segments, bounds } = eraserSegments(last)
   if (!segments.length) return items
 
-  let changed = false
+  let changed = last !== finished
   const next: CanvasItem[] = []
   for (let index = 0; index < items.length - 1; index += 1) {
-    const item = items[index]
-    if (item.kind !== 'stroke' || item.erase || item.shape || !boundsOverlap(strokeBounds(item), bounds)) {
+    let item = items[index]
+    // eraser strokes saved earlier (or by older versions) get the same thinning
+    if (item.kind === 'stroke' && item.erase) {
+      const thinned = simplifyEraserStroke(item)
+      if (thinned !== item) { item = thinned; changed = true }
+      next.push(item)
+      continue
+    }
+    if (item.kind !== 'stroke' || item.shape || !boundsOverlap(strokeBounds(item), bounds)) {
       next.push(item)
       continue
     }

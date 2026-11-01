@@ -7,7 +7,7 @@ const read = (path) => readFile(new URL(`../src/${path}`, import.meta.url), 'utf
 const js = (src) => ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 } }).outputText
 const visible = js(await read('app/visibleInk.ts'))
 const compaction = js(await read('app/eraserCompaction.ts')).replace("from './visibleInk'", `from 'data:text/javascript;base64,${Buffer.from(visible).toString('base64')}'`)
-const { compactAfterErase } = await import(`data:text/javascript;base64,${Buffer.from(compaction).toString('base64')}`)
+const { compactAfterErase, simplifyEraserStroke } = await import(`data:text/javascript;base64,${Buffer.from(compaction).toString('base64')}`)
 const app = await read('App.tsx')
 
 let id = 100
@@ -77,4 +77,28 @@ test('finishing an eraser stroke runs the cleanup inside the same undo step', ()
   assert.match(app, /strokesRef\.current\.push\(stroke\)\n\s+if \(stroke\.kind === 'stroke' && stroke\.erase\) strokesRef\.current = compactAfterErase\(strokesRef\.current, \(\) => nextStrokeIdRef\.current\+\+\)/)
   // history is recorded before the eraser stroke is added, so one undo brings back everything that was erased
   assert.match(app, /saveHistory\(\)\n\s+let stroke = shapePreviewRef\.current/)
+})
+
+test('a dense eraser sweep is thinned, keeping both ends and the swept path', () => {
+  const dense = eraser(0, 100, 300, 100)
+  dense.points = Array.from({ length: 900 }, (_, i) => ({ x: i / 3, y: 100 + Math.sin(i / 60) * 5, pressure: 0.5 }))
+  const thin = simplifyEraserStroke(dense)
+  assert.ok(thin.points.length < 120, `thinned to ${thin.points.length}`)
+  assert.deepEqual(thin.points[0], dense.points[0])
+  assert.deepEqual(thin.points[thin.points.length - 1], dense.points[dense.points.length - 1])
+  for (let i = 1; i < thin.points.length - 1; i += 1) assert.ok(Math.hypot(thin.points[i].x - thin.points[i - 1].x, thin.points[i].y - thin.points[i - 1].y) <= 28 * 0.3 + 1.5)
+  assert.equal(simplifyEraserStroke(thin), thin, 'thinning twice changes nothing')
+})
+
+test('ink under a thinned eraser is still removed, and older dense erasers on the page are thinned too', () => {
+  const old = eraser(0, 400, 300, 400)
+  old.points = Array.from({ length: 600 }, (_, i) => ({ x: i / 2, y: 400, pressure: 0.5 }))
+  const wide = line(0, 100, 300, 100, 61, { id: 7 })
+  const sweep = eraser(0, 100, 300, 100)
+  sweep.points = Array.from({ length: 900 }, (_, i) => ({ x: i / 3, y: 100, pressure: 0.5 }))
+  const result = compactAfterErase([line(0, 400, 300, 400, 61, { id: 8 }), old, wide, sweep], nextId)
+  assert.ok(!result.some((item) => item.id === 7), 'the covered line is gone')
+  const erasers = result.filter((item) => item.erase)
+  assert.equal(erasers.length, 1)
+  assert.ok(erasers[0].points.length < 150, 'the older eraser was thinned')
 })

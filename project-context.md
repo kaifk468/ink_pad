@@ -380,3 +380,8 @@
 ## Draw readout (2026-11-02)
 - Dev-only `?debug=on` on the address shows a small readout at the bottom-left of the canvas: active draw path (direct/cached), visible ink points, items, eraser points and erasers on the page. It updates between strokes and is used to see whether a page that looks empty after erasing still counts as heavy.
 - Headless reproduction (2x dense test ink, then erase every row with the stroke eraser or the whole-object eraser): draw path returns to direct and visible points drop to ~2-4k, so no stale cache/mode/overlay state was found. Ink the pen leaves behind (screen edges, gaps between sweeps) still counts, and above ~7,800 visible points the page stays on the cached path.
+
+## Eraser thinning (2026-11-02)
+- Tablet readout after erasing dense ink showed the page almost empty of ink (~700 points) but 12,805 points in 45 eraser strokes (pen reports a point every 1-2 ms), which kept the page above the cached-path limit.
+- `simplifyEraserStroke` (in `src/app/eraserCompaction.ts`) drops eraser points closer than a third of the eraser width (min 2 units) to the last kept one, keeping both ends. `compactAfterErase` applies it to the new eraser stroke and to every older eraser stroke on the page (so existing pages are thinned the next time something is erased).
+- Checks run: 267 tests pass, `tsc -b` clean. Headless: after a full stroke-eraser sweep of 2x dense ink the draw path returns to direct. Needs a tablet check with `?debug=on`.
