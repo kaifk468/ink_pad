@@ -26,6 +26,7 @@ import { ToolDock } from './app/ToolDock'
 import { TopLeftBar } from './app/TopLeftBar'
 import { ZoomControls } from './app/ZoomControls'
 import { statusLabel } from './FilePanel'
+import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { DEFAULT_TEXT_FONT_SIZE, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { useDocuments } from './app/useDocuments'
@@ -100,7 +101,7 @@ function App() {
 
   const {
     filePanelOpen, setFilePanelOpen, refreshLibrary, docTitle, saveStatus, fileNotice, library, folders, currentDocId,
-    storage, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
+    storage, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile,
@@ -1969,6 +1970,8 @@ function App() {
         onDeleteFolder={(id) => void deleteFolder(id)}
         onMoveDiagram={(docId, folderId) => void moveDiagram(docId, folderId)}
         notice={fileNotice}
+        storage={storage}
+        onOpenStorage={() => setStoragePanelOpen(true)}
         diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open) }}
       />
       <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
@@ -2020,6 +2023,17 @@ function App() {
         onDone={commitClassBox}
         onCancel={() => setClassBoxEditor(null)}
       />}
+      {storagePanelOpen && <StoragePanel
+        storage={storage}
+        saveStatus={saveStatus}
+        notice={fileNotice}
+        onClose={() => setStoragePanelOpen(false)}
+        onChooseDeviceFolder={() => void chooseDeviceFolder()}
+        onReconnect={() => void reconnectDeviceFolder()}
+        onConnectDrive={() => void connectDrive()}
+        onUseBrowserStorage={() => void useBrowserStorage()}
+        onCopyBrowserHere={() => void copyBrowserToDevice()}
+      />}
       {filePanelOpen && <FilePanel
         title={docTitle}
         saveStatus={saveStatus}
@@ -2028,11 +2042,6 @@ function App() {
         currentId={currentDocId}
         canExport={hasInk}
         storage={storage}
-        onChooseDeviceFolder={() => void chooseDeviceFolder()}
-        onReconnectDeviceFolder={() => void reconnectDeviceFolder()}
-        onConnectDrive={() => void connectDrive()}
-        onUseBrowserStorage={() => void useBrowserStorage()}
-        onCopyBrowserToDevice={() => void copyBrowserToDevice()}
         onClose={() => setFilePanelOpen(false)}
         onTitleChange={renameDiagram}
         onNew={() => void newDiagram()}

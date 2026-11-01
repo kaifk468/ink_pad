@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DocumentSummary, FolderRecord } from '../documentStore'
 import { FoldersSidebar } from './FoldersSidebar'
+import { storageLabel } from '../StoragePanel'
+import type { StorageInfo } from './useDocuments'
 import { PAGE_BACKGROUND_COLORS, type PageBackground } from '../pageBackground'
 import type { PageTemplate } from '../pageTemplates'
 
@@ -25,6 +27,8 @@ type TopLeftBarProps = {
   onDeleteFolder: (id: string) => void
   onMoveDiagram: (docId: string, folderId: string | null) => void
   notice: string | null
+  storage: StorageInfo
+  onOpenStorage: () => void
   diagnostics: { enabled: boolean; open: boolean; onToggle: () => void }
 }
 
@@ -93,6 +97,10 @@ export function TopLeftBar(props: TopLeftBarProps) {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>
             <span className="menu-row-label">File…</span><span className="menu-row-hint">Save, open, export</span>
           </button>
+          <button className="menu-row storage-row" type="button" aria-haspopup="dialog" onClick={() => { props.onOpenStorage(); setMenuOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17 8.5a4.75 4.75 0 0 1 .5 9.5z"/></svg>
+            <span className="menu-row-label">Storage…</span><span className="menu-row-hint">{props.storage.locked ? 'Sign in needed' : props.storage.kind === 'drive' ? 'Google Drive' : props.storage.kind === 'device' ? 'Device folder' : 'This browser'}</span>
+          </button>
           <div className="menu-divider" role="separator" />
           <div className="menu-row menu-choice-row" role="group" aria-label="Page template">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M4 15h16"/></svg>
@@ -141,6 +149,10 @@ export function TopLeftBar(props: TopLeftBarProps) {
         onDeleteFolder={props.onDeleteFolder}
         onMoveDiagram={props.onMoveDiagram}
         notice={props.notice}
+        storageText={storageLabel(props.storage)}
+        storageLocked={props.storage.locked}
+        showConnectHint={props.storage.kind === 'browser'}
+        onChangeStorage={() => { props.onOpenStorage(); setFoldersOpen(false) }}
       />}
     </div>
   )

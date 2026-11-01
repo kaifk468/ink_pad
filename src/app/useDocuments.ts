@@ -71,6 +71,7 @@ export function useDocuments(host: DocumentHost) {
   hostRef.current = host
 
   const [filePanelOpen, setFilePanelOpen] = useState(false)
+  const [storagePanelOpen, setStoragePanelOpen] = useState(false)
   const [docTitle, setDocTitle] = useState(DEFAULT_DOCUMENT_TITLE)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [fileNotice, setFileNotice] = useState<string | null>(null)
@@ -403,7 +404,7 @@ export function useDocuments(host: DocumentHost) {
           // The browser needs a tap before Google sign-in can open again.
           setStorage({ kind: 'drive', folderName: null, locked: true, supported: isDeviceFolderSupported() })
           setSaveStatus('locked')
-          setFilePanelOpen(true)
+          setStoragePanelOpen(true)
           return
         }
         if (cancelled) return
@@ -423,7 +424,7 @@ export function useDocuments(host: DocumentHost) {
             // Autosave stays off until the person taps Reconnect, because the browser needs a tap to allow the folder again.
             setStorage({ kind: 'device', folderName: handle.name, locked: true, supported: true })
             setSaveStatus('locked')
-            setFilePanelOpen(true)
+            setStoragePanelOpen(true)
             return
           }
           setStorage({ kind: 'device', folderName: handle.name, locked: false, supported: true })
@@ -567,7 +568,7 @@ export function useDocuments(host: DocumentHost) {
 
   return {
     filePanelOpen, setFilePanelOpen, refreshLibrary, docTitle, saveStatus, fileNotice, library, folders, currentDocId,
-    storage, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
+    storage, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile,

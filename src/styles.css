@@ -515,3 +515,9 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .file-panel-storage .file-panel-actions { margin-top: 8px; }
 .file-panel-primary { border-color: #475fdb !important; background: #475fdb !important; color: #fff !important; font-weight: 700; }
 .navigator-status.status-locked { color: #b3261e; font-weight: 700; }
+
+.folders-storage { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: 9px; background: #f1f2f5; color: #343944; font-size: 12px; }
+.folders-storage-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folders-storage button { flex: 0 0 auto; min-height: 32px; padding: 0 10px; border: 1px solid #d5d8de; border-radius: 8px; background: #fff; color: #343944; font: inherit; font-weight: 600; cursor: pointer; }
+.folders-hint { margin: 0; padding: 0 4px; color: #7b818d; font-size: 11px; line-height: 1.4; }
+.storage-current { margin: 0; font-size: 13px; line-height: 1.4; }

@@ -21,11 +21,6 @@ type FilePanelProps = {
   onExportPng: (scale: 1 | 2) => void
   canExport: boolean
   storage: StorageInfo
-  onChooseDeviceFolder: () => void
-  onReconnectDeviceFolder: () => void
-  onConnectDrive: () => void
-  onUseBrowserStorage: () => void
-  onCopyBrowserToDevice: () => void
 }
 
 export const STATUS_LABEL: Record<SaveStatus, string> = {
@@ -115,23 +110,6 @@ export function FilePanel(props: FilePanelProps) {
           <button type="button" disabled={!props.canExport} onClick={() => props.onExportPng(2)}>PNG @2x</button>
         </div>
         <p className="file-panel-hint">Images are cropped to your drawing and include the sheet color and page style.</p>
-
-        <h3>Storage</h3>
-        <div className="file-panel-storage">
-          {props.storage.kind === 'browser' && <p className="file-panel-hint">Diagrams are saved in this browser. The browser can clear them, so keep a device folder or export copies for anything important.</p>}
-          {props.storage.kind === 'device' && !props.storage.locked && <p className="file-panel-hint">Saving into your device folder “{props.storage.folderName}”. Folders you make in InkPad are real folders there, and each diagram is a .inkpad file.</p>}
-          {props.storage.kind === 'device' && props.storage.locked && <p className="file-panel-notice" role="alert">Your device folder “{props.storage.folderName}” needs permission again after a restart. Nothing is being saved until you reconnect.</p>}
-          {props.storage.kind === 'drive' && !props.storage.locked && <p className="file-panel-hint">Saving to your Google Drive, in a private InkPad area that only this app can open (it does not appear in your normal Drive files). Folders and diagrams keep the same hierarchy on every device you sign in on.</p>}
-          {props.storage.kind === 'drive' && props.storage.locked && <p className="file-panel-notice" role="alert">Google needs you to sign in again. Nothing is being saved until you do. Your drawing stays on screen.</p>}
-          <div className="file-panel-actions">
-            {props.storage.locked && <button type="button" className="file-panel-primary" onClick={props.onReconnectDeviceFolder}>{props.storage.kind === 'drive' ? 'Sign in again' : 'Reconnect folder'}</button>}
-            {props.storage.kind !== 'drive' && <button type="button" onClick={props.onConnectDrive}>Save to Google Drive…</button>}
-            {props.storage.supported && <button type="button" onClick={props.onChooseDeviceFolder}>{props.storage.kind === 'device' ? 'Choose another folder…' : 'Save to a device folder…'}</button>}
-            {props.storage.kind !== 'browser' && !props.storage.locked && <button type="button" onClick={props.onCopyBrowserToDevice}>Copy browser diagrams here</button>}
-            {props.storage.kind !== 'browser' && <button type="button" onClick={props.onUseBrowserStorage}>{props.storage.kind === 'drive' ? 'Disconnect Google Drive' : 'Use browser storage'}</button>}
-          </div>
-          {!props.storage.supported && <p className="file-panel-hint">Saving to a device folder needs Chrome or Edge on a secure (https) address.</p>}
-        </div>
 
         <h3>{props.storage.kind === 'device' ? 'Saved in your device folder' : props.storage.kind === 'drive' ? 'Saved in Google Drive' : 'Saved in this browser'}</h3>
         <ul className="file-panel-list">

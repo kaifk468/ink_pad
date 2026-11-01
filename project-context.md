@@ -295,3 +295,9 @@
 - Verified: 234 tests passing on the cloud copy and the laptop (10 new Drive tests using an in-memory fake of the Drive API, including hierarchy, move, rename, delete, paging, token refresh, conflict copy); laptop `tsc -b` clean and `vite build` passes (in a clean copy, because the laptop shell cannot use the Windows `node_modules`).
 - Not verified: anything against real Google (sign-in popup, real API responses, token renewal on the tablet).
 
+## Storage moved out of the File panel — 2026-11-01
+
+- Storage is an app-wide choice, so it no longer lives in the per-diagram File panel. New `src/StoragePanel.tsx` (opened from the hamburger menu row "Storage…", which shows the current place, or "Sign in needed" when locked) holds: Connect Google Drive, Use a device folder, Copy browser diagrams here, Use browser storage / Disconnect Google Drive, Reconnect folder / Sign in again. The Folders panel shows a line "Saved in: <place>" with Change (Fix when locked) and, on browser storage, a hint to connect Drive. A locked storage at startup now opens the Storage panel. The File panel keeps title, new, import, export, and the diagram list.
+- Planned, not built: link the top-right account avatar (placeholder) to the same Storage panel / sign-in state.
+- Verified: 235 tests pass on the cloud copy and the laptop; laptop `tsc -b` clean; `vite build` passes in a clean copy. Tablet check still to do.
+

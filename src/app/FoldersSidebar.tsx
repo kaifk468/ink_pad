@@ -13,6 +13,10 @@ type FoldersSidebarProps = {
   onDeleteFolder: (id: string) => void
   onMoveDiagram: (docId: string, folderId: string | null) => void
   notice: string | null
+  storageText: string
+  storageLocked: boolean
+  showConnectHint: boolean
+  onChangeStorage: () => void
 }
 
 /** Folder browser: one folder level at a time, with a path to go back up. Diagrams open, move or live inside folders. */
@@ -60,6 +64,12 @@ export function FoldersSidebar(props: FoldersSidebarProps) {
           </span>
         ))}
       </nav>
+
+      <div className="folders-storage">
+        <span className="folders-storage-text">Saved in: <strong>{props.storageText}</strong>{props.storageLocked ? ' (not saving)' : ''}</span>
+        <button type="button" onClick={props.onChangeStorage}>{props.storageLocked ? 'Fix' : 'Change'}</button>
+      </div>
+      {props.showConnectHint && <p className="folders-hint">Connect Google Drive to use these folders on your other devices.</p>}
 
       {props.notice && <p className="folders-notice" role="alert">{props.notice}</p>}
 

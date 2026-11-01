@@ -160,11 +160,11 @@ test('copying browser storage into a device folder keeps the hierarchy identical
   assert.ok(treeOf(root).includes('LLD/Payments/Flow (2).inkpad'), 'a second copy never overwrites existing files')
 })
 
-test('the File panel offers device storage and the app wires the storage actions', async () => {
+test('the Storage panel offers device storage and the app wires the storage actions', async () => {
   const { readFile } = await import('node:fs/promises')
-  const panel = await readFile(new URL('../src/FilePanel.tsx', import.meta.url), 'utf8')
+  const panel = await readFile(new URL('../src/StoragePanel.tsx', import.meta.url), 'utf8')
   const hook = await readFile(new URL('../src/app/useDocuments.ts', import.meta.url), 'utf8')
-  assert.match(panel, /Save to a device folder…/)
+  assert.match(panel, /Use a device folder…/)
   assert.match(panel, /Reconnect folder/)
   assert.match(panel, /Use browser storage/)
   assert.match(panel, /Copy browser diagrams here/)

@@ -145,11 +145,26 @@ test('copying browser-style content into Drive keeps the hierarchy identical', a
 test('the app wires Drive in: sign-in button, locked state and token renewal', async () => {
   const { readFile } = await import('node:fs/promises')
   const hook = await readFile(new URL('../src/app/useDocuments.ts', import.meta.url), 'utf8')
-  const panel = await readFile(new URL('../src/FilePanel.tsx', import.meta.url), 'utf8')
+  const panel = await readFile(new URL('../src/StoragePanel.tsx', import.meta.url), 'utf8')
   assert.match(hook, /createDriveBackend/)
   assert.match(hook, /instanceof DriveAuthError/)
   assert.match(hook, /readStorageMode\(\) === 'drive'/)
   assert.match(hook, /addEventListener\('pointerup', renew\)/)
-  assert.match(panel, /Save to Google Drive/)
+  assert.match(panel, /Connect Google Drive/)
   assert.match(panel, /Sign in again/)
+})
+
+test('storage lives in the menu and the Folders panel, not in the per-diagram File panel', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const read = (name) => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')
+  const [bar, folders, file, app, hook] = await Promise.all([read('app/TopLeftBar.tsx'), read('app/FoldersSidebar.tsx'), read('FilePanel.tsx'), read('App.tsx'), read('app/useDocuments.ts')])
+  assert.match(bar, /Storage…/)
+  assert.match(bar, /onOpenStorage\(\)/)
+  assert.match(folders, /Saved in:/)
+  assert.match(folders, /props\.onChangeStorage/)
+  assert.doesNotMatch(file, /Connect Google Drive|Use a device folder|<h3>Storage/)
+  assert.match(app, /<StoragePanel/)
+  // a locked storage opens the Storage panel, not the per-diagram File panel
+  assert.match(hook, /setStoragePanelOpen\(true\)/)
+  assert.doesNotMatch(hook, /setFilePanelOpen\(true\)/)
 })
