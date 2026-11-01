@@ -16,3 +16,7 @@
 - Add or update regression tests for behavior changes. Run `npm test` and `npm run build`; report actual results and any device-only checks that remain.
 - Automated tests do not substitute for S Pen/tablet verification; distinguish verified code behavior from unverified device behavior in reports.
 - Do not change application behavior, dimensions, or persisted data as part of documentation-only tasks.
+
+## Commits
+- Commit to git whenever a fix is finished or a milestone is reached (after tests and the build pass), with a short message that says what changed. Do not commit unfinished or failing work. Never commit `node_modules`, `dist`, `_to_delete`, or local Claude settings.
+

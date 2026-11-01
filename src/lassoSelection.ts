@@ -109,7 +109,7 @@ export function itemHitTest(item: CanvasItem, point: Point, tolerance = 12): boo
     return distanceToSegment(point, a, b) <= tolerance + item.strokeWidth / 2
       || connectorSymbolHitTest(item, point, tolerance)
   }
-  if (item.kind === 'rectangle') {
+  if (item.kind === 'rectangle' || item.kind === 'text') {
     return point.x >= item.x - tolerance && point.x <= item.x + item.width + tolerance
       && point.y >= item.y - tolerance && point.y <= item.y + item.height + tolerance
   }
@@ -157,7 +157,7 @@ export function selectItemsByLasso(items: CanvasItem[], polygon: Point[]): strin
         && pathInsideRatio(itemSegments(item), polygon) >= 0.98) selected.push(canvasItemKey(item))
       continue
     }
-    if (item.kind === 'rectangle') {
+    if (item.kind === 'rectangle' || item.kind === 'text') {
       const center = { x: item.x + item.width / 2, y: item.y + item.height / 2, pressure: 1 }
       if (pointInLasso(center, polygon)) selected.push(canvasItemKey(item))
       continue

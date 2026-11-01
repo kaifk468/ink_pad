@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import ts from 'typescript'
+import { readAppSource } from './helpers/appSource.mjs'
 
 const source = await readFile(new URL('../src/pageBackground.ts', import.meta.url), 'utf8')
-const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const appSource = await readAppSource()
 const output = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
 }).outputText
@@ -43,8 +44,11 @@ test('sheet background selection saves and restores independently of template se
 
 test('sheet color is rendered on the page in all views while the workspace background stays gray', () => {
   assert.match(appSource, /aria-label="Sheet background color"/)
-  assert.equal((appSource.match(/ctx\.fillStyle = PAGE_BACKGROUND_COLORS\[pageBackground\]/g) ?? []).length, 3)
+  assert.match(appSource, /PAGE_COLOR_CHOICES/)
+  assert.equal((appSource.match(/ctx\.fillStyle = PAGE_BACKGROUND_COLORS\[pageBackground\]/g) ?? []).length, 1)
+  assert.match(appSource, /PAGE_BACKGROUND_COLORS\[benchmarkBackground \? 'white' : pageBackground\],\s*viewport,/)
   assert.match(appSource, /ctx\.fillStyle = '#e9ebf0'[\s\S]*?ctx\.fillStyle = PAGE_BACKGROUND_COLORS\[pageBackground\]/)
   assert.match(appSource, /savePageBackground\(pageBackground\)/)
-  assert.match(appSource, /onChange=\{\(event\) => setPageBackground\(event\.target\.value as PageBackground\)\}/)
+  assert.match(appSource, /onClick=\{\(\) => props\.onPageBackground\(value\)\}/)
+  assert.match(appSource, /onPageBackground=\{setPageBackground\}/)
 })

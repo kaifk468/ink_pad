@@ -1,3 +1,6 @@
 node_modules/
 dist/
 *.tsbuildinfo
+_to_delete/
+Claude outputs/
+.claude/settings.local.json

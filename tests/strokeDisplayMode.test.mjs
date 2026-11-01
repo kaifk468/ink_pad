@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import ts from 'typescript'
+import { readAppSource } from './helpers/appSource.mjs'
 
 async function loadTs(path) {
   const source = await readFile(new URL(path, import.meta.url), 'utf8')
@@ -12,7 +13,7 @@ async function loadTs(path) {
 }
 
 const modeApi = await loadTs('../src/strokeDisplayMode.ts')
-const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const appSource = await readAppSource()
 const mockStorage = () => {
   const data = new Map()
   return {
@@ -45,8 +46,9 @@ test('display mode never changes the raw stored stroke points', () => {
   assert.deepEqual(stroke.points, before)
 })
 
-test('Raw display uses the straight lineTo renderer while Smooth uses the filtered curve renderer', async () => {
-  assert.match(appSource, /strokeDisplayMode === 'raw'[\s\S]*?ctx\.lineTo\(current\.x, current\.y\)/)
+test('Raw display uses pass-through interpolation while Smooth retains its filtered curve renderer', async () => {
+  assert.match(appSource, /buildInterpolatingCurve\(points\)/)
+  assert.match(appSource, /ctx\.bezierCurveTo\(segment\.control1\.x, segment\.control1\.y, segment\.control2\.x, segment\.control2\.y, segment\.to\.x, segment\.to\.y\)/)
   assert.match(appSource, /filterDisplayPoints\(stroke\.points\)/)
   assert.match(appSource, /buildMidpointCurve\(points\)/)
   assert.doesNotMatch(await readFile(new URL('../src/oneEuroFilter.ts', import.meta.url), 'utf8'), /DEBUG_DISABLE_FILTER/)

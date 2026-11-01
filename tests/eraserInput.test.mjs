@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import ts from 'typescript'
+import { readAppSource } from './helpers/appSource.mjs'
 
 const source = await readFile(new URL('../src/eraserInput.ts', import.meta.url), 'utf8')
 const output = ts.transpileModule(source, {
@@ -13,7 +14,7 @@ const modelOutput = ts.transpileModule(modelSource, {
   compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
 }).outputText
 const model = await import(`data:text/javascript;base64,${Buffer.from(modelOutput).toString('base64')}`)
-const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const appSource = await readAppSource()
 
 test('pen hover erasing is enabled only for the contact-free standard eraser', () => {
   assert.equal(eraserInput.isPenHoverEraseInput('pen', 0, true, false), true)

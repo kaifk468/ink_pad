@@ -1,79 +1,51 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { createEraserStroke, getEraserSweepPoints, isPenHoverEraseInput } from './eraserInput'
-import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getConnectorRenderSpec, getConnectorSymbolGeometry, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
-import type { CanvasItem, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
+import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
-import { filterDisplayPoints } from './oneEuroFilter'
-import { buildMidpointCurve } from './strokeCurves'
 import { loadStrokeDisplayMode, saveStrokeDisplayMode, type StrokeDisplayMode } from './strokeDisplayMode'
+import { getPointerSamples } from './pointerSamples'
 import { shouldAppendStrokeSample } from './strokeSampling'
-import { PerformanceDiagnostics, type StrokeDiagnosticRow } from './performanceDiagnostics'
-import { drawPageTemplate, drawPageTemplateOverview, loadPageTemplate, savePageTemplate, type PageTemplate } from './pageTemplates'
+import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserStallSummary, type StrokeDiagnosticRow } from './performanceDiagnostics'
+import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
+import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPageTemplate, savePageTemplate, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
+import { getNextIds } from './documentFormat'
+import { FilePanel } from './FilePanel'
+import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
+import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer } from './app/canvasRenderer'
+import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
+import { UmlConnectorIcon } from './app/UmlConnectorIcon'
+import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
+import { ClassBoxDialog } from './ClassBoxDialog'
+import { AccountButton } from './app/AccountButton'
+import { ContextPanel } from './app/ContextPanel'
+import { HistoryBar } from './app/HistoryBar'
+import { ToolDock } from './app/ToolDock'
+import { TopLeftBar } from './app/TopLeftBar'
+import { ZoomControls } from './app/ZoomControls'
+import { statusLabel } from './FilePanel'
+import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
+import { DEFAULT_TEXT_FONT_SIZE, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
+import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeRectangleOnHold, recognizeRectangleStroke } from './shapeRecognition'
-import { DEFAULT_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEIGHT, SHEET_WIDTH, THREE_FINGER_PAN_THRESHOLD, WORKSPACE_BOUNDS, centerViewportOnPoint, clampPointToBounds, clampTranslationToBounds, clampViewportToBounds, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, getNavigatorPanels, getPageOverviewGeometry, getTouchNavigationGestureMode, isPointWithinBounds, minimapToCanvasPoint, panThreeFingerViewport, type MinimapGeometry, type TouchNavigationGestureMode, type ViewBounds, type Viewport, screenToCanvasPoint, zoomTwoFingerViewport } from './viewport'
+import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEIGHT, SHEET_WIDTH, THREE_FINGER_PAN_THRESHOLD, WORKSPACE_BOUNDS, centerViewportOnPoint, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, getTouchNavigationGestureMode, isPointWithinBounds, minimapToCanvasPoint, panThreeFingerViewport, type MinimapGeometry, type TouchNavigationGestureMode, type ViewBounds, type Viewport, screenToCanvasPoint, zoomTwoFingerViewport } from './viewport'
 
-const COLORS = [
-  { name: 'Ink black', value: '#202124' },
-  { name: 'Cobalt blue', value: '#3568d4' },
-  { name: 'Coral red', value: '#e45b55' },
-  { name: 'Leaf green', value: '#38845b' },
-  { name: 'Violet', value: '#8856c7' },
-]
-const WIDTHS = [2, 4, 7, 11]
-const ERASER_SIZES = [14, 28, 48, 72]
-const SHAPE_HOLD_JITTER_PX = 7
-const PERFORMANCE_DIAGNOSTICS_ENABLED = import.meta.env.DEV
-const UML_CONNECTOR_TOOLS: Array<{ type: ConnectorRelationshipType; label: string }> = [
-  { type: 'association', label: 'Association' },
-  { type: 'directed-association', label: 'Directed association' },
-  { type: 'inheritance', label: 'Inheritance' },
-  { type: 'realization', label: 'Realization' },
-  { type: 'aggregation', label: 'Aggregation' },
-  { type: 'composition', label: 'Composition' },
-  { type: 'dependency', label: 'Dependency' },
-]
 
-function getReusableCanvasLayer(
-  layerRef: { current: HTMLCanvasElement | null },
-  width: number,
-  height: number,
-): HTMLCanvasElement {
-  if (!layerRef.current) layerRef.current = document.createElement('canvas')
-  if (layerRef.current.width !== width) layerRef.current.width = width
-  if (layerRef.current.height !== height) layerRef.current.height = height
-  return layerRef.current
-}
-
-function UmlConnectorIcon({ type }: { type: ConnectorRelationshipType }) {
-  const dashed = type === 'realization' || type === 'dependency'
-  const marker = type === 'inheritance' || type === 'realization'
-    ? <path d="M27 7 19 2 19 12Z" fill="var(--uml-marker-fill, #ffffff)" />
-    : type === 'directed-association' || type === 'dependency'
-      ? <path d="m20 2 7 5-7 5" fill="none" />
-      : type === 'aggregation' || type === 'composition'
-        ? <path d="M2 7 8 2 14 7 8 12Z" fill={type === 'composition' ? 'currentColor' : '#ffffff'} />
-        : null
-  const line = type === 'aggregation' || type === 'composition' ? 'M14 7H28' : marker ? 'M2 7H19' : 'M2 7H28'
-  return (
-    <svg className={`uml-tool-icon${dashed ? ' dashed' : ''}`} viewBox="0 0 30 14" aria-hidden="true">
-      <path className="uml-tool-line" d={line} />
-      {marker}
-    </svg>
-  )
-}
+const DOUBLE_TAP_MS = 400
+const ZOOM_STEP = 1.25
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const inkLayerRef = useRef<HTMLCanvasElement | null>(null)
+  const sheetLayerRef = useRef<HTMLDivElement | null>(null)
+  const sheetLayerAppliedRef = useRef<Partial<SheetLayerState>>({})
   const minimapInkLayerRef = useRef<HTMLCanvasElement | null>(null)
-  const pageOverviewInkLayerRef = useRef<HTMLCanvasElement | null>(null)
   const toolbarRef = useRef<HTMLElement>(null)
   const umlToolboxRef = useRef<HTMLDivElement>(null)
   const eraserControlRef = useRef<HTMLDivElement>(null)
   const minimapRef = useRef<HTMLCanvasElement>(null)
-  const pageOverviewRef = useRef<HTMLCanvasElement>(null)
   const strokesRef = useRef<CanvasItem[]>([])
   const historyRef = useRef(new CanvasSnapshotHistory())
   const performanceDiagnosticsRef = useRef<PerformanceDiagnostics | null>(null)
@@ -91,7 +63,9 @@ function App() {
   } | null>(null)
   const shapePreviewRef = useRef<CanvasItem | null>(null)
   const selectedRectangleIdRef = useRef<number | null>(null)
-  const activeDragRef = useRef<{ pointerId: number; itemKey: string; start: Point; originalItems: CanvasItem[]; moved: boolean } | null>(null)
+  const activeDragRef = useRef<{ pointerId: number; itemKey: string; start: Point; originalItems: CanvasItem[]; moved: boolean; editTextId?: number | null; editClassBoxId?: number | null } | null>(null)
+  const textTapRef = useRef<{ pointerId: number; point: Point } | null>(null)
+  const classTapRef = useRef<{ pointerId: number; point: Point } | null>(null)
   const activeResizeRef = useRef<{ pointerId: number; rectangleId: number | null; selectedKeys: Set<string> | null; handle: RectangleResizeHandle; start: Point; originalBounds: RectangleBounds; originalItems: CanvasItem[]; moved: boolean } | null>(null)
   const activeLassoRef = useRef<{ pointerId: number; points: Point[] } | null>(null)
   const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean } | null>(null)
@@ -99,51 +73,117 @@ function App() {
   const nextRectangleIdRef = useRef(1)
   const nextStrokeIdRef = useRef(1)
   const nextConnectorIdRef = useRef(1)
+  const nextTextIdRef = useRef(1)
+  const textEditorRef = useRef<TextEditorState | null>(null)
+  const textEditorValueRef = useRef('')
   const holdTimerRef = useRef<number | null>(null)
   const activePointerRef = useRef<number | null>(null)
   const holdAnchorRef = useRef<Point | null>(null)
   const lastSignificantMoveAtRef = useRef(0)
   const frameRef = useRef<number | null>(null)
-  const viewportRef = useRef<Viewport>({ scale: DEFAULT_ZOOM, offsetX: 0, offsetY: 0 })
+  const initialViewDoneRef = useRef(false)
+  const viewportRef = useRef<Viewport>({ scale: INITIAL_ZOOM, offsetX: 0, offsetY: 0 })
   const touchPointsRef = useRef(new Map<number, Point>())
   const touchGestureRef = useRef<{ mode: TouchNavigationGestureMode; viewport: Viewport; center: Point; distance: number } | null>(null)
   const minimapDragPointerRef = useRef<{ pointerId: number; bounds: ViewBounds; geometry: MinimapGeometry } | null>(null)
-  const pageOverviewDragPointerRef = useRef<number | null>(null)
   const umlToolboxDragRef = useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number; moved: boolean } | null>(null)
   const suppressMinimizedToolboxClickRef = useRef(false)
   const [color, setColor] = useState(COLORS[0].value)
-  const [width, setWidth] = useState(4)
+  const [width, setWidth] = useState(WIDTHS[0])
   const [strokeDisplayMode, setStrokeDisplayMode] = useState<StrokeDisplayMode>(() => loadStrokeDisplayMode())
   const [pageTemplate, setPageTemplate] = useState<PageTemplate>(() => loadPageTemplate())
   const [pageBackground, setPageBackground] = useState<PageBackground>(() => loadPageBackground())
+  const pageTemplateRef = useRef(pageTemplate)
+  const pageBackgroundRef = useRef(pageBackground)
+  pageTemplateRef.current = pageTemplate
+  pageBackgroundRef.current = pageBackground
+
+  const {
+    filePanelOpen, setFilePanelOpen, refreshLibrary, docTitle, saveStatus, fileNotice, library, folders, currentDocId,
+    storage, chooseDeviceFolder, reconnectDeviceFolder, useBrowserStorage, copyBrowserToDevice,
+    newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
+    scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
+    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile,
+  } = useDocuments({
+    getItems: () => strokesRef.current,
+    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current }),
+    isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null,
+    loadDocument: (loaded) => {
+      clearShapeHoldTimer()
+      activeStrokeRef.current = null
+      activeConnectorRef.current = null
+      activeResizeRef.current = null
+      shapePreviewRef.current = null
+      activeLassoRef.current = null
+      lassoDragRef.current = null
+      activePointerRef.current = null
+      hoverErasePointerRef.current = null
+      activeObjectEraserRef.current = null
+      holdAnchorRef.current = null
+      updateSelectedItems([])
+      setSelectedRectangle(null)
+      strokesRef.current = cloneCanvasItems(loaded.items)
+      const nextIds = getNextIds(strokesRef.current)
+      nextStrokeIdRef.current = nextIds.stroke
+      nextRectangleIdRef.current = nextIds.rectangle
+      nextConnectorIdRef.current = nextIds.connector
+      nextTextIdRef.current = nextIds.text
+      textEditorRef.current = null
+      textTapRef.current = null
+      classTapRef.current = null
+      setTextEditor(null)
+      setClassBoxEditor(null)
+      historyRef.current = new CanvasSnapshotHistory()
+      setCanUndo(false)
+      setCanRedo(false)
+      setHasInk(strokesRef.current.length > 0)
+      pageTemplateRef.current = loaded.page.template
+      pageBackgroundRef.current = loaded.page.background
+      setPageTemplate(loaded.page.template)
+      setPageBackground(loaded.page.background)
+      renderAll()
+      openAtDefaultView()
+    },
+  })
   const [eraser, setEraser] = useState(false)
   const [hasInk, setHasInk] = useState(false)
   const [shapeMode, setShapeMode] = useState(false)
   const [selectionMode, setSelectionMode] = useState(false)
+  const [textMode, setTextMode] = useState(false)
+  const [classMode, setClassMode] = useState(false)
+  const [classBoxEditor, setClassBoxEditor] = useState<{ rectangleId: number | null; x: number; y: number; content: ClassBoxContent } | null>(null)
+  const [textSize, setTextSize] = useState(DEFAULT_TEXT_FONT_SIZE)
+  const [textEditor, setTextEditor] = useState<TextEditorState | null>(null)
   const [lassoMode, setLassoMode] = useState(false)
   const [connectorMode, setConnectorMode] = useState(false)
   const [umlConnectorType, setUmlConnectorType] = useState<ConnectorRelationshipType | null>(null)
   const [umlToolboxPosition, setUmlToolboxPosition] = useState<{ left: number; top: number } | null>(null)
-  const [umlToolboxMinimized, setUmlToolboxMinimized] = useState(false)
+  const [umlToolboxMinimized, setUmlToolboxMinimized] = useState(true)
   const [selectedItemCount, setSelectedItemCount] = useState(0)
   const [selectedConnectorId, setSelectedConnectorId] = useState<number | null>(null)
   const [selectedConnectorType, setSelectedConnectorType] = useState<ConnectorRelationshipType | null>(null)
   const [selectedConnectorReversed, setSelectedConnectorReversed] = useState(false)
   const [eraserSize, setEraserSize] = useState(28)
   const [objectEraser, setObjectEraser] = useState(false)
-  const [eraserMenuOpen, setEraserMenuOpen] = useState(false)
+  const [optionsFor, setOptionsFor] = useState<'pen' | 'eraser' | 'text' | null>(null)
+  const lastToolTapRef = useRef<{ tool: string; time: number } | null>(null)
+  const eraserMenuOpen = optionsFor === 'eraser'
+  const setEraserMenuOpen = (open: boolean) => setOptionsFor(open ? 'eraser' : null)
   const [eraserPopoverPosition, setEraserPopoverPosition] = useState<{ left: number; top: number; width: number } | null>(null)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
-  const [zoomPercent, setZoomPercent] = useState(DEFAULT_ZOOM * 100)
+  const [zoomPercent, setZoomPercent] = useState(Math.round(INITIAL_ZOOM * 100))
   const [performanceDiagnosticsOpen, setPerformanceDiagnosticsOpen] = useState(false)
+  const [performanceCaptureActive, setPerformanceCaptureActive] = useState(false)
   const [performanceRows, setPerformanceRows] = useState<StrokeDiagnosticRow[]>([])
-  const [pageOverviewExpanded, setPageOverviewExpanded] = useState(false)
-  const navigatorPanels = getNavigatorPanels(pageOverviewExpanded)
-  const penModeActive = !eraser && !shapeMode && !selectionMode && !lassoMode && !connectorMode && umlConnectorType === null
+  const [browserStallSummary, setBrowserStallSummary] = useState<BrowserStallSummary | null>(null)
+  const [benchmarkRunning, setBenchmarkRunning] = useState(false)
+  const [benchmarkResult, setBenchmarkResult] = useState<Record<string, unknown> | null>(null)
+  const [navigatorMinimized, setNavigatorMinimized] = useState(true)
+  const penModeActive = !eraser && !shapeMode && !selectionMode && !lassoMode && !connectorMode && !textMode && !classMode && umlConnectorType === null
 
   const getCurrentMinimapBounds = useCallback((): ViewBounds => {
-    return { ...WORKSPACE_BOUNDS }
+    return { ...SHEET_BOUNDS }
   }, [])
 
   const updateSelectedItems = (keys: string[]) => {
@@ -165,6 +205,7 @@ function App() {
     historyRef.current.record(strokesRef.current)
     setCanUndo(historyRef.current.canUndo)
     setCanRedo(historyRef.current.canRedo)
+    scheduleAutosave()
   }
 
   const changeSelectedConnectorType = (relationshipType: ConnectorRelationshipType) => {
@@ -177,8 +218,8 @@ function App() {
   }
 
   useEffect(() => {
-    if (connectorMode || eraser || shapeMode || selectionMode || lassoMode) setUmlConnectorType(null)
-  }, [connectorMode, eraser, shapeMode, selectionMode, lassoMode])
+    if (connectorMode || eraser || shapeMode || selectionMode || lassoMode || textMode || classMode) setUmlConnectorType(null)
+  }, [connectorMode, eraser, shapeMode, selectionMode, lassoMode, textMode, classMode])
 
   useEffect(() => {
     setUmlConnectorType(null)
@@ -199,6 +240,7 @@ function App() {
   }
 
   const selectPenMode = () => {
+    setTextMode(false); setClassMode(false)
     setEraser(false)
     setEraserMenuOpen(false)
     setShapeMode(false)
@@ -215,6 +257,7 @@ function App() {
     strokesRef.current = previous
     setCanUndo(historyRef.current.canUndo)
     setCanRedo(historyRef.current.canRedo)
+    scheduleAutosave()
     setHasInk(strokesRef.current.length > 0)
     reconcileSelectedItems()
     renderAll()
@@ -226,6 +269,7 @@ function App() {
     strokesRef.current = next
     setCanUndo(historyRef.current.canUndo)
     setCanRedo(historyRef.current.canRedo)
+    scheduleAutosave()
     setHasInk(strokesRef.current.length > 0)
     reconcileSelectedItems()
     renderAll()
@@ -271,6 +315,10 @@ function App() {
   const hitTestObject = (point: Point) => {
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
+      if (item.kind === 'text') {
+        if (itemHitTest(item, point, 8 / viewportRef.current.scale)) return index
+        continue
+      }
       if (item.kind === 'rectangle') {
         const pad = Math.max(8 / viewportRef.current.scale, item.strokeWidth * 2)
         if (point.x >= item.x - pad && point.x <= item.x + item.width + pad && point.y >= item.y - pad && point.y <= item.y + item.height + pad) return index
@@ -333,6 +381,96 @@ function App() {
     return null
   }
 
+  const hitTestText = (point: Point): TextObject | null => {
+    const pad = 8 / viewportRef.current.scale
+    for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
+      const item = strokesRef.current[index]
+      if (item.kind === 'text' && itemHitTest(item, point, pad)) return item
+    }
+    return null
+  }
+
+  const openTextEditor = (editor: TextEditorState) => {
+    if (textEditorRef.current) commitTextEditor()
+    textEditorRef.current = editor
+    textEditorValueRef.current = editor.initialText
+    setTextEditor(editor)
+    updateSelectedItems([])
+    setSelectedRectangle(null)
+    renderAll()
+  }
+
+  const commitTextEditor = () => {
+    const editor = textEditorRef.current
+    if (!editor) return
+    textEditorRef.current = null
+    setTextEditor(null)
+    const value = normalizeText(textEditorValueRef.current)
+    if (editor.itemId === null) {
+      if (!isBlankText(value)) {
+        saveHistory()
+        strokesRef.current.push(createTextObject(nextTextIdRef.current++, editor.x, editor.y, value, editor.color, editor.fontSize, createTextMeasure(editor.fontSize)))
+        setHasInk(true)
+      }
+    } else {
+      const index = strokesRef.current.findIndex((item) => item.kind === 'text' && item.id === editor.itemId)
+      const existing = index === -1 ? null : strokesRef.current[index]
+      if (existing && existing.kind === 'text') {
+        if (isBlankText(value)) {
+          saveHistory()
+          strokesRef.current = strokesRef.current.filter((_, itemIndex) => itemIndex !== index)
+          setHasInk(strokesRef.current.length > 0)
+          reconcileSelectedItems()
+        } else if (value !== existing.text) {
+          saveHistory()
+          const updated = updateTextObject(existing, value, existing.fontSize, createTextMeasure(existing.fontSize))
+          strokesRef.current = strokesRef.current.map((item, itemIndex) => (itemIndex === index ? updated : item))
+        }
+      }
+    }
+    renderAll()
+  }
+
+  const cancelTextEditor = () => {
+    if (!textEditorRef.current) return
+    textEditorRef.current = null
+    setTextEditor(null)
+    renderAll()
+  }
+
+  const editTextItem = (item: TextObject) => openTextEditor({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, color: item.color, initialText: item.text })
+
+  const openClassBoxEditor = (editor: { rectangleId: number | null; x: number; y: number; content: ClassBoxContent }) => {
+    if (textEditorRef.current) commitTextEditor()
+    setClassBoxEditor(editor)
+  }
+
+  const commitClassBox = (content: ClassBoxContent) => {
+    const editor = classBoxEditor
+    setClassBoxEditor(null)
+    if (!editor) return
+    const clean = normalizeClassBoxContent(content)
+    const measure = createFontMeasure()
+    if (editor.rectangleId === null) {
+      if (isEmptyClassBox(clean)) return
+      saveHistory()
+      strokesRef.current.push(createClassBox(nextRectangleIdRef.current++, editor.x, editor.y, clean, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, measure))
+      setHasInk(true)
+      renderAll()
+      return
+    }
+    const existing = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === editor.rectangleId)
+    if (!existing) return
+    if (!existing.classBox && isEmptyClassBox(clean)) return
+    if (sameClassBoxContent(existing.classBox, clean)) return
+    saveHistory()
+    const withContent = strokesRef.current.map((item) => (item.kind === 'rectangle' && item.id === existing.id ? { ...item, classBox: clean } : item))
+    const bounds = fitClassBoxBounds(existing, clean, measure)
+    const grown = bounds.width !== existing.width || bounds.height !== existing.height
+    strokesRef.current = grown ? resizeRectangleItems(withContent, existing.id, bounds) : withContent
+    renderAll()
+  }
+
   const recognizeShape = (stroke: Stroke): CanvasItem => {
     const points = stroke.points
     const rectangle = recognizeRectangleStroke(stroke, nextRectangleIdRef.current)
@@ -390,185 +528,20 @@ function App() {
     return { ...stroke, shape: 'line', points: [start, end] }
   }
 
-  const drawStroke = useCallback((ctx: CanvasRenderingContext2D, stroke: Stroke) => {
-    const points = stroke.erase || stroke.shape || strokeDisplayMode === 'raw' ? stroke.points : filterDisplayPoints(stroke.points)
-    if (!points.length) return
-    ctx.save()
-    ctx.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over'
-    ctx.strokeStyle = stroke.color
-    ctx.fillStyle = stroke.color
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    if (stroke.shape === 'arrow' && points.length >= 2) {
-      const [start, end] = points
-      const angle = Math.atan2(end.y - start.y, end.x - start.x)
-      const headLength = Math.max(12, stroke.width * 3.5)
-      ctx.lineWidth = stroke.width
-      ctx.beginPath()
-      ctx.moveTo(start.x, start.y)
-      ctx.lineTo(end.x, end.y)
-      ctx.moveTo(end.x, end.y)
-      ctx.lineTo(end.x - headLength * Math.cos(angle - Math.PI / 6), end.y - headLength * Math.sin(angle - Math.PI / 6))
-      ctx.moveTo(end.x, end.y)
-      ctx.lineTo(end.x - headLength * Math.cos(angle + Math.PI / 6), end.y - headLength * Math.sin(angle + Math.PI / 6))
-      ctx.stroke()
-      ctx.restore()
-      return
-    }
-    if (stroke.shape === 'line' && points.length >= 2) {
-      ctx.lineWidth = stroke.width
-      ctx.beginPath()
-      ctx.moveTo(points[0].x, points[0].y)
-      ctx.lineTo(points[1].x, points[1].y)
-      ctx.stroke()
-      ctx.restore()
-      return
-    }
-    if (points.length === 1) {
-      const p = points[0]
-      const pressureScale = p.pressure > 0 ? 0.35 + p.pressure * 0.9 : 1
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, (stroke.width * pressureScale) / 2, 0, Math.PI * 2)
-      ctx.fill()
-    } else if (stroke.erase || strokeDisplayMode === 'raw') {
-      for (let index = 1; index < points.length; index += 1) {
-        const previous = points[index - 1]
-        const current = points[index]
-        const pressure = (previous.pressure + current.pressure) / 2
-        ctx.lineWidth = stroke.width * (pressure > 0 ? 0.35 + pressure * 0.9 : 1)
-        ctx.beginPath()
-        ctx.moveTo(previous.x, previous.y)
-        ctx.lineTo(current.x, current.y)
-        ctx.stroke()
-      }
-    } else {
-      for (const segment of buildMidpointCurve(points)) {
-        const pressureScale = segment.pressure > 0 ? 0.35 + segment.pressure * 0.9 : 1
-        ctx.lineWidth = stroke.width * pressureScale
-        ctx.beginPath()
-        ctx.moveTo(segment.from.x, segment.from.y)
-        if (segment.curved && segment.control) ctx.quadraticCurveTo(segment.control.x, segment.control.y, segment.to.x, segment.to.y)
-        else ctx.lineTo(segment.to.x, segment.to.y)
-        ctx.stroke()
-      }
-    }
-    ctx.restore()
-  }, [strokeDisplayMode])
-
-  const drawRectangle = useCallback((ctx: CanvasRenderingContext2D, rectangle: RectangleObject) => {
-    ctx.save()
-    ctx.strokeStyle = rectangle.strokeColor
-    ctx.lineWidth = rectangle.strokeWidth
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.strokeRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height)
-    ctx.restore()
-  }, [])
-
-  const drawConnector = useCallback((ctx: CanvasRenderingContext2D, connector: ConnectorObject, color = connector.strokeColor, width = connector.strokeWidth) => {
-    const spec = getConnectorRenderSpec(connector)
-    const geometry = getConnectorSymbolGeometry(connector, width)
-    const tip = geometry?.tip
-    const other = geometry?.other
-
-    ctx.save()
-    ctx.strokeStyle = color
-    ctx.lineWidth = width
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.setLineDash(spec.lineStyle === 'dashed' ? [Math.max(6, width * 2.5), Math.max(4, width * 1.8)] : [])
-
-    if (spec.symbol === 'hollow-triangle' && geometry && tip && other) {
-      ctx.beginPath()
-      ctx.moveTo(other.x, other.y)
-      ctx.lineTo(geometry.base.x, geometry.base.y)
-      ctx.stroke()
-      ctx.setLineDash([])
-      ctx.beginPath()
-      ctx.moveTo(tip.x, tip.y)
-      ctx.lineTo(geometry.sideA.x, geometry.sideA.y)
-      ctx.lineTo(geometry.sideB.x, geometry.sideB.y)
-      ctx.closePath()
-      ctx.fillStyle = '#ffffff'
-      ctx.fill()
-      ctx.stroke()
-    } else if (spec.symbol === 'open-arrow' && geometry && tip) {
-      ctx.beginPath()
-      ctx.moveTo(connector.start.x, connector.start.y)
-      ctx.lineTo(connector.end.x, connector.end.y)
-      ctx.stroke()
-      ctx.setLineDash([])
-      ctx.beginPath()
-      ctx.moveTo(geometry.sideA.x, geometry.sideA.y)
-      ctx.lineTo(tip.x, tip.y)
-      ctx.lineTo(geometry.sideB.x, geometry.sideB.y)
-      ctx.stroke()
-    } else if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip && other) {
-      ctx.beginPath()
-      ctx.moveTo(geometry.far.x, geometry.far.y)
-      ctx.lineTo(other.x, other.y)
-      ctx.stroke()
-      ctx.setLineDash([])
-      ctx.beginPath()
-      ctx.moveTo(tip.x, tip.y)
-      ctx.lineTo(geometry.sideA.x, geometry.sideA.y)
-      ctx.lineTo(geometry.far.x, geometry.far.y)
-      ctx.lineTo(geometry.sideB.x, geometry.sideB.y)
-      ctx.closePath()
-      ctx.fillStyle = spec.symbol === 'filled-diamond' ? color : '#ffffff'
-      ctx.fill()
-      ctx.stroke()
-    } else {
-      ctx.beginPath()
-      ctx.moveTo(connector.start.x, connector.start.y)
-      ctx.lineTo(connector.end.x, connector.end.y)
-      ctx.stroke()
-    }
-    ctx.restore()
-  }, [])
+  const drawStroke = useCallback((ctx: CanvasRenderingContext2D, stroke: Stroke) => drawStrokeToCanvas(ctx, stroke, strokeDisplayMode), [strokeDisplayMode])
 
   const drawItem = useCallback((ctx: CanvasRenderingContext2D, item: CanvasItem) => {
-    if (item.kind === 'rectangle') drawRectangle(ctx, item)
-    else if (item.kind === 'connector') drawConnector(ctx, item)
-    else drawStroke(ctx, item)
-  }, [drawConnector, drawRectangle, drawStroke])
+    drawItemToCanvas(ctx, item, strokeDisplayMode)
+  }, [strokeDisplayMode])
 
   const drawMinimapItems = useCallback((ctx: CanvasRenderingContext2D, geometry: MinimapGeometry) => {
-    const toMiniX = (x: number) => x * geometry.scale + geometry.offsetX
-    const toMiniY = (y: number) => y * geometry.scale + geometry.offsetY
-    ctx.save()
-    for (const item of canvasItemsForRendering(strokesRef.current)) {
-      if (item.kind === 'rectangle') {
-        ctx.globalCompositeOperation = 'source-over'
-        ctx.strokeStyle = item.strokeColor
-        ctx.lineWidth = Math.max(1, item.strokeWidth * geometry.scale)
-        ctx.strokeRect(toMiniX(item.x), toMiniY(item.y), item.width * geometry.scale, item.height * geometry.scale)
-      } else if (item.kind === 'connector') {
-        ctx.globalCompositeOperation = 'source-over'
-        ctx.strokeStyle = item.strokeColor
-        ctx.lineWidth = Math.max(1, item.strokeWidth * geometry.scale)
-        ctx.beginPath()
-        ctx.moveTo(toMiniX(item.start.x), toMiniY(item.start.y))
-        ctx.lineTo(toMiniX(item.end.x), toMiniY(item.end.y))
-        ctx.stroke()
-      } else if (item.points.length > 0) {
-        ctx.globalCompositeOperation = item.erase ? 'destination-out' : 'source-over'
-        ctx.strokeStyle = item.erase ? '#000000' : item.color
-        ctx.fillStyle = item.erase ? '#000000' : item.color
-        ctx.lineWidth = Math.max(1, item.width * geometry.scale)
-        ctx.lineCap = 'round'
-        ctx.lineJoin = 'round'
-        ctx.beginPath()
-        ctx.moveTo(toMiniX(item.points[0].x), toMiniY(item.points[0].y))
-        item.points.slice(1).forEach((point) => ctx.lineTo(toMiniX(point.x), toMiniY(point.y)))
-        if (item.points.length === 1) {
-          ctx.arc(toMiniX(item.points[0].x), toMiniY(item.points[0].y), Math.max(0.5, item.width * geometry.scale / 2), 0, Math.PI * 2)
-          ctx.fill()
-        } else ctx.stroke()
-      }
-    }
-    ctx.restore()
+    drawMinimapItemsToCanvas(ctx, canvasItemsForRendering(strokesRef.current), geometry)
   }, [])
+
+
+
+
+
 
   const renderNavigator = useCallback(() => {
     const minimap = minimapRef.current
@@ -642,93 +615,38 @@ function App() {
     ctx.restore()
   }, [drawMinimapItems, getCurrentMinimapBounds, pageBackground, pageTemplate])
 
-  const renderPageOverview = useCallback(() => {
-    const overview = pageOverviewRef.current
-    const mainCanvas = canvasRef.current
-    const ctx = overview?.getContext('2d')
-    if (!overview || !mainCanvas || !ctx) return
-    const rect = overview.getBoundingClientRect()
-    if (!rect.width || !rect.height) return
-    const dpr = Math.max(1, window.devicePixelRatio || 1)
-    const pixelWidth = Math.round(rect.width * dpr)
-    const pixelHeight = Math.round(rect.height * dpr)
-    if (overview.width !== pixelWidth || overview.height !== pixelHeight) {
-      overview.width = pixelWidth
-      overview.height = pixelHeight
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.clearRect(0, 0, rect.width, rect.height)
-    ctx.fillStyle = '#f1f3f7'
-    ctx.fillRect(0, 0, rect.width, rect.height)
-    const geometry = getPageOverviewGeometry(rect.width, rect.height)
-    const pageX = SHEET_BOUNDS.x * geometry.scale + geometry.offsetX
-    const pageY = SHEET_BOUNDS.y * geometry.scale + geometry.offsetY
-    const pageWidth = SHEET_WIDTH * geometry.scale
-    const pageHeight = SHEET_HEIGHT * geometry.scale
-    ctx.fillStyle = PAGE_BACKGROUND_COLORS[pageBackground]
-    ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
-    drawPageTemplateOverview(ctx, pageTemplate, { x: pageX, y: pageY, width: pageWidth, height: pageHeight })
-    const inkLayer = getReusableCanvasLayer(pageOverviewInkLayerRef, pixelWidth, pixelHeight)
-    const inkContext = inkLayer.getContext('2d')
-    if (!inkContext) return
-    inkContext.setTransform(1, 0, 0, 1, 0, 0)
-    inkContext.clearRect(0, 0, pixelWidth, pixelHeight)
-    inkContext.setTransform(dpr, 0, 0, dpr, 0, 0)
-    drawMinimapItems(inkContext, geometry)
-
-    ctx.save()
-    ctx.beginPath()
-    ctx.rect(pageX, pageY, pageWidth, pageHeight)
-    ctx.clip()
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.drawImage(inkLayer, 0, 0)
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-
-    const canvasRect = mainCanvas.getBoundingClientRect()
-    const viewport = viewportRef.current
-    const viewX = -viewport.offsetX / viewport.scale
-    const viewY = -viewport.offsetY / viewport.scale
-    const viewWidth = canvasRect.width / viewport.scale
-    const viewHeight = canvasRect.height / viewport.scale
-    ctx.fillStyle = 'rgba(65, 91, 204, .12)'
-    ctx.strokeStyle = '#415bca'
-    ctx.lineWidth = 1.5
-    ctx.fillRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
-    ctx.strokeRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
-    ctx.restore()
-    ctx.strokeStyle = '#aeb6c7'
-    ctx.lineWidth = 1
-    ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
-  }, [drawMinimapItems, pageBackground, pageTemplate])
-
   const setSelectedRectangle = (id: number | null) => {
     selectedRectangleIdRef.current = id
   }
 
-  const renderAll = useCallback(() => {
+  const renderAll = useCallback((benchmarkBackground?: { template: PageTemplate; dpr?: number; viewport?: Viewport; onBackgroundRendered: (durationMs: number) => void }) => {
     const diagnostics = performanceDiagnosticsRef.current
     const measureFrame = diagnostics?.isStrokeActive() ?? false
     const renderStartedAt = measureFrame ? performance.now() : 0
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
+    const mainCanvasStartedAt = measureFrame ? performance.now() : 0
     const inkLayer = getReusableCanvasLayer(inkLayerRef, canvas.width, canvas.height)
     const inkContext = inkLayer.getContext('2d')
     if (!inkContext) return
-    const dpr = Math.max(1, window.devicePixelRatio || 1)
+    const dpr = benchmarkBackground?.dpr ?? Math.max(1, window.devicePixelRatio || 1)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    const viewport = viewportRef.current
+    const viewport = benchmarkBackground?.viewport ?? viewportRef.current
     ctx.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
-    ctx.save()
-    ctx.shadowColor = 'rgba(35, 42, 54, .16)'
-    ctx.shadowBlur = 14
-    ctx.shadowOffsetY = 3
-    ctx.fillStyle = PAGE_BACKGROUND_COLORS[pageBackground]
-    ctx.fillRect(SHEET_BOUNDS.x, SHEET_BOUNDS.y, SHEET_WIDTH, SHEET_HEIGHT)
-    drawPageTemplate(ctx, pageTemplate)
-    ctx.restore()
+    // The sheet color, template and shadow live in a CSS layer behind this transparent canvas, so the canvas never
+    // repaints a patterned sheet. The layer follows the same viewport transform used for every canvas draw below.
+    const backgroundStartedAt = benchmarkBackground ? performance.now() : 0
+    const sheetLayer = sheetLayerRef.current
+    if (sheetLayer) {
+      applySheetLayer(sheetLayer, sheetLayerAppliedRef.current, getSheetLayerState(
+        benchmarkBackground?.template ?? pageTemplate,
+        PAGE_BACKGROUND_COLORS[benchmarkBackground ? 'white' : pageBackground],
+        viewport,
+      ))
+    }
+    if (benchmarkBackground) benchmarkBackground.onBackgroundRendered(performance.now() - backgroundStartedAt)
     ctx.save()
     ctx.strokeStyle = '#d4d7de'
     ctx.lineWidth = 1
@@ -752,6 +670,13 @@ function App() {
         ctx.setLineDash([7, 4])
         ctx.strokeRect(item.x - 5, item.y - 5, item.width + 10, item.height + 10)
         ctx.restore()
+      } else if (item.kind === 'text') {
+        ctx.save()
+        ctx.strokeStyle = '#5574ed'
+        ctx.lineWidth = 2
+        ctx.setLineDash([7, 4])
+        ctx.strokeRect(item.x - 6, item.y - 6, item.width + 12, item.height + 12)
+        ctx.restore()
       } else if (item.kind === 'connector') {
         drawConnector(ctx, item, '#5574ed', item.strokeWidth + 8)
       } else if (!item.erase) {
@@ -768,7 +693,10 @@ function App() {
     inkContext.beginPath()
     inkContext.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
     inkContext.clip()
-    canvasItemsForRendering(strokesRef.current).forEach((item) => drawItem(inkContext, item))
+    const historyInkStartedAt = measureFrame ? performance.now() : 0
+    const editingTextId = textEditorRef.current?.itemId ?? null
+    canvasItemsForRendering(strokesRef.current).forEach((item) => { if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(inkContext, item) })
+    if (measureFrame) diagnostics?.recordHistoryInkRender(performance.now() - historyInkStartedAt)
     if (activeStrokeRef.current) {
       const preview = shapePreviewRef.current
       const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
@@ -776,8 +704,10 @@ function App() {
       if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
     }
     inkContext.restore()
+    const compositeStartedAt = measureFrame ? performance.now() : 0
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.drawImage(inkLayer, 0, 0)
+    if (measureFrame) diagnostics?.recordCompositeRender(performance.now() - compositeStartedAt)
     ctx.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
     const activeConnector = activeConnectorRef.current
     if (activeConnector) {
@@ -857,20 +787,19 @@ function App() {
       ctx.restore()
     }
     ctx.restore()
+    if (measureFrame) diagnostics?.recordMainCanvasRender(performance.now() - mainCanvasStartedAt)
     const minimapStartedAt = measureFrame ? performance.now() : 0
     renderNavigator()
     if (measureFrame) diagnostics?.recordMinimapRender(performance.now() - minimapStartedAt)
-    const pageOverviewStartedAt = measureFrame ? performance.now() : 0
-    renderPageOverview()
-    if (measureFrame) diagnostics?.recordPageOverviewRender(performance.now() - pageOverviewStartedAt)
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
-  }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageTemplate, renderNavigator, renderPageOverview, width])
+  }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageTemplate, renderNavigator, width])
 
   const applyViewport = (viewport: Viewport) => {
+    if (textEditorRef.current) commitTextEditor()
     const canvas = canvasRef.current
     const rect = canvas?.getBoundingClientRect()
     const boundedViewport = rect
-      ? clampViewportToBounds(viewport, rect.width, rect.height)
+      ? clampViewportToSheet(viewport, rect.width, rect.height)
       : viewport
     viewportRef.current = boundedViewport
     setZoomPercent(Math.round(boundedViewport.scale * 100))
@@ -880,11 +809,11 @@ function App() {
   const scheduleRender = useCallback(() => {
     const diagnostics = performanceDiagnosticsRef.current
     const alreadyPending = frameRef.current !== null
-    diagnostics?.recordFrameRequest(performance.now(), alreadyPending)
+    if (diagnostics?.isCapturing()) diagnostics.recordFrameRequest(performance.now(), alreadyPending)
     if (alreadyPending) return
-    frameRef.current = requestAnimationFrame(() => {
+    frameRef.current = requestAnimationFrame((frameTimestamp) => {
       frameRef.current = null
-      diagnostics?.recordFrameCallback(performance.now())
+      if (diagnostics?.isCapturing()) diagnostics.recordFrameCallback(frameTimestamp)
       renderAll()
     })
   }, [renderAll])
@@ -896,8 +825,13 @@ function App() {
     const dpr = Math.max(1, window.devicePixelRatio || 1)
     canvas.width = Math.round(rect.width * dpr)
     canvas.height = Math.round(rect.height * dpr)
-    viewportRef.current = clampViewportToBounds(viewportRef.current, rect.width, rect.height)
+    if (!initialViewDoneRef.current && rect.width > 0 && rect.height > 0) {
+      initialViewDoneRef.current = true
+      viewportRef.current = getInitialViewport(rect.width, rect.height)
+    }
+    viewportRef.current = clampViewportToSheet(viewportRef.current, rect.width, rect.height)
     setZoomPercent(Math.round(viewportRef.current.scale * 100))
+    if (textEditorRef.current) setTextEditor({ ...textEditorRef.current })
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -919,7 +853,7 @@ function App() {
 
   useEffect(() => {
     renderAll()
-  }, [pageOverviewExpanded, renderAll])
+  }, [navigatorMinimized, renderAll])
 
   useEffect(() => {
     saveStrokeDisplayMode(strokeDisplayMode)
@@ -929,20 +863,65 @@ function App() {
   useEffect(() => {
     savePageTemplate(pageTemplate)
     renderAll()
+    scheduleAutosave()
   }, [pageTemplate, renderAll])
 
   useEffect(() => {
     savePageBackground(pageBackground)
     renderAll()
+    scheduleAutosave()
   }, [pageBackground, renderAll])
+
 
   useEffect(() => {
     if (!PERFORMANCE_DIAGNOSTICS_ENABLED || !performanceDiagnosticsOpen) return
-    const updateRows = () => setPerformanceRows(performanceDiagnosticsRef.current?.snapshot() ?? [])
+    const updateRows = () => {
+      const diagnostics = performanceDiagnosticsRef.current
+      setPerformanceRows(diagnostics?.snapshot() ?? [])
+      setBrowserStallSummary(diagnostics?.browserStallSnapshot() ?? null)
+    }
     updateRows()
-    const timer = window.setInterval(updateRows, 250)
+    const timer = window.setInterval(() => {
+      if (!performanceDiagnosticsRef.current?.isStrokeActive()) updateRows()
+    }, 500)
     return () => window.clearInterval(timer)
-  }, [performanceDiagnosticsOpen])
+  }, [performanceDiagnosticsOpen, performanceCaptureActive])
+
+  useEffect(() => {
+    if (!PERFORMANCE_DIAGNOSTICS_ENABLED || !performanceCaptureActive) return
+    const diagnostics = performanceDiagnosticsRef.current
+    if (!diagnostics || typeof PerformanceObserver === 'undefined') {
+      diagnostics?.setLongTaskSupport(false)
+      diagnostics?.setLongAnimationFrameSupport(false)
+      return
+    }
+
+    const observers: PerformanceObserver[] = []
+    const supportedTypes = PerformanceObserver.supportedEntryTypes ?? []
+    const observe = (type: 'longtask' | 'long-animation-frame', record: (duration: number) => void) => {
+      if (!supportedTypes.includes(type)) {
+        if (type === 'longtask') diagnostics.setLongTaskSupport(false)
+        else diagnostics.setLongAnimationFrameSupport(false)
+        return
+      }
+      try {
+        const observer = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) record(entry.duration)
+        })
+        observer.observe({ type, buffered: false })
+        observers.push(observer)
+        if (type === 'longtask') diagnostics.setLongTaskSupport(true)
+        else diagnostics.setLongAnimationFrameSupport(true)
+      } catch {
+        if (type === 'longtask') diagnostics.setLongTaskSupport(false)
+        else diagnostics.setLongAnimationFrameSupport(false)
+      }
+    }
+    observe('longtask', (duration) => diagnostics.recordBrowserStall('longtask', duration))
+    observe('long-animation-frame', (duration) => diagnostics.recordBrowserStall('long-animation-frame', duration))
+    setBrowserStallSummary(diagnostics.browserStallSnapshot())
+    return () => observers.forEach((observer) => observer.disconnect())
+  }, [performanceCaptureActive])
 
   useEffect(() => {
     if (!eraserMenuOpen) return
@@ -967,6 +946,22 @@ function App() {
       window.removeEventListener('resize', updateEraserPopoverPosition)
     }
   }, [eraserMenuOpen])
+
+  useEffect(() => {
+    if (optionsFor === null) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null
+      if (target?.closest?.('.context-panel, .eraser-popover, .tool-dock')) return
+      setOptionsFor(null)
+    }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOptionsFor(null) }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [optionsFor])
 
   const getScreenPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -1024,6 +1019,7 @@ function App() {
   }
 
   const selectUmlConnectorTool = (relationshipType: ConnectorRelationshipType) => {
+    setTextMode(false); setClassMode(false)
     setUmlConnectorType(relationshipType)
     setConnectorMode(false)
     setShapeMode(false)
@@ -1050,7 +1046,15 @@ function App() {
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
-    applyViewport(fitViewportToBounds(WORKSPACE_BOUNDS, rect.width, rect.height))
+    applyViewport({ scale: getCoverScale(rect.width, rect.height), offsetX: 0, offsetY: 0 })
+  }
+
+  const openAtDefaultView = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+    applyViewport(getInitialViewport(rect.width, rect.height))
   }
 
   const fitDrawingView = () => {
@@ -1065,7 +1069,11 @@ function App() {
     applyViewport(fitViewportToBounds(bounds, rect.width, rect.height, 48))
   }
 
-  const resetView = () => applyViewport({ scale: DEFAULT_ZOOM, offsetX: 0, offsetY: 0 })
+  const resetView = () => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    applyViewport({ scale: DEFAULT_ZOOM, offsetX: rect.width / 2 - SHEET_WIDTH / 2 * DEFAULT_ZOOM, offsetY: rect.height / 2 - SHEET_HEIGHT / 2 * DEFAULT_ZOOM })
+  }
 
   const getMinimapCanvasPoint = (event: React.PointerEvent<HTMLCanvasElement>, geometry: MinimapGeometry): Point => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -1103,43 +1111,6 @@ function App() {
       minimapDragPointerRef.current = null
       renderAll()
     }
-  }
-
-  const getPageOverviewCanvasPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const geometry = getPageOverviewGeometry(rect.width, rect.height)
-    const point = minimapToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, geometry)
-    return {
-      ...point,
-      x: Math.max(SHEET_BOUNDS.x, Math.min(SHEET_BOUNDS.x + SHEET_WIDTH, point.x)),
-      y: Math.max(SHEET_BOUNDS.y, Math.min(SHEET_BOUNDS.y + SHEET_HEIGHT, point.y)),
-    }
-  }
-
-  const jumpToPageOverviewPoint = (point: Point) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const rect = canvas.getBoundingClientRect()
-    applyViewport(centerViewportOnPoint(viewportRef.current, point, rect.width, rect.height))
-  }
-
-  const onPageOverviewPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    event.preventDefault()
-    event.stopPropagation()
-    pageOverviewDragPointerRef.current = event.pointerId
-    event.currentTarget.setPointerCapture(event.pointerId)
-    jumpToPageOverviewPoint(getPageOverviewCanvasPoint(event))
-  }
-
-  const onPageOverviewPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (pageOverviewDragPointerRef.current !== event.pointerId) return
-    event.preventDefault()
-    event.stopPropagation()
-    jumpToPageOverviewPoint(getPageOverviewCanvasPoint(event))
-  }
-
-  const onPageOverviewPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (pageOverviewDragPointerRef.current === event.pointerId) pageOverviewDragPointerRef.current = null
   }
 
   const beginTouchGesture = () => {
@@ -1194,7 +1165,14 @@ function App() {
     clearShapeHoldTimer()
     if (activeStrokeRef.current) {
       const pointCount = activeStrokeRef.current.points.length
-      performanceDiagnosticsRef.current?.finishStroke(pointCount, performance.now())
+      const diagnostics = performanceDiagnosticsRef.current
+      if (diagnostics?.isCapturing()) {
+        diagnostics.finishStroke(pointCount, performance.now())
+        if (performanceDiagnosticsOpen) {
+          setPerformanceRows(diagnostics.snapshot())
+          setBrowserStallSummary(diagnostics.browserStallSnapshot())
+        }
+      }
       saveHistory()
       let stroke = shapePreviewRef.current
       if (!stroke) {
@@ -1221,14 +1199,14 @@ function App() {
     holdAnchorRef.current = null
     lastSignificantMoveAtRef.current = 0
     scheduleRender()
-  }, [scheduleRender, shapeMode])
+  }, [performanceDiagnosticsOpen, scheduleRender, shapeMode])
 
   const appendStrokeSample = (pointerId: number, point: Point): boolean => {
     const stroke = activeStrokeRef.current
     if (!stroke) return false
     const previous = stroke.points[stroke.points.length - 1]
     const clippedPoint = clipSegmentToBounds(previous, point)
-    if (clippedPoint && shouldAppendStrokeSample(previous, clippedPoint, viewportRef.current.scale)) {
+    if (clippedPoint && shouldAppendStrokeSample(previous, clippedPoint)) {
       stroke.points.push(clippedPoint)
     }
     if (!isPointWithinBounds(point)) {
@@ -1252,6 +1230,17 @@ function App() {
     const rawPoint = getPoint(event)
     if (!isPointWithinBounds(rawPoint)) return
     const point = getBoundedPoint(event)
+    if (textEditorRef.current) commitTextEditor()
+    if (textMode) {
+      event.currentTarget.setPointerCapture(event.pointerId)
+      textTapRef.current = { pointerId: event.pointerId, point }
+      return
+    }
+    if (classMode) {
+      event.currentTarget.setPointerCapture(event.pointerId)
+      classTapRef.current = { pointerId: event.pointerId, point }
+      return
+    }
     if (connectorMode || umlConnectorType !== null) {
       event.currentTarget.setPointerCapture(event.pointerId)
       const snappedStart = snapConnectorEndpointWithinWorkspace(point)
@@ -1322,12 +1311,15 @@ function App() {
         }
         return
       }
-      const rectangle = hitTestRectangle(point)
-      const connector = rectangle ? null : hitTestConnector(point)
+      const previouslySelectedRectangleId = selectedRectangleIdRef.current
+      const textHit = hitTestText(point)
+      const rectangle = textHit ? null : hitTestRectangle(point)
+      const connector = textHit || rectangle ? null : hitTestConnector(point)
+      const textWasSelected = textHit !== null && selectedKeysRef.current.has(canvasItemKey(textHit))
       setSelectedRectangle(rectangle?.id ?? null)
-      updateSelectedItems(connector ? [canvasItemKey(connector)] : [])
+      updateSelectedItems(textHit ? [canvasItemKey(textHit)] : connector ? [canvasItemKey(connector)] : [])
       renderAll()
-      const selectedItem = rectangle ?? connector
+      const selectedItem = textHit ?? rectangle ?? connector
       if (!selectedItem) return
       event.currentTarget.setPointerCapture(event.pointerId)
       activeDragRef.current = {
@@ -1336,6 +1328,9 @@ function App() {
         start: point,
         originalItems: cloneCanvasItems(strokesRef.current),
         moved: false,
+        // Tapping already-selected text (without dragging) edits it.
+        editTextId: textWasSelected && textHit ? textHit.id : null,
+        editClassBoxId: rectangle?.classBox && previouslySelectedRectangleId === rectangle.id ? rectangle.id : null,
       }
       return
     }
@@ -1351,7 +1346,15 @@ function App() {
     activeStrokeRef.current = eraser
       ? createEraserStroke(nextStrokeIdRef.current++, point, color, eraserSize)
       : { kind: 'stroke', id: nextStrokeIdRef.current++, points: [point], color, width, erase: false }
-    if (!eraser) performanceDiagnosticsRef.current?.startStroke(strokeDisplayMode, performance.now(), event.nativeEvent.timeStamp)
+    const diagnostics = performanceDiagnosticsRef.current
+    if (!eraser && diagnostics?.isCapturing()) {
+      diagnostics.startStroke(
+        strokeDisplayMode,
+        performance.now(),
+        event.nativeEvent.timeStamp,
+        getSceneComplexity(strokesRef.current, viewportRef.current.scale, Math.max(1, window.devicePixelRatio || 1), false),
+      )
+    }
     shapePreviewRef.current = null
     holdAnchorRef.current = point
     scheduleShapePreview(point)
@@ -1490,8 +1493,9 @@ function App() {
     }
     if (activePointerRef.current !== event.pointerId || !activeStrokeRef.current) return
     event.preventDefault()
-    const samples = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent]
-    performanceDiagnosticsRef.current?.recordPointerMove(event.nativeEvent.timeStamp, samples.length, performance.now())
+    const samples = getPointerSamples(event.nativeEvent)
+    const diagnostics = performanceDiagnosticsRef.current
+    if (diagnostics?.isCapturing()) diagnostics.recordPointerMove(samples.map((sample) => sample.timeStamp), performance.now())
     for (const sample of samples) {
       const rect = event.currentTarget.getBoundingClientRect()
       const point = screenToCanvasPoint({
@@ -1513,6 +1517,24 @@ function App() {
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (touchPointsRef.current.has(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
+      return
+    }
+    if (textTapRef.current?.pointerId === event.pointerId) {
+      // The editor opens on pen-up (the end of the tap) so the on-screen keyboard is allowed to appear.
+      const tap = textTapRef.current
+      textTapRef.current = null
+      const existing = hitTestText(tap.point)
+      if (existing) editTextItem(existing)
+      else openTextEditor({ itemId: null, x: tap.point.x, y: tap.point.y - textSize * 0.65, fontSize: textSize, color, initialText: '' })
+      return
+    }
+    if (classTapRef.current?.pointerId === event.pointerId) {
+      // Like text, the dialog opens on pen-up so the keyboard is allowed to appear.
+      const tap = classTapRef.current
+      classTapRef.current = null
+      const existing = hitTestRectangle(tap.point)
+      if (existing) openClassBoxEditor({ rectangleId: existing.id, x: existing.x, y: existing.y, content: existing.classBox ?? EMPTY_CLASS_BOX })
+      else openClassBoxEditor({ rectangleId: null, x: tap.point.x, y: tap.point.y, content: EMPTY_CLASS_BOX })
       return
     }
     if (hoverErasePointerRef.current === event.pointerId) {
@@ -1568,7 +1590,16 @@ function App() {
       return
     }
     if (activeDragRef.current?.pointerId === event.pointerId) {
+      const drag = activeDragRef.current
       activeDragRef.current = null
+      if (!drag.moved && drag.editTextId != null) {
+        const tapped = strokesRef.current.find((item): item is TextObject => item.kind === 'text' && item.id === drag.editTextId)
+        if (tapped) editTextItem(tapped)
+      }
+      if (!drag.moved && drag.editClassBoxId != null) {
+        const tappedBox = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === drag.editClassBoxId)
+        if (tappedBox?.classBox) openClassBoxEditor({ rectangleId: tappedBox.id, x: tappedBox.x, y: tappedBox.y, content: tappedBox.classBox })
+      }
       return
     }
     if (activePointerRef.current === event.pointerId && activeStrokeRef.current) {
@@ -1584,6 +1615,14 @@ function App() {
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (touchPointsRef.current.has(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
+      return
+    }
+    if (textTapRef.current?.pointerId === event.pointerId) {
+      textTapRef.current = null
+      return
+    }
+    if (classTapRef.current?.pointerId === event.pointerId) {
+      classTapRef.current = null
       return
     }
     if (hoverErasePointerRef.current === event.pointerId) {
@@ -1621,7 +1660,95 @@ function App() {
     finishStroke(event.pointerId)
   }
 
+  const runSyntheticBenchmark = async (mode: BenchmarkMode) => {
+    if (benchmarkRunning) return
+    setBenchmarkRunning(true)
+    const oldItems = strokesRef.current
+    const oldActive = activeStrokeRef.current
+    const oldDiagnostics = performanceDiagnosticsRef.current
+    const canvas = canvasRef.current
+    const oldPointerEvents = canvas?.style.pointerEvents
+    const oldCanvasWidth = canvas?.width
+    const oldCanvasHeight = canvas?.height
+    const actualEnvironment = {
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      dpr: Math.max(1, window.devicePixelRatio || 1),
+      backingWidth: canvas?.width ?? 0,
+      backingHeight: canvas?.height ?? 0,
+      zoom: viewportRef.current.scale,
+      offsetX: viewportRef.current.offsetX,
+      offsetY: viewportRef.current.offsetY,
+    }
+    const effectiveViewport: Viewport = mode === 'controlled'
+      ? { scale: CONTROLLED_BENCHMARK_VIEWPORT.zoom, offsetX: 0, offsetY: 0 }
+      : { ...viewportRef.current }
+    const effectiveDpr = mode === 'controlled' ? CONTROLLED_BENCHMARK_VIEWPORT.dpr : actualEnvironment.dpr
+    if (canvas) canvas.style.pointerEvents = 'none'
+    if (canvas && mode === 'controlled') {
+      canvas.width = Math.round(CONTROLLED_BENCHMARK_VIEWPORT.width * CONTROLLED_BENCHMARK_VIEWPORT.dpr)
+      canvas.height = Math.round(CONTROLLED_BENCHMARK_VIEWPORT.height * CONTROLLED_BENCHMARK_VIEWPORT.dpr)
+    }
+    const results: Record<string, unknown>[] = []
+    const nextFrame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve))
+    try {
+      for (const size of BENCHMARK_SCENE_SIZES) {
+        strokesRef.current = createBenchmarkScene(size)
+        activeStrokeRef.current = { kind: 'stroke', id: -1, points: Array.from({ length: 48 }, (_, index) => ({ x: 100 + index * 2, y: 300 + Math.sin(index / 4) * 18, pressure: 0.5 })), color: '#202124', width: 4, erase: false }
+        const complexity = getSceneComplexity(strokesRef.current, effectiveViewport.scale, effectiveDpr, false)
+        const warmup = new PerformanceDiagnostics()
+        performanceDiagnosticsRef.current = warmup
+        for (const template of ['blank', 'lined', 'dotted'] as const) {
+          for (let frame = 0; frame < BENCHMARK_WARMUP_FRAMES; frame += 1) { await nextFrame(); renderAll({ template, dpr: effectiveDpr, viewport: effectiveViewport, onBackgroundRendered: () => undefined }) }
+          const diagnostics = new PerformanceDiagnostics()
+          performanceDiagnosticsRef.current = diagnostics
+          diagnostics.startCapture()
+          diagnostics.startStroke('raw', performance.now(), performance.now(), complexity)
+          const backgroundSamples: number[] = []
+          const laf: number[] = []
+          let observer: PerformanceObserver | null = null
+          if (typeof PerformanceObserver !== 'undefined' && PerformanceObserver.supportedEntryTypes?.includes('long-animation-frame')) {
+            observer = new PerformanceObserver((list) => list.getEntries().forEach((entry) => laf.push(entry.duration)))
+            observer.observe({ type: 'long-animation-frame', buffered: false })
+          }
+          for (let frame = 0; frame < BENCHMARK_MEASURED_FRAMES; frame += 1) {
+            diagnostics.recordFrameRequest(performance.now(), false)
+            await new Promise<void>((resolve) => requestAnimationFrame((timestamp) => {
+              diagnostics.recordFrameCallback(timestamp)
+              renderAll({ template, dpr: effectiveDpr, viewport: effectiveViewport, onBackgroundRendered: (duration) => backgroundSamples.push(duration) })
+              resolve()
+            }))
+          }
+          diagnostics.finishStroke(48, performance.now())
+          diagnostics.stopCapture()
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          const row = diagnostics.snapshot().find((entry) => entry.mode === 'raw' && entry.length === 'short')
+          const metricNames = ['renderAllMs', 'historyInkMs', 'activeStrokeRenderMs', 'frameGapMs', 'compositeMs', 'minimapMs', 'pageOverviewMs'] as const
+          const metrics = Object.fromEntries(metricNames.map((name) => {
+            const metric = row?.metrics[name]
+            return [name, { medianMs: metric?.p50Ms ?? 0, p95Ms: metric?.p95Ms ?? 0, maxMs: metric?.maxMs ?? 0, observations: metric?.observations ?? 0 }]
+          }))
+          results.push({ mode, objectCount: size, template, sheetColor: 'white', seed: BENCHMARK_SEED, warmupFrames: BENCHMARK_WARMUP_FRAMES, measuredFrames: BENCHMARK_MEASURED_FRAMES, environment: getBenchmarkEnvironment(mode, actualEnvironment), composition: { strokes: complexity.strokes, rectangles: complexity.rectangles, connectors: complexity.connectors, storedPoints: complexity.storedPoints }, metrics: { backgroundRenderMs: summarizeBenchmarkSamples(backgroundSamples), ...metrics }, longAnimationFrames: { supported: Boolean(observer), ...summarizeBenchmarkSamples(laf) } })
+          observer?.disconnect()
+        }
+      }
+      setBenchmarkResult({ schema: 'inkpad-synthetic-render-benchmark', version: 2, mode, generatedAt: new Date().toISOString(), device: getDiagnosticDeviceInfo(), captureType: 'synthetic; separate from S Pen diagnostics', results })
+    } finally {
+      strokesRef.current = oldItems
+      activeStrokeRef.current = oldActive
+      performanceDiagnosticsRef.current = oldDiagnostics
+      if (canvas) canvas.style.pointerEvents = oldPointerEvents ?? ''
+      if (canvas && oldCanvasWidth !== undefined && oldCanvasHeight !== undefined) {
+        canvas.width = oldCanvasWidth
+        canvas.height = oldCanvasHeight
+      }
+      renderAll()
+      setBenchmarkRunning(false)
+    }
+  }
+
   const clearCanvas = () => {
+    cancelTextEditor()
     if (!strokesRef.current.length) return
     saveHistory()
     strokesRef.current = []
@@ -1640,15 +1767,58 @@ function App() {
     clearShapeHoldTimer()
     setHasInk(false)
     renderAll()
+    scheduleAutosave()
   }
 
   const onPointerLeave = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (hoverErasePointerRef.current === event.pointerId) finishStroke(event.pointerId)
   }
 
+  const toggleShapeTool = () => { setOptionsFor(null); setShapeMode((value) => !value); setTextMode(false); setClassMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser(false) }
+  const toggleSelectTool = () => { const next = !selectionMode; setSelectionMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const openTextOptions = () => { setTextMode(true); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); clearLassoSelection(); setOptionsFor('text') }
+  const toggleTextTool = () => { const next = !textMode; setTextMode(next); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleClassTool = () => { const next = !classMode; setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleLassoTool = () => { const next = !lassoMode; setLassoMode(next); setTextMode(false); setClassMode(false); setSelectionMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); setSelectedRectangle(null); clearLassoSelection() }
+  const toggleConnectorTool = () => { const next = !connectorMode; setConnectorMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setSelectionMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const isDoubleTap = (tool: string) => {
+    const now = Date.now()
+    const last = lastToolTapRef.current
+    lastToolTapRef.current = { tool, time: now }
+    return last !== null && last.tool === tool && now - last.time <= DOUBLE_TAP_MS
+  }
+  const tapPenTool = () => {
+    const double = isDoubleTap('pen')
+    selectPenMode()
+    setOptionsFor(double ? 'pen' : null)
+  }
+  const tapEraserTool = () => {
+    if (isDoubleTap('eraser')) {
+      setTextMode(false); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); clearLassoSelection()
+      setEraser(true)
+      setOptionsFor('eraser')
+      return
+    }
+    setTextMode(false); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection()
+    setEraser((value) => !value)
+    setOptionsFor(null)
+  }
+  const selectColor = (value: string) => { setColor(value); setEraser(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection() }
+
+  const zoomBy = (factor: number) => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const viewport = viewportRef.current
+    const scale = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, viewport.scale * factor))
+    const center = { x: rect.width / 2, y: rect.height / 2, pressure: 1 }
+    const anchor = screenToCanvasPoint(center, viewport)
+    applyViewport({ scale, offsetX: center.x - anchor.x * scale, offsetY: center.y - anchor.y * scale })
+  }
+
   return (
     <main className="app-shell">
       <section className="canvas-stage" aria-label="Drawing canvas">
+        <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: SHEET_HEIGHT }} />
         <canvas
           ref={canvasRef}
           className={`drawing-canvas${selectionMode ? ' selecting' : ''}${connectorMode || umlConnectorType !== null ? ' connecting' : ''}`}
@@ -1660,6 +1830,15 @@ function App() {
           onLostPointerCapture={onPointerEnd}
           onPointerLeave={onPointerLeave}
         />
+        {textEditor && <TextEditorOverlay
+          key={`${textEditor.itemId ?? 'new'}:${textEditor.x}:${textEditor.y}`}
+          editor={textEditor}
+          viewport={viewportRef.current}
+          measure={createTextMeasure}
+          onChange={(value) => { textEditorValueRef.current = value }}
+          onCommit={commitTextEditor}
+          onCancel={cancelTextEditor}
+        />}
         {!hasInk && <div className="canvas-hint" aria-hidden="true">Draw here with your S Pen</div>}
         <aside
           ref={umlToolboxRef}
@@ -1725,210 +1904,250 @@ function App() {
             </>
           )}
         </aside>
-        <aside className={`viewport-navigator${navigatorPanels.includes('page') ? ' expanded' : ''}`} aria-label="Canvas navigation">
-          <div className="navigator-header">
-            <span className="navigator-map-label">Workspace</span>
-            <button
-              className="navigator-expand-button"
-              type="button"
-              aria-label={pageOverviewExpanded ? 'Collapse page overview' : 'Expand page overview'}
-              aria-expanded={pageOverviewExpanded}
-              title={pageOverviewExpanded ? 'Hide page overview' : 'Show page overview'}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => { event.stopPropagation(); setPageOverviewExpanded((expanded) => !expanded) }}
-            >
-              <span aria-hidden="true">{pageOverviewExpanded ? '−' : '+'}</span>
+        <aside className={`viewport-navigator${navigatorMinimized ? ' minimized' : ''}`} aria-label="Canvas navigation">
+          {navigatorMinimized ? (
+            <button className="navigator-restore" type="button" aria-label="Show workspace map" title="Show workspace map" onClick={() => setNavigatorMinimized(false)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><rect x="7" y="8.5" width="6" height="5" rx="1"/></svg>
             </button>
-          </div>
-          <div className={`navigator-maps${navigatorPanels.includes('page') ? ' expanded' : ''}`}>
-            <div className="navigator-map-section">
-              <canvas
-                ref={minimapRef}
-                className="navigator-map"
-                aria-label="Workspace overview. Click or drag to navigate the full drawing area."
-                onPointerDown={onMinimapPointerDown}
-                onPointerMove={onMinimapPointerMove}
-                onPointerUp={onMinimapPointerEnd}
-                onPointerCancel={onMinimapPointerEnd}
-                onLostPointerCapture={onMinimapPointerEnd}
-              />
-            </div>
-            {navigatorPanels.includes('page') && (
-              <div className="navigator-page-section">
-                <span className="navigator-map-label">Page</span>
-                <canvas
-                  ref={pageOverviewRef}
-                  className="navigator-page-map"
-                  aria-label="Page overview. Click or drag to navigate the white page."
-                  onPointerDown={onPageOverviewPointerDown}
-                  onPointerMove={onPageOverviewPointerMove}
-                  onPointerUp={onPageOverviewPointerEnd}
-                  onPointerCancel={onPageOverviewPointerEnd}
-                  onLostPointerCapture={onPageOverviewPointerEnd}
-                />
+          ) : (
+            <>
+              <div className="navigator-header">
+                <span className="navigator-map-label">Workspace</span>
+                <button
+                  className="navigator-expand-button"
+                  type="button"
+                  aria-label="Minimize workspace map"
+                  title="Minimize"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => { event.stopPropagation(); setNavigatorMinimized(true) }}
+                >
+                  <span aria-hidden="true">−</span>
+                </button>
               </div>
-            )}
-          </div>
-          <div className="navigator-controls">
-            <output className="zoom-indicator" aria-label="Current zoom">{zoomPercent}%</output>
-            <button type="button" onClick={fitCanvasView}>Fit canvas</button>
-            <button type="button" onClick={fitDrawingView}>Fit drawing</button>
-            <button type="button" onClick={resetView}>Reset</button>
-          </div>
+              <div className="navigator-maps">
+                <div className="navigator-map-section">
+                  <canvas
+                    ref={minimapRef}
+                    className="navigator-map"
+                    aria-label="Workspace overview. Click or drag to navigate the full drawing area."
+                    onPointerDown={onMinimapPointerDown}
+                    onPointerMove={onMinimapPointerMove}
+                    onPointerUp={onMinimapPointerEnd}
+                    onPointerCancel={onMinimapPointerEnd}
+                    onLostPointerCapture={onMinimapPointerEnd}
+                  />
+                </div>
+              </div>
+              <div className="navigator-controls">
+                <button type="button" onClick={fitCanvasView}>Fit canvas</button>
+                <button type="button" onClick={fitDrawingView}>Fit drawing</button>
+                <button type="button" onClick={resetView}>Reset</button>
+              </div>
+            </>
+          )}
+          <div className={`navigator-status status-${saveStatus}`} role="status">{statusLabel(saveStatus, storage.kind)}</div>
         </aside>
       </section>
-      <header ref={toolbarRef} className="toolbar" aria-label="Drawing tools">
-        <div className="brand-lockup">
-          <span className="brand-mark" aria-hidden="true"><span /></span>
-          <span className="brand-name">Ink Pad</span>
-        </div>
-        <button className="history-button" type="button" onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-2"/></svg>
-          <span>Undo</span>
-        </button>
-        <button className="history-button" type="button" onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h2"/></svg>
-          <span>Redo</span>
-        </button>
-        <span className="toolbar-spacer toolbar-tools-spacer" />
-        <button className={`tool-button pen-button${penModeActive ? ' selected' : ''}`} type="button" aria-label="Pen" aria-pressed={penModeActive} title="Freehand pen" onClick={selectPenMode}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 11.8-11.8a2.1 2.1 0 0 1 3 3L7 20l-4 1z"/><path d="m13.5 6.5 4 4"/></svg><span>Pen</span>
-        </button>
-        <button className={`tool-button shape-button${shapeMode ? ' selected' : ''}`} type="button" aria-pressed={shapeMode} title="Straight lines and rectangles recognize on hold automatically. Toggle for arrows." onClick={() => { setShapeMode((value) => !value); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser(false) }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="10" height="10" rx="1"/><path d="M10 19h9m0 0-4-4m4 4-4 4"/></svg><span>Shapes</span>
-        </button>
-        <button className={`tool-button selection-button${selectionMode ? ' selected' : ''}`} type="button" aria-pressed={selectionMode} title="Select, move, and resize rectangles" onClick={() => { const next = !selectionMode; setSelectionMode(next); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v16l4.3-4.1 3.2 6.1 2.5-1.3-3.1-6.1H18L5 3Z"/><rect x="15.5" y="3.5" width="5" height="5" rx="1"/></svg><span>Select</span>
-        </button>
-        <button className={`tool-button lasso-button${lassoMode ? ' selected' : ''}`} type="button" aria-pressed={lassoMode} title="Draw a loop to select and move multiple items" onClick={() => { const next = !lassoMode; setLassoMode(next); setSelectionMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); setSelectedRectangle(null); clearLassoSelection() }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12c0-4.1 3.1-7 7.3-7 3.8 0 6.7 2.2 6.7 5.7 0 3.8-3.2 7.3-7.1 7.3-3.8 0-6.9-2.1-6.9-6Z"/><path d="M17.5 17.5 20 20"/></svg><span>Lasso</span>
-        </button>
-        <button className={`tool-button connector-button${connectorMode || umlConnectorType !== null ? ' selected' : ''}`} type="button" aria-pressed={connectorMode || umlConnectorType !== null} title="Draw a straight UML relationship connector with the S Pen" onClick={() => { const next = !connectorMode; setConnectorMode(next); setLassoMode(false); setSelectionMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="6" height="6" rx="1"/><rect x="14.5" y="14" width="6" height="6" rx="1"/><path d="m9.5 8.5 5 6"/></svg><span>Connector</span>
-        </button>
-        {selectedItemCount > 0 && <button className="clear-selection-button" type="button" onClick={clearLassoSelection}>Clear selection</button>}
-        {selectedConnectorId !== null && selectedConnectorType !== null && <div className="relationship-controls" role="group" aria-label="Selected connector relationship">
-          <label className="relationship-label" htmlFor="connector-relationship-type">Relationship</label>
-          <select
-            id="connector-relationship-type"
-            className="relationship-select"
-            aria-label="Connector relationship type"
-            value={selectedConnectorType}
-            onChange={(event) => changeSelectedConnectorType(event.target.value as ConnectorRelationshipType)}
-          >
-            <option value="association">Association</option>
-            <option value="directed-association">Directed association</option>
-            <option value="inheritance">Inheritance</option>
-            <option value="realization">Realization</option>
-            <option value="dependency">Dependency</option>
-            <option value="aggregation">Aggregation</option>
-            <option value="composition">Composition</option>
-          </select>
-          <button
-            className="relationship-reverse"
-            type="button"
-            disabled={selectedConnectorType === 'association'}
-            title={selectedConnectorType === 'association' ? 'Association has no direction' : `Reverse ${selectedConnectorReversed ? 'to start' : 'to end'}`}
-            aria-label="Reverse connector direction"
-            onClick={reverseSelectedConnector}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h15l-4-4m4 4-4 4M20 16H5l4 4m-4-4 4-4"/></svg>
-            <span>Reverse</span>
-          </button>
-        </div>}
-        <span className="toolbar-spacer toolbar-settings-spacer" />
-        <div className="tool-group color-group" aria-label="Pen color">
-          {COLORS.map((item) => (
-            <button
-              className={`color-swatch${color === item.value ? ' selected' : ''}`}
-              key={item.value}
-              type="button"
-              title={item.name}
-              aria-label={item.name}
-              aria-pressed={color === item.value}
-              style={{ '--swatch': item.value } as React.CSSProperties}
-              onClick={() => { setColor(item.value); setEraser(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection() }}
-            />
-          ))}
-        </div>
-        <div className="tool-group thickness-group" aria-label="Stroke thickness">
-          {WIDTHS.map((size) => (
-            <button
-              className={`thickness-button${width === size ? ' selected' : ''}`}
-              key={size}
-              type="button"
-              title={`${size}px stroke`}
-              aria-label={`${size} pixel stroke thickness`}
-              aria-pressed={width === size}
-              onClick={() => setWidth(size)}
-            ><span style={{ width: Math.min(size * 2.2, 20), height: Math.min(size * 2.2, 20) }} /></button>
-          ))}
-        </div>
-        <div className="stroke-display-control" role="group" aria-label="Stroke display mode">
-          <button className={`stroke-mode-button${strokeDisplayMode === 'smooth' ? ' selected' : ''}`} type="button" aria-label="Smooth stroke display" aria-pressed={strokeDisplayMode === 'smooth'} title="Display smoothed curved strokes" onClick={() => setStrokeDisplayMode('smooth')}>
-            <svg viewBox="0 0 24 16" aria-hidden="true"><path d="M1 12c4 0 4-8 8-8s4 8 8 8 4-4 6-4"/></svg><span>Smooth</span>
-          </button>
-          <button className={`stroke-mode-button${strokeDisplayMode === 'raw' ? ' selected' : ''}`} type="button" aria-label="Raw stroke display" aria-pressed={strokeDisplayMode === 'raw'} title="Display raw straight stroke segments" onClick={() => setStrokeDisplayMode('raw')}>
-            <svg viewBox="0 0 24 16" aria-hidden="true"><path d="m1 12 7-8 7 8 8-7"/></svg><span>Raw</span>
-          </button>
-        </div>
-        <label className="page-template-control">
-          <span>Page</span>
-          <select
-            className="page-template-select"
-            aria-label="Page template"
-            value={pageTemplate}
-            onChange={(event) => setPageTemplate(event.target.value as PageTemplate)}
-          >
-            <option value="blank">Blank</option>
-            <option value="lined">Lined</option>
-            <option value="dotted">Dotted</option>
-          </select>
-        </label>
-        <label className="page-template-control page-background-control">
-          <span>Color</span>
-          <select
-            className="page-template-select"
-            aria-label="Sheet background color"
-            value={pageBackground}
-            onChange={(event) => setPageBackground(event.target.value as PageBackground)}
-          >
-            <option value="white">White</option>
-            <option value="warm">Warm</option>
-            <option value="blue">Blue</option>
-            <option value="yellow">Yellow</option>
-            <option value="green">Green</option>
-          </select>
-          <span className="page-color-swatch" aria-hidden="true" style={{ backgroundColor: PAGE_BACKGROUND_COLORS[pageBackground] }} />
-        </label>
-        <div ref={eraserControlRef} className="eraser-control">
-        <button className={`tool-button eraser-button${eraser ? ' selected' : ''}`} type="button" aria-label="Eraser" title="Eraser" aria-pressed={eraser} aria-expanded={eraserMenuOpen} onClick={() => { setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser((value) => !value); setEraserMenuOpen((value) => !value) }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8.2 4.8 9.9 0a1.5 1.5 0 0 1 1.1 2.6l-9.8 9.8a1.5 1.5 0 0 1-2.1 0l-4.1-4.1a1.5 1.5 0 0 1 0-2.1l7.2-7.2a1.5 1.5 0 0 1 1.1-.4Z"/><path d="m8.1 17.2 3.6 3.6h8"/></svg>
-          <span>Eraser</span>
-        </button>
-        </div>
-        {PERFORMANCE_DIAGNOSTICS_ENABLED && <button className={`perf-diagnostics-toggle${performanceDiagnosticsOpen ? ' selected' : ''}`} type="button" aria-expanded={performanceDiagnosticsOpen} aria-controls="inkpad-performance-panel" onClick={() => setPerformanceDiagnosticsOpen((open) => !open)}>Perf</button>}
-        <button className="clear-button" type="button" onClick={clearCanvas} disabled={!hasInk}>Clear</button>
-      </header>
+      <TopLeftBar
+        title={docTitle}
+        library={library}
+        folders={folders}
+        currentId={currentDocId}
+        pageTemplate={pageTemplate}
+        onPageTemplate={setPageTemplate}
+        pageBackground={pageBackground}
+        onPageBackground={setPageBackground}
+        hasInk={hasInk}
+        filePanelOpen={filePanelOpen}
+        onToggleFilePanel={() => setFilePanelOpen((open) => !open)}
+        onClear={clearCanvas}
+        onOpenDiagram={(id) => void openStoredDiagram(id)}
+        onFoldersOpen={() => void refreshLibrary()}
+        onNewDiagramIn={(folderId) => void newDiagramIn(folderId)}
+        onCreateFolder={(name, parentId) => void createFolder(name, parentId)}
+        onRenameFolder={(id, name) => void renameFolder(id, name)}
+        onDeleteFolder={(id) => void deleteFolder(id)}
+        onMoveDiagram={(docId, folderId) => void moveDiagram(docId, folderId)}
+        notice={fileNotice}
+        diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open) }}
+      />
+      <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
+      <AccountButton />
+      <ContextPanel
+        showStyle={optionsFor === 'pen' && penModeActive}
+        color={color}
+        onColor={selectColor}
+        width={width}
+        onWidth={setWidth}
+        strokeDisplayMode={strokeDisplayMode}
+        onStrokeDisplayMode={setStrokeDisplayMode}
+        showTextSizes={optionsFor === 'text' && textMode}
+        textSize={textSize}
+        onTextSize={setTextSize}
+        selectedItemCount={selectedItemCount}
+        onClearSelection={clearLassoSelection}
+        relationship={selectedConnectorId !== null && selectedConnectorType !== null
+          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector }
+          : null}
+      />
+      <ZoomControls zoomPercent={zoomPercent} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
+      <ToolDock
+        dockRef={toolbarRef}
+        eraserControlRef={eraserControlRef}
+        penActive={penModeActive}
+        eraserActive={eraser}
+        eraserMenuOpen={eraserMenuOpen}
+        selectionActive={selectionMode}
+        lassoActive={lassoMode}
+        connectorActive={connectorMode || umlConnectorType !== null}
+        textActive={textMode}
+        classActive={classMode}
+        shapeActive={shapeMode}
+        onPen={tapPenTool}
+        onEraser={tapEraserTool}
+        onSelect={toggleSelectTool}
+        onLasso={toggleLassoTool}
+        onConnector={toggleConnectorTool}
+        onText={toggleTextTool}
+        onTextOptions={openTextOptions}
+        onClass={toggleClassTool}
+        onShapes={toggleShapeTool}
+      />
+      {classBoxEditor && <ClassBoxDialog
+        key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}
+        initial={classBoxEditor.content}
+        isNew={classBoxEditor.rectangleId === null || !classBoxEditor.content.name && !classBoxEditor.content.attributes && !classBoxEditor.content.methods}
+        onDone={commitClassBox}
+        onCancel={() => setClassBoxEditor(null)}
+      />}
+      {filePanelOpen && <FilePanel
+        title={docTitle}
+        saveStatus={saveStatus}
+        notice={fileNotice}
+        library={library}
+        currentId={currentDocId}
+        canExport={hasInk}
+        storage={storage}
+        onChooseDeviceFolder={() => void chooseDeviceFolder()}
+        onReconnectDeviceFolder={() => void reconnectDeviceFolder()}
+        onUseBrowserStorage={() => void useBrowserStorage()}
+        onCopyBrowserToDevice={() => void copyBrowserToDevice()}
+        onClose={() => setFilePanelOpen(false)}
+        onTitleChange={renameDiagram}
+        onNew={() => void newDiagram()}
+        onOpen={(id) => void openStoredDiagram(id)}
+        onDelete={(id) => void deleteStoredDiagram(id)}
+        onExportDocument={exportDocumentFile}
+        onImportFile={(file) => void importDocumentFile(file)}
+        onExportSvg={exportSvgFile}
+        onExportPng={(scale) => void exportPngFile(scale)}
+      />}
       {PERFORMANCE_DIAGNOSTICS_ENABLED && performanceDiagnosticsOpen && <section id="inkpad-performance-panel" className="performance-panel" aria-label="Development performance diagnostics">
         <div className="performance-panel-header">
-          <div><strong>InkPad stroke diagnostics</strong><span>Development only · averages from up to 40 completed strokes per group</span></div>
+          <div><strong>InkPad drawing latency diagnostics</strong><span>Development only · capture is opt-in · each group keeps up to 40 strokes</span></div>
           <div className="performance-panel-actions">
-            <button type="button" onClick={() => { performanceDiagnosticsRef.current?.reset(); setPerformanceRows(performanceDiagnosticsRef.current?.snapshot() ?? []) }}>Reset</button>
-            <button type="button" aria-label="Close performance diagnostics" onClick={() => setPerformanceDiagnosticsOpen(false)}>×</button>
+            <button type="button" aria-pressed={performanceCaptureActive} onClick={() => {
+              const diagnostics = performanceDiagnosticsRef.current
+              if (!diagnostics) return
+              if (performanceCaptureActive) {
+                diagnostics.stopCapture()
+                setPerformanceRows(diagnostics.snapshot())
+                setBrowserStallSummary(diagnostics.browserStallSnapshot())
+                setPerformanceCaptureActive(false)
+              } else {
+                diagnostics.startCapture()
+                setPerformanceRows(diagnostics.snapshot())
+                setBrowserStallSummary(diagnostics.browserStallSnapshot())
+                setPerformanceCaptureActive(true)
+              }
+            }}>{performanceCaptureActive ? 'Stop capture' : 'Start capture'}</button>
+            <button type="button" disabled={benchmarkRunning || performanceCaptureActive} onClick={() => { void runSyntheticBenchmark('controlled') }}>{benchmarkRunning ? 'Benchmarking…' : 'Run controlled'}</button>
+            <button type="button" disabled={benchmarkRunning || performanceCaptureActive} onClick={() => { void runSyntheticBenchmark('native') }}>{benchmarkRunning ? 'Benchmarking…' : 'Run native'}</button>
+            <button type="button" disabled={!benchmarkResult} onClick={() => {
+              if (!benchmarkResult) return
+              const blob = new Blob([JSON.stringify(benchmarkResult, null, 2)], { type: 'application/json' })
+              const url = URL.createObjectURL(blob)
+              const link = document.createElement('a')
+              link.href = url
+              link.download = `inkpad-benchmark-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+              link.click()
+              URL.revokeObjectURL(url)
+            }}>Export benchmark JSON</button>
+            <button type="button" onClick={() => {
+              const diagnostics = performanceDiagnosticsRef.current
+              if (!diagnostics) return
+              const data = diagnostics.exportJson(getDiagnosticDeviceInfo())
+              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+              const url = URL.createObjectURL(blob)
+              const download = document.createElement('a')
+              download.href = url
+              download.download = `inkpad-diagnostics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+              document.body.appendChild(download)
+              download.click()
+              download.remove()
+              window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+            }}>Export JSON</button>
+            <button type="button" onClick={() => {
+              const diagnostics = performanceDiagnosticsRef.current
+              diagnostics?.reset()
+              setPerformanceRows(diagnostics?.snapshot() ?? [])
+              setBrowserStallSummary(diagnostics?.browserStallSnapshot() ?? null)
+            }}>Reset</button>
+            <button type="button" aria-label="Close performance diagnostics" onClick={() => {
+              performanceDiagnosticsRef.current?.stopCapture()
+              setPerformanceRows(performanceDiagnosticsRef.current?.snapshot() ?? [])
+              setBrowserStallSummary(performanceDiagnosticsRef.current?.browserStallSnapshot() ?? null)
+              setPerformanceCaptureActive(false)
+              setPerformanceDiagnosticsOpen(false)
+            }}>×</button>
           </div>
         </div>
+        <div className="performance-browser-stalls">
+          <span>Long tasks: {browserStallSummary ? formatBrowserStall(browserStallSummary.longTaskDuration, browserStallSummary.longTaskSupported) : 'not captured'}</span>
+          <span>Long animation frames: {browserStallSummary ? formatBrowserStall(browserStallSummary.longAnimationFrameDuration, browserStallSummary.longAnimationFrameSupported) : 'not captured'}</span>
+        </div>
+        <section className="performance-latency-focus" aria-label="Pointer and animation frame latency P95">
+          <div className="performance-latency-focus-heading">
+            <strong>Pointer → frame P95</strong>
+            <span>Compare delivery, RAF wait, canvas and navigator stages. The largest P95 is a clue, not a causal or digitizer-to-screen measurement.</span>
+          </div>
+          <div className="performance-latency-focus-grid">
+            {performanceRows.map((row) => {
+              const largestStage = getLargestMeasuredLatencyStage(row.metrics)
+              return <article key={`focus-${row.mode}-${row.length}`}>
+                <h3>{row.mode === 'raw' ? 'Raw' : 'Smooth'} · {row.length} <span>({row.strokes} strokes)</span></h3>
+                <dl>
+                  <div><dt>Pointer event → handler</dt><dd>{formatFocusedP95(row.metrics.sampleToHandlerMs)}</dd></div>
+                  <div><dt>Render request → RAF</dt><dd>{formatFocusedP95(row.metrics.frameWaitMs)}</dd></div>
+                  <div><dt>Main canvas render</dt><dd>{formatFocusedP95(row.metrics.mainCanvasMs)}</dd></div>
+                  <div><dt>Minimap / page overview</dt><dd>{formatFocusedP95(row.metrics.minimapMs)} / {formatFocusedP95(row.metrics.pageOverviewMs)}</dd></div>
+                  <div><dt>Latest sample → render complete</dt><dd>{formatFocusedP95(row.metrics.latestSampleToRenderMs)}</dd></div>
+                </dl>
+                <p>Largest measured stage: <strong>{largestStage.label}</strong>{largestStage.observations ? ` · P95 ${largestStage.p95Ms.toFixed(2)} ms` : ''}</p>
+              </article>
+            })}
+          </div>
+        </section>
         <div className="performance-table-scroll"><table>
-          <thead><tr><th>Mode / length</th><th>N</th><th>Mean ms</th><th>Points</th><th>Moves/s</th><th>Event Δt</th><th>Samples/move</th><th>RAF wait</th><th>RAF merged</th><th>Render all</th><th>Live stroke</th><th>Minimap</th><th>Page view</th><th>Event→render</th></tr></thead>
+          <thead><tr>
+            <th>Mode / length</th><th>Strokes</th><th>Avg stroke ms</th><th>Active pts</th><th>Moves/s</th><th>Samples/move</th><th>Scene items</th><th>Scene pts</th><th>Zoom / DPR</th><th>Page inset %</th>
+            <th>Sample→handler</th><th>Sample Δt</th><th>RAF wait</th><th>RAF gap</th><th>RAF merged</th><th>Render total</th><th>Main canvas</th><th>History ink</th><th>Active stroke</th><th>Composite</th><th>Minimap</th><th>Page view</th><th>Latest→render</th><th>Oldest→render</th>
+          </tr></thead>
           <tbody>{performanceRows.map((row) => <tr key={`${row.mode}-${row.length}`}>
             <th>{row.mode === 'raw' ? 'Raw' : 'Smooth'} · {row.length}</th><td>{row.strokes}</td><td>{row.avgDurationMs.toFixed(0)}</td><td>{row.avgPoints.toFixed(0)}</td>
-            <td>{row.avgPointerHz ? row.avgPointerHz.toFixed(1) : '—'}</td><td>{row.avgPointerIntervalMs ? row.avgPointerIntervalMs.toFixed(2) : '—'}</td><td>{row.avgSamplesPerMove ? row.avgSamplesPerMove.toFixed(2) : '—'}</td>
-            <td>{row.avgFrameWaitMs ? row.avgFrameWaitMs.toFixed(2) : '—'}</td><td>{row.avgCoalescedFrameRequests.toFixed(2)}</td><td>{row.avgRenderAllMs ? row.avgRenderAllMs.toFixed(2) : '—'}</td>
-            <td>{row.avgActiveStrokeRenderMs ? row.avgActiveStrokeRenderMs.toFixed(2) : '—'}</td><td>{row.avgMinimapMs ? row.avgMinimapMs.toFixed(2) : '—'}</td>
-            <td>{row.avgPageOverviewMs ? row.avgPageOverviewMs.toFixed(2) : '—'}</td><td>{row.avgEventToRenderMs ? row.avgEventToRenderMs.toFixed(2) : '—'}</td>
+            <td>{row.avgPointerHz.toFixed(1)}</td><td>{row.avgSamplesPerMove.toFixed(2)}</td>
+            <td>{row.avgSceneItems.toFixed(0)} ({row.avgSceneStrokes.toFixed(0)}s/{row.avgSceneRectangles.toFixed(0)}r/{row.avgSceneConnectors.toFixed(0)}c)</td><td>{row.avgScenePoints.toFixed(0)}</td>
+            <td>{row.avgZoom.toFixed(2)}× / {row.avgDevicePixelRatio.toFixed(2)}</td><td>{row.pageOverviewUsePercent.toFixed(0)}</td>
+            <td>{formatMetricSummary(row.metrics.sampleToHandlerMs)}</td><td>{formatMetricSummary(row.metrics.sampleIntervalMs)}</td>
+            <td>{formatMetricSummary(row.metrics.frameWaitMs)}</td><td>{formatMetricSummary(row.metrics.frameGapMs)}</td><td>{row.avgMergedFrameRequests.toFixed(2)}</td>
+            <td>{formatMetricSummary(row.metrics.renderAllMs)}</td><td>{formatMetricSummary(row.metrics.mainCanvasMs)}</td>
+            <td>{formatMetricSummary(row.metrics.historyInkMs)}</td><td>{formatMetricSummary(row.metrics.activeStrokeRenderMs)}</td>
+            <td>{formatMetricSummary(row.metrics.compositeMs)}</td><td>{formatMetricSummary(row.metrics.minimapMs)}</td>
+            <td>{formatMetricSummary(row.metrics.pageOverviewMs)}</td><td>{formatMetricSummary(row.metrics.latestSampleToRenderMs)}</td>
+            <td>{formatMetricSummary(row.metrics.oldestSampleToRenderMs)}</td>
           </tr>)}</tbody>
         </table></div>
-        <p>Short ≤120 retained points; long &gt;120. Event→render is handler-entry to render completion (not digitizer-to-photon latency). Measurements are summarized on pen-up.</p>
+        <p>Short ≤120 retained points; long &gt;120. Times are milliseconds. P95 uses up to 512 observations per stroke; maxima and total counts cover every observation. RAF gap is between requested drawing callbacks, not display refresh. Scene complexity is sampled at pen-down. Sample→render ends before browser compositing/display scanout and is not digitizer-to-photon latency. Browser stall APIs are feature-detected.</p>
       </section>}
       {eraserMenuOpen && eraserPopoverPosition && createPortal(
         <div

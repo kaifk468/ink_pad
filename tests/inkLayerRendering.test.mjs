@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import ts from 'typescript'
+import { readAppSource } from './helpers/appSource.mjs'
 
-const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const appSource = await readAppSource()
 const modelSource = await readFile(new URL('../src/canvasModel.ts', import.meta.url), 'utf8')
 const modelOutput = ts.transpileModule(modelSource, {
   compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
@@ -15,10 +16,14 @@ test('main canvas keeps the page background separate from ink compositing', () =
   assert.match(appSource, /if \(!layerRef\.current\) layerRef\.current = document\.createElement\('canvas'\)/)
   assert.match(appSource, /const inkLayer = getReusableCanvasLayer\(inkLayerRef, canvas\.width, canvas\.height\)/)
   assert.match(appSource, /drawStroke[\s\S]*?ctx\.globalCompositeOperation = stroke\.erase \? 'destination-out' : 'source-over'/)
-  assert.match(appSource, /canvasItemsForRendering\(strokesRef\.current\)\.forEach\(\(item\) => drawItem\(inkContext, item\)\)/)
+  assert.match(appSource, /canvasItemsForRendering\(strokesRef\.current\)\.forEach\(\(item\) => \{ if \(editingTextId === null \|\| item\.kind !== 'text' \|\| item\.id !== editingTextId\) drawItem\(inkContext, item\) \}\)/)
   assert.match(appSource, /drawItem\(inkContext, preview \?\? activeStrokeRef\.current\)/)
   assert.match(appSource, /ctx\.drawImage\(inkLayer, 0, 0\)/)
-  assert.match(appSource, /ctx\.fillRect\(SHEET_BOUNDS\.x, SHEET_BOUNDS\.y, SHEET_WIDTH, SHEET_HEIGHT\)/)
+  const renderAll = appSource.slice(appSource.indexOf('const renderAll = useCallback'), appSource.indexOf('const applyViewport'))
+  assert.match(renderAll, /applySheetLayer\(sheetLayer, sheetLayerAppliedRef\.current/)
+  assert.doesNotMatch(renderAll, /ctx\.fillRect\(SHEET_BOUNDS/)
+  assert.doesNotMatch(renderAll, /shadowBlur|createPattern/)
+  assert.ok(renderAll.indexOf('ctx.clearRect(0, 0, canvas.width, canvas.height)') < renderAll.indexOf('ctx.drawImage(inkLayer, 0, 0)'))
 })
 
 test('eraser strokes remain localized paths, preserving ink outside the erased segment', () => {
@@ -50,7 +55,7 @@ test('eraser strokes remain localized paths, preserving ink outside the erased s
 })
 
 test('connectors and shapes render on the same ink layer and remain in history snapshots', () => {
-  assert.match(appSource, /canvasItemsForRendering\(strokesRef\.current\)\.forEach\(\(item\) => drawItem\(inkContext, item\)\)/)
+  assert.match(appSource, /canvasItemsForRendering\(strokesRef\.current\)\.forEach\(\(item\) => \{ if \(editingTextId === null \|\| item\.kind !== 'text' \|\| item\.id !== editingTextId\) drawItem\(inkContext, item\) \}\)/)
   const rectangle = { kind: 'rectangle', id: 1, x: 20, y: 20, width: 100, height: 70, strokeColor: '#202124', strokeWidth: 3 }
   const connector = { kind: 'connector', id: 2, start: { x: 120, y: 55 }, end: { x: 200, y: 55 }, strokeColor: '#202124', strokeWidth: 3, relationshipType: 'association', reversed: false }
   const beforeMove = [rectangle, connector]
@@ -65,18 +70,14 @@ test('connectors and shapes render on the same ink layer and remain in history s
   assert.deepEqual(history.redo(beforeMove), afterMove)
 })
 
-test('workspace and page overviews composite erased item rendering over their own backgrounds', () => {
+test('workspace map composites erased item rendering over its own background and the page overview is gone', () => {
   const navigatorStart = appSource.indexOf('const renderNavigator = useCallback')
-  const pageOverviewStart = appSource.indexOf('const renderPageOverview = useCallback')
   const renderAllStart = appSource.indexOf('const renderAll = useCallback')
-  const navigator = appSource.slice(navigatorStart, pageOverviewStart)
-  const pageOverview = appSource.slice(pageOverviewStart, renderAllStart)
+  const navigator = appSource.slice(navigatorStart, renderAllStart)
 
   assert.match(navigator, /drawMinimapItems\(inkContext, geometry\)/)
   assert.match(navigator, /getReusableCanvasLayer\(minimapInkLayerRef, pixelWidth, pixelHeight\)/)
   assert.match(navigator, /ctx\.fillStyle = '#e9ebf0'[\s\S]*?ctx\.fillStyle = PAGE_BACKGROUND_COLORS\[pageBackground\][\s\S]*?drawPageTemplateOverview\(ctx, pageTemplate,[\s\S]*?ctx\.drawImage\(inkLayer, 0, 0\)/)
-  assert.match(pageOverview, /drawMinimapItems\(inkContext, geometry\)/)
-  assert.match(pageOverview, /getReusableCanvasLayer\(pageOverviewInkLayerRef, pixelWidth, pixelHeight\)/)
-  assert.match(pageOverview, /ctx\.fillStyle = PAGE_BACKGROUND_COLORS\[pageBackground\][\s\S]*?drawPageTemplateOverview\(ctx, pageTemplate,[\s\S]*?ctx\.drawImage\(inkLayer, 0, 0\)/)
   assert.match(appSource, /ctx\.globalCompositeOperation = item\.erase \? 'destination-out' : 'source-over'/)
+  assert.doesNotMatch(appSource, /renderPageOverview|pageOverviewRef|navigator-page-section|Expand page overview/)
 })

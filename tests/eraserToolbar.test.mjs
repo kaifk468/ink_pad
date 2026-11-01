@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { readAppSource } from './helpers/appSource.mjs'
 
-const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const app = await readAppSource()
 const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
 
 test('eraser popover provides a continuous size range and retains the existing quick presets', () => {

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { readAppSource } from './helpers/appSource.mjs'
 
-const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const appSource = await readAppSource()
 const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
 
 test('floating UML toolbox exposes all seven first-class relationship tools', () => {
@@ -58,4 +59,15 @@ test('selected relationship type flows through pen preview and snapped connector
   assert.match(appSource, /relationshipType: umlConnectorType \?\? 'association'/)
   assert.match(appSource, /activeConnector\.relationshipType,[\s\S]*?\)\)/)
   assert.match(appSource, /setUmlConnectorType\(relationshipType\)[\s\S]*?setConnectorMode\(false\)/)
+})
+
+test('UML toolbox and workspace map start minimized, and the workspace map can be minimized and restored', async () => {
+  const { readAppSource } = await import('./helpers/appSource.mjs')
+  const source = await readAppSource()
+  assert.match(source, /const \[umlToolboxMinimized, setUmlToolboxMinimized\] = useState\(true\)/)
+  assert.match(source, /const \[navigatorMinimized, setNavigatorMinimized\] = useState\(true\)/)
+  assert.match(source, /aria-label="Show workspace map"[\s\S]*?setNavigatorMinimized\(false\)|setNavigatorMinimized\(false\)[\s\S]*?aria-label="Show workspace map"/)
+  assert.match(source, /aria-label="Minimize workspace map"/)
+  assert.match(source, /setNavigatorMinimized\(true\)/)
+  assert.match(source, /navigator-status/)
 })

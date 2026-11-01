@@ -1,6 +1,8 @@
 export type Point = { x: number; y: number; pressure: number }
 export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line' }
-export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number }
+export type ClassBoxContent = { name: string; attributes: string; methods: string }
+export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent }
+export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string }
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
 export type ConnectorAttachment = { rectangleId: number; offsetX: number; offsetY: number }
@@ -17,7 +19,7 @@ export type ConnectorObject = {
   startAttachment?: ConnectorAttachment
   endAttachment?: ConnectorAttachment
 }
-export type CanvasItem = Stroke | RectangleObject | ConnectorObject
+export type CanvasItem = Stroke | RectangleObject | ConnectorObject | TextObject
 export const CONNECTOR_SNAP_TOLERANCE = 36
 
 export function createConnector(
@@ -296,6 +298,9 @@ export function getCanvasSelectionBounds(items: CanvasItem[], selectedKeys: Read
         include(geometry.sideB.x, geometry.sideB.y, item.strokeWidth / 2)
         include(geometry.far.x, geometry.far.y, item.strokeWidth / 2)
       }
+    } else if (item.kind === 'text') {
+      include(item.x, item.y)
+      include(item.x + item.width, item.y + item.height)
     } else if (!item.erase) {
       for (const point of item.points) include(point.x, point.y, item.width / 2)
       if (item.shape === 'arrow' && item.points.length >= 2) {
@@ -350,6 +355,18 @@ export function resizeSelectedItems(items: CanvasItem[], selectedKeys: ReadonlyS
   return items.map((item) => {
     const selected = selectedKeys.has(canvasItemKey(item))
     if (item.kind === 'rectangle') return selected ? selectedRectangles.get(item.id)! : item
+    if (item.kind === 'text') {
+      return selected
+        ? {
+          ...item,
+          x: bounds.x + (item.x - originalBounds.x) * scaleX,
+          y: bounds.y + (item.y - originalBounds.y) * scaleY,
+          fontSize: item.fontSize * strokeScale,
+          width: item.width * strokeScale,
+          height: item.height * strokeScale,
+        }
+        : item
+    }
     if (item.kind === 'stroke') {
       return selected
         ? { ...item, points: item.points.map(transformPoint), width: item.width * strokeScale }
@@ -405,7 +422,8 @@ export function resizeSelectedItems(items: CanvasItem[], selectedKeys: ReadonlyS
 
 export function cloneCanvasItems(items: CanvasItem[]): CanvasItem[] {
   return items.map((item) => {
-    if (item.kind === 'rectangle') return { ...item }
+    if (item.kind === 'rectangle') return item.classBox ? { ...item, classBox: { ...item.classBox } } : { ...item }
+    if (item.kind === 'text') return { ...item }
     if (item.kind === 'connector') return {
       ...item,
       start: { ...item.start },
@@ -429,7 +447,7 @@ export function translateSelectedItems(items: CanvasItem[], selectedKeys: Readon
     .map((rectangle) => [rectangle.id, rectangle]))
   return items.map((item) => {
     const itemSelected = selectedKeys.has(canvasItemKey(item))
-    if (item.kind === 'rectangle') return itemSelected ? { ...item, x: item.x + dx, y: item.y + dy } : item
+    if (item.kind === 'rectangle' || item.kind === 'text') return itemSelected ? { ...item, x: item.x + dx, y: item.y + dy } : item
     if (item.kind === 'connector') {
       const connectorSelected = itemSelected
       const startRectangleMoves = !!item.startAttachment && selectedRectangleIds.has(item.startAttachment.rectangleId)

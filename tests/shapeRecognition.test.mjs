@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import ts from 'typescript'
+import { readAppSource } from './helpers/appSource.mjs'
 
 async function importTypeScript(path) {
   const source = await readFile(new URL(path, import.meta.url), 'utf8')
@@ -13,7 +14,7 @@ async function importTypeScript(path) {
 
 const recognition = await importTypeScript('../src/shapeRecognition.ts')
 const model = await importTypeScript('../src/canvasModel.ts')
-const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const appSource = await readAppSource()
 
 const rectangleStroke = (overrides = {}) => ({
   kind: 'stroke',

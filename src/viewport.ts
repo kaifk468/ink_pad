@@ -20,6 +20,8 @@ export const WORKSPACE_BOUNDS: ViewBounds = {
   height: WORKSPACE_HEIGHT,
 }
 export const DEFAULT_ZOOM = 1
+/** Zoom the app opens at. Reset and the zoom buttons still treat 100% as the default. */
+export const INITIAL_ZOOM = 1.1
 export const MIN_ZOOM = 0.1
 export const MAX_ZOOM = 3
 export const THREE_FINGER_PAN_THRESHOLD = 3
@@ -218,4 +220,26 @@ export function zoomTwoFingerViewport(
 ): Viewport {
   const ratio = startDistance > 0 ? currentDistance / startDistance : 1
   return zoomViewportAt(startViewport, startViewport.scale * ratio, startCenter, minScale, maxScale)
+}
+
+/** Smallest scale at which the sheet fully covers the viewport, so no area outside the sheet is ever visible. */
+export function getCoverScale(viewportWidth: number, viewportHeight: number, bounds: ViewBounds = SHEET_BOUNDS): number {
+  return Math.max(viewportWidth / Math.max(1, bounds.width), viewportHeight / Math.max(1, bounds.height))
+}
+
+/** Clamp a viewport so it never shows anything outside the sheet: zoom-out stops where the sheet exactly fits. */
+export function clampViewportToSheet(viewport: Viewport, viewportWidth: number, viewportHeight: number): Viewport {
+  const minScale = getCoverScale(viewportWidth, viewportHeight)
+  const scale = Math.max(minScale, Math.min(MAX_ZOOM, viewport.scale))
+  return clampViewportToBounds({ ...viewport, scale }, viewportWidth, viewportHeight, SHEET_BOUNDS)
+}
+
+/** The view a fresh app or a freshly opened diagram starts in: INITIAL_ZOOM centered on the sheet. */
+export function getInitialViewport(viewportWidth: number, viewportHeight: number): Viewport {
+  const scale = Math.max(INITIAL_ZOOM, getCoverScale(viewportWidth, viewportHeight))
+  return clampViewportToSheet({
+    scale,
+    offsetX: viewportWidth / 2 - (SHEET_WIDTH / 2) * scale,
+    offsetY: viewportHeight / 2 - (SHEET_HEIGHT / 2) * scale,
+  }, viewportWidth, viewportHeight)
 }
