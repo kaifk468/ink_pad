@@ -62,7 +62,7 @@ test('the stroke being written is drawn on its own overlay canvas above the page
 test('the overlay and the page cache can be switched off from the address for on-device comparison', () => {
   assert.match(app, /DRAW_SWITCHES\.get\('overlay'\) !== 'off'/)
   assert.match(app, /DRAW_SWITCHES\.get\('cache'\) !== 'off'/)
-  assert.match(app, /const liveCanvas = LIVE_OVERLAY_ENABLED \? liveCanvasRef\.current : null/)
+  assert.match(app, /const liveCanvas = LIVE_OVERLAY_ENABLED && drawMode === 'cached' \? liveCanvasRef\.current : null/)
 })
 
 test('the low-latency canvas hint is opt-in and only for the live-stroke overlay', () => {

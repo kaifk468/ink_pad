@@ -14,6 +14,7 @@ import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type Pa
 import { getNextIds } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
+import { DEFAULT_DIRECT_MAX_VISIBLE_POINTS, chooseDrawMode, countVisiblePoints, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
 import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer } from './app/canvasRenderer'
 import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
 import { UmlConnectorIcon } from './app/UmlConnectorIcon'
@@ -54,6 +55,8 @@ const LIVE_OVERLAY_ENABLED = DRAW_SWITCHES.get('overlay') !== 'off'
 const PAGE_CACHE_ENABLED = DRAW_SWITCHES.get('cache') !== 'off'
 // ?desync=on asks the browser for its low-latency canvas path (skips waiting for the compositor) for the live-stroke overlay.
 const LIVE_OVERLAY_DESYNCHRONIZED = DRAW_SWITCHES.get('desync') === 'on'
+// ?direct=N sets how many points of ink may be visible before the page picture is cached (0 = always cached, a huge number = never).
+const DIRECT_MAX_VISIBLE_POINTS = Number.isFinite(Number(DRAW_SWITCHES.get('direct'))) && DRAW_SWITCHES.get('direct') !== null ? Number(DRAW_SWITCHES.get('direct')) : DEFAULT_DIRECT_MAX_VISIBLE_POINTS
 
 /** The canvas area (device pixels) a growing stroke can touch: its bounding box plus line width and curve overshoot. */
 function getDirtyRect(points: Point[], strokeWidth: number, viewport: Viewport, dpr: number, canvasWidth: number, canvasHeight: number): DeviceRect | null {
@@ -91,6 +94,7 @@ function App() {
   const historyLayerRef = useRef<HTMLCanvasElement | null>(null)
   const liveCanvasRef = useRef<HTMLCanvasElement>(null)
   const liveOverlayActiveRef = useRef(false)
+  const drawModeRef = useRef<DrawMode>('direct')
   const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
   const minimapRenderedAtRef = useRef(0)
   // True while a pinch or three-finger pan is moving: the page is shown as a moved copy of a saved picture, then redrawn sharply once it settles.
@@ -693,7 +697,19 @@ function App() {
     const gestureFrame = !benchmarkBackground && editingTextId === null && viewportGestureRef.current
     // The picture of everything already on the page is kept between frames and between strokes. A finished pen stroke is
     // added to it directly, so neither starting nor ending a stroke redraws the whole page.
-    const cacheAllowed = !benchmarkBackground && editingTextId === null && PAGE_CACHE_ENABLED
+    const viewCssWidth = canvas.width / dpr
+    const viewCssHeight = canvas.height / dpr
+    const view = viewRectOf(viewport, viewCssWidth, viewCssHeight)
+    // Which drawing path to use depends on how much ink is in view, and only changes between strokes.
+    if (!benchmarkBackground && liveStroke === null) {
+      const nextMode = chooseDrawMode(drawModeRef.current, countVisiblePoints(items, view), DIRECT_MAX_VISIBLE_POINTS)
+      if (nextMode !== drawModeRef.current) {
+        drawModeRef.current = nextMode
+        canvas.dataset.drawMode = nextMode
+      }
+    }
+    const drawMode = drawModeRef.current
+    const cacheAllowed = !benchmarkBackground && editingTextId === null && PAGE_CACHE_ENABLED && drawMode === 'cached'
     const cache = historyCacheRef.current
     const historyLayerNow = historyLayerRef.current
     const cacheBase = cacheAllowed && cache !== null && historyLayerNow !== null
@@ -725,7 +741,7 @@ function App() {
     // The stroke being written lives on its own transparent canvas above the page, so while writing, nothing the size of
     // the screen is redrawn or copied: each frame only repaints the stroke's own area on that canvas. The page canvas is
     // painted once when the stroke starts and once when it ends. Anything else (eraser, shapes, pinch) uses the page canvas.
-    const liveCanvas = LIVE_OVERLAY_ENABLED ? liveCanvasRef.current : null
+    const liveCanvas = LIVE_OVERLAY_ENABLED && drawMode === 'cached' ? liveCanvasRef.current : null
     const liveContext = dirtyRect && liveCanvas ? liveCanvas.getContext('2d', LIVE_OVERLAY_DESYNCHRONIZED ? { desynchronized: true } : undefined) : null
     const overlayCapable = liveContext !== null && liveCanvas !== null && liveStroke !== null
     const drawLiveStroke = (rect: DeviceRect) => {
@@ -846,7 +862,7 @@ function App() {
       else inkContext.drawImage(historyLayerRef.current, 0, 0)
       inkContext.restore()
     } else {
-      canvasItemsForRendering(items).forEach((item) => { if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(inkContext, item) })
+      canvasItemsForRendering(items).forEach((item) => { if (!isItemVisible(item, view)) return; if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(inkContext, item) })
       if (cacheAllowed) {
         const historyLayer = getReusableCanvasLayer(historyLayerRef, canvas.width, canvas.height)
         const historyContext = historyLayer.getContext('2d')

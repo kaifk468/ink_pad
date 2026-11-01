@@ -16,7 +16,7 @@ test('main canvas keeps the page background separate from ink compositing', () =
   assert.match(appSource, /if \(!layerRef\.current\) layerRef\.current = document\.createElement\('canvas'\)/)
   assert.match(appSource, /const inkLayer = getReusableCanvasLayer\(inkLayerRef, canvas\.width, canvas\.height\)/)
   assert.match(appSource, /drawStroke[\s\S]*?ctx\.globalCompositeOperation = stroke\.erase \? 'destination-out' : 'source-over'/)
-  assert.match(appSource, /canvasItemsForRendering\(items\)\.forEach\(\(item\) => \{ if \(editingTextId === null \|\| item\.kind !== 'text' \|\| item\.id !== editingTextId\) drawItem\(inkContext, item\) \}\)/)
+  assert.match(appSource, /canvasItemsForRendering\(items\)\.forEach\(\(item\) => \{ if \(!isItemVisible\(item, view\)\) return; if \(editingTextId === null \|\| item\.kind !== 'text' \|\| item\.id !== editingTextId\) drawItem\(inkContext, item\) \}\)/)
   assert.match(appSource, /drawItem\(inkContext, preview \?\? activeStrokeRef\.current\)/)
   assert.match(appSource, /ctx\.drawImage\(inkLayer, 0, 0\)/)
   const renderAll = appSource.slice(appSource.indexOf('const renderAll = useCallback'), appSource.indexOf('const applyViewport'))
@@ -55,7 +55,7 @@ test('eraser strokes remain localized paths, preserving ink outside the erased s
 })
 
 test('connectors and shapes render on the same ink layer and remain in history snapshots', () => {
-  assert.match(appSource, /canvasItemsForRendering\(items\)\.forEach\(\(item\) => \{ if \(editingTextId === null \|\| item\.kind !== 'text' \|\| item\.id !== editingTextId\) drawItem\(inkContext, item\) \}\)/)
+  assert.match(appSource, /canvasItemsForRendering\(items\)\.forEach\(\(item\) => \{ if \(!isItemVisible\(item, view\)\) return; if \(editingTextId === null \|\| item\.kind !== 'text' \|\| item\.id !== editingTextId\) drawItem\(inkContext, item\) \}\)/)
   const rectangle = { kind: 'rectangle', id: 1, x: 20, y: 20, width: 100, height: 70, strokeColor: '#202124', strokeWidth: 3 }
   const connector = { kind: 'connector', id: 2, start: { x: 120, y: 55 }, end: { x: 200, y: 55 }, strokeColor: '#202124', strokeWidth: 3, relationshipType: 'association', reversed: false }
   const beforeMove = [rectangle, connector]
