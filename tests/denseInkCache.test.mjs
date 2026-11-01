@@ -8,7 +8,7 @@ test('the ink already on the page is kept as a picture between frames and betwee
   assert.match(app, /historyLayerRef/)
   assert.match(app, /historyCacheRef/)
   // never used for benchmark runs or while a text label is being edited
-  assert.match(app, /const cacheAllowed = !benchmarkBackground && editingTextId === null/)
+  assert.match(app, /const cacheAllowed = !benchmarkBackground && editingTextId === null && PAGE_CACHE_ENABLED/)
   // reused only for the same items (same objects, same order), display mode, pixel density and canvas size
   for (const key of ['sameItems(cache!.snapshot, items, items.length)', 'cache.mode === strokeDisplayMode', 'cache.dpr === dpr', 'cache.width === canvas.width', 'cache.height === canvas.height', 'cache!.scale === viewport.scale', 'cache!.offsetX === viewport.offsetX', 'cache!.offsetY === viewport.offsetY']) {
     assert.ok(app.includes(key), key)
@@ -57,4 +57,10 @@ test('the stroke being written is drawn on its own overlay canvas above the page
   assert.match(app, /if \(liveOverlayActiveRef\.current\) \{[\s\S]*?clearRect\(0, 0, liveCanvas\.width, liveCanvas\.height\)[\s\S]*?liveOverlayActiveRef\.current = false/)
   // the frame that starts the overlay paints the page without the stroke
   assert.match(app, /if \(activeStrokeRef\.current && !startOverlay\)/)
+})
+
+test('the overlay and the page cache can be switched off from the address for on-device comparison', () => {
+  assert.match(app, /DRAW_SWITCHES\.get\('overlay'\) !== 'off'/)
+  assert.match(app, /DRAW_SWITCHES\.get\('cache'\) !== 'off'/)
+  assert.match(app, /const liveCanvas = LIVE_OVERLAY_ENABLED \? liveCanvasRef\.current : null/)
 })

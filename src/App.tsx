@@ -48,6 +48,11 @@ function sameItems(snapshot: CanvasItem[], items: CanvasItem[], count: number): 
 
 type DeviceRect = { x: number; y: number; width: number; height: number }
 
+// Diagnostic switches for comparing drawing paths on a device without a second build: add ?overlay=off or ?cache=off to the address.
+const DRAW_SWITCHES = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
+const LIVE_OVERLAY_ENABLED = DRAW_SWITCHES.get('overlay') !== 'off'
+const PAGE_CACHE_ENABLED = DRAW_SWITCHES.get('cache') !== 'off'
+
 /** The canvas area (device pixels) a growing stroke can touch: its bounding box plus line width and curve overshoot. */
 function getDirtyRect(points: Point[], strokeWidth: number, viewport: Viewport, dpr: number, canvasWidth: number, canvasHeight: number): DeviceRect | null {
   if (!points.length) return null
@@ -686,7 +691,7 @@ function App() {
     const gestureFrame = !benchmarkBackground && editingTextId === null && viewportGestureRef.current
     // The picture of everything already on the page is kept between frames and between strokes. A finished pen stroke is
     // added to it directly, so neither starting nor ending a stroke redraws the whole page.
-    const cacheAllowed = !benchmarkBackground && editingTextId === null
+    const cacheAllowed = !benchmarkBackground && editingTextId === null && PAGE_CACHE_ENABLED
     const cache = historyCacheRef.current
     const historyLayerNow = historyLayerRef.current
     const cacheBase = cacheAllowed && cache !== null && historyLayerNow !== null
@@ -718,7 +723,7 @@ function App() {
     // The stroke being written lives on its own transparent canvas above the page, so while writing, nothing the size of
     // the screen is redrawn or copied: each frame only repaints the stroke's own area on that canvas. The page canvas is
     // painted once when the stroke starts and once when it ends. Anything else (eraser, shapes, pinch) uses the page canvas.
-    const liveCanvas = liveCanvasRef.current
+    const liveCanvas = LIVE_OVERLAY_ENABLED ? liveCanvasRef.current : null
     const liveContext = dirtyRect && liveCanvas ? liveCanvas.getContext('2d') : null
     const overlayCapable = liveContext !== null && liveCanvas !== null && liveStroke !== null
     const drawLiveStroke = (rect: DeviceRect) => {
