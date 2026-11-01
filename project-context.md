@@ -301,3 +301,12 @@
 - Planned, not built: link the top-right account avatar (placeholder) to the same Storage panel / sign-in state.
 - Verified: 235 tests pass on the cloud copy and the laptop; laptop `tsc -b` clean; `vite build` passes in a clean copy. Tablet check still to do.
 
+## Lag over dense writing — 2026-11-01
+
+- Symptom (tablet, deployed app): after roughly 40-50 words the ink lagged behind the pen; blank areas and fresh diagrams were smooth, and it came back as the page filled.
+- Cause: every frame of a pen stroke redrew every item on the page into the ink layer, and also redrew the whole minimap. Cost grew with the amount of ink.
+- Fix (`src/App.tsx`, `renderAll`): while a plain pen stroke is in progress, everything already on the page is painted once into `historyLayerRef` and reused each frame (valid only for the same items array and count, viewport, pixel density and canvas size; dropped as soon as no pen stroke is active; never used for erasers, benchmark runs or text editing). The minimap is refreshed at most every 300 ms while writing (`MINIMAP_LIVE_REFRESH_MS`).
+- Measured in headless Chromium (pen events, mean ms per pointer move, empty page / 500 / 1500 / 3000 strokes): before 33 / 34 / 65 / 98 (p95 134); after 33 / 34 / 34 / 35 (p95 39). The final canvas pixels, mid-stroke and after the stroke, are identical to the old build.
+- Not measured: the tablet itself. Check by filling a page with writing and watching whether the ink keeps up with the pen. Tests `tests/denseInkCache.test.mjs`; 237 tests pass on the cloud copy and the laptop; laptop `tsc -b` clean, `vite build` passes in a clean copy.
+- Still possible if lag remains: shrink the cost of the active stroke itself (it is redrawn whole each frame) and avoid redrawing the whole canvas for pan/zoom with lots of ink.
+

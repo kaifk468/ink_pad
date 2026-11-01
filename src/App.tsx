@@ -35,6 +35,7 @@ import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEI
 
 
 const DOUBLE_TAP_MS = 400
+const MINIMAP_LIVE_REFRESH_MS = 300
 const ZOOM_STEP = 1.25
 
 function App() {
@@ -43,6 +44,11 @@ function App() {
   const sheetLayerRef = useRef<HTMLDivElement | null>(null)
   const sheetLayerAppliedRef = useRef<Partial<SheetLayerState>>({})
   const minimapInkLayerRef = useRef<HTMLCanvasElement | null>(null)
+  // While one pen stroke is being drawn, everything already on the page is painted once into this layer and
+  // reused each frame, so a frame costs the same however much is written. Dropped as soon as the stroke ends.
+  const historyLayerRef = useRef<HTMLCanvasElement | null>(null)
+  const historyCacheRef = useRef<{ items: CanvasItem[]; count: number; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
+  const minimapRenderedAtRef = useRef(0)
   const toolbarRef = useRef<HTMLElement>(null)
   const umlToolboxRef = useRef<HTMLDivElement>(null)
   const eraserControlRef = useRef<HTMLDivElement>(null)
@@ -696,7 +702,33 @@ function App() {
     inkContext.clip()
     const historyInkStartedAt = measureFrame ? performance.now() : 0
     const editingTextId = textEditorRef.current?.itemId ?? null
-    canvasItemsForRendering(strokesRef.current).forEach((item) => { if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(inkContext, item) })
+    const liveStroke = activeStrokeRef.current
+    const cacheable = !benchmarkBackground && editingTextId === null && liveStroke !== null && liveStroke.kind === 'stroke' && !liveStroke.erase
+    const cache = historyCacheRef.current
+    const items = strokesRef.current
+    const cacheValid = cacheable && cache !== null && historyLayerRef.current !== null && cache.items === items && cache.count === items.length
+      && cache.scale === viewport.scale && cache.offsetX === viewport.offsetX && cache.offsetY === viewport.offsetY
+      && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height
+    if (cacheValid && historyLayerRef.current) {
+      inkContext.save()
+      inkContext.setTransform(1, 0, 0, 1, 0, 0)
+      inkContext.drawImage(historyLayerRef.current, 0, 0)
+      inkContext.restore()
+    } else {
+      canvasItemsForRendering(items).forEach((item) => { if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(inkContext, item) })
+      if (cacheable) {
+        const historyLayer = getReusableCanvasLayer(historyLayerRef, canvas.width, canvas.height)
+        const historyContext = historyLayer.getContext('2d')
+        if (historyContext) {
+          historyContext.setTransform(1, 0, 0, 1, 0, 0)
+          historyContext.clearRect(0, 0, historyLayer.width, historyLayer.height)
+          historyContext.drawImage(inkLayer, 0, 0)
+          historyCacheRef.current = { items, count: items.length, scale: viewport.scale, offsetX: viewport.offsetX, offsetY: viewport.offsetY, dpr, width: canvas.width, height: canvas.height }
+        }
+      } else {
+        historyCacheRef.current = null
+      }
+    }
     if (measureFrame) diagnostics?.recordHistoryInkRender(performance.now() - historyInkStartedAt)
     if (activeStrokeRef.current) {
       const preview = shapePreviewRef.current
@@ -790,7 +822,12 @@ function App() {
     ctx.restore()
     if (measureFrame) diagnostics?.recordMainCanvasRender(performance.now() - mainCanvasStartedAt)
     const minimapStartedAt = measureFrame ? performance.now() : 0
-    renderNavigator()
+    // The minimap redraws every item, so while a stroke is being written it is refreshed a few times a second at most.
+    const minimapNow = performance.now()
+    if (!activeStrokeRef.current || minimapNow - minimapRenderedAtRef.current > MINIMAP_LIVE_REFRESH_MS) {
+      minimapRenderedAtRef.current = minimapNow
+      renderNavigator()
+    }
     if (measureFrame) diagnostics?.recordMinimapRender(performance.now() - minimapStartedAt)
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
   }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageTemplate, renderNavigator, width])
