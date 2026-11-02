@@ -3,6 +3,8 @@ import type { DocumentSummary, FolderRecord } from './documentStore'
 import { fileBase, sanitizeName } from './deviceStore'
 import { cleanFolderName, folderAndDescendantIds } from './folderTree'
 import type { StorageBackend } from './storageBackend'
+import type { DriveCache } from './driveCache'
+import type { DriveProfile } from './driveProfile'
 
 /**
  * Storage in the person's own Google Drive, inside the hidden "app data" area (scope drive.appdata):
@@ -16,6 +18,7 @@ export const GOOGLE_CLIENT_ID = '422120639138-p86fdlt7qg2fqp5sb1c6c59nevketg6e.a
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
 
 const FILES_URL = 'https://www.googleapis.com/drive/v3/files'
+const ABOUT_URL = 'https://www.googleapis.com/drive/v3/about'
 const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files'
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
 const ROOT_ALIAS = 'appDataFolder'
@@ -105,10 +108,21 @@ function organise(files: DriveFile[]) {
   return { folders, documents, parentOf, diagramFiles }
 }
 
-export function createDriveBackend(env: DriveEnv): StorageBackend {
+/** The signed-in person's name, email and photo. Drive's "about" call is allowed by the same app-data permission, so no extra sign-in scope is needed. */
+export async function fetchDriveProfile(env: DriveEnv): Promise<DriveProfile> {
+  const params = new URLSearchParams({ fields: 'user(displayName,emailAddress,photoLink)' })
+  const data = await (await call(env, `${ABOUT_URL}?${params}`)).json() as { user?: { displayName?: string; emailAddress?: string; photoLink?: string } }
+  return { name: data.user?.displayName ?? '', email: data.user?.emailAddress ?? '', photoUrl: data.user?.photoLink ?? null }
+}
+
+export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache } = {}): StorageBackend {
+  const cache = options.cache
   // When this device last loaded or saved each diagram. If Drive holds a newer version when we save,
   // another device changed it, so its version is kept as a copy before we overwrite it.
   const knownModified = new Map<string, string>()
+
+  /** The browser copy is an extra: if the browser refuses to store it, Drive still works. */
+  const quietly = async (work: Promise<unknown> | undefined) => { try { await work } catch { /* cache unavailable */ } }
 
   async function getMeta(id: string): Promise<DriveFile | null> {
     try {
@@ -127,41 +141,112 @@ export function createDriveBackend(env: DriveEnv): StorageBackend {
     return result.id
   }
 
+  /** Downloads a diagram from Drive and keeps a browser copy of it. */
+  async function download(id: string, remember = true): Promise<{ document: InkPadDocument; text: string; modifiedTime: string } | null> {
+    let meta: DriveFile | null
+    let text: string
+    try {
+      // the version time and the content are asked for together, so opening costs one round trip, not two
+      const [metaResult, textResult] = await Promise.all([getMeta(id), call(env, `${FILES_URL}/${encodeURIComponent(id)}?alt=media`).then((response) => response.text())])
+      meta = metaResult
+      text = textResult
+    } catch (error) {
+      if (error instanceof DriveHttpError && error.status === 404) { await quietly(cache?.remove(id)); return null }
+      throw error
+    }
+    if (!meta) { await quietly(cache?.remove(id)); return null }
+    const result = parseDocument(text)
+    if (!result.ok) throw new Error(result.error)
+    const modifiedTime = meta.modifiedTime ?? ''
+    if (remember) {
+      if (modifiedTime) knownModified.set(id, modifiedTime)
+      await quietly(cache?.putText(id, text, { modifiedTime, pending: false }))
+    }
+    return { document: result.document, text, modifiedTime }
+  }
+
+  /** Uploads a diagram over an existing Drive file, keeping the other device's version as a copy when Drive changed meanwhile. */
+  async function upload(id: string, document: InkPadDocument, content: string, folderId: string | null = null): Promise<string> {
+    const name = `${sanitizeName(document.title)}${DOCUMENT_FILE_EXTENSION}`
+    const itemCount = document.items.length
+    const known = knownModified.get(id)
+    const remote = await getMeta(id)
+    if (!remote) {
+      // deleted elsewhere: keep the work as a new file
+      const newId = await create(name, folderId, content, itemCount)
+      await quietly(cache?.remove(id))
+      await quietly(cache?.putText(newId, content, { modifiedTime: knownModified.get(newId) ?? '', pending: false }))
+      return newId
+    }
+    if (known && remote.modifiedTime && remote.modifiedTime !== known) {
+      const stamp = new Date(remote.modifiedTime).toISOString().slice(0, 16).replace('T', ' ')
+      await call(env, `${FILES_URL}/${encodeURIComponent(id)}/copy?fields=id`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: `${fileBase(remote.name)} (other device ${stamp})${DOCUMENT_FILE_EXTENSION}`, parents: remote.parents }),
+      })
+    }
+    const { body, headers } = multipart({ name, appProperties: { itemCount: String(itemCount) } }, content)
+    const result = await (await call(env, `${UPLOAD_URL}/${encodeURIComponent(id)}?uploadType=multipart&fields=id,modifiedTime`, { method: 'PATCH', headers, body })).json() as DriveFile
+    if (result.modifiedTime) knownModified.set(id, result.modifiedTime)
+    await quietly(cache?.setState(id, { modifiedTime: result.modifiedTime ?? known ?? '', pending: false }))
+    return id
+  }
+
+  /** After showing the browser copy: finish an upload that was interrupted, or fetch a newer version if Drive has one. */
+  async function revalidate(id: string, cached: { text: string; modifiedTime: string; pending: boolean }, onFresher?: (document: InkPadDocument) => boolean | void) {
+    try {
+      if (cached.pending) {
+        const parsed = parseDocument(cached.text)
+        if (parsed.ok) await upload(id, parsed.document, cached.text)
+        return
+      }
+      const remote = await getMeta(id)
+      if (!remote?.modifiedTime || remote.modifiedTime === cached.modifiedTime) return
+      const fresh = await download(id, false)
+      if (!fresh) return
+      // The newer version only becomes "known" once it is on screen. If it was not used (the diagram was edited here meanwhile),
+      // the next save still sees that Drive changed and keeps the other version as a copy.
+      if (!onFresher || onFresher(fresh.document) === false) return
+      if (fresh.modifiedTime) knownModified.set(id, fresh.modifiedTime)
+      await quietly(cache?.putText(id, fresh.text, { modifiedTime: fresh.modifiedTime, pending: false }))
+    } catch { /* offline or signed out: the browser copy stays and the next save reports any problem */ }
+  }
+
   return {
     kind: 'drive',
     async list() {
       const { folders, documents } = organise(await listAll(env))
+      await quietly(cache?.putListing({ documents, folders }))
       return { documents, folders }
     },
-    async load(id) {
-      const meta = await getMeta(id)
-      if (!meta) return null
-      const text = await (await call(env, `${FILES_URL}/${encodeURIComponent(id)}?alt=media`)).text()
-      const result = parseDocument(text)
-      if (!result.ok) throw new Error(result.error)
-      if (meta.modifiedTime) knownModified.set(id, meta.modifiedTime)
-      return result.document
+    async listCached() {
+      try { return (await cache?.getListing()) ?? null } catch { return null }
+    },
+    async load(id, onFresher) {
+      let cached = null
+      try { cached = cache ? await cache.get(id) : null } catch { cached = null }
+      if (cached) {
+        const parsed = parseDocument(cached.text)
+        if (parsed.ok) {
+          if (cached.modifiedTime) knownModified.set(id, cached.modifiedTime)
+          void revalidate(id, cached, onFresher)
+          return parsed.document
+        }
+      }
+      return (await download(id))?.document ?? null
     },
     async save(id, document: InkPadDocument, folderId) {
-      const name = `${sanitizeName(document.title)}${DOCUMENT_FILE_EXTENSION}`
       const content = stringifyDocument(document)
-      const itemCount = document.items.length
-      if (!id) return create(name, folderId, content, itemCount)
-      const known = knownModified.get(id)
-      const remote = await getMeta(id)
-      if (!remote) return create(name, folderId, content, itemCount) // deleted elsewhere: keep the work as a new file
-      if (known && remote.modifiedTime && remote.modifiedTime !== known) {
-        const stamp = new Date(remote.modifiedTime).toISOString().slice(0, 16).replace('T', ' ')
-        await call(env, `${FILES_URL}/${encodeURIComponent(id)}/copy?fields=id`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: `${fileBase(remote.name)} (other device ${stamp})${DOCUMENT_FILE_EXTENSION}`, parents: remote.parents }),
-        })
+      if (!id) {
+        const name = `${sanitizeName(document.title)}${DOCUMENT_FILE_EXTENSION}`
+        const newId = await create(name, folderId, content, document.items.length)
+        await quietly(cache?.putText(newId, content, { modifiedTime: knownModified.get(newId) ?? '', pending: false }))
+        return newId
       }
-      const { body, headers } = multipart({ name, appProperties: { itemCount: String(itemCount) } }, content)
-      const result = await (await call(env, `${UPLOAD_URL}/${encodeURIComponent(id)}?uploadType=multipart&fields=id,modifiedTime`, { method: 'PATCH', headers, body })).json() as DriveFile
-      if (result.modifiedTime) knownModified.set(id, result.modifiedTime)
-      return id
+      // the browser copy is written first and marked as waiting, so a slow or failed upload never loses the edit
+      await quietly(cache?.putText(id, content, { modifiedTime: knownModified.get(id) ?? '', pending: true }))
+      return upload(id, document, content, folderId)
     },
     async remove(id) {
       try {
@@ -170,6 +255,7 @@ export function createDriveBackend(env: DriveEnv): StorageBackend {
         if (!(error instanceof DriveHttpError && error.status === 404)) throw error
       }
       knownModified.delete(id)
+      await quietly(cache?.remove(id))
     },
     async move(id, folderId) {
       const { parentOf, diagramFiles } = organise(await listAll(env))
@@ -216,6 +302,7 @@ export function createDriveBackend(env: DriveEnv): StorageBackend {
         if (entry.folderId && inside.has(entry.folderId)) {
           await quietDelete(entry.id)
           knownModified.delete(entry.id)
+          await quietly(cache?.remove(entry.id))
           deleted.push(entry.id)
         }
       }

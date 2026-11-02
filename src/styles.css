@@ -287,6 +287,15 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 
 .history-bar { position: absolute; z-index: 3; top: max(16px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; height: 56px; padding: 0 6px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 16px; background: rgba(255, 255, 255, .96); box-shadow: 0 3px 12px rgba(31, 39, 52, .12); }
 .account-control { position: absolute; z-index: 3; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); }
+.account-control { display: flex; align-items: center; gap: 8px; }
+.account-button.has-profile { padding: 0; overflow: hidden; }
+.avatar { display: grid; place-items: center; width: 100%; height: 100%; overflow: hidden; border-radius: 50%; background: #5574ed; color: #fff; font: 600 16px/1 system-ui, sans-serif; }
+.avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.storage-account { display: flex; align-items: center; gap: 12px; margin: 4px 0 10px; }
+.storage-account .avatar { flex: 0 0 auto; width: 44px; height: 44px; }
+.storage-account div { display: flex; flex-direction: column; min-width: 0; }
+.storage-account div span { overflow: hidden; color: #6a707c; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.reconnect-pill { height: 40px; padding: 0 14px; border: 1px solid #cbd3ff; border-radius: 20px; background: #e9edff; color: #354fc2; font: 600 14px/1 system-ui, sans-serif; box-shadow: 0 3px 12px rgba(31, 39, 52, .12); cursor: pointer; touch-action: manipulation; }
 .account-note { position: absolute; top: calc(100% + 8px); right: 0; padding: 8px 12px; border-radius: 10px; background: #2d313a; color: #fff; font-size: 12px; white-space: nowrap; }
 
 .context-panel { position: absolute; z-index: 2; top: calc(max(16px, env(safe-area-inset-top)) + 64px); right: max(16px, env(safe-area-inset-right)); display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 244px; padding: 10px 12px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 16px; background: rgba(255, 255, 255, .96); box-shadow: 0 5px 22px rgba(31, 39, 52, .14); }

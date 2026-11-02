@@ -99,7 +99,7 @@ test('connector relationship controls and Clear selection moved into the context
   assert.match(app, /relationship=\{selectedConnectorId !== null && selectedConnectorType !== null/)
 })
 
-test('top bars: menu, folders, title, undo/redo and account placeholder', () => {
+test('top bars: menu, folders, title, undo/redo and account button', () => {
   assert.match(topLeft, /aria-label="Menu"/)
   assert.match(topLeft, /aria-label="Folders"/)
   assert.match(topLeft, /aria-label="Page template"/)
@@ -108,9 +108,8 @@ test('top bars: menu, folders, title, undo/redo and account placeholder', () => 
   assert.match(topLeft, /File…/)
   assert.match(topLeft, /<FoldersSidebar/)
   assert.match(app, /<span>Undo<\/span>|HistoryBar/)
-  assert.match(app, /<AccountButton \/>/)
-  const account = app
-  assert.match(account, /aria-label="Sign in, coming soon"/)
+  assert.match(app, /<AccountButton profile=\{driveProfile\}/)
+  assert.match(app, /onOpenStorage=\{\(\) => setStoragePanelOpen\(true\)\} \/>/)
 })
 
 test('zoom controls and save status are present and the old top toolbar is gone', () => {

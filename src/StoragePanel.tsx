@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import type { StorageInfo } from './app/useDocuments'
 import { statusLabel, type SaveStatus } from './FilePanel'
+import { Avatar } from './app/AccountButton'
+import { displayName, type DriveProfile } from './driveProfile'
 
 export function storageLabel(storage: StorageInfo): string {
   if (storage.kind === 'drive') return 'Google Drive'
@@ -10,6 +12,7 @@ export function storageLabel(storage: StorageInfo): string {
 
 type StoragePanelProps = {
   storage: StorageInfo
+  profile: DriveProfile | null
   saveStatus: SaveStatus
   notice: string | null
   onClose: () => void
@@ -38,6 +41,12 @@ export function StoragePanel(props: StoragePanelProps) {
           <strong>Storage</strong>
           <button type="button" className="file-panel-close" aria-label="Close" onClick={props.onClose}>×</button>
         </header>
+        {storage.kind === 'drive' && props.profile && (
+          <div className="storage-account">
+            <Avatar profile={props.profile} />
+            <div><strong>{displayName(props.profile)}</strong>{props.profile.email && <span>{props.profile.email}</span>}</div>
+          </div>
+        )}
         <p className="storage-current">Your folders and diagrams are saved in: <strong>{storageLabel(storage)}</strong></p>
         <p className={`file-panel-status status-${props.saveStatus}`} role="status">{statusLabel(props.saveStatus, storage.kind)}</p>
         {props.notice && <p className="file-panel-notice" role="alert">{props.notice}</p>}
@@ -47,9 +56,9 @@ export function StoragePanel(props: StoragePanelProps) {
           {storage.kind === 'device' && !storage.locked && <p className="file-panel-hint">Folders you make in InkPad are real folders there, and each diagram is a .inkpad file.</p>}
           {storage.kind === 'device' && storage.locked && <p className="file-panel-notice" role="alert">Your device folder “{storage.folderName}” needs permission again after a restart. Nothing is being saved until you reconnect.</p>}
           {storage.kind === 'drive' && !storage.locked && <p className="file-panel-hint">Saved in a private InkPad area of your Google Drive that only this app can open (it does not appear in your normal Drive files). Folders and diagrams keep the same hierarchy on every device you sign in on.</p>}
-          {storage.kind === 'drive' && storage.locked && <p className="file-panel-notice" role="alert">Google needs you to sign in again. Nothing is being saved until you do. Your drawing stays on screen.</p>}
+          {storage.kind === 'drive' && storage.locked && <p className="file-panel-notice" role="alert">Google needs you to reconnect. Nothing is being saved until you do. Your drawing stays on screen.</p>}
           <div className="file-panel-actions">
-            {storage.locked && <button type="button" className="file-panel-primary" onClick={props.onReconnect}>{storage.kind === 'drive' ? 'Sign in again' : 'Reconnect folder'}</button>}
+            {storage.locked && <button type="button" className="file-panel-primary" onClick={props.onReconnect}>{storage.kind === 'drive' ? 'Reconnect Drive' : 'Reconnect folder'}</button>}
             {storage.kind !== 'drive' && <button type="button" onClick={props.onConnectDrive}>Connect Google Drive…</button>}
             {storage.supported && <button type="button" onClick={props.onChooseDeviceFolder}>{storage.kind === 'device' ? 'Choose another folder…' : 'Use a device folder…'}</button>}
             {storage.kind !== 'browser' && !storage.locked && <button type="button" onClick={props.onCopyBrowserHere}>Copy browser diagrams here</button>}

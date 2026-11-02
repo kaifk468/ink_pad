@@ -4,7 +4,9 @@ import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, p
 import { downloadBlob, loadCurrentDocumentId, saveCurrentDocumentId, type DocumentSummary, type FolderRecord } from '../documentStore'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
 import { folderAndDescendantIds } from '../folderTree'
-import { DriveAuthError, createDriveBackend } from '../googleDrive'
+import { DriveAuthError, createDriveBackend, fetchDriveProfile, type DriveEnv } from '../googleDrive'
+import { createIndexedDbDriveCache, type DriveCache } from '../driveCache'
+import { readStoredProfile, writeStoredProfile, type DriveProfile } from '../driveProfile'
 import { REFRESH_WINDOW_MS, driveAuth } from '../googleAuth'
 import { copyAllBetweenBackends, createBrowserBackend, type StorageBackend } from '../storageBackend'
 import type { SaveStatus } from '../FilePanel'
@@ -28,7 +30,8 @@ export type DocumentHost = {
 const AUTOSAVE_DELAY_MS = 1200
 const DEVICE_CURRENT_KEY = 'inkpad.currentDocument.device'
 const DRIVE_CURRENT_KEY = 'inkpad.currentDocument.drive'
-const STARTUP_SIGN_IN_WAIT_MS = 6000
+const STARTUP_SIGN_IN_WAIT_MS = 9000
+const SILENT_RENEW_CHECK_MS = 30000
 
 export type StorageInfo = {
   kind: 'browser' | 'device' | 'drive'
@@ -59,7 +62,11 @@ function readStorageMode(): StorageMode {
     return stored === 'device' || stored === 'drive' ? stored : 'browser'
   } catch { return 'browser' }
 }
-const createAppDriveBackend = () => createDriveBackend({ getToken: (force) => driveAuth.getToken(force), fetch: (url, init) => window.fetch(url, init) })
+// Background requests (saves, listings) only ever try the quiet token request; the interactive one is for taps.
+const driveEnv: DriveEnv = { getToken: (force) => driveAuth.getToken(force), fetch: (url, init) => window.fetch(url, init) }
+let driveCache: DriveCache | null = null
+const getDriveCache = () => (driveCache ??= createIndexedDbDriveCache())
+const createAppDriveBackend = () => createDriveBackend(driveEnv, { cache: getDriveCache() })
 const withTimeout = <T,>(work: Promise<T>, ms: number): Promise<T> => new Promise<T>((resolve, reject) => {
   const timer = window.setTimeout(() => reject(new DriveAuthError()), ms)
   work.then((value) => { window.clearTimeout(timer); resolve(value) }, (error) => { window.clearTimeout(timer); reject(error) })
@@ -78,6 +85,7 @@ export function useDocuments(host: DocumentHost) {
   const [library, setLibrary] = useState<DocumentSummary[]>([])
   const [currentDocId, setCurrentDocId] = useState<string | null>(null)
   const [folders, setFolders] = useState<FolderRecord[]>([])
+  const [driveProfile, setDriveProfile] = useState<DriveProfile | null>(() => (readStorageMode() === 'drive' ? readStoredProfile() : null))
   const [storage, setStorage] = useState<StorageInfo>({ kind: 'browser', folderName: null, locked: false, supported: isDeviceFolderSupported() })
   const pendingFolderRef = useRef<string | null>(null)
 
@@ -103,6 +111,8 @@ export function useDocuments(host: DocumentHost) {
     else saveCurrentDocumentId(id)
   }
   const unsavedWhileLockedRef = useRef(false)
+  /** What the open diagram looked like when it was last saved or loaded; an unchanged diagram is not saved again. */
+  const savedSignatureRef = useRef<string | null>(null)
 
   const buildCurrentDocument = (): InkPadDocument => {
     const page = hostRef.current.getPage()
@@ -116,9 +126,31 @@ export function useDocuments(host: DocumentHost) {
     })
   }
 
+  /** The diagram's content without its save time, so two identical states compare equal. Finished strokes reuse their cached text, so this is cheap. */
+  const currentSignature = (): string => {
+    const page = hostRef.current.getPage()
+    return stringifyDocument(createDocument({
+      title: docMetaRef.current.title,
+      createdAt: docMetaRef.current.createdAt,
+      template: page.template,
+      background: page.background,
+      items: hostRef.current.getItems(),
+      shareStrokes: true,
+    }, 'unsaved'))
+  }
+
   const refreshLibrary = async () => {
+    const backend = backendRef.current
+    if (backend.listCached) {
+      // show the last known list at once; the fresh one replaces it when it arrives
+      try {
+        const cached = await backend.listCached()
+        if (cached && backendRef.current === backend) { setLibrary(cached.documents); setFolders(cached.folders) }
+      } catch { /* nothing cached */ }
+    }
     try {
-      const listed = await backendRef.current.list()
+      const listed = await backend.list()
+      if (backendRef.current !== backend) return
       setLibrary(listed.documents)
       setFolders(listed.folders)
     } catch {
@@ -135,7 +167,14 @@ export function useDocuments(host: DocumentHost) {
     }
     // Never create an empty entry for a diagram that was never drawn on.
     if (!docIdRef.current && hostRef.current.getItems().length === 0 && !forceSaveRef.current) return
+    const forced = forceSaveRef.current
     forceSaveRef.current = false
+    // Nothing changed since this diagram was last saved or opened: skip the upload (switching diagrams used to save every time).
+    const signature = currentSignature()
+    if (docIdRef.current && !forced && signature === savedSignatureRef.current) {
+      setSaveStatus('saved')
+      return
+    }
     const backend = backendRef.current
     const saved = buildCurrentDocument()
     setSaveStatus('saving')
@@ -146,6 +185,7 @@ export function useDocuments(host: DocumentHost) {
       pendingFolderRef.current = null
       docIdRef.current = newId
       docMetaRef.current = { title: saved.title, createdAt: saved.createdAt }
+      savedSignatureRef.current = signature
       writeCurrentId(newId)
       setCurrentDocId(newId)
       setSaveStatus('saved')
@@ -193,10 +233,19 @@ export function useDocuments(host: DocumentHost) {
     hostRef.current.loadDocument(loaded)
     docIdRef.current = id
     docMetaRef.current = { title: loaded.title, createdAt: loaded.createdAt }
+    savedSignatureRef.current = id ? currentSignature() : null
     setCurrentDocId(id)
     setDocTitle(loaded.title)
     writeCurrentId(id)
     setSaveStatus(id ? 'saved' : 'idle')
+  }
+
+  /** Drive has a newer version than the browser copy that was shown. Swap it in only if the diagram is still open and nothing was edited here since. */
+  const fresherVersion = (backend: StorageBackend, id: string) => (fresher: InkPadDocument): boolean => {
+    if (backendRef.current !== backend || docIdRef.current !== id || hostRef.current.isInputActive()) return false
+    if (currentSignature() !== savedSignatureRef.current) return false
+    applyDocument(id, fresher)
+    return true
   }
 
   const blankDocument = () => {
@@ -215,7 +264,8 @@ export function useDocuments(host: DocumentHost) {
   const openStoredDiagram = async (id: string) => {
     await persistNow()
     try {
-      const stored = await backendRef.current.load(id)
+      const backend = backendRef.current
+      const stored = await backend.load(id, fresherVersion(backend, id))
       if (!stored) {
         setFileNotice('That diagram no longer exists.')
         void refreshLibrary()
@@ -378,12 +428,24 @@ export function useDocuments(host: DocumentHost) {
     if (filePanelOpen) void refreshLibrary()
   }, [filePanelOpen])
 
+  /** Fetches who is signed in and remembers it. Another Google account than before means the browser copies belong to someone else, so they are dropped. */
+  const loadDriveProfile = async () => {
+    try {
+      const profile = await fetchDriveProfile(driveEnv)
+      const previous = readStoredProfile()
+      if (previous?.email && profile.email && previous.email !== profile.email) await getDriveCache().clear().catch(() => undefined)
+      writeStoredProfile(profile)
+      setDriveProfile(profile)
+    } catch { /* keep the remembered name and photo */ }
+  }
+
   /** Reopen the last diagram of the active storage, then enable autosave (it stays off until this finishes, so a slow read can never be overwritten by an empty sheet). */
   const finishStartup = async (isCancelled: () => boolean = () => false) => {
     const id = readCurrentId()
     if (id) {
       try {
-        const stored = await backendRef.current.load(id)
+        const backend = backendRef.current
+        const stored = await backend.load(id, fresherVersion(backend, id))
         if (!isCancelled() && stored && hostRef.current.getItems().length === 0) applyDocument(id, stored)
       } catch {
         // Storage unavailable: start with an empty sheet; saving will report the problem.
@@ -399,16 +461,17 @@ export function useDocuments(host: DocumentHost) {
         backendRef.current = createAppDriveBackend()
         setStorage({ kind: 'drive', folderName: null, locked: false, supported: isDeviceFolderSupported() })
         try {
+          // A token kept from this tab's earlier load is used at once; otherwise Google is asked quietly, without a window.
           await withTimeout(driveAuth.getToken(), STARTUP_SIGN_IN_WAIT_MS)
         } catch {
           if (cancelled) return
-          // The browser needs a tap before Google sign-in can open again.
+          // The quiet request did not work: "Reconnect Drive" (next to the avatar) asks with a tap.
           setStorage({ kind: 'drive', folderName: null, locked: true, supported: isDeviceFolderSupported() })
           setSaveStatus('locked')
-          setStoragePanelOpen(true)
           return
         }
         if (cancelled) return
+        void loadDriveProfile()
         await finishStartup(() => cancelled)
         return
       }
@@ -482,11 +545,12 @@ export function useDocuments(host: DocumentHost) {
   const reconnectDeviceFolder = async () => {
     if (backendRef.current.kind === 'drive') {
       try {
-        await driveAuth.getToken(true)
+        await driveAuth.getToken(false, true)
       } catch {
-        setFileNotice('Google sign-in did not finish. Tap Sign in again and choose your account.')
+        setFileNotice('Google sign-in did not finish. Tap Reconnect Drive and choose your account.')
         return
       }
+      await loadDriveProfile()
     } else {
       const handle = deviceHandleRef.current
       if (!handle) return
@@ -509,11 +573,12 @@ export function useDocuments(host: DocumentHost) {
   const connectDrive = async () => {
     setFileNotice(null)
     try {
-      await driveAuth.getToken(true)
+      await driveAuth.getToken(true, true)
     } catch {
       setFileNotice('Google sign-in did not finish. Nothing was changed.')
       return
     }
+    await loadDriveProfile()
     await persistNow() // finish saving to the storage being left
     writeStorageMode('drive')
     setSaveStatus('idle')
@@ -523,8 +588,12 @@ export function useDocuments(host: DocumentHost) {
   const useBrowserStorage = async () => {
     setFileNotice(null)
     await persistNow()
-    if (backendRef.current.kind === 'drive') driveAuth.signOut()
-    else { try { await saveDeviceHandle(null) } catch { /* nothing to forget */ } }
+    if (backendRef.current.kind === 'drive') {
+      driveAuth.signOut()
+      writeStoredProfile(null)
+      setDriveProfile(null)
+      await getDriveCache().clear().catch(() => undefined)
+    } else { try { await saveDeviceHandle(null) } catch { /* nothing to forget */ } }
     writeStorageMode('browser')
     setSaveStatus('idle')
     await switchBackend(createBrowserBackend(), null)
@@ -551,10 +620,17 @@ export function useDocuments(host: DocumentHost) {
     const renew = () => {
       if (backendRef.current.kind !== 'drive' || renewing || !driveAuth.hasToken() || driveAuth.msLeft() > REFRESH_WINDOW_MS) return
       renewing = true
-      void driveAuth.getToken(true).catch(() => { /* the next save asks for a sign-in if this failed */ }).finally(() => { renewing = false })
+      // a tap is allowed to open Google's window; it closes by itself when nothing has to be confirmed
+      void driveAuth.getToken(true, true).catch(() => { /* the next save asks for a sign-in if this failed */ }).finally(() => { renewing = false })
     }
     window.addEventListener('pointerup', renew)
-    return () => window.removeEventListener('pointerup', renew)
+    // Shortly before the token runs out, ask Google quietly for a new one so the sign-in window is rarely needed.
+    const quietRenew = window.setInterval(() => {
+      if (backendRef.current.kind !== 'drive' || renewing || !driveAuth.hasToken() || driveAuth.msLeft() > REFRESH_WINDOW_MS) return
+      renewing = true
+      void driveAuth.getToken(true).catch(() => { /* the tap-based renewal or Reconnect Drive takes over */ }).finally(() => { renewing = false })
+    }, SILENT_RENEW_CHECK_MS)
+    return () => { window.removeEventListener('pointerup', renew); window.clearInterval(quietRenew) }
   }, [])
 
   useEffect(() => {
@@ -569,7 +645,7 @@ export function useDocuments(host: DocumentHost) {
 
   return {
     filePanelOpen, setFilePanelOpen, refreshLibrary, docTitle, saveStatus, fileNotice, library, folders, currentDocId,
-    storage, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
+    storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile,

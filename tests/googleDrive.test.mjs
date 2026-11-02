@@ -151,7 +151,7 @@ test('the app wires Drive in: sign-in button, locked state and token renewal', a
   assert.match(hook, /readStorageMode\(\) === 'drive'/)
   assert.match(hook, /addEventListener\('pointerup', renew\)/)
   assert.match(panel, /Connect Google Drive/)
-  assert.match(panel, /Sign in again/)
+  assert.match(panel, /Reconnect Drive/)
 })
 
 test('storage lives in the menu and the Folders panel, not in the per-diagram File panel', async () => {
