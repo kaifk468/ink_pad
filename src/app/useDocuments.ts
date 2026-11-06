@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CanvasItem } from '../canvasModel'
-import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, parseDocument, stringifyDocument, type DocumentPageBackground, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
+import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
 import { downloadBlob, loadCurrentDocumentId, saveCurrentDocumentId, type DocumentSummary, type FolderRecord } from '../documentStore'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
 import { folderAndDescendantIds } from '../folderTree'
@@ -112,7 +112,7 @@ export function useDocuments(host: DocumentHost) {
   }
   const unsavedWhileLockedRef = useRef(false)
   /** What the open diagram looked like when it was last saved or loaded; an unchanged diagram is not saved again. */
-  const savedSignatureRef = useRef<string | null>(null)
+  const savedSignatureRef = useRef<DocumentSignature | null>(null)
 
   const buildCurrentDocument = (): InkPadDocument => {
     const page = hostRef.current.getPage()
@@ -126,17 +126,15 @@ export function useDocuments(host: DocumentHost) {
     })
   }
 
-  /** The diagram's content without its save time, so two identical states compare equal. Finished strokes reuse their cached text, so this is cheap. */
-  const currentSignature = (): string => {
+  /**
+   * What the diagram holds, without its save time: title, page settings and the list of items. Items are never edited in
+   * place (every change replaces the item with a new object), so the same objects in the same order mean the same content.
+   * Comparing references costs one pass over the item list; building and comparing the whole document text cost tens of
+   * milliseconds per autosave on a large page and grew with every stroke.
+   */
+  const currentSignature = (): DocumentSignature => {
     const page = hostRef.current.getPage()
-    return stringifyDocument(createDocument({
-      title: docMetaRef.current.title,
-      createdAt: docMetaRef.current.createdAt,
-      template: page.template,
-      background: page.background,
-      items: hostRef.current.getItems(),
-      shareStrokes: true,
-    }, 'unsaved'))
+    return { title: docMetaRef.current.title, template: page.template, background: page.background, items: hostRef.current.getItems().slice() }
   }
 
   const refreshLibrary = async () => {
@@ -171,7 +169,7 @@ export function useDocuments(host: DocumentHost) {
     forceSaveRef.current = false
     // Nothing changed since this diagram was last saved or opened: skip the upload (switching diagrams used to save every time).
     const signature = currentSignature()
-    if (docIdRef.current && !forced && signature === savedSignatureRef.current) {
+    if (docIdRef.current && !forced && sameSignature(signature, savedSignatureRef.current)) {
       setSaveStatus('saved')
       return
     }
@@ -243,7 +241,7 @@ export function useDocuments(host: DocumentHost) {
   /** Drive has a newer version than the browser copy that was shown. Swap it in only if the diagram is still open and nothing was edited here since. */
   const fresherVersion = (backend: StorageBackend, id: string) => (fresher: InkPadDocument): boolean => {
     if (backendRef.current !== backend || docIdRef.current !== id || hostRef.current.isInputActive()) return false
-    if (currentSignature() !== savedSignatureRef.current) return false
+    if (!sameSignature(currentSignature(), savedSignatureRef.current)) return false
     applyDocument(id, fresher)
     return true
   }

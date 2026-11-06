@@ -128,6 +128,25 @@ export function canvasItemsForRendering(items: CanvasItem[]): CanvasItem[] {
   return renderItems
 }
 
+/**
+ * The tail of canvasItemsForRendering(items) that belongs to the last item: the item itself and, for a connector, the
+ * rectangles it is attached to (drawn again so the boxes sit above the connector ends). Lets a saved picture of the
+ * earlier items be brought up to date by drawing only these.
+ */
+export function appendedItemsForRendering(items: CanvasItem[]): CanvasItem[] {
+  const last = items[items.length - 1]
+  if (!last) return []
+  if (last.kind !== 'connector') return [last]
+  const result: CanvasItem[] = [last]
+  for (const rectangleId of new Set([last.startAttachment?.rectangleId, last.endAttachment?.rectangleId])) {
+    if (rectangleId === undefined) continue
+    let rectangle: RectangleObject | undefined
+    for (const item of items) if (item.kind === 'rectangle' && item.id === rectangleId) rectangle = item
+    if (rectangle) result.push(rectangle)
+  }
+  return result
+}
+
 export function updateConnectorRelationship(items: CanvasItem[], connectorId: number, relationshipType: ConnectorRelationshipType): CanvasItem[] {
   return items.map((item) => item.kind === 'connector' && item.id === connectorId && item.relationshipType !== relationshipType
     ? { ...item, relationshipType, reversed: relationshipType === 'association' ? false : item.reversed }
@@ -509,6 +528,11 @@ export function detachConnectorsFromRectangles(items: CanvasItem[], rectangleIds
   })
 }
 
+/**
+ * Undo/redo snapshots. Canvas items are never edited in place (every move, resize, erase or text edit replaces the
+ * item with a new object), so a snapshot is a copy of the item list that shares the items themselves. Copying every
+ * point of every stroke at each step made each pen-up cost grow with the page and held up to 100 full copies of it.
+ */
 export class CanvasSnapshotHistory {
   private undoStack: CanvasItem[][] = []
   private redoStack: CanvasItem[][] = []
@@ -519,7 +543,7 @@ export class CanvasSnapshotHistory {
   get canRedo() { return this.redoStack.length > 0 }
 
   record(items: CanvasItem[]) {
-    this.undoStack.push(cloneCanvasItems(items))
+    this.undoStack.push(items.slice())
     if (this.undoStack.length > this.limit) this.undoStack.shift()
     this.redoStack = []
   }
@@ -527,14 +551,14 @@ export class CanvasSnapshotHistory {
   undo(current: CanvasItem[]): CanvasItem[] | null {
     const previous = this.undoStack.pop()
     if (!previous) return null
-    this.redoStack.push(cloneCanvasItems(current))
+    this.redoStack.push(current.slice())
     return previous
   }
 
   redo(current: CanvasItem[]): CanvasItem[] | null {
     const next = this.redoStack.pop()
     if (!next) return null
-    this.undoStack.push(cloneCanvasItems(current))
+    this.undoStack.push(current.slice())
     return next
   }
 }

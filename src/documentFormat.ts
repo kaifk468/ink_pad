@@ -80,6 +80,16 @@ export function stringifyDocument(document: InkPadDocument): string {
   return `${head.slice(0, -2)}${parts.join(',')}]}`
 }
 
+/** An open diagram's content for "did anything change since the last save" checks. */
+export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; items: CanvasItem[] }
+
+export function sameSignature(a: DocumentSignature | null, b: DocumentSignature | null): boolean {
+  if (!a || !b) return false
+  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || a.items.length !== b.items.length) return false
+  for (let index = 0; index < a.items.length; index += 1) if (a.items[index] !== b.items[index]) return false
+  return true
+}
+
 /** Largest used id per kind + 1, so new items never collide with loaded ones. */
 export function getNextIds(items: CanvasItem[]): NextIds {
   const next: NextIds = { stroke: 1, rectangle: 1, connector: 1, text: 1 }

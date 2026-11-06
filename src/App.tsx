@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, getEraserSweepPoints, isPenHoverEraseInput } from './eraserInput'
-import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
 import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
 import { loadStrokeDisplayMode, saveStrokeDisplayMode, type StrokeDisplayMode } from './strokeDisplayMode'
@@ -57,6 +57,8 @@ const LIVE_OVERLAY_ENABLED = DRAW_SWITCHES.get('overlay') !== 'off'
 const PAGE_CACHE_ENABLED = DRAW_SWITCHES.get('cache') !== 'off'
 // ?desync=on asks the browser for its low-latency canvas path (skips waiting for the compositor) for the live-stroke overlay.
 const LIVE_OVERLAY_DESYNCHRONIZED = DRAW_SWITCHES.get('desync') === 'on'
+// ?debug=on shows a small readout of the drawing path and the amount of ink (also on the deployed site, for tablet checks).
+const DRAW_READOUT_ENABLED = DRAW_SWITCHES.get('debug') === 'on'
 // ?direct=N sets how many points of ink may be visible before the page picture is cached (0 = always cached, a huge number = never).
 const DIRECT_MAX_VISIBLE_POINTS = Number.isFinite(Number(DRAW_SWITCHES.get('direct'))) && DRAW_SWITCHES.get('direct') !== null ? Number(DRAW_SWITCHES.get('direct')) : DEFAULT_DIRECT_MAX_VISIBLE_POINTS
 
@@ -707,7 +709,7 @@ function App() {
     if (!benchmarkBackground && liveStroke === null) {
       const visiblePoints = countVisiblePoints(items, view)
       const nextMode = chooseDrawMode(drawModeRef.current, visiblePoints, DIRECT_MAX_VISIBLE_POINTS)
-      if (import.meta.env.DEV) {
+      if (import.meta.env.DEV || DRAW_READOUT_ENABLED) {
         canvas.dataset.visiblePoints = String(visiblePoints)
         const readout = drawReadoutRef.current
         if (readout) {
@@ -730,7 +732,9 @@ function App() {
       && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height && cache.mode === strokeDisplayMode
     const viewportSame = cacheBase && cache!.scale === viewport.scale && cache!.offsetX === viewport.offsetX && cache!.offsetY === viewport.offsetY
     let itemsMatch = cacheBase && sameItems(cache!.snapshot, items, items.length)
-    if (cacheBase && !itemsMatch && viewportSame && items.length === cache!.snapshot.length + 1 && items[items.length - 1].kind === 'stroke' && sameItems(cache!.snapshot, items, cache!.snapshot.length)) {
+    // One item added on top since the picture was made (a stroke, or a recognized rectangle or line, a connector, a text
+    // label): draw just that item onto the picture, in the same order a full redraw would use.
+    if (cacheBase && !itemsMatch && viewportSame && items.length === cache!.snapshot.length + 1 && sameItems(cache!.snapshot, items, cache!.snapshot.length)) {
       const historyContext = historyLayerNow!.getContext('2d')
       if (historyContext) {
         historyContext.save()
@@ -738,7 +742,7 @@ function App() {
         historyContext.beginPath()
         historyContext.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
         historyContext.clip()
-        drawItem(historyContext, items[items.length - 1])
+        for (const added of appendedItemsForRendering(items)) drawItem(historyContext, added)
         historyContext.restore()
         cache!.snapshot = items.slice()
         itemsMatch = true
@@ -1497,7 +1501,7 @@ function App() {
           handle: resizeHandle,
           start: point,
           originalBounds: { ...selectedBounds },
-          originalItems: cloneCanvasItems(strokesRef.current),
+          originalItems: strokesRef.current.slice(),
           moved: false,
         }
         return
@@ -1509,7 +1513,7 @@ function App() {
           pointerId: event.pointerId,
           start: point,
           keys: new Set(selectedKeysRef.current),
-          originalItems: cloneCanvasItems(strokesRef.current),
+          originalItems: strokesRef.current.slice(),
           moved: false,
         }
         return
@@ -1533,7 +1537,7 @@ function App() {
           handle: selectedHandle,
           start: point,
           originalBounds: { x: currentlySelectedRectangle.x, y: currentlySelectedRectangle.y, width: currentlySelectedRectangle.width, height: currentlySelectedRectangle.height },
-          originalItems: cloneCanvasItems(strokesRef.current),
+          originalItems: strokesRef.current.slice(),
           moved: false,
         }
         return
@@ -1553,7 +1557,7 @@ function App() {
         pointerId: event.pointerId,
         itemKey: canvasItemKey(selectedItem),
         start: point,
-        originalItems: cloneCanvasItems(strokesRef.current),
+        originalItems: strokesRef.current.slice(),
         moved: false,
         // Tapping already-selected text (without dragging) edits it.
         editTextId: textWasSelected && textHit ? textHit.id : null,
@@ -2083,7 +2087,7 @@ function App() {
           onPointerLeave={onPointerLeave}
         />
         <canvas ref={liveCanvasRef} className="live-canvas" aria-hidden="true" />
-        {import.meta.env.DEV && DRAW_SWITCHES.get('debug') === 'on' && <div ref={drawReadoutRef} className="draw-readout" aria-hidden="true" />}
+        {DRAW_READOUT_ENABLED && <div ref={drawReadoutRef} className="draw-readout" aria-hidden="true" />}
         {textEditor && <TextEditorOverlay
           key={`${textEditor.itemId ?? 'new'}:${textEditor.x}:${textEditor.y}`}
           editor={textEditor}

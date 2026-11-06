@@ -130,7 +130,7 @@ test('the app wires the new Drive behaviour in', async () => {
   const read = (name) => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')
   const [hook, account, panel, app] = await Promise.all([read('app/useDocuments.ts'), read('app/AccountButton.tsx'), read('StoragePanel.tsx'), read('App.tsx')])
   // a diagram that has not changed is not saved again when switching
-  assert.match(hook, /signature === savedSignatureRef\.current/)
+  assert.match(hook, /sameSignature\(signature, savedSignatureRef\.current\)/)
   assert.match(hook, /savedSignatureRef\.current = signature/)
   // the quiet sign-in on load; a failure shows Reconnect Drive and no longer opens the Storage panel by itself
   assert.match(hook, /await withTimeout\(driveAuth\.getToken\(\), STARTUP_SIGN_IN_WAIT_MS\)/)
