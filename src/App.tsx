@@ -15,6 +15,7 @@ import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type Pa
 import { getNextIds } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
+import { thinStroke } from './strokeThinning'
 import { createTestInk, isTestInk } from './testInk'
 import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
 import { chooseDrawMode, countVisiblePoints, DEFAULT_DIRECT_MAX_VISIBLE_POINTS, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
@@ -63,6 +64,7 @@ const PEN_PREDICTION_ENABLED = DRAW_SWITCHES.get('predict') !== 'off'
 // ?desync=on asks the browser for its low-latency canvas path (skips waiting for the compositor) for the page canvas.
 const MAIN_CANVAS_OPTIONS: CanvasRenderingContext2DSettings | undefined = DRAW_SWITCHES.get('desync') === 'on' ? { desynchronized: true } : undefined
 // ?debug=on shows a small readout of the drawing path and the amount of ink (also on the deployed site, for tablet checks).
+const STROKE_THINNING_ENABLED = DRAW_SWITCHES.get('thin') !== 'off'
 const DRAW_READOUT_ENABLED = DRAW_SWITCHES.get('debug') === 'on'
 // One drawing path for the whole canvas: the saved page picture is always used, so writing costs the same on an empty
 // page and a full one. ?direct=N brings back the old switch (direct redraw while at most N ink points are visible).
@@ -1424,6 +1426,7 @@ function App() {
           ? recognizedShape
           : heldLongEnough ? recognizeLine(heldStroke) : heldStroke
       }
+      if (stroke.kind === 'stroke' && STROKE_THINNING_ENABLED) stroke = thinStroke(stroke)
       strokesRef.current.push(stroke)
       if (stroke.kind === 'stroke' && stroke.erase) strokesRef.current = compactAfterErase(strokesRef.current, () => nextStrokeIdRef.current++)
       setHasInk(true)
