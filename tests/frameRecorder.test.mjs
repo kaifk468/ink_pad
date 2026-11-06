@@ -39,8 +39,8 @@ test('text lines are compact and list every flag', () => {
   const line = rec.formatFrameSummary({ frames: 120, gapP50: 11.1, gapP95: 14, gapMax: 31, slowShare: 0.03, drawP50: 4.2, drawMax: 12, samplesPerFrame: 2.5 })
   assert.match(line, /gap 11\/14\/31 ms/)
   assert.match(line, /slow 3%/)
-  const flags = rec.formatDrawFlags({ directMax: 18000, live: 'whole', predict: false, thin: true, cache: true, desync: false })
-  assert.equal(flags, 'direct<=18000 · live=whole · predict=off · thin=on · cache=on · desync=off')
+  const flags = rec.formatDrawFlags({ directMax: 18000, live: 'whole', predict: false, thin: true, cache: true, desync: false, cpu: false, dprCap: null, oneLayer: false, group: true })
+  assert.equal(flags, 'direct<=18000 · live=whole · predict=off · thin=on · cache=on · group=on · layers=two · canvas=gpu · dpr<=any · desync=off')
 })
 
 test('App shows the flags line and the frame line with ?debug=on and defaults to 18,000, whole-stroke, no prediction', async () => {

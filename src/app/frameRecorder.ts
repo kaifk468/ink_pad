@@ -80,13 +80,20 @@ export function formatFrameSummary(summary: FrameSummary): string {
 }
 
 /** The switches that change drawing, as "name=value" for the on-screen flags line. */
-export function formatDrawFlags(flags: { directMax: number; live: 'whole' | 'incremental'; predict: boolean; thin: boolean; cache: boolean; desync: boolean }): string {
+export function formatDrawFlags(flags: {
+  directMax: number; live: 'whole' | 'incremental'; predict: boolean; thin: boolean; cache: boolean; desync: boolean
+  cpu: boolean; dprCap: number | null; oneLayer: boolean; group: boolean
+}): string {
   return [
     `direct<=${flags.directMax}`,
     `live=${flags.live}`,
     `predict=${flags.predict ? 'on' : 'off'}`,
     `thin=${flags.thin ? 'on' : 'off'}`,
     `cache=${flags.cache ? 'on' : 'off'}`,
+    `group=${flags.group ? 'on' : 'off'}`,
+    `layers=${flags.oneLayer ? 'one' : 'two'}`,
+    `canvas=${flags.cpu ? 'cpu' : 'gpu'}`,
+    `dpr<=${flags.dprCap ?? 'any'}`,
     `desync=${flags.desync ? 'on' : 'off'}`,
   ].join(' · ')
 }

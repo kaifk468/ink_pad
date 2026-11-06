@@ -32,7 +32,7 @@ test('a growing pen stroke only repaints the area around it', () => {
   assert.match(app, /!liveStroke\.shape && shapePreviewRef\.current === null/)
   assert.match(app, /ctx\.rect\(dirty\.x, dirty\.y, dirty\.width, dirty\.height\)/)
   assert.match(app, /if \(dirty\) ctx\.restore\(\)/)
-  assert.match(app, /if \(dirty\) inkContext\.restore\(\)/)
+  assert.match(app, /if \(!oneLayer && dirty\) inkContext\.restore\(\)/)
 })
 
 test('pinch and three-finger pan move a saved picture of the page and redraw sharply when they settle', () => {
@@ -64,6 +64,6 @@ test('drawing paths can be switched from the address for on-device comparison', 
 })
 
 test('the low-latency canvas hint is opt-in and applies to the page canvas', () => {
-  assert.match(app, /MAIN_CANVAS_OPTIONS: CanvasRenderingContext2DSettings \| undefined = DRAW_SWITCHES\.get\('desync'\) === 'on' \? \{ desynchronized: true \} : undefined/)
+  assert.match(app, /MAIN_CANVAS_OPTIONS: CanvasRenderingContext2DSettings \| undefined = DRAW_SWITCHES\.get\('desync'\) === 'on' \|\| CANVAS_ON_CPU\s*\? \{ \.\.\.\(DRAW_SWITCHES\.get\('desync'\) === 'on' \? \{ desynchronized: true \} : \{\}\), \.\.\.LAYER_CANVAS_OPTIONS \}\s*: undefined/)
   assert.equal((app.match(/getContext\('2d', MAIN_CANVAS_OPTIONS\)/g) ?? []).length, 2)
 })

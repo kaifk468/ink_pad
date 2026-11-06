@@ -54,6 +54,55 @@ export function drawInterpolatingSegment(ctx: CanvasRenderingContext2D, segment:
   ctx.stroke()
 }
 
+/** Switches for drawing Raw strokes cheaply. ?group=off restores one draw call per segment. */
+export const rawDrawingOptions = { groupWidths: true }
+
+/**
+ * A finished stroke never changes, so its Raw curve is worked out once and kept with the stroke object (never saved).
+ * A stroke still being written grows in place, so the kept curve is only reused while its point list is unchanged.
+ */
+const rawSegmentCache = new WeakMap<Stroke, { points: Point[]; length: number; segments: InterpolatingStrokeSegment[] }>()
+
+function rawSegments(stroke: Stroke, points: Point[]): InterpolatingStrokeSegment[] {
+  const hit = rawSegmentCache.get(stroke)
+  if (hit && hit.points === points && hit.length === points.length) return hit.segments
+  const segments = buildInterpolatingCurve(points)
+  rawSegmentCache.set(stroke, { points, length: points.length, segments })
+  return segments
+}
+
+/** Width steps for grouping: 4% of the pen width, well below what the eye can tell apart. */
+const WIDTH_STEP_RATIO = 0.04
+
+/**
+ * Draws Raw segments. Neighbouring segments whose pressure widths are the same (to within 4% of the pen width) go into one
+ * path and one stroke call, since a stroke is drawn in a single opaque colour with round joins and caps.
+ */
+export function drawRawSegments(ctx: CanvasRenderingContext2D, segments: InterpolatingStrokeSegment[], width: number): void {
+  if (!rawDrawingOptions.groupWidths) {
+    for (const segment of segments) drawInterpolatingSegment(ctx, segment, width)
+    return
+  }
+  const step = Math.max(0.01, width * WIDTH_STEP_RATIO)
+  const levelOf = (segment: InterpolatingStrokeSegment) => Math.round(pressureLineWidth(width, segment.pressure) / step)
+  let index = 0
+  while (index < segments.length) {
+    const level = levelOf(segments[index])
+    let end = index + 1
+    while (end < segments.length && levelOf(segments[end]) === level) end += 1
+    ctx.lineWidth = level * step
+    ctx.beginPath()
+    ctx.moveTo(segments[index].from.x, segments[index].from.y)
+    for (let k = index; k < end; k += 1) {
+      const segment = segments[k]
+      if (segment.curved && segment.control1 && segment.control2) ctx.bezierCurveTo(segment.control1.x, segment.control1.y, segment.control2.x, segment.control2.y, segment.to.x, segment.to.y)
+      else ctx.lineTo(segment.to.x, segment.to.y)
+    }
+    ctx.stroke()
+    index = end
+  }
+}
+
 export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, strokeDisplayMode: StrokeDisplayMode): void {
   const points = stroke.erase || stroke.shape || strokeDisplayMode === 'raw' ? stroke.points : filterDisplayPoints(stroke.points)
   if (!points.length) return
@@ -102,7 +151,7 @@ export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, stroke
       ctx.stroke()
     }
   } else if (strokeDisplayMode === 'raw') {
-    for (const segment of buildInterpolatingCurve(points)) drawInterpolatingSegment(ctx, segment, stroke.width)
+    drawRawSegments(ctx, rawSegments(stroke, points), stroke.width)
   } else {
     for (const segment of buildMidpointCurve(points)) {
       const pressureScale = segment.pressure > 0 ? 0.35 + segment.pressure * 0.9 : 1

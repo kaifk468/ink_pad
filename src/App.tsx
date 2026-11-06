@@ -20,7 +20,7 @@ import { createTestInk, isTestInk } from './testInk'
 import { createFrameRecorder, formatDrawFlags, formatFrameSummary } from './app/frameRecorder'
 import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
 import { chooseDrawMode, countVisiblePoints, DEFAULT_DIRECT_MAX_VISIBLE_POINTS, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
-import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer } from './app/canvasRenderer'
+import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, rawDrawingOptions } from './app/canvasRenderer'
 import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
 import { UmlConnectorIcon } from './app/UmlConnectorIcon'
 import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
@@ -64,7 +64,20 @@ const LIVE_INCREMENTAL_ENABLED = DRAW_SWITCHES.get('live') === 'incremental'
 // ?predict=on draws the browser's predicted pen positions ahead of the ink; it made no difference on the tablet, so it is off.
 const PEN_PREDICTION_ENABLED = DRAW_SWITCHES.get('predict') === 'on'
 // ?desync=on asks the browser for its low-latency canvas path (skips waiting for the compositor) for the page canvas.
-const MAIN_CANVAS_OPTIONS: CanvasRenderingContext2DSettings | undefined = DRAW_SWITCHES.get('desync') === 'on' ? { desynchronized: true } : undefined
+// ?canvas=cpu asks for software-drawn canvases (willReadFrequently) to test whether the tablet's GPU canvas path is what delays frames.
+const CANVAS_ON_CPU = DRAW_SWITCHES.get('canvas') === 'cpu'
+const LAYER_CANVAS_OPTIONS: CanvasRenderingContext2DSettings | undefined = CANVAS_ON_CPU ? { willReadFrequently: true } : undefined
+const MAIN_CANVAS_OPTIONS: CanvasRenderingContext2DSettings | undefined = DRAW_SWITCHES.get('desync') === 'on' || CANVAS_ON_CPU
+  ? { ...(DRAW_SWITCHES.get('desync') === 'on' ? { desynchronized: true } : {}), ...LAYER_CANVAS_OPTIONS }
+  : undefined
+// ?layers=one draws straight onto the page canvas, without the extra full-screen layer that is copied over every frame.
+const ONE_LAYER_ENABLED = DRAW_SWITCHES.get('layers') === 'one'
+// ?group=off draws every Raw segment in its own call again (by default neighbouring segments of the same width share one).
+const GROUP_SEGMENTS_ENABLED = DRAW_SWITCHES.get('group') !== 'off'
+rawDrawingOptions.groupWidths = GROUP_SEGMENTS_ENABLED
+// ?dpr=N draws the page canvas with at most N pixels per CSS pixel (the tablet uses 2.125), to test whether canvas size is the cost.
+const DPR_CAP = Number(DRAW_SWITCHES.get('dpr'))
+const canvasPixelRatio = () => Math.max(1, Math.min(window.devicePixelRatio || 1, DPR_CAP > 0 ? DPR_CAP : Infinity))
 // ?debug=on shows a small readout of the drawing path and the amount of ink (also on the deployed site, for tablet checks).
 const STROKE_THINNING_ENABLED = DRAW_SWITCHES.get('thin') !== 'off'
 const DRAW_READOUT_ENABLED = DRAW_SWITCHES.get('debug') === 'on'
@@ -76,7 +89,11 @@ const DRAW_FLAGS_TEXT = formatDrawFlags({
   predict: PEN_PREDICTION_ENABLED,
   thin: STROKE_THINNING_ENABLED,
   cache: PAGE_CACHE_ENABLED,
-  desync: MAIN_CANVAS_OPTIONS !== undefined,
+  desync: DRAW_SWITCHES.get('desync') === 'on',
+  cpu: CANVAS_ON_CPU,
+  dprCap: DPR_CAP > 0 ? DPR_CAP : null,
+  oneLayer: ONE_LAYER_ENABLED,
+  group: GROUP_SEGMENTS_ENABLED,
 })
 
 /** The canvas area (device pixels) a growing stroke can touch: its bounding box plus line width and curve overshoot. */
@@ -714,9 +731,9 @@ function App() {
     if (!canvas || !ctx) return
     const mainCanvasStartedAt = measureFrame ? performance.now() : 0
     const inkLayer = getReusableCanvasLayer(inkLayerRef, canvas.width, canvas.height)
-    const inkContext = inkLayer.getContext('2d')
+    const inkContext = inkLayer.getContext('2d', LAYER_CANVAS_OPTIONS)
     if (!inkContext) return
-    const dpr = benchmarkBackground?.dpr ?? Math.max(1, window.devicePixelRatio || 1)
+    const dpr = benchmarkBackground?.dpr ?? canvasPixelRatio()
     const viewport = benchmarkBackground?.viewport ?? viewportRef.current
     const editingTextId = textEditorRef.current?.itemId ?? null
     const items = strokesRef.current
@@ -758,7 +775,7 @@ function App() {
     // One item added on top since the picture was made (a stroke, or a recognized rectangle or line, a connector, a text
     // label): draw just that item onto the picture, in the same order a full redraw would use.
     if (cacheBase && !itemsMatch && viewportSame && items.length === cache!.snapshot.length + 1 && sameItems(cache!.snapshot, items, cache!.snapshot.length)) {
-      const historyContext = historyLayerNow!.getContext('2d')
+      const historyContext = historyLayerNow!.getContext('2d', LAYER_CANVAS_OPTIONS)
       if (historyContext) {
         historyContext.save()
         historyContext.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
@@ -808,6 +825,11 @@ function App() {
     liveStateRef.current = null
     const startLive = incrementalLive
     const dirty = startLive ? null : dirtyRect
+    // ?layers=one: draw the ink straight onto the page canvas instead of a second full-screen layer that is copied over.
+    // Not while something is selected (its highlight sits under the ink) or during a pinch/pan frame.
+    const oneLayer = ONE_LAYER_ENABLED && !benchmarkBackground && !startLive && !directGesture
+      && selectedKeysRef.current.size === 0 && selectedRectangleIdRef.current === null
+      && (!cacheAllowed || (sameViewport && cache !== null && historyLayerRef.current !== null))
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     if (dirty) {
       ctx.save()
@@ -829,16 +851,19 @@ function App() {
       ))
     }
     if (benchmarkBackground) benchmarkBackground.onBackgroundRendered(performance.now() - backgroundStartedAt)
-    ctx.save()
-    ctx.strokeStyle = '#d4d7de'
-    ctx.lineWidth = 1
-    ctx.strokeRect(WORKSPACE_BOUNDS.x + 0.5, WORKSPACE_BOUNDS.y + 0.5, WORKSPACE_BOUNDS.width - 1, WORKSPACE_BOUNDS.height - 1)
-    ctx.restore()
-    ctx.save()
-    ctx.strokeStyle = '#d9dce2'
-    ctx.lineWidth = 1
-    ctx.strokeRect(SHEET_BOUNDS.x + 0.5, SHEET_BOUNDS.y + 0.5, SHEET_WIDTH - 1, SHEET_HEIGHT - 1)
-    ctx.restore()
+    const drawSheetBorders = () => {
+      ctx.save()
+      ctx.strokeStyle = '#d4d7de'
+      ctx.lineWidth = 1
+      ctx.strokeRect(WORKSPACE_BOUNDS.x + 0.5, WORKSPACE_BOUNDS.y + 0.5, WORKSPACE_BOUNDS.width - 1, WORKSPACE_BOUNDS.height - 1)
+      ctx.restore()
+      ctx.save()
+      ctx.strokeStyle = '#d9dce2'
+      ctx.lineWidth = 1
+      ctx.strokeRect(SHEET_BOUNDS.x + 0.5, SHEET_BOUNDS.y + 0.5, SHEET_WIDTH - 1, SHEET_HEIGHT - 1)
+      ctx.restore()
+    }
+    if (!oneLayer) drawSheetBorders()
     ctx.save()
     ctx.beginPath()
     ctx.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
@@ -868,33 +893,38 @@ function App() {
         ctx.restore()
       }
     })
-    inkContext.setTransform(1, 0, 0, 1, 0, 0)
-    if (dirty) {
-      inkContext.save()
-      inkContext.beginPath()
-      inkContext.rect(dirty.x, dirty.y, dirty.width, dirty.height)
-      inkContext.clip()
+    // The ink goes onto its own layer that is copied onto the page canvas, or (oneLayer) straight onto the page canvas,
+    // which is already cleared, clipped to the changed area and set to the page transform.
+    const target = oneLayer ? ctx : inkContext
+    if (!oneLayer) {
+      inkContext.setTransform(1, 0, 0, 1, 0, 0)
+      if (dirty) {
+        inkContext.save()
+        inkContext.beginPath()
+        inkContext.rect(dirty.x, dirty.y, dirty.width, dirty.height)
+        inkContext.clip()
+      }
+      if (!directGesture) inkContext.clearRect(dirty?.x ?? 0, dirty?.y ?? 0, dirty?.width ?? inkLayer.width, dirty?.height ?? inkLayer.height)
+      inkContext.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
     }
-    if (!directGesture) inkContext.clearRect(dirty?.x ?? 0, dirty?.y ?? 0, dirty?.width ?? inkLayer.width, dirty?.height ?? inkLayer.height)
-    inkContext.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
-    inkContext.save()
-    inkContext.beginPath()
-    inkContext.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
-    inkContext.clip()
+    target.save()
+    target.beginPath()
+    target.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
+    target.clip()
     const historyInkStartedAt = measureFrame ? performance.now() : 0
     if (directGesture) {
       // nothing to draw into the ink layer; the saved picture is composited below
     } else if (sameViewport && cache && historyLayerRef.current) {
-      inkContext.save()
-      inkContext.setTransform(1, 0, 0, 1, 0, 0)
-      if (dirty) inkContext.drawImage(historyLayerRef.current, dirty.x, dirty.y, dirty.width, dirty.height, dirty.x, dirty.y, dirty.width, dirty.height)
-      else inkContext.drawImage(historyLayerRef.current, 0, 0)
-      inkContext.restore()
+      target.save()
+      target.setTransform(1, 0, 0, 1, 0, 0)
+      if (dirty) target.drawImage(historyLayerRef.current, dirty.x, dirty.y, dirty.width, dirty.height, dirty.x, dirty.y, dirty.width, dirty.height)
+      else target.drawImage(historyLayerRef.current, 0, 0)
+      target.restore()
     } else {
-      canvasItemsForRendering(items).forEach((item) => { if (!isItemVisible(item, view)) return; if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(inkContext, item) })
+      canvasItemsForRendering(items).forEach((item) => { if (!isItemVisible(item, view)) return; if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(target, item) })
       if (cacheAllowed) {
         const historyLayer = getReusableCanvasLayer(historyLayerRef, canvas.width, canvas.height)
-        const historyContext = historyLayer.getContext('2d')
+        const historyContext = historyLayer.getContext('2d', LAYER_CANVAS_OPTIONS)
         if (historyContext) {
           historyContext.setTransform(1, 0, 0, 1, 0, 0)
           historyContext.clearRect(0, 0, historyLayer.width, historyLayer.height)
@@ -909,14 +939,23 @@ function App() {
     if (activeStrokeRef.current && !startLive) {
       const preview = shapePreviewRef.current
       const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
-      drawItem(inkContext, preview ?? activeStrokeRef.current)
+      drawItem(target, preview ?? activeStrokeRef.current)
       if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
     }
-    inkContext.restore()
-    if (dirty) inkContext.restore()
+    target.restore()
+    if (!oneLayer && dirty) inkContext.restore()
     const compositeStartedAt = measureFrame ? performance.now() : 0
+    if (oneLayer) {
+      // The sheet borders sit under the ink: draw them behind what is already on the canvas.
+      ctx.save()
+      ctx.globalCompositeOperation = 'destination-over'
+      drawSheetBorders()
+      ctx.restore()
+    }
     ctx.setTransform(1, 0, 0, 1, 0, 0)
-    if (directGesture && cache && historyLayerRef.current) {
+    if (oneLayer) {
+      // nothing to copy: the ink is already on the page canvas
+    } else if (directGesture && cache && historyLayerRef.current) {
       const k = viewport.scale / cache.scale
       ctx.setTransform(k, 0, 0, k, dpr * (viewport.offsetX - k * cache.offsetX), dpr * (viewport.offsetY - k * cache.offsetY))
       ctx.drawImage(historyLayerRef.current, 0, 0)
@@ -1006,9 +1045,9 @@ function App() {
     if (startLive && liveStroke) {
       // Keep the page as painted now (without the stroke) and start an empty layer for the stroke's final spans.
       const base = getReusableCanvasLayer(liveBaseRef, canvas.width, canvas.height)
-      const baseContext = base.getContext('2d')
+      const baseContext = base.getContext('2d', LAYER_CANVAS_OPTIONS)
       const live = getReusableCanvasLayer(liveLayerRef, canvas.width, canvas.height)
-      const liveContext = live.getContext('2d')
+      const liveContext = live.getContext('2d', LAYER_CANVAS_OPTIONS)
       if (baseContext && liveContext) {
         baseContext.setTransform(1, 0, 0, 1, 0, 0)
         baseContext.globalCompositeOperation = 'copy'
@@ -1078,7 +1117,7 @@ function App() {
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
-    const dpr = Math.max(1, window.devicePixelRatio || 1)
+    const dpr = canvasPixelRatio()
     canvas.width = Math.round(rect.width * dpr)
     canvas.height = Math.round(rect.height * dpr)
     if (!initialViewDoneRef.current && rect.width > 0 && rect.height > 0) {
