@@ -17,6 +17,7 @@ import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
 import { thinItems, thinStroke } from './strokeThinning'
 import { createTestInk, isTestInk } from './testInk'
+import { createFrameRecorder, formatDrawFlags, formatFrameSummary } from './app/frameRecorder'
 import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
 import { chooseDrawMode, countVisiblePoints, DEFAULT_DIRECT_MAX_VISIBLE_POINTS, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
 import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer } from './app/canvasRenderer'
@@ -57,18 +58,26 @@ type DeviceRect = { x: number; y: number; width: number; height: number }
 const DRAW_SWITCHES = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
 // ?cache=off: no saved page picture, the page is redrawn every frame (like the original build).
 const PAGE_CACHE_ENABLED = DRAW_SWITCHES.get('cache') !== 'off'
-// ?live=full: redraw the whole live stroke (clipped to its area) every frame instead of only its newest part.
-const LIVE_INCREMENTAL_ENABLED = DRAW_SWITCHES.get('live') !== 'full'
-// ?predict=off: do not draw the browser's predicted pen positions ahead of the ink.
-const PEN_PREDICTION_ENABLED = DRAW_SWITCHES.get('predict') !== 'off'
+// The live stroke is redrawn whole (clipped to its area) every frame. ?live=incremental draws only its newest part
+// instead; on the tablet that felt worse than redrawing the whole stroke.
+const LIVE_INCREMENTAL_ENABLED = DRAW_SWITCHES.get('live') === 'incremental'
+// ?predict=on draws the browser's predicted pen positions ahead of the ink; it made no difference on the tablet, so it is off.
+const PEN_PREDICTION_ENABLED = DRAW_SWITCHES.get('predict') === 'on'
 // ?desync=on asks the browser for its low-latency canvas path (skips waiting for the compositor) for the page canvas.
 const MAIN_CANVAS_OPTIONS: CanvasRenderingContext2DSettings | undefined = DRAW_SWITCHES.get('desync') === 'on' ? { desynchronized: true } : undefined
 // ?debug=on shows a small readout of the drawing path and the amount of ink (also on the deployed site, for tablet checks).
 const STROKE_THINNING_ENABLED = DRAW_SWITCHES.get('thin') !== 'off'
 const DRAW_READOUT_ENABLED = DRAW_SWITCHES.get('debug') === 'on'
-// One drawing path for the whole canvas: the saved page picture is always used, so writing costs the same on an empty
-// page and a full one. ?direct=N brings back the old switch (direct redraw while at most N ink points are visible).
+// Direct redraw while at most N ink points are visible, the saved page picture above that. ?direct=N overrides (0 = always the picture).
 const DIRECT_MAX_VISIBLE_POINTS = Number.isFinite(Number(DRAW_SWITCHES.get('direct'))) && DRAW_SWITCHES.get('direct') !== null ? Number(DRAW_SWITCHES.get('direct')) : DEFAULT_DIRECT_MAX_VISIBLE_POINTS
+const DRAW_FLAGS_TEXT = formatDrawFlags({
+  directMax: DIRECT_MAX_VISIBLE_POINTS,
+  live: LIVE_INCREMENTAL_ENABLED ? 'incremental' : 'whole',
+  predict: PEN_PREDICTION_ENABLED,
+  thin: STROKE_THINNING_ENABLED,
+  cache: PAGE_CACHE_ENABLED,
+  desync: MAIN_CANVAS_OPTIONS !== undefined,
+})
 
 /** The canvas area (device pixels) a growing stroke can touch: its bounding box plus line width and curve overshoot. */
 function getDirtyRect(points: Point[], strokeWidth: number, viewport: Viewport, dpr: number, canvasWidth: number, canvasHeight: number): DeviceRect | null {
@@ -156,6 +165,8 @@ function App() {
   const holdAnchorRef = useRef<Point | null>(null)
   const lastSignificantMoveAtRef = useRef(0)
   const frameRef = useRef<number | null>(null)
+  const frameRecorderRef = useRef(createFrameRecorder())
+  const frameReadoutRef = useRef<HTMLDivElement>(null)
   const initialViewDoneRef = useRef(false)
   const viewportRef = useRef<Viewport>({ scale: INITIAL_ZOOM, offsetX: 0, offsetY: 0 })
   const touchPointsRef = useRef(new Map<number, Point>())
@@ -1053,6 +1064,12 @@ function App() {
     frameRef.current = requestAnimationFrame((frameTimestamp) => {
       frameRef.current = null
       if (diagnostics?.isCapturing()) diagnostics.recordFrameCallback(frameTimestamp)
+      if (DRAW_READOUT_ENABLED && activeStrokeRef.current) {
+        const drawStartedAt = performance.now()
+        renderAll()
+        frameRecorderRef.current.frame(frameTimestamp, performance.now() - drawStartedAt)
+        return
+      }
       renderAll()
     })
   }, [renderAll])
@@ -1404,6 +1421,10 @@ function App() {
     clearShapeHoldTimer()
     if (activeStrokeRef.current) {
       const pointCount = activeStrokeRef.current.points.length
+      if (DRAW_READOUT_ENABLED) {
+        const summary = frameRecorderRef.current.finish()
+        if (summary && frameReadoutRef.current) frameReadoutRef.current.textContent = formatFrameSummary(summary)
+      }
       const diagnostics = performanceDiagnosticsRef.current
       if (diagnostics?.isCapturing()) {
         diagnostics.finishStroke(pointCount, performance.now())
@@ -1737,6 +1758,7 @@ function App() {
     if (activePointerRef.current !== event.pointerId || !activeStrokeRef.current) return
     event.preventDefault()
     const samples = getPointerSamples(event.nativeEvent)
+    if (DRAW_READOUT_ENABLED) frameRecorderRef.current.samples(samples.length)
     const diagnostics = performanceDiagnosticsRef.current
     if (diagnostics?.isCapturing()) diagnostics.recordPointerMove(samples.map((sample) => sample.timeStamp), performance.now())
     const rect = event.currentTarget.getBoundingClientRect()
@@ -2116,7 +2138,13 @@ function App() {
           onLostPointerCapture={onPointerEnd}
           onPointerLeave={onPointerLeave}
         />
-        {DRAW_READOUT_ENABLED && <div ref={drawReadoutRef} className="draw-readout" aria-hidden="true" />}
+        {DRAW_READOUT_ENABLED && (
+          <div className="draw-readouts" aria-hidden="true">
+            <div className="draw-readout">{DRAW_FLAGS_TEXT}</div>
+            <div ref={frameReadoutRef} className="draw-readout">last stroke: write a stroke to see frame timing</div>
+            <div ref={drawReadoutRef} className="draw-readout" />
+          </div>
+        )}
         {textEditor && <TextEditorOverlay
           key={`${textEditor.itemId ?? 'new'}:${textEditor.x}:${textEditor.y}`}
           editor={textEditor}

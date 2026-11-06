@@ -59,8 +59,8 @@ test('a Raw pen stroke is drawn piece by piece on the page canvas, with no extra
 
 test('drawing paths can be switched from the address for on-device comparison', () => {
   assert.match(app, /DRAW_SWITCHES\.get\('cache'\) !== 'off'/)
-  assert.match(app, /DRAW_SWITCHES\.get\('live'\) !== 'full'/)
-  assert.match(app, /DRAW_SWITCHES\.get\('predict'\) !== 'off'/)
+  assert.match(app, /DRAW_SWITCHES\.get\('live'\) === 'incremental'/)
+  assert.match(app, /DRAW_SWITCHES\.get\('predict'\) === 'on'/)
 })
 
 test('the low-latency canvas hint is opt-in and applies to the page canvas', () => {
