@@ -17,7 +17,7 @@ import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
 import { createTestInk, isTestInk } from './testInk'
 import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
-import { chooseDrawMode, countVisiblePoints, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
+import { chooseDrawMode, countVisiblePoints, DEFAULT_DIRECT_MAX_VISIBLE_POINTS, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
 import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer } from './app/canvasRenderer'
 import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
 import { UmlConnectorIcon } from './app/UmlConnectorIcon'
@@ -66,7 +66,7 @@ const MAIN_CANVAS_OPTIONS: CanvasRenderingContext2DSettings | undefined = DRAW_S
 const DRAW_READOUT_ENABLED = DRAW_SWITCHES.get('debug') === 'on'
 // One drawing path for the whole canvas: the saved page picture is always used, so writing costs the same on an empty
 // page and a full one. ?direct=N brings back the old switch (direct redraw while at most N ink points are visible).
-const DIRECT_MAX_VISIBLE_POINTS = Number.isFinite(Number(DRAW_SWITCHES.get('direct'))) && DRAW_SWITCHES.get('direct') !== null ? Number(DRAW_SWITCHES.get('direct')) : 0
+const DIRECT_MAX_VISIBLE_POINTS = Number.isFinite(Number(DRAW_SWITCHES.get('direct'))) && DRAW_SWITCHES.get('direct') !== null ? Number(DRAW_SWITCHES.get('direct')) : DEFAULT_DIRECT_MAX_VISIBLE_POINTS
 
 /** The canvas area (device pixels) a growing stroke can touch: its bounding box plus line width and curve overshoot. */
 function getDirtyRect(points: Point[], strokeWidth: number, viewport: Viewport, dpr: number, canvasWidth: number, canvasHeight: number): DeviceRect | null {
