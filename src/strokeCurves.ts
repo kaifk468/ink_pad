@@ -48,54 +48,60 @@ function isSharpCorner(points: Point[], index: number, threshold: number): boole
 }
 
 /**
+ * One centripetal Catmull–Rom span, from points[index] to points[index + 1]. It reads only points index - 1 to
+ * index + 2, so once two more points exist after a span's start, that span never changes while the stroke grows.
+ * Sharp turns are emitted as straight spans to preserve deliberately drawn corners.
+ */
+export function buildInterpolatingSegment(
+  points: Point[],
+  index: number,
+  cornerAngle = RAW_STROKE_CORNER_ANGLE_RADIANS,
+): InterpolatingStrokeSegment {
+  const from = points[index]
+  const to = points[index + 1]
+  const pressure = (from.pressure + to.pressure) / 2
+  if (isSharpCorner(points, index, cornerAngle) || isSharpCorner(points, index + 1, cornerAngle)) {
+    return { from, to, pressure, curved: false }
+  }
+
+  const before = index > 0 ? points[index - 1] : extrapolate(to, from)
+  const after = index + 2 < points.length ? points[index + 2] : extrapolate(from, to)
+  // Centripetal parameterization (alpha = 0.5) reduces overshoot when the
+  // tablet reports uneven sample spacing, common during handwriting.
+  const t0 = 0
+  const t1 = t0 + Math.sqrt(distance(before, from))
+  const t2 = t1 + Math.sqrt(distance(from, to))
+  const t3 = t2 + Math.sqrt(distance(to, after))
+  if (t1 === t0 || t2 === t1 || t3 === t2 || t2 === t0 || t3 === t1) {
+    return { from, to, pressure, curved: false }
+  }
+
+  const span = t2 - t1
+  const tangentFromX = (from.x - before.x) / (t1 - t0) - (to.x - before.x) / (t2 - t0) + (to.x - from.x) / span
+  const tangentFromY = (from.y - before.y) / (t1 - t0) - (to.y - before.y) / (t2 - t0) + (to.y - from.y) / span
+  const tangentToX = (to.x - from.x) / span - (after.x - from.x) / (t3 - t1) + (after.x - to.x) / (t3 - t2)
+  const tangentToY = (to.y - from.y) / span - (after.y - from.y) / (t3 - t1) + (after.y - to.y) / (t3 - t2)
+  return {
+    from,
+    control1: { x: from.x + tangentFromX * span / 3, y: from.y + tangentFromY * span / 3, pressure: from.pressure },
+    control2: { x: to.x - tangentToX * span / 3, y: to.y - tangentToY * span / 3, pressure: to.pressure },
+    to,
+    pressure,
+    curved: true,
+  }
+}
+
+/**
  * Build centripetal Catmull–Rom spans for Raw display. Every span starts and
- * ends at captured points, so the path interpolates the source samples. Sharp
- * turns are emitted as straight spans to preserve deliberately drawn corners.
+ * ends at captured points, so the path interpolates the source samples.
  */
 export function buildInterpolatingCurve(
   points: Point[],
   cornerAngle = RAW_STROKE_CORNER_ANGLE_RADIANS,
 ): InterpolatingStrokeSegment[] {
   if (points.length < 2) return []
-  const corners = points.map((_, index) => isSharpCorner(points, index, cornerAngle))
   const segments: InterpolatingStrokeSegment[] = []
-
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const from = points[index]
-    const to = points[index + 1]
-    const pressure = (from.pressure + to.pressure) / 2
-    if (corners[index] || corners[index + 1]) {
-      segments.push({ from, to, pressure, curved: false })
-      continue
-    }
-
-    const before = index > 0 ? points[index - 1] : extrapolate(to, from)
-    const after = index + 2 < points.length ? points[index + 2] : extrapolate(from, to)
-    // Centripetal parameterization (alpha = 0.5) reduces overshoot when the
-    // tablet reports uneven sample spacing, common during handwriting.
-    const t0 = 0
-    const t1 = t0 + Math.sqrt(distance(before, from))
-    const t2 = t1 + Math.sqrt(distance(from, to))
-    const t3 = t2 + Math.sqrt(distance(to, after))
-    if (t1 === t0 || t2 === t1 || t3 === t2 || t2 === t0 || t3 === t1) {
-      segments.push({ from, to, pressure, curved: false })
-      continue
-    }
-
-    const span = t2 - t1
-    const tangentFromX = (from.x - before.x) / (t1 - t0) - (to.x - before.x) / (t2 - t0) + (to.x - from.x) / span
-    const tangentFromY = (from.y - before.y) / (t1 - t0) - (to.y - before.y) / (t2 - t0) + (to.y - from.y) / span
-    const tangentToX = (to.x - from.x) / span - (after.x - from.x) / (t3 - t1) + (after.x - to.x) / (t3 - t2)
-    const tangentToY = (to.y - from.y) / span - (after.y - from.y) / (t3 - t1) + (after.y - to.y) / (t3 - t2)
-    segments.push({
-      from,
-      control1: { x: from.x + tangentFromX * span / 3, y: from.y + tangentFromY * span / 3, pressure: from.pressure },
-      control2: { x: to.x - tangentToX * span / 3, y: to.y - tangentToY * span / 3, pressure: to.pressure },
-      to,
-      pressure,
-      curved: true,
-    })
-  }
+  for (let index = 0; index < points.length - 1; index += 1) segments.push(buildInterpolatingSegment(points, index, cornerAngle))
   return segments
 }
 

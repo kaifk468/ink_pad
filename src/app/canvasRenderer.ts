@@ -1,7 +1,7 @@
 import { getConnectorRenderSpec, getConnectorSymbolGeometry } from '../canvasModel'
-import type { CanvasItem, ConnectorObject, RectangleObject, Stroke, TextObject } from '../canvasModel'
+import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from '../canvasModel'
 import { filterDisplayPoints } from '../oneEuroFilter'
-import { buildInterpolatingCurve, buildMidpointCurve } from '../strokeCurves'
+import { buildInterpolatingCurve, buildMidpointCurve, type InterpolatingStrokeSegment } from '../strokeCurves'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import { classBoxFont, getClassBoxGeometry, type ClassBoxCompartment, type FontMeasure } from '../classBoxLayout'
 import { getTextBaselines, splitTextLines, textFont, type TextMeasure } from '../textLayout'
@@ -18,6 +18,40 @@ export function getReusableCanvasLayer(
   if (layerRef.current.width !== width) layerRef.current.width = width
   if (layerRef.current.height !== height) layerRef.current.height = height
   return layerRef.current
+}
+
+/** Line width for a pressure value, as every pen stroke is drawn. */
+export function pressureLineWidth(width: number, pressure: number): number {
+  return width * (pressure > 0 ? 0.35 + pressure * 0.9 : 1)
+}
+
+/** Sets up a context to draw pen-stroke pieces in a colour (the same state drawStroke uses). */
+export function preparePenContext(ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.strokeStyle = color
+  ctx.fillStyle = color
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+}
+
+/** The dot a one-point stroke shows. */
+export function drawStrokeDot(ctx: CanvasRenderingContext2D, point: Point, width: number): void {
+  ctx.beginPath()
+  ctx.arc(point.x, point.y, pressureLineWidth(width, point.pressure) / 2, 0, Math.PI * 2)
+  ctx.fill()
+}
+
+/** One Raw-mode span, stroked on its own with its pressure width (a finished stroke is drawn as these spans in order). */
+export function drawInterpolatingSegment(ctx: CanvasRenderingContext2D, segment: InterpolatingStrokeSegment, width: number): void {
+  ctx.lineWidth = pressureLineWidth(width, segment.pressure)
+  ctx.beginPath()
+  ctx.moveTo(segment.from.x, segment.from.y)
+  if (segment.curved && segment.control1 && segment.control2) {
+    ctx.bezierCurveTo(segment.control1.x, segment.control1.y, segment.control2.x, segment.control2.y, segment.to.x, segment.to.y)
+  } else {
+    ctx.lineTo(segment.to.x, segment.to.y)
+  }
+  ctx.stroke()
 }
 
 export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, strokeDisplayMode: StrokeDisplayMode): void {
@@ -55,11 +89,7 @@ export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, stroke
     return
   }
   if (points.length === 1) {
-    const p = points[0]
-    const pressureScale = p.pressure > 0 ? 0.35 + p.pressure * 0.9 : 1
-    ctx.beginPath()
-    ctx.arc(p.x, p.y, (stroke.width * pressureScale) / 2, 0, Math.PI * 2)
-    ctx.fill()
+    drawStrokeDot(ctx, points[0], stroke.width)
   } else if (stroke.erase) {
     for (let index = 1; index < points.length; index += 1) {
       const previous = points[index - 1]
@@ -72,18 +102,7 @@ export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, stroke
       ctx.stroke()
     }
   } else if (strokeDisplayMode === 'raw') {
-    for (const segment of buildInterpolatingCurve(points)) {
-      const pressureScale = segment.pressure > 0 ? 0.35 + segment.pressure * 0.9 : 1
-      ctx.lineWidth = stroke.width * pressureScale
-      ctx.beginPath()
-      ctx.moveTo(segment.from.x, segment.from.y)
-      if (segment.curved && segment.control1 && segment.control2) {
-        ctx.bezierCurveTo(segment.control1.x, segment.control1.y, segment.control2.x, segment.control2.y, segment.to.x, segment.to.y)
-      } else {
-        ctx.lineTo(segment.to.x, segment.to.y)
-      }
-      ctx.stroke()
-    }
+    for (const segment of buildInterpolatingCurve(points)) drawInterpolatingSegment(ctx, segment, stroke.width)
   } else {
     for (const segment of buildMidpointCurve(points)) {
       const pressureScale = segment.pressure > 0 ? 0.35 + segment.pressure * 0.9 : 1

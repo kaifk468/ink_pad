@@ -6,7 +6,7 @@ import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appende
 import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
 import { loadStrokeDisplayMode, saveStrokeDisplayMode, type StrokeDisplayMode } from './strokeDisplayMode'
-import { getPointerSamples } from './pointerSamples'
+import { MAX_PREDICTION_DISTANCE_SCREEN_PX, getPointerSamples, getPredictedPoints } from './pointerSamples'
 import { shouldAppendStrokeSample } from './strokeSampling'
 import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserStallSummary, type StrokeDiagnosticRow } from './performanceDiagnostics'
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
@@ -16,7 +16,8 @@ import { getNextIds } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
 import { createTestInk, isTestInk } from './testInk'
-import { DEFAULT_DIRECT_MAX_VISIBLE_POINTS, chooseDrawMode, countVisiblePoints, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
+import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
+import { chooseDrawMode, countVisiblePoints, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
 import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer } from './app/canvasRenderer'
 import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
 import { UmlConnectorIcon } from './app/UmlConnectorIcon'
@@ -51,16 +52,21 @@ function sameItems(snapshot: CanvasItem[], items: CanvasItem[], count: number): 
 
 type DeviceRect = { x: number; y: number; width: number; height: number }
 
-// Diagnostic switches for comparing drawing paths on a device without a second build: add ?overlay=off or ?cache=off to the address.
+// Diagnostic switches for comparing drawing paths on a device without a second build (add them to the address).
 const DRAW_SWITCHES = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
-const LIVE_OVERLAY_ENABLED = DRAW_SWITCHES.get('overlay') !== 'off'
+// ?cache=off: no saved page picture, the page is redrawn every frame (like the original build).
 const PAGE_CACHE_ENABLED = DRAW_SWITCHES.get('cache') !== 'off'
-// ?desync=on asks the browser for its low-latency canvas path (skips waiting for the compositor) for the live-stroke overlay.
-const LIVE_OVERLAY_DESYNCHRONIZED = DRAW_SWITCHES.get('desync') === 'on'
+// ?live=full: redraw the whole live stroke (clipped to its area) every frame instead of only its newest part.
+const LIVE_INCREMENTAL_ENABLED = DRAW_SWITCHES.get('live') !== 'full'
+// ?predict=off: do not draw the browser's predicted pen positions ahead of the ink.
+const PEN_PREDICTION_ENABLED = DRAW_SWITCHES.get('predict') !== 'off'
+// ?desync=on asks the browser for its low-latency canvas path (skips waiting for the compositor) for the page canvas.
+const MAIN_CANVAS_OPTIONS: CanvasRenderingContext2DSettings | undefined = DRAW_SWITCHES.get('desync') === 'on' ? { desynchronized: true } : undefined
 // ?debug=on shows a small readout of the drawing path and the amount of ink (also on the deployed site, for tablet checks).
 const DRAW_READOUT_ENABLED = DRAW_SWITCHES.get('debug') === 'on'
-// ?direct=N sets how many points of ink may be visible before the page picture is cached (0 = always cached, a huge number = never).
-const DIRECT_MAX_VISIBLE_POINTS = Number.isFinite(Number(DRAW_SWITCHES.get('direct'))) && DRAW_SWITCHES.get('direct') !== null ? Number(DRAW_SWITCHES.get('direct')) : DEFAULT_DIRECT_MAX_VISIBLE_POINTS
+// One drawing path for the whole canvas: the saved page picture is always used, so writing costs the same on an empty
+// page and a full one. ?direct=N brings back the old switch (direct redraw while at most N ink points are visible).
+const DIRECT_MAX_VISIBLE_POINTS = Number.isFinite(Number(DRAW_SWITCHES.get('direct'))) && DRAW_SWITCHES.get('direct') !== null ? Number(DRAW_SWITCHES.get('direct')) : 0
 
 /** The canvas area (device pixels) a growing stroke can touch: its bounding box plus line width and curve overshoot. */
 function getDirtyRect(points: Point[], strokeWidth: number, viewport: Viewport, dpr: number, canvasWidth: number, canvasHeight: number): DeviceRect | null {
@@ -96,10 +102,14 @@ function App() {
   // While one pen stroke is being drawn, everything already on the page is painted once into this layer and
   // reused each frame, so a frame costs the same however much is written. Dropped as soon as the stroke ends.
   const historyLayerRef = useRef<HTMLCanvasElement | null>(null)
-  const liveCanvasRef = useRef<HTMLCanvasElement>(null)
   const drawReadoutRef = useRef<HTMLDivElement>(null)
-  const liveOverlayActiveRef = useRef(false)
-  const drawModeRef = useRef<DrawMode>('direct')
+  // The stroke being written (Raw pen): the page as it was when the stroke started, and the stroke's final spans.
+  const liveBaseRef = useRef<HTMLCanvasElement | null>(null)
+  const liveLayerRef = useRef<HTMLCanvasElement | null>(null)
+  const liveStateRef = useRef<LiveStrokeState | null>(null)
+  // Where the browser predicts the pen will be in the next few milliseconds (drawn ahead of the ink, never saved).
+  const predictedPointsRef = useRef<Point[]>([])
+  const drawModeRef = useRef<DrawMode>(DIRECT_MAX_VISIBLE_POINTS <= 0 ? 'cached' : 'direct')
   const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
   const minimapRenderedAtRef = useRef(0)
   // True while a pinch or three-finger pan is moving: the page is shown as a moved copy of a saved picture, then redrawn sharply once it settles.
@@ -687,7 +697,7 @@ function App() {
     const measureFrame = diagnostics?.isStrokeActive() ?? false
     const renderStartedAt = measureFrame ? performance.now() : 0
     const canvas = canvasRef.current
-    const ctx = canvas?.getContext('2d')
+    const ctx = canvas?.getContext('2d', MAIN_CANVAS_OPTIONS) as CanvasRenderingContext2D | null | undefined
     if (!canvas || !ctx) return
     const mainCanvasStartedAt = measureFrame ? performance.now() : 0
     const inkLayer = getReusableCanvasLayer(inkLayerRef, canvas.width, canvas.height)
@@ -719,9 +729,9 @@ function App() {
           readout.textContent = `draw: ${nextMode} · visible ink points ${visiblePoints} · eraser points on page ${eraserPoints} · items ${items.length} · erasers ${erasers}`
         }
       }
+      if (canvas.dataset.drawMode !== nextMode) canvas.dataset.drawMode = nextMode
       if (nextMode !== drawModeRef.current) {
         drawModeRef.current = nextMode
-        canvas.dataset.drawMode = nextMode
       }
     }
     const drawMode = drawModeRef.current
@@ -756,31 +766,24 @@ function App() {
     const dirtyRect = penStrokeFrame && sameViewport && !gestureFrame && liveStroke && !liveStroke.shape && shapePreviewRef.current === null
       ? getDirtyRect(liveStroke.points, liveStroke.width, viewport, dpr, canvas.width, canvas.height)
       : null
-    // The stroke being written lives on its own transparent canvas above the page, so while writing, nothing the size of
-    // the screen is redrawn or copied: each frame only repaints the stroke's own area on that canvas. The page canvas is
-    // painted once when the stroke starts and once when it ends. Anything else (eraser, shapes, pinch) uses the page canvas.
-    const liveCanvas = LIVE_OVERLAY_ENABLED && drawMode === 'cached' ? liveCanvasRef.current : null
-    const liveContext = dirtyRect && liveCanvas ? liveCanvas.getContext('2d', LIVE_OVERLAY_DESYNCHRONIZED ? { desynchronized: true } : undefined) : null
-    const overlayCapable = liveContext !== null && liveCanvas !== null && liveStroke !== null
-    const drawLiveStroke = (rect: DeviceRect) => {
-      if (!liveContext || !liveStroke) return
-      liveContext.setTransform(1, 0, 0, 1, 0, 0)
-      liveContext.clearRect(rect.x, rect.y, rect.width, rect.height)
-      liveContext.save()
-      liveContext.beginPath()
-      liveContext.rect(rect.x, rect.y, rect.width, rect.height)
-      liveContext.clip()
-      liveContext.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
-      liveContext.beginPath()
-      liveContext.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
-      liveContext.clip()
-      drawItem(liveContext, liveStroke)
-      liveContext.restore()
-    }
-    if (overlayCapable && liveOverlayActiveRef.current && liveCanvas!.width === canvas.width && liveCanvas!.height === canvas.height) {
+    // A Raw pen stroke over the saved page picture is drawn piece by piece: each frame repaints only the small area
+    // around the newest part of the stroke (see app/liveStroke.ts). The first frame of the stroke paints the page once
+    // without the stroke and keeps a copy of it. Erasers, shapes, Smooth mode and gestures use the paths below.
+    const incrementalLive = LIVE_INCREMENTAL_ENABLED && dirtyRect !== null && liveStroke !== null && liveStroke.kind === 'stroke'
+      && !liveStroke.erase && strokeDisplayMode === 'raw'
+    const liveState = liveStateRef.current
+    const liveTransform = { scale: viewport.scale, offsetX: viewport.offsetX, offsetY: viewport.offsetY, dpr }
+    const drawLiveFrame = () => {
+      const base = liveBaseRef.current
+      const live = liveLayerRef.current
+      if (!base || !live || !liveStateRef.current || !liveStroke || liveStroke.kind !== 'stroke') return
       const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
-      drawLiveStroke(dirtyRect!)
+      drawLiveStrokeFrame({ page: ctx, base, live, stroke: liveStroke, predicted: PEN_PREDICTION_ENABLED ? predictedPointsRef.current : [], state: liveStateRef.current, transform: liveTransform, clip: WORKSPACE_BOUNDS })
       if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
+    }
+    if (incrementalLive && liveState && liveState.strokeId === liveStroke!.id
+      && liveBaseRef.current?.width === canvas.width && liveBaseRef.current.height === canvas.height) {
+      drawLiveFrame()
       const minimapNow = performance.now()
       if (minimapNow - minimapRenderedAtRef.current > MINIMAP_LIVE_REFRESH_MS) {
         minimapRenderedAtRef.current = minimapNow
@@ -789,14 +792,9 @@ function App() {
       if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
       return
     }
-    if (liveOverlayActiveRef.current) {
-      const staleContext = liveCanvas?.getContext('2d')
-      if (staleContext && liveCanvas) { staleContext.setTransform(1, 0, 0, 1, 0, 0); staleContext.clearRect(0, 0, liveCanvas.width, liveCanvas.height) }
-      liveOverlayActiveRef.current = false
-    }
-    // The frame that starts the overlay paints the page without the stroke; the stroke itself then goes on the overlay.
-    const startOverlay = overlayCapable
-    const dirty = startOverlay ? null : dirtyRect
+    liveStateRef.current = null
+    const startLive = incrementalLive
+    const dirty = startLive ? null : dirtyRect
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     if (dirty) {
       ctx.save()
@@ -895,7 +893,7 @@ function App() {
       }
     }
     if (measureFrame) diagnostics?.recordHistoryInkRender(performance.now() - historyInkStartedAt)
-    if (activeStrokeRef.current && !startOverlay) {
+    if (activeStrokeRef.current && !startLive) {
       const preview = shapePreviewRef.current
       const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
       drawItem(inkContext, preview ?? activeStrokeRef.current)
@@ -912,14 +910,6 @@ function App() {
     } else if (dirty) ctx.drawImage(inkLayer, dirty.x, dirty.y, dirty.width, dirty.height, dirty.x, dirty.y, dirty.width, dirty.height)
     else ctx.drawImage(inkLayer, 0, 0)
     if (measureFrame) diagnostics?.recordCompositeRender(performance.now() - compositeStartedAt)
-    if (startOverlay && liveCanvas && dirtyRect) {
-      if (liveCanvas.width !== canvas.width) liveCanvas.width = canvas.width
-      if (liveCanvas.height !== canvas.height) liveCanvas.height = canvas.height
-      const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
-      drawLiveStroke({ x: 0, y: 0, width: liveCanvas.width, height: liveCanvas.height })
-      liveOverlayActiveRef.current = true
-      if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
-    }
     ctx.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
     const activeConnector = activeConnectorRef.current
     if (activeConnector) {
@@ -1000,6 +990,23 @@ function App() {
     }
     ctx.restore()
     if (dirty) ctx.restore()
+    if (startLive && liveStroke) {
+      // Keep the page as painted now (without the stroke) and start an empty layer for the stroke's final spans.
+      const base = getReusableCanvasLayer(liveBaseRef, canvas.width, canvas.height)
+      const baseContext = base.getContext('2d')
+      const live = getReusableCanvasLayer(liveLayerRef, canvas.width, canvas.height)
+      const liveContext = live.getContext('2d')
+      if (baseContext && liveContext) {
+        baseContext.setTransform(1, 0, 0, 1, 0, 0)
+        baseContext.globalCompositeOperation = 'copy'
+        baseContext.drawImage(canvas, 0, 0)
+        baseContext.globalCompositeOperation = 'source-over'
+        liveContext.setTransform(1, 0, 0, 1, 0, 0)
+        liveContext.clearRect(0, 0, live.width, live.height)
+        liveStateRef.current = createLiveStrokeState(liveStroke.id)
+        drawLiveFrame()
+      }
+    }
     if (measureFrame) diagnostics?.recordMainCanvasRender(performance.now() - mainCanvasStartedAt)
     const minimapStartedAt = measureFrame ? performance.now() : 0
     // The minimap redraws every item, so while a stroke is being written it is refreshed a few times a second at most.
@@ -1062,7 +1069,7 @@ function App() {
     viewportRef.current = clampViewportToSheet(viewportRef.current, rect.width, rect.height)
     setZoomPercent(Math.round(viewportRef.current.scale * 100))
     if (textEditorRef.current) setTextEditor({ ...textEditorRef.current })
-    const ctx = canvas.getContext('2d')
+    const ctx = canvas.getContext('2d', MAIN_CANVAS_OPTIONS) as CanvasRenderingContext2D | null
     if (!ctx) return
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     renderAll()
@@ -1422,6 +1429,7 @@ function App() {
       setHasInk(true)
     }
     activeStrokeRef.current = null
+    predictedPointsRef.current = []
     activeConnectorRef.current = null
     shapePreviewRef.current = null
     activePointerRef.current = null
@@ -1587,6 +1595,7 @@ function App() {
       )
     }
     shapePreviewRef.current = null
+    predictedPointsRef.current = []
     holdAnchorRef.current = point
     scheduleShapePreview(point)
     scheduleRender()
@@ -1727,8 +1736,8 @@ function App() {
     const samples = getPointerSamples(event.nativeEvent)
     const diagnostics = performanceDiagnosticsRef.current
     if (diagnostics?.isCapturing()) diagnostics.recordPointerMove(samples.map((sample) => sample.timeStamp), performance.now())
+    const rect = event.currentTarget.getBoundingClientRect()
     for (const sample of samples) {
-      const rect = event.currentTarget.getBoundingClientRect()
       const point = screenToCanvasPoint({
         x: sample.clientX - rect.left,
         y: sample.clientY - rect.top,
@@ -1736,6 +1745,14 @@ function App() {
       }, viewportRef.current)
       if (!appendStrokeSample(event.pointerId, point)) return
     }
+    // Where the browser expects the pen next: drawn just ahead of the ink so it keeps up with the tip, never saved.
+    const liveNow = activeStrokeRef.current
+    predictedPointsRef.current = PEN_PREDICTION_ENABLED && liveNow?.kind === 'stroke' && !liveNow.erase
+      ? getPredictedPoints(event.nativeEvent, (clientX, clientY) => {
+        const point = screenToCanvasPoint({ x: clientX - rect.left, y: clientY - rect.top, pressure: 0 }, viewportRef.current)
+        return isPointWithinBounds(point) ? point : null
+      }, liveNow.points[liveNow.points.length - 1], MAX_PREDICTION_DISTANCE_SCREEN_PX / viewportRef.current.scale)
+      : []
     const latestPoint = activeStrokeRef.current.points[activeStrokeRef.current.points.length - 1]
     if (!holdAnchorRef.current || Math.hypot(latestPoint.x - holdAnchorRef.current.x, latestPoint.y - holdAnchorRef.current.y) >= SHAPE_HOLD_JITTER_PX) {
       shapePreviewRef.current = null
@@ -2086,7 +2103,6 @@ function App() {
           onLostPointerCapture={onPointerEnd}
           onPointerLeave={onPointerLeave}
         />
-        <canvas ref={liveCanvasRef} className="live-canvas" aria-hidden="true" />
         {DRAW_READOUT_ENABLED && <div ref={drawReadoutRef} className="draw-readout" aria-hidden="true" />}
         {textEditor && <TextEditorOverlay
           key={`${textEditor.itemId ?? 'new'}:${textEditor.x}:${textEditor.y}`}

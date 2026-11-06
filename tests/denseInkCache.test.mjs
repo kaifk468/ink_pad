@@ -43,29 +43,27 @@ test('pinch and three-finger pan move a saved picture of the page and redraw sha
   assert.match(app, /viewportGestureRef\.current = false\n\s+renderAll\(\)/)
 })
 
-test('the stroke being written is drawn on its own overlay canvas above the page', async () => {
+test('a Raw pen stroke is drawn piece by piece on the page canvas, with no extra full-screen layer', async () => {
   const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
-  // a second, transparent canvas that never takes pointer input
-  assert.match(app, /<canvas ref=\{liveCanvasRef\} className="live-canvas" aria-hidden="true" \/>/)
-  assert.match(css, /\.live-canvas \{[^}]*pointer-events: none/)
-  // only pen strokes over a usable page picture take the overlay; eraser, shapes, previews and gestures keep the page-canvas path
+  assert.doesNotMatch(app, /live-canvas|liveCanvasRef|liveOverlayActiveRef/)
+  assert.doesNotMatch(css, /\.live-canvas/)
+  // only pen strokes over a usable page picture qualify; eraser, shapes, previews and gestures keep the page-canvas path
   assert.match(app, /const dirtyRect = penStrokeFrame && sameViewport && !gestureFrame && liveStroke && !liveStroke\.shape && shapePreviewRef\.current === null/)
-  // while the overlay runs, a frame repaints only the stroke's own area on the overlay and returns before touching the page canvas
-  assert.match(app, /overlayCapable && liveOverlayActiveRef\.current/)
-  assert.match(app, /drawLiveStroke\(dirtyRect!\)\n[\s\S]*?return\n    \}/)
-  // the overlay is cleared in the same render that stops using it, so the hand-off at pen-up happens in one paint
-  assert.match(app, /if \(liveOverlayActiveRef\.current\) \{[\s\S]*?clearRect\(0, 0, liveCanvas\.width, liveCanvas\.height\)[\s\S]*?liveOverlayActiveRef\.current = false/)
-  // the frame that starts the overlay paints the page without the stroke
-  assert.match(app, /if \(activeStrokeRef\.current && !startOverlay\)/)
+  assert.match(app, /const incrementalLive = LIVE_INCREMENTAL_ENABLED && dirtyRect !== null && liveStroke !== null && liveStroke\.kind === 'stroke'\s*&& !liveStroke\.erase && strokeDisplayMode === 'raw'/)
+  // while it runs, a frame draws only the newest part of the stroke and returns before the full render
+  assert.match(app, /liveState\.strokeId === liveStroke!\.id[\s\S]*?drawLiveFrame\(\)[\s\S]*?return\n    \}/)
+  // the frame that starts it paints the page without the stroke, then keeps a copy as the base
+  assert.match(app, /if \(activeStrokeRef\.current && !startLive\)/)
+  assert.match(app, /if \(startLive && liveStroke\) \{[\s\S]*?baseContext\.drawImage\(canvas, 0, 0\)[\s\S]*?createLiveStrokeState\(liveStroke\.id\)/)
 })
 
-test('the overlay and the page cache can be switched off from the address for on-device comparison', () => {
-  assert.match(app, /DRAW_SWITCHES\.get\('overlay'\) !== 'off'/)
+test('drawing paths can be switched from the address for on-device comparison', () => {
   assert.match(app, /DRAW_SWITCHES\.get\('cache'\) !== 'off'/)
-  assert.match(app, /const liveCanvas = LIVE_OVERLAY_ENABLED && drawMode === 'cached' \? liveCanvasRef\.current : null/)
+  assert.match(app, /DRAW_SWITCHES\.get\('live'\) !== 'full'/)
+  assert.match(app, /DRAW_SWITCHES\.get\('predict'\) !== 'off'/)
 })
 
-test('the low-latency canvas hint is opt-in and only for the live-stroke overlay', () => {
-  assert.match(app, /LIVE_OVERLAY_DESYNCHRONIZED = DRAW_SWITCHES\.get\('desync'\) === 'on'/)
-  assert.match(app, /liveCanvas\.getContext\('2d', LIVE_OVERLAY_DESYNCHRONIZED \? \{ desynchronized: true \} : undefined\)/)
+test('the low-latency canvas hint is opt-in and applies to the page canvas', () => {
+  assert.match(app, /MAIN_CANVAS_OPTIONS: CanvasRenderingContext2DSettings \| undefined = DRAW_SWITCHES\.get\('desync'\) === 'on' \? \{ desynchronized: true \} : undefined/)
+  assert.equal((app.match(/getContext\('2d', MAIN_CANVAS_OPTIONS\)/g) ?? []).length, 2)
 })
