@@ -15,7 +15,7 @@ import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type Pa
 import { getNextIds } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
-import { thinStroke } from './strokeThinning'
+import { thinItems, thinStroke } from './strokeThinning'
 import { createTestInk, isTestInk } from './testInk'
 import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
 import { chooseDrawMode, countVisiblePoints, DEFAULT_DIRECT_MAX_VISIBLE_POINTS, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
@@ -174,7 +174,7 @@ function App() {
   pageBackgroundRef.current = pageBackground
 
   const {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, docTitle, saveStatus, fileNotice, library, folders, currentDocId,
+    filePanelOpen, setFilePanelOpen, refreshLibrary, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
@@ -2046,6 +2046,16 @@ function App() {
     scheduleAutosave()
   }
 
+  const slimInk = () => {
+    const result = thinItems(strokesRef.current)
+    if (result.after >= result.before) { setFileNotice('Ink is already slim.'); return }
+    saveHistory()
+    strokesRef.current = result.items
+    setFileNotice(`Slimmed ink: ${result.before.toLocaleString()} → ${result.after.toLocaleString()} points.`)
+    renderAll()
+    scheduleAutosave()
+  }
+
   const onPointerLeave = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (hoverErasePointerRef.current === event.pointerId) finishStroke(event.pointerId)
   }
@@ -2238,6 +2248,7 @@ function App() {
         filePanelOpen={filePanelOpen}
         onToggleFilePanel={() => setFilePanelOpen((open) => !open)}
         onClear={clearCanvas}
+        onSlimInk={slimInk}
         onOpenDiagram={(id) => void openStoredDiagram(id)}
         onFoldersOpen={() => void refreshLibrary()}
         onNewDiagramIn={(folderId) => void newDiagramIn(folderId)}

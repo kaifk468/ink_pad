@@ -76,3 +76,19 @@ test('finishing a stroke thins it (switch ?thin=off)', async () => {
   assert.match(app, /STROKE_THINNING_ENABLED = DRAW_SWITCHES\.get\('thin'\) !== 'off'/)
   assert.match(app, /stroke = thinStroke\(stroke\)\s*strokesRef\.current\.push\(stroke\)/)
 })
+
+test('slimming a page keeps untouched items by identity and reports counts', () => {
+  const box = { kind: 'rectangle', id: 1, x: 0, y: 0, width: 5, height: 5 }
+  const line = { kind: 'stroke', id: 2, color: '#000', width: 2, erase: false, points: Array.from({ length: 40 }, (_, i) => pt(i, 0)) }
+  const result = thin.thinItems([box, line])
+  assert.equal(result.items[0], box)
+  assert.equal(result.before, 40)
+  assert.equal(result.after, 2)
+  assert.equal(line.points.length, 40, 'original untouched')
+})
+
+test('the menu has a one-time, undoable slim action', async () => {
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /const slimInk = \(\) => \{[\s\S]*?saveHistory\(\)[\s\S]*?strokesRef\.current = result\.items/)
+  assert.match(app, /onSlimInk=\{slimInk\}/)
+})

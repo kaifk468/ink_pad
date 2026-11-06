@@ -58,3 +58,18 @@ export function thinStroke(stroke: Stroke): Stroke {
   const points = thinPoints(stroke.points)
   return points.length === stroke.points.length ? stroke : { ...stroke, points }
 }
+
+/** One-time slimming of a whole page. Returns the new list and the point counts; untouched items keep their identity. */
+export function thinItems<T extends { kind: string }>(items: T[]): { items: T[]; before: number; after: number } {
+  let before = 0
+  let after = 0
+  const next = items.map((item) => {
+    if (item.kind !== 'stroke') return item
+    const stroke = item as unknown as Stroke
+    before += stroke.points.length
+    const thinned = thinStroke(stroke)
+    after += thinned.points.length
+    return thinned as unknown as T
+  })
+  return { items: next, before, after }
+}

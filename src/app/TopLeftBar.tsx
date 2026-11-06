@@ -19,6 +19,7 @@ type TopLeftBarProps = {
   filePanelOpen: boolean
   onToggleFilePanel: () => void
   onClear: () => void
+  onSlimInk: () => void
   onOpenDiagram: (id: string) => void
   onFoldersOpen: () => void
   onNewDiagramIn: (folderId: string | null) => void
@@ -121,6 +122,10 @@ export function TopLeftBar(props: TopLeftBarProps) {
             </span>
           </div>
           <div className="menu-divider" role="separator" />
+          <button className="menu-row slim-row" type="button" title="Drop pen points that do not change the shape. One-time, undoable." onClick={() => { props.onSlimInk(); setMenuOpen(false) }} disabled={!props.hasInk}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16c3-8 5 6 8-2s5 2 8-4"/></svg>
+            <span className="menu-row-label">Slim ink points</span>
+          </button>
           <button className="menu-row clear-row" type="button" onClick={() => { props.onClear(); setMenuOpen(false) }} disabled={!props.hasInk}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg>
             <span className="menu-row-label">Clear canvas</span>
