@@ -308,6 +308,9 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 .zoom-controls button { width: 44px; height: 48px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: #343944; font-size: 24px; line-height: 1; cursor: pointer; touch-action: manipulation; }
 .zoom-controls button:hover { background: #f1f2f5; }
 .zoom-controls .zoom-indicator { min-width: 58px; font-size: 14px; }
+.zoom-controls button:disabled { opacity: .35; cursor: default; }
+.zoom-controls .zoom-lock { display: grid; place-items: center; margin-left: 2px; border-left: 1px solid #e7eaf0; border-radius: 0 12px 12px 0; }
+.zoom-controls .zoom-lock.selected { background: #e9edff; color: #354fc2; }
 .navigator-status { margin-top: 6px; color: #5d626b; font-size: 10px; font-weight: 600; text-align: center; }
 .navigator-status.status-error { color: #b3261e; font-weight: 700; }
 

@@ -45,8 +45,8 @@ test('a growing pen stroke only repaints the area around it', () => {
 
 test('pinch and three-finger pan move a saved picture of the page and redraw sharply when they settle', () => {
   assert.match(app, /GESTURE_SETTLE_MS/)
-  assert.match(app, /zoomTwoFingerViewport\(gesture\.viewport, gesture\.center, gesture\.distance, distance, MIN_ZOOM, MAX_ZOOM\), true\)/)
-  assert.match(app, /panThreeFingerViewport\(gesture\.viewport, gesture\.center, center\), true\)/)
+  // the touch navigator returns the moved viewport (zoom or pan); it is applied as a gesture frame
+  assert.match(app, /if \(next\) applyViewport\(next, true\)/)
   assert.match(app, /const directGesture = cacheUsable && gestureFrame && !sameViewport/)
   assert.match(app, /viewportGestureRef\.current = false\n\s+renderAll\(\)/)
 })

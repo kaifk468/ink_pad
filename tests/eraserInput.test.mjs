@@ -90,7 +90,7 @@ test('erase stroke history still undoes and redoes an erase operation', () => {
 
 test('hover erasing is finalized on pen contact, pointer end, or leaving the canvas', () => {
   assert.match(appSource, /isPenHoverEraseInput\(event\.pointerType, event\.buttons, eraser, objectEraser\)/)
-  assert.match(appSource, /activePointerRef\.current === null\s*&& touchPointsRef\.current\.size === 0/)
+  assert.match(appSource, /activePointerRef\.current === null\s*&& touchNav\.touchCount\(\) === 0/)
   assert.match(appSource, /isPointWithinBounds\(point\) && hitTestObject\(point\) !== -1/)
   assert.match(appSource, /hoverErasePointerRef\.current === event\.pointerId\) finishStroke\(event\.pointerId\)/)
   assert.match(appSource, /onPointerLeave=\{onPointerLeave\}/)

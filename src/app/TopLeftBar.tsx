@@ -15,6 +15,8 @@ type TopLeftBarProps = {
   onPageTemplate: (value: PageTemplate) => void
   pageBackground: PageBackground
   onPageBackground: (value: PageBackground) => void
+  oneFingerPan: boolean
+  onOneFingerPan: (value: boolean) => void
   hasInk: boolean
   filePanelOpen: boolean
   onToggleFilePanel: () => void
@@ -122,6 +124,10 @@ export function TopLeftBar(props: TopLeftBarProps) {
             </span>
           </div>
           <div className="menu-divider" role="separator" />
+          <button className={`menu-row${props.oneFingerPan ? ' selected' : ''}`} type="button" role="switch" aria-checked={props.oneFingerPan} title="One finger pans the page. Ignored while the pen is near or touching the screen." onClick={() => props.onOneFingerPan(!props.oneFingerPan)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V5a1.5 1.5 0 0 1 3 0v6M12 10.5a1.5 1.5 0 0 1 3 0V12M15 11.5a1.5 1.5 0 0 1 3 0V16a5 5 0 0 1-5 5h-1.5a5 5 0 0 1-4-2L5 15.5a1.5 1.5 0 0 1 2.4-1.8L9 15"/></svg>
+            <span className="menu-row-label">One-finger pan</span><span className="menu-row-hint">{props.oneFingerPan ? 'On' : 'Off'}</span>
+          </button>
           <button className="menu-row slim-row" type="button" title="Drop pen points that do not change the shape. One-time, undoable." onClick={() => { props.onSlimInk(); setMenuOpen(false) }} disabled={!props.hasInk}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16c3-8 5 6 8-2s5 2 8-4"/></svg>
             <span className="menu-row-label">Slim ink points</span>

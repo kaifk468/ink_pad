@@ -37,7 +37,9 @@ import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitCla
 import { DEFAULT_TEXT_FONT_SIZE, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeRectangleOnHold, recognizeRectangleStroke } from './shapeRecognition'
-import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEIGHT, SHEET_WIDTH, THREE_FINGER_PAN_THRESHOLD, WORKSPACE_BOUNDS, centerViewportOnPoint, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, getTouchNavigationGestureMode, isPointWithinBounds, minimapToCanvasPoint, panThreeFingerViewport, type MinimapGeometry, type TouchNavigationGestureMode, type ViewBounds, type Viewport, screenToCanvasPoint, zoomTwoFingerViewport } from './viewport'
+import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEIGHT, SHEET_WIDTH, WORKSPACE_BOUNDS, centerViewportOnPoint, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
+import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
+import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
 
 
 const DOUBLE_TAP_MS = 400
@@ -202,8 +204,18 @@ function App() {
   const redrawTrackerRef = useRef(createRedrawTracker())
   const initialViewDoneRef = useRef(false)
   const viewportRef = useRef<Viewport>({ scale: INITIAL_ZOOM, offsetX: 0, offsetY: 0 })
-  const touchPointsRef = useRef(new Map<number, Point>())
-  const touchGestureRef = useRef<{ mode: TouchNavigationGestureMode; viewport: Viewport; center: Point; distance: number } | null>(null)
+  const [navigationSettings, setNavigationSettings] = useState<NavigationSettings>(() => loadNavigationSettings())
+  const navigationSettingsRef = useRef(navigationSettings)
+  navigationSettingsRef.current = navigationSettings
+  const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
+  if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
+  const touchNav = touchNavRef.current
+  const updateNavigationSettings = (patch: Partial<NavigationSettings>) => {
+    const next = { ...navigationSettingsRef.current, ...patch }
+    navigationSettingsRef.current = next
+    setNavigationSettings(next)
+    saveNavigationSettings(next)
+  }
   const minimapDragPointerRef = useRef<{ pointerId: number; bounds: ViewBounds; geometry: MinimapGeometry } | null>(null)
   const umlToolboxDragRef = useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number; moved: boolean } | null>(null)
   const suppressMinimizedToolboxClickRef = useRef(false)
@@ -1391,6 +1403,7 @@ function App() {
   }
 
   const fitDrawingView = () => {
+    if (navigationSettingsRef.current.zoomLocked) return
     const canvas = canvasRef.current
     if (!canvas) return
     const bounds = getCanvasSelectionBounds(strokesRef.current, new Set(strokesRef.current.map(canvasItemKey)))
@@ -1446,51 +1459,13 @@ function App() {
     }
   }
 
-  const beginTouchGesture = () => {
-    const mode = getTouchNavigationGestureMode(touchPointsRef.current.size)
-    if (!mode) {
-      touchGestureRef.current = null
-      return
-    }
-    const points = [...touchPointsRef.current.values()]
-    const [first, second] = points
-    touchGestureRef.current = {
-      mode,
-      viewport: { ...viewportRef.current },
-      center: {
-        x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
-        y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
-        pressure: 1,
-      },
-      distance: mode === 'pinch-zoom' ? Math.hypot(second.x - first.x, second.y - first.y) : 0,
-    }
-  }
-
   const updateTouchPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    touchPointsRef.current.set(event.pointerId, getScreenPoint(event))
-    const gesture = touchGestureRef.current
-    if (!gesture || getTouchNavigationGestureMode(touchPointsRef.current.size) !== gesture.mode) return false
-    const points = [...touchPointsRef.current.values()]
-    if (gesture.mode === 'pinch-zoom') {
-      const [first, second] = points
-      const distance = Math.hypot(second.x - first.x, second.y - first.y)
-      applyViewport(zoomTwoFingerViewport(gesture.viewport, gesture.center, gesture.distance, distance, MIN_ZOOM, MAX_ZOOM), true)
-    } else {
-      const center = {
-        x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
-        y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
-        pressure: 1,
-      }
-      if (Math.hypot(center.x - gesture.center.x, center.y - gesture.center.y) >= THREE_FINGER_PAN_THRESHOLD) {
-        applyViewport(panThreeFingerViewport(gesture.viewport, gesture.center, center), true)
-      }
-    }
-    return true
+    const next = touchNav.move(event.pointerId, getScreenPoint(event), performance.now(), viewportRef.current)
+    if (next) applyViewport(next, true)
   }
 
   const finishTouchPointer = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    touchPointsRef.current.delete(event.pointerId)
-    beginTouchGesture()
+    touchNav.up(event.pointerId)
   }
 
   const finishStroke = useCallback((pointerId: number) => {
@@ -1557,11 +1532,11 @@ function App() {
   }
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerType === 'pen') touchNav.penDown()
     if (event.pointerType === 'touch') {
       event.preventDefault()
       event.currentTarget.setPointerCapture(event.pointerId)
-      touchPointsRef.current.set(event.pointerId, getScreenPoint(event))
-      beginTouchGesture()
+      touchNav.down(event.pointerId, getScreenPoint(event), performance.now())
       return
     }
     if (event.pointerType === 'pen' && hoverErasePointerRef.current === event.pointerId) finishStroke(event.pointerId)
@@ -1703,7 +1678,8 @@ function App() {
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (touchPointsRef.current.has(event.pointerId)) {
+    if (event.pointerType === 'pen') touchNav.penSeen(performance.now())
+    if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       event.preventDefault()
       updateTouchPoint(event)
       return
@@ -1731,7 +1707,7 @@ function App() {
     }
     if (isPenHoverEraseInput(event.pointerType, event.buttons, eraser, objectEraser)
       && activePointerRef.current === null
-      && touchPointsRef.current.size === 0
+      && touchNav.touchCount() === 0
       && activeConnectorRef.current === null
       && activeResizeRef.current === null
       && activeLassoRef.current === null
@@ -1865,7 +1841,8 @@ function App() {
   }
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (touchPointsRef.current.has(event.pointerId) || event.pointerType === 'touch') {
+    if (event.pointerType === 'pen') touchNav.penUp(performance.now())
+    if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
     }
@@ -1963,7 +1940,8 @@ function App() {
   }
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (touchPointsRef.current.has(event.pointerId) || event.pointerType === 'touch') {
+    if (event.pointerType === 'pen') touchNav.penUp(performance.now())
+    if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
     }
@@ -2156,6 +2134,7 @@ function App() {
   }
 
   const onPointerLeave = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerType === 'pen') touchNav.penGone()
     if (hoverErasePointerRef.current === event.pointerId) finishStroke(event.pointerId)
   }
 
@@ -2191,6 +2170,7 @@ function App() {
   const selectColor = (value: string) => { setColor(value); setEraser(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection() }
 
   const zoomBy = (factor: number) => {
+    if (navigationSettingsRef.current.zoomLocked) return
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
     const viewport = viewportRef.current
@@ -2350,6 +2330,8 @@ function App() {
         onPageTemplate={setPageTemplate}
         pageBackground={pageBackground}
         onPageBackground={setPageBackground}
+        oneFingerPan={navigationSettings.oneFingerPan}
+        onOneFingerPan={(value) => updateNavigationSettings({ oneFingerPan: value })}
         hasInk={hasInk}
         filePanelOpen={filePanelOpen}
         onToggleFilePanel={() => setFilePanelOpen((open) => !open)}
@@ -2386,7 +2368,7 @@ function App() {
           ? { type: selectedConnectorType, reversed: selectedConnectorReversed, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector }
           : null}
       />
-      <ZoomControls zoomPercent={zoomPercent} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
+      <ZoomControls zoomPercent={zoomPercent} locked={navigationSettings.zoomLocked} onToggleLock={() => updateNavigationSettings({ zoomLocked: !navigationSettings.zoomLocked })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
         dockRef={toolbarRef}
         eraserControlRef={eraserControlRef}
