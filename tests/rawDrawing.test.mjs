@@ -72,9 +72,9 @@ test('the page switches: one layer, cpu canvas, pixel ratio cap, grouping', asyn
   assert.match(app, /globalCompositeOperation = 'destination-over'\s*drawSheetBorders\(\)/)
 })
 
-test('?dirty=off repaints the whole canvas and ?layerdom=on attaches the layer canvases to the page', async () => {
+test('full canvas repaint is the default and ?dirty=box restores the box repaint, and ?layerdom=on attaches the layer canvases to the page', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /DIRTY_RECT_ENABLED = DRAW_SWITCHES\.get\('dirty'\) !== 'off'/)
+  assert.match(app, /DIRTY_RECT_ENABLED = DRAW_SWITCHES\.get\('dirty'\) === 'box'/)
   assert.match(app, /const dirtyRect = DIRTY_RECT_ENABLED && penStrokeFrame/)
   assert.match(app, /layerCanvasOptions\.attachToPage = LAYERS_ON_PAGE/)
   const calls = []

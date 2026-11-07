@@ -75,9 +75,10 @@ const ONE_LAYER_ENABLED = DRAW_SWITCHES.get('layers') === 'one'
 // ?group=off draws every Raw segment in its own call again (by default neighbouring segments of the same width share one).
 const GROUP_SEGMENTS_ENABLED = DRAW_SWITCHES.get('group') !== 'off'
 rawDrawingOptions.groupWidths = GROUP_SEGMENTS_ENABLED
-// ?dirty=off repaints the whole page canvas every frame while writing instead of only the box around the stroke
-// (tests whether partial updates of a big canvas are what makes frames late on the tablet).
-const DIRTY_RECT_ENABLED = DRAW_SWITCHES.get('dirty') !== 'off'
+// Pen strokes over the saved page picture (cached path) repaint the whole page canvas every frame. Tablet test: repainting only
+// the box around the stroke made frames late (22/33/44 ms gaps, 97% slow); a full repaint gave 11/11/11, 0% slow.
+// ?dirty=box brings the box repaint back.
+const DIRTY_RECT_ENABLED = DRAW_SWITCHES.get('dirty') === 'box'
 // ?layerdom=on puts the off-screen layer canvases on the page, invisible (tests whether detached canvases are drawn slowly).
 const LAYERS_ON_PAGE = DRAW_SWITCHES.get('layerdom') === 'on'
 layerCanvasOptions.attachToPage = LAYERS_ON_PAGE
