@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { StorageInfo } from './useDocuments'
 import { PAGE_BACKGROUND_COLORS, type PageBackground } from '../pageBackground'
+import { titleToCommit } from '../documentFormat'
 import type { PageSpacing, PageTemplate } from '../pageTemplates'
 
 type TopLeftBarProps = {
   title: string
+  /** Called with the cleaned new title when the name is edited in place in the bar. */
+  onRenameTitle: (title: string) => void
   pageTemplate: PageTemplate
   onPageTemplate: (value: PageTemplate) => void
   pageSpacing: PageSpacing
@@ -47,6 +50,24 @@ const PAGE_COLOR_CHOICES: Array<{ value: PageBackground; label: string }> = [
 export function TopLeftBar(props: TopLeftBarProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [draftTitle, setDraftTitle] = useState('')
+  const editingTitleRef = useRef(false)
+
+  const beginTitleEdit = () => {
+    editingTitleRef.current = true
+    setDraftTitle(props.title)
+    setEditingTitle(true)
+  }
+  // Enter and tapping away keep the new name; Escape drops it. The ref stops a second finish (blur after Enter) from saving twice.
+  const finishTitleEdit = (save: boolean) => {
+    if (!editingTitleRef.current) return
+    editingTitleRef.current = false
+    setEditingTitle(false)
+    if (!save) return
+    const next = titleToCommit(props.title, draftTitle)
+    if (next !== null) props.onRenameTitle(next)
+  }
 
   useEffect(() => {
     if (!menuOpen) return
@@ -76,7 +97,7 @@ export function TopLeftBar(props: TopLeftBarProps) {
           <div className="menu-divider" role="separator" />
           <button className={`menu-row file-button${props.filePanelOpen ? ' selected' : ''}`} type="button" aria-haspopup="dialog" aria-expanded={props.filePanelOpen} onClick={() => { props.onToggleFilePanel(); setMenuOpen(false) }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>
-            <span className="menu-row-label">File…</span><span className="menu-row-hint">Save, open, export</span>
+            <span className="menu-row-label">File…</span><span className="menu-row-hint">Export, import</span>
           </button>
           <button className="menu-row storage-row" type="button" aria-haspopup="dialog" onClick={() => { props.onOpenStorage(); setMenuOpen(false) }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17 8.5a4.75 4.75 0 0 1 .5 9.5z"/></svg>
@@ -147,7 +168,26 @@ export function TopLeftBar(props: TopLeftBarProps) {
       <button className={`top-icon-button library-toggle${props.libraryOpen ? ' selected' : ''}`} type="button" aria-label="Library" aria-pressed={props.libraryOpen} title="Library: all diagrams and folders" onClick={props.onOpenLibrary}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
       </button>
-      <button className="diagram-title" type="button" title="Open the File panel to rename this diagram" onClick={props.onToggleFilePanel}>{props.title || 'Untitled diagram'}</button>
+      {editingTitle
+        ? <input
+          className="diagram-title-input"
+          type="text"
+          autoFocus
+          maxLength={120}
+          aria-label="Diagram title"
+          value={draftTitle}
+          onFocus={(event) => event.currentTarget.select()}
+          onChange={(event) => setDraftTitle(event.target.value)}
+          onBlur={() => finishTitleEdit(true)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') finishTitleEdit(true)
+            if (event.key === 'Escape') { event.stopPropagation(); finishTitleEdit(false) }
+          }}
+        />
+        : <button className="diagram-title" type="button" title="Tap to rename this diagram" aria-label={`Diagram title: ${props.title || 'Untitled diagram'}. Tap to rename`} onClick={beginTitleEdit}>
+          <span className="diagram-title-text">{props.title || 'Untitled diagram'}</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>
+        </button>}
     </div>
   )
 }

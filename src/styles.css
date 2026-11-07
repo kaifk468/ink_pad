@@ -275,7 +275,10 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 .top-icon-button svg, .account-button svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .top-icon-button.selected { border-color: #cbd3ff; background: #e9edff; color: #354fc2; }
 .account-button { border-radius: 50%; color: #6a707c; }
-.diagram-title { max-width: min(36vw, 320px); height: 48px; padding: 0 14px; overflow: hidden; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .96); color: #292b30; font: inherit; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 3px 12px rgba(31, 39, 52, .12); cursor: pointer; }
+.diagram-title { max-width: min(36vw, 320px); height: 48px; padding: 0 14px; overflow: hidden; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .96); color: #292b30; font: inherit; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 3px 12px rgba(31, 39, 52, .12); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.diagram-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.diagram-title svg { flex: 0 0 14px; width: 14px; height: 14px; fill: none; stroke: #7b818d; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.diagram-title-input { width: min(36vw, 320px); min-width: 160px; height: 48px; padding: 0 14px; border: 2px solid #475fdb; border-radius: 14px; background: #fff; color: #292b30; font: inherit; font-size: 14px; font-weight: 600; box-shadow: 0 3px 12px rgba(31, 39, 52, .12); outline: 0; }
 
 .history-bar { position: absolute; z-index: 3; top: max(16px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; height: 56px; padding: 0 6px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 16px; background: rgba(255, 255, 255, .96); box-shadow: 0 3px 12px rgba(31, 39, 52, .12); }
 .account-control { position: absolute; z-index: 3; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); }

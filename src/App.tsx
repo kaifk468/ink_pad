@@ -2610,6 +2610,7 @@ function App() {
       {!navigationSettings.zoomLocked && (
         <TopLeftBar
           title={docTitle}
+          onRenameTitle={renameDiagram}
           pageTemplate={pageTemplate}
           onPageTemplate={setPageTemplate}
           pageSpacing={pageSpacing}

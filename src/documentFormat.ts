@@ -107,6 +107,12 @@ export function cleanTitle(title: unknown): string {
   return text || DEFAULT_DOCUMENT_TITLE
 }
 
+/** What to save after the title was edited in place, or null when nothing changed (so no needless save). Empty text means the default title. */
+export function titleToCommit(current: string, draft: string): string | null {
+  const next = cleanTitle(draft)
+  return next === cleanTitle(current) ? null : next
+}
+
 export function documentFileName(title: string): string {
   const base = cleanTitle(title).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').trim().replace(/\s+/g, '-') || 'diagram'
   return `${base}${DOCUMENT_FILE_EXTENSION}`
