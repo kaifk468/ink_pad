@@ -234,3 +234,89 @@ test('the live erase stroke redraws connectors over itself', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
   assert.match(app, /activeStrokeRef\.current\.erase\) for \(const item of routeConnectors\(items\)\)/)
 })
+
+// ---- step two: going round other boxes ----
+const crosses = (path, box, margin = 0) => path.slice(1).some((b, i) => {
+  const a = path[i]
+  const left = box.x - margin + 0.6, right = box.x + box.width + margin - 0.6, top = box.y - margin + 0.6, bottom = box.y + box.height + margin - 0.6
+  if (Math.abs(a.y - b.y) < 0.01) return a.y > top && a.y < bottom && Math.max(a.x, b.x) > left && Math.min(a.x, b.x) < right
+  return a.x > left && a.x < right && Math.max(a.y, b.y) > top && Math.min(a.y, b.y) < bottom
+})
+const bends = (path) => path.length - 2
+const row = (c = 7) => ({ ...model.createConnector(c, p(200, 60), p(700, 60), '#111', 3, { rectangleId: 1, offsetX: 200, offsetY: 60 }, { rectangleId: 2, offsetX: 0, offsetY: 60 }), routing: 'elbow' })
+const RA = rect(1, 0, 0)
+const RB = rect(2, 700, 0)
+const blocker = (id = 3, x = 360, y = -20, w = 120, h = 160) => rect(id, x, y, w, h)
+
+test('a box in the way is gone round with clearance, and the line stays orthogonal and attached', () => {
+  const C = blocker()
+  const [, , , c] = route.routeConnectors([RA, RB, C, row()])
+  assert.ok(orthogonal(c.routedPath))
+  assert.equal(crosses(c.routedPath, C, route.ROUTE_CLEARANCE - 1), false)
+  assert.equal(crosses(c.routedPath, RA), false)
+  assert.equal(crosses(c.routedPath, RB), false)
+  assert.deepEqual([c.routedPath[0].x, c.routedPath[0].y], [200, 60])
+  const last = c.routedPath[c.routedPath.length - 1]
+  assert.deepEqual([last.x, last.y], [700, 60])
+  assert.ok(bends(c.routedPath) <= 4, 'few bends: ' + bends(c.routedPath))
+})
+
+test('without a box in the way the line is the same as before (no detour for far away boxes)', () => {
+  const plain = route.routeConnectors([RA, RB, row()])[2].routedPath
+  const far = route.routeConnectors([RA, RB, rect(3, 360, 900), row()])[3].routedPath
+  assert.deepEqual(far, plain)
+})
+
+test('moving or resizing an unrelated box re-routes the line, and moving it back restores it', () => {
+  const C = blocker()
+  const conn = row()
+  const detour = route.routeConnectors([RA, RB, C, conn])[3].routedPath
+  const movedAway = model.translateSelectedItems([RA, RB, C, conn], new Set(['rectangle:3']), 0, 600)
+  const clear = route.routeConnectors(movedAway)[3].routedPath
+  assert.ok(clear.length < detour.length)
+  const back = model.translateSelectedItems(movedAway, new Set(['rectangle:3']), 0, -600)
+  assert.deepEqual(route.routeConnectors(back)[3].routedPath, detour)
+  const resized = [RA, RB, { ...C, height: 20 }, conn]
+  assert.notDeepEqual(route.routeConnectors(resized)[3].routedPath, detour)
+})
+
+test('a wall of boxes is gone round; a line with a free end inside a box still gets a path', () => {
+  const wall = [blocker(3, 360, -300, 120, 260), blocker(4, 360, -20, 120, 160), blocker(5, 360, 160, 120, 260)]
+  const c = route.routeConnectors([RA, RB, ...wall, row()])[5]
+  assert.ok(orthogonal(c.routedPath))
+  for (const box of wall) assert.equal(crosses(c.routedPath, box, route.ROUTE_CLEARANCE - 1), false)
+  const inside = { ...model.createConnector(9, p(400, 60), p(900, 300), '#111', 3), routing: 'elbow' }
+  const free = route.routeConnectors([blocker(), inside])[1]
+  assert.ok(orthogonal(free.routedPath))
+  assert.deepEqual([free.routedPath[0].x, free.routedPath[0].y], [400, 60])
+})
+
+test('symbols still sit on the last piece of a line that goes round a box', () => {
+  const [, , , c] = route.routeConnectors([RA, RB, blocker(), { ...row(), relationshipType: 'inheritance' }])
+  const g = model.getConnectorSymbolGeometry(c)
+  const path = c.routedPath
+  const last = path[path.length - 1]
+  assert.deepEqual([g.tip.x, g.tip.y], [last.x, last.y])
+  const prev = path[path.length - 2]
+  const along = (g.base.x - last.x) * (prev.x - last.x) + (g.base.y - last.y) * (prev.y - last.y)
+  assert.ok(along > 0)
+})
+
+test('routing round many boxes stays fast and clean', () => {
+  const boxes = []
+  let id = 10
+  for (let gx = 0; gx < 10; gx += 1) for (let gy = 0; gy < 10; gy += 1) boxes.push(rect(id++, gx * 300, gy * 220, 200, 120))
+  const from = boxes[0]
+  const to = boxes[boxes.length - 1]
+  const conn = { ...model.createConnector(7, p(from.x + 200, from.y + 60), p(to.x, to.y + 60), '#111', 3, { rectangleId: from.id, offsetX: 200, offsetY: 60 }, { rectangleId: to.id, offsetX: 0, offsetY: 60 }), routing: 'elbow' }
+  const started = performance.now()
+  const routed = route.routeConnectors([...boxes, conn])
+  const elapsed = performance.now() - started
+  const path = routed[routed.length - 1].routedPath
+  assert.ok(orthogonal(path))
+  for (const box of boxes) assert.equal(crosses(path, box, box === from || box === to ? 0 : route.ROUTE_CLEARANCE - 1), false, `crosses box ${box.id}`)
+  assert.ok(elapsed < 2000, `took ${elapsed} ms`)
+  const again = performance.now()
+  route.routeConnectors([...boxes, conn])
+  assert.ok(performance.now() - again < 200, 'a second call uses the cache')
+})
