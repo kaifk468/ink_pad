@@ -534,6 +534,12 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .home-search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--home-text); font: inherit; }
 .home-primary { padding: 0 18px; border-color: var(--home-accent) !important; background: var(--home-accent) !important; color: #fff !important; font-weight: 700 !important; white-space: nowrap; }
 .home-secondary { padding: 0 14px; white-space: nowrap; }
+.home-new { position: relative; flex: 0 0 auto; }
+.home-new-menu { position: absolute; z-index: 2; top: calc(100% + 8px); right: 0; display: grid; gap: 2px; width: min(300px, calc(100vw - 32px)); padding: 6px; border: 1px solid var(--home-line); border-radius: var(--home-radius); background: var(--home-surface); box-shadow: 0 12px 32px rgba(31, 39, 52, .22); }
+.home-new-menu button { display: grid; gap: 2px; justify-items: start; min-height: 56px; padding: 8px 12px; border: 0; background: transparent; text-align: left; font-weight: 400; }
+.home-new-menu button:hover { background: var(--home-accent-soft); }
+.home-new-menu strong { font-size: 15px; }
+.home-new-menu span { color: var(--home-muted); font-size: 12px; }
 .home-notice { margin: 0; padding: 10px 12px; border-radius: 10px; background: #fff4e5; color: #7a4b00; font-size: 13px; line-height: 1.4; }
 .home-confirm { padding: 12px; border: 1px solid #f0d2cf; border-radius: var(--home-radius); background: #fff6f5; }
 .home-confirm[aria-label^="Move"] { border-color: #d9dff7; background: #f5f7ff; }

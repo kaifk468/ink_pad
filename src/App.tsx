@@ -2712,7 +2712,7 @@ function App() {
         showConnectHint={storage.kind === 'browser'}
         onClose={() => setLibraryOpen(false)}
         onOpenDiagram={(id) => { setLibraryOpen(false); void openStoredDiagram(id) }}
-        onNewDiagram={(folderId) => { setLibraryOpen(false); void newDiagramIn(folderId) }}
+        onNewDiagram={(folderId, template) => { setLibraryOpen(false); void newDiagramIn(folderId, template) }}
         onImportFile={(file) => void importDocumentFile(file)}
         onCreateFolder={(name, parentId) => void createFolder(name, parentId)}
         onRenameFolder={(id, name) => void renameFolder(id, name)}

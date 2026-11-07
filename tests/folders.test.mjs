@@ -65,7 +65,7 @@ test('deleting a folder removes its subfolders and diagrams; the UI asks first',
   assert.match(ui, /props\.onDeleteFolder\(confirmFolder\.id\)/)
   assert.match(ui, /props\.onDeleteDiagram\(entry\.id\)/)
   assert.match(ui, /props\.onMoveDiagram\(moveTarget\.id, null\)/)
-  assert.match(ui, /props\.onNewDiagram\(here\)/)
+  assert.match(ui, /props\.onNewDiagram\(here, preset\.template\)/)
 })
 
 test('renaming saves with the Save button, Enter, and on any way of closing the panel', async () => {
@@ -81,7 +81,7 @@ test('the Library screen closes with Escape and the Back button, and opens from 
   const home = await read('app/HomeScreen.tsx')
   const bar = await read('app/TopLeftBar.tsx')
   const app = await read('App.tsx')
-  assert.match(home, /event\.key === 'Escape'\) closeRef\.current\(\)/)
+  assert.match(home, /else closeRef\.current\(\)/)
   assert.match(home, /Back to canvas/)
   assert.match(bar, /aria-label="Library"/)
   assert.match(bar, /onClick=\{props\.onOpenLibrary\}/)

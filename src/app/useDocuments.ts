@@ -252,15 +252,15 @@ export function useDocuments(host: DocumentHost) {
     return true
   }
 
-  const blankDocument = () => {
+  const blankDocument = (template?: DocumentPageTemplate) => {
     const page = hostRef.current.getPage()
-    return createDocument({ template: page.template, background: page.background, spacing: page.spacing, items: [] })
+    return createDocument({ template: template ?? page.template, background: page.background, spacing: page.spacing, items: [] })
   }
 
-  const newDiagram = async () => {
+  const newDiagram = async (template?: DocumentPageTemplate) => {
     await persistNow()
     setFileNotice(null)
-    applyDocument(null, blankDocument())
+    applyDocument(null, blankDocument(template))
     writeCurrentId(null)
     void refreshLibrary()
   }
@@ -303,8 +303,8 @@ export function useDocuments(host: DocumentHost) {
   }
 
   /** Start a blank diagram that will be saved inside the given folder (null = top level). */
-  const newDiagramIn = async (folderId: string | null) => {
-    await newDiagram()
+  const newDiagramIn = async (folderId: string | null, template?: DocumentPageTemplate) => {
+    await newDiagram(template)
     pendingFolderRef.current = folderId
   }
 

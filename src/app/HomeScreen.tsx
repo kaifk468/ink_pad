@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DocumentSummary, FolderRecord } from '../documentStore'
 import { flattenFolders } from '../folderTree'
-import { countInFolder, describeEdited, folderLabel, searchLibrary, type LibraryLayout } from '../libraryView'
+import { NEW_DIAGRAM_PRESETS, countInFolder, describeEdited, folderLabel, searchLibrary, type LibraryLayout } from '../libraryView'
+import type { PageTemplate } from '../pageTemplates'
 
 type HomeScreenProps = {
   library: DocumentSummary[]
@@ -15,7 +16,7 @@ type HomeScreenProps = {
   showConnectHint: boolean
   onClose: () => void
   onOpenDiagram: (id: string) => void
-  onNewDiagram: (folderId: string | null) => void
+  onNewDiagram: (folderId: string | null, template: PageTemplate) => void
   onImportFile: (file: File) => void
   onCreateFolder: (name: string, parentId: string | null) => void
   onRenameFolder: (id: string, name: string) => void
@@ -44,6 +45,8 @@ export function HomeScreen(props: HomeScreenProps) {
   const [confirmFolderId, setConfirmFolderId] = useState<string | null>(null)
   const [confirmDiagramId, setConfirmDiagramId] = useState<string | null>(null)
   const [movingId, setMovingId] = useState<string | null>(null)
+  const [newMenuOpen, setNewMenuOpen] = useState(false)
+  const newMenuRef = useRef<HTMLDivElement>(null)
 
   // If the chosen folder disappears (deleted), fall back to all diagrams.
   const here = selected && folders.some((folder) => folder.id === selected) ? selected : null
@@ -55,11 +58,26 @@ export function HomeScreen(props: HomeScreenProps) {
 
   const closeRef = useRef(props.onClose)
   closeRef.current = props.onClose
+  const newMenuOpenRef = useRef(false)
+  newMenuOpenRef.current = newMenuOpen
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') closeRef.current() }
+    // Escape closes the New menu first, then the Library.
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (newMenuOpenRef.current) setNewMenuOpen(false)
+      else closeRef.current()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+  useEffect(() => {
+    if (!newMenuOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (newMenuRef.current && !newMenuRef.current.contains(event.target as Node)) setNewMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [newMenuOpen])
 
   const chooseLayout = (value: LibraryLayout) => {
     setLayout(value)
@@ -113,7 +131,17 @@ export function HomeScreen(props: HomeScreenProps) {
             <input type="search" aria-label="Search diagrams" placeholder="Search diagrams or folders" value={query} onChange={(event) => setQuery(event.target.value)} />
           </label>
           <button type="button" className="home-secondary" onClick={() => importRef.current?.click()}>Import .inkpad</button>
-          <button type="button" className="home-primary" onClick={() => props.onNewDiagram(here)}>+ New diagram</button>
+          <div ref={newMenuRef} className="home-new">
+            <button type="button" className="home-primary" aria-haspopup="menu" aria-expanded={newMenuOpen} onClick={() => setNewMenuOpen((open) => !open)}>+ New diagram</button>
+            {newMenuOpen && <div className="home-new-menu" role="menu" aria-label="New diagram">
+              {NEW_DIAGRAM_PRESETS.map((preset) => (
+                <button key={preset.id} type="button" role="menuitem" onClick={() => { setNewMenuOpen(false); props.onNewDiagram(here, preset.template) }}>
+                  <strong>{preset.label}</strong>
+                  <span>{preset.hint}</span>
+                </button>
+              ))}
+            </div>}
+          </div>
           <input ref={importRef} type="file" accept=".inkpad,application/json" hidden onChange={(event) => {
             const file = event.target.files?.[0]
             event.target.value = ''
@@ -188,7 +216,7 @@ export function HomeScreen(props: HomeScreenProps) {
             )
           })}
         </ul>
-        {shown.length === 0 && <p className="home-empty">{query.trim() ? 'No diagram matches your search.' : here ? 'This folder is empty.' : 'Nothing saved yet. Tap “New diagram” and start writing; it saves by itself.'}</p>}
+        {shown.length === 0 && <p className="home-empty">{query.trim() ? 'No diagram matches your search.' : here ? 'This folder is empty.' : 'Nothing saved yet. Tap “New diagram”, pick a sheet and start writing; it saves by itself.'}</p>}
       </main>
     </div>
   )

@@ -1,5 +1,6 @@
 import type { DocumentSummary, FolderRecord } from './documentStore'
 import { folderAndDescendantIds, folderPath } from './folderTree'
+import type { PageTemplate } from './pageTemplates'
 
 export type LibraryQuery = {
   /** Text to look for in the diagram title or its folder path. */
@@ -9,6 +10,15 @@ export type LibraryQuery = {
 }
 
 export type LibraryLayout = 'grid' | 'list'
+
+export type NewDiagramPreset = { id: string; label: string; hint: string; template: PageTemplate }
+
+/** Starting sheets offered by "+ New diagram". Only the page style changes; sheet colour and line spacing stay as the person set them. */
+export const NEW_DIAGRAM_PRESETS: readonly NewDiagramPreset[] = [
+  { id: 'dot-grid', label: 'Dot grid', hint: 'Class boxes and connectors for LLD and HLD', template: 'dotted' },
+  { id: 'lined', label: 'Lined notes', hint: 'Ruled lines for handwriting', template: 'lined' },
+  { id: 'blank', label: 'Blank', hint: 'A plain sheet', template: 'blank' },
+]
 
 function time(value: string): number {
   const parsed = Date.parse(value)

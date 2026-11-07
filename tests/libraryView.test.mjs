@@ -60,3 +60,24 @@ test('edited time reads in plain words', () => {
   assert.equal(say(''), '')
   assert.equal(say('garbage'), '')
 })
+
+test('new diagram presets: dot grid, lined notes, blank; each is a real page style', () => {
+  assert.deepEqual(view.NEW_DIAGRAM_PRESETS.map((x) => x.template), ['dotted', 'lined', 'blank'])
+  assert.deepEqual(view.NEW_DIAGRAM_PRESETS.map((x) => x.label), ['Dot grid', 'Lined notes', 'Blank'])
+  assert.equal(new Set(view.NEW_DIAGRAM_PRESETS.map((x) => x.id)).size, 3)
+  for (const preset of view.NEW_DIAGRAM_PRESETS) assert.ok(['blank', 'lined', 'dotted'].includes(preset.template) && preset.hint.length > 0)
+})
+
+test('choosing a preset starts a blank diagram with that page style in the chosen folder', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const read = (name) => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')
+  const [home, app, hook] = await Promise.all([read('app/HomeScreen.tsx'), read('App.tsx'), read('app/useDocuments.ts')])
+  assert.match(home, /props\.onNewDiagram\(here, preset\.template\)/)
+  assert.match(home, /role="menu" aria-label="New diagram"/)
+  assert.match(home, /if \(newMenuOpenRef\.current\) setNewMenuOpen\(false\)\s+else closeRef\.current\(\)/)
+  assert.match(app, /onNewDiagram=\{\(folderId, template\) => \{ setLibraryOpen\(false\); void newDiagramIn\(folderId, template\) \}\}/)
+  assert.match(hook, /const newDiagramIn = async \(folderId: string \| null, template\?: DocumentPageTemplate\) => \{\s+await newDiagram\(template\)/)
+  assert.match(hook, /template: template \?\? page\.template/)
+  // the File dialog's New diagram keeps the current page style
+  assert.match(app, /onNew=\{\(\) => void newDiagram\(\)\}/)
+})
