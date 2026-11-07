@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
+import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
 import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, hitInkBoxMoveGrip, inkBoxMoveGrip, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
 import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
@@ -96,6 +97,7 @@ const DPR_CAP = Number(DRAW_SWITCHES.get('dpr'))
 const canvasPixelRatio = () => Math.max(1, Math.min(window.devicePixelRatio || 1, DPR_CAP > 0 ? DPR_CAP : Infinity))
 // ?debug=on shows a small readout of the drawing path and the amount of ink (also on the deployed site, for tablet checks).
 const STROKE_THINNING_ENABLED = DRAW_SWITCHES.get('thin') !== 'off'
+const PEN_BUTTON_DEBUG = DRAW_SWITCHES.get('penbutton') === 'show'
 const DRAW_READOUT_ENABLED = DRAW_SWITCHES.get('debug') === 'on'
 // Direct redraw while at most N ink points are visible, the saved page picture above that. ?direct=N overrides (0 = always the picture).
 const DIRECT_MAX_VISIBLE_POINTS = Number.isFinite(Number(DRAW_SWITCHES.get('direct'))) && DRAW_SWITCHES.get('direct') !== null ? Number(DRAW_SWITCHES.get('direct')) : DEFAULT_DIRECT_MAX_VISIBLE_POINTS
@@ -306,8 +308,13 @@ function App() {
   const [selectedConnectorId, setSelectedConnectorId] = useState<number | null>(null)
   const [selectedConnectorType, setSelectedConnectorType] = useState<ConnectorRelationshipType | null>(null)
   const [selectedConnectorReversed, setSelectedConnectorReversed] = useState(false)
-  const [eraserSize, setEraserSize] = useState(28)
-  const [objectEraser, setObjectEraser] = useState(false)
+  // The eraser mode and size used last are remembered (saved), so holding the S Pen button erases the way the person last chose.
+  const [savedEraser] = useState(() => loadEraserPrefs())
+  const [eraserSize, setEraserSize] = useState(savedEraser.size)
+  const [objectEraser, setObjectEraser] = useState(savedEraser.whole)
+  useEffect(() => { saveEraserPrefs({ whole: objectEraser, size: eraserSize }) }, [objectEraser, eraserSize])
+  const penButtonEraseRef = useRef(false)
+  const penButtonReadoutRef = useRef<HTMLDivElement>(null)
   const [optionsFor, setOptionsFor] = useState<'pen' | 'eraser' | 'text' | null>(null)
   const lastToolTapRef = useRef<{ tool: string; time: number } | null>(null)
   const eraserMenuOpen = optionsFor === 'eraser'
@@ -426,7 +433,7 @@ function App() {
   }
 
   const scheduleShapePreview = (point?: Point) => {
-    if (eraser || objectEraser) return
+    if (eraser || penButtonEraseRef.current) return
     const anchor = holdAnchorRef.current
     if (holdTimerRef.current !== null && point && anchor && Math.hypot(point.x - anchor.x, point.y - anchor.y) < SHAPE_HOLD_JITTER_PX / viewportRef.current.scale) return
     clearShapeHoldTimer()
@@ -1599,10 +1606,12 @@ function App() {
   const moveEraserCursor = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const cursor = eraserCursorRef.current
     if (!cursor) return
-    if (!eraser || event.pointerType !== 'pen') {
+    if ((!eraser && !isPenButtonHeld(event)) || event.pointerType !== 'pen') {
       cursor.style.display = 'none'
       return
     }
+    // Different looks: the stroke eraser is a round circle of its real width; the whole eraser is a small square with an X.
+    cursor.classList.toggle('whole', objectEraser)
     const rect = event.currentTarget.getBoundingClientRect()
     const diameter = eraserCursorDiameter(eraserSize, viewportRef.current.scale, objectEraser)
     cursor.style.display = 'block'
@@ -1617,7 +1626,13 @@ function App() {
     }, ERASER_CURSOR_QUIET_MS)
   }
 
+  const showPenButtonState = (type: string, event: React.PointerEvent<HTMLCanvasElement>) => {
+    const readout = penButtonReadoutRef.current
+    if (readout && event.pointerType === 'pen') readout.textContent = describePenEvent(type, event.nativeEvent)
+  }
+
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    showPenButtonState('down', event)
     moveEraserCursor(event)
     if (event.pointerType === 'pen') touchNav.penDown()
     if (event.pointerType === 'touch') {
@@ -1631,6 +1646,9 @@ function App() {
     const rawPoint = getPoint(event)
     if (!isPointWithinBounds(rawPoint)) return
     const point = getBoundedPoint(event)
+    // Holding the S Pen button turns this stroke into an erase with the eraser used last (mode and size); letting go goes back to the pen.
+    const buttonErase = !eraser && isPenButtonHeld(event.nativeEvent)
+    penButtonEraseRef.current = buttonErase
     if (textEditorRef.current) commitTextEditor()
     if (textMode) {
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -1780,7 +1798,7 @@ function App() {
       }
       return
     }
-    if (!eraser && !shapeMode && selectedRectangleIdRef.current !== null) {
+    if (!eraser && !buttonErase && !shapeMode && selectedRectangleIdRef.current !== null) {
       // A selected ink class box: its handles, dividers and border come first, so resizing or moving never draws ink. Only presses inside write.
       const selectedBox = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === selectedRectangleIdRef.current && item.inkBox !== undefined)
       if (selectedBox) {
@@ -1828,7 +1846,7 @@ function App() {
         }
       }
     }
-    if (eraser && objectEraser) {
+    if ((eraser || buttonErase) && objectEraser) {
       event.currentTarget.setPointerCapture(event.pointerId)
       activeObjectEraserRef.current = { pointerId: event.pointerId, lastPoint: point, changed: false }
       if (deleteWholeObjectAtPoint(point)) renderAll()
@@ -1838,11 +1856,11 @@ function App() {
     activePointerRef.current = event.pointerId
     lastSignificantMoveAtRef.current = performance.now()
     activeStrokeBoxRef.current = shapeMode ? null : findInkBoxAt(strokesRef.current, point)?.id ?? null
-    activeStrokeRef.current = eraser
+    activeStrokeRef.current = eraser || buttonErase
       ? createEraserStroke(nextStrokeIdRef.current++, point, color, eraserSize)
       : { kind: 'stroke', id: nextStrokeIdRef.current++, points: [point], color, width, erase: false }
     const diagnostics = performanceDiagnosticsRef.current
-    if (!eraser && diagnostics?.isCapturing()) {
+    if (!eraser && !buttonErase && diagnostics?.isCapturing()) {
       diagnostics.startStroke(
         strokeDisplayMode,
         performance.now(),
@@ -1858,6 +1876,7 @@ function App() {
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (PEN_BUTTON_DEBUG) showPenButtonState('move', event)
     if (event.pointerType === 'pen') touchNav.penSeen(performance.now())
     moveEraserCursor(event)
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
@@ -2384,11 +2403,13 @@ function App() {
       <section className="canvas-stage" aria-label="Drawing canvas">
         <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: SHEET_HEIGHT }} />
         <div ref={eraserCursorRef} className="eraser-cursor" aria-hidden="true" />
+        {PEN_BUTTON_DEBUG && <div ref={penButtonReadoutRef} className="pen-button-readout" role="status">pen button: waiting for the pen</div>}
         <canvas
           ref={canvasRef}
           className={`drawing-canvas${selectionMode ? ' selecting' : ''}${connectorMode || umlConnectorType !== null ? ' connecting' : ''}`}
           aria-label="White drawing canvas. Use an S Pen to draw."
           onPointerDown={onPointerDown}
+          onContextMenu={(event) => event.preventDefault()}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerEnd}
