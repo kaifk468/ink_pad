@@ -23,7 +23,12 @@ test('the ink already on the page is kept as a picture between frames and betwee
 test('the minimap is not redrawn on every frame while writing', () => {
   assert.match(app, /MINIMAP_LIVE_REFRESH_MS/)
   assert.match(app, /MINIMAP_LIVE_REFRESH_MS = 1000/)
-  assert.match(app, /if \(!activeStrokeRef\.current && \(!gestureFrame \|\| minimapNow - minimapRenderedAtRef\.current > MINIMAP_LIVE_REFRESH_MS\)\) \{/)
+  assert.match(app, /MINIMAP_IDLE_DELAY_MS = 600/)
+  // a redraw is scheduled only for non-gesture frames without an active stroke, after the idle delay; a new frame drops the pending one
+  assert.match(app, /if \(minimapIdleTimerRef\.current !== null\) \{\s*window\.clearTimeout\(minimapIdleTimerRef\.current\)/)
+  assert.match(app, /\} else if \(gestureFrame\) \{\s*if \(minimapNow - minimapRenderedAtRef\.current > MINIMAP_LIVE_REFRESH_MS\) \{/)
+  assert.match(app, /minimapIdleTimerRef\.current = window\.setTimeout\(\(\) => \{[\s\S]*?if \(activeStrokeRef\.current !== null \|\| activePointerRef\.current !== null\) return[\s\S]*?renderNavigator\(\)\s*\}, MINIMAP_IDLE_DELAY_MS\)/)
+  assert.match(app, /window\.clearTimeout\(minimapIdleTimerRef\.current\)\s*\}\s*\}, \[resizeCanvas\]|if \(minimapIdleTimerRef\.current !== null\) window\.clearTimeout/)
   // the piece-by-piece live path no longer touches the minimap
   assert.doesNotMatch(app, /drawLiveFrame\(\)\s*const minimapNow/)
 })

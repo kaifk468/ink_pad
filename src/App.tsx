@@ -43,6 +43,9 @@ import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEI
 const DOUBLE_TAP_MS = 400
 // The minimap is not redrawn at all while a stroke is being written (it updates once on pen-up); during pinch/pan at most once a second.
 const MINIMAP_LIVE_REFRESH_MS = 1000
+// After a stroke ends (or any other change) the minimap waits this long without a new stroke before it redraws all the ink,
+// so a big redraw never lands on the start of the next stroke.
+const MINIMAP_IDLE_DELAY_MS = 600
 const GESTURE_SETTLE_MS = 140
 const ZOOM_STEP = 1.25
 
@@ -150,6 +153,7 @@ function App() {
   const drawModeRef = useRef<DrawMode>(DIRECT_MAX_VISIBLE_POINTS <= 0 ? 'cached' : 'direct')
   const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
   const minimapRenderedAtRef = useRef(0)
+  const minimapIdleTimerRef = useRef<number | null>(null)
   // True while a pinch or three-finger pan is moving: the page is shown as a moved copy of a saved picture, then redrawn sharply once it settles.
   const viewportGestureRef = useRef(false)
   const gestureSettleTimerRef = useRef<number | null>(null)
@@ -1067,11 +1071,27 @@ function App() {
     }
     if (measureFrame) diagnostics?.recordMainCanvasRender(performance.now() - mainCanvasStartedAt)
     const minimapStartedAt = measureFrame ? performance.now() : 0
-    // The minimap redraws every item: never while a stroke is being written (the next frame after pen-up draws it), at most once a second during pinch/pan.
+    // The minimap redraws every item: never while a stroke is being written, at most once a second during pinch/pan, and otherwise
+    // only after MINIMAP_IDLE_DELAY_MS without a new stroke (a pending redraw is dropped when a stroke starts).
     const minimapNow = performance.now()
-    if (!activeStrokeRef.current && (!gestureFrame || minimapNow - minimapRenderedAtRef.current > MINIMAP_LIVE_REFRESH_MS)) {
-      minimapRenderedAtRef.current = minimapNow
-      renderNavigator()
+    if (minimapIdleTimerRef.current !== null) {
+      window.clearTimeout(minimapIdleTimerRef.current)
+      minimapIdleTimerRef.current = null
+    }
+    if (activeStrokeRef.current) {
+      // nothing: the pending redraw was dropped above and pen-up schedules a new one
+    } else if (gestureFrame) {
+      if (minimapNow - minimapRenderedAtRef.current > MINIMAP_LIVE_REFRESH_MS) {
+        minimapRenderedAtRef.current = minimapNow
+        renderNavigator()
+      }
+    } else {
+      minimapIdleTimerRef.current = window.setTimeout(() => {
+        minimapIdleTimerRef.current = null
+        if (activeStrokeRef.current !== null || activePointerRef.current !== null) return
+        minimapRenderedAtRef.current = performance.now()
+        renderNavigator()
+      }, MINIMAP_IDLE_DELAY_MS)
     }
     if (measureFrame) diagnostics?.recordMinimapRender(performance.now() - minimapStartedAt)
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
@@ -1149,6 +1169,7 @@ function App() {
       window.removeEventListener('orientationchange', resizeCanvas)
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
       if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current)
+      if (minimapIdleTimerRef.current !== null) window.clearTimeout(minimapIdleTimerRef.current)
     }
   }, [resizeCanvas])
 
