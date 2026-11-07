@@ -13,7 +13,7 @@ const model = await import(`data:text/javascript;base64,${Buffer.from(modelOutpu
 
 test('main canvas keeps the page background separate from ink compositing', () => {
   assert.match(appSource, /function getReusableCanvasLayer\(/)
-  assert.match(appSource, /if \(!layerRef\.current\) layerRef\.current = document\.createElement\('canvas'\)/)
+  assert.match(appSource, /if \(!layerRef\.current\) \{\s*layerRef\.current = document\.createElement\('canvas'\)/)
   assert.match(appSource, /const inkLayer = getReusableCanvasLayer\(inkLayerRef, canvas\.width, canvas\.height\)/)
   assert.match(appSource, /drawStroke[\s\S]*?ctx\.globalCompositeOperation = stroke\.erase \? 'destination-out' : 'source-over'/)
   assert.match(appSource, /canvasItemsForRendering\(items\)\.forEach\(\(item\) => \{ if \(!isItemVisible\(item, view\)\) return; if \(editingTextId === null \|\| item\.kind !== 'text' \|\| item\.id !== editingTextId\) drawItem\(target, item\) \}\)/)

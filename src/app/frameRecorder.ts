@@ -82,7 +82,7 @@ export function formatFrameSummary(summary: FrameSummary): string {
 /** The switches that change drawing, as "name=value" for the on-screen flags line. */
 export function formatDrawFlags(flags: {
   directMax: number; live: 'whole' | 'incremental'; predict: boolean; thin: boolean; cache: boolean; desync: boolean
-  cpu: boolean; dprCap: number | null; oneLayer: boolean; group: boolean
+  cpu: boolean; dprCap: number | null; oneLayer: boolean; group: boolean; dirty: boolean; layerDom: boolean
 }): string {
   return [
     `direct<=${flags.directMax}`,
@@ -94,6 +94,8 @@ export function formatDrawFlags(flags: {
     `layers=${flags.oneLayer ? 'one' : 'two'}`,
     `canvas=${flags.cpu ? 'cpu' : 'gpu'}`,
     `dpr<=${flags.dprCap ?? 'any'}`,
+    `dirty=${flags.dirty ? 'box' : 'full'}`,
+    `layerdom=${flags.layerDom ? 'on' : 'off'}`,
     `desync=${flags.desync ? 'on' : 'off'}`,
   ].join(' · ')
 }

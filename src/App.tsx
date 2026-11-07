@@ -20,7 +20,7 @@ import { createTestInk, isTestInk } from './testInk'
 import { createFrameRecorder, formatDrawFlags, formatFrameSummary } from './app/frameRecorder'
 import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
 import { chooseDrawMode, countVisiblePoints, DEFAULT_DIRECT_MAX_VISIBLE_POINTS, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
-import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, rawDrawingOptions } from './app/canvasRenderer'
+import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, layerCanvasOptions, rawDrawingOptions } from './app/canvasRenderer'
 import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
 import { UmlConnectorIcon } from './app/UmlConnectorIcon'
 import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
@@ -75,6 +75,12 @@ const ONE_LAYER_ENABLED = DRAW_SWITCHES.get('layers') === 'one'
 // ?group=off draws every Raw segment in its own call again (by default neighbouring segments of the same width share one).
 const GROUP_SEGMENTS_ENABLED = DRAW_SWITCHES.get('group') !== 'off'
 rawDrawingOptions.groupWidths = GROUP_SEGMENTS_ENABLED
+// ?dirty=off repaints the whole page canvas every frame while writing instead of only the box around the stroke
+// (tests whether partial updates of a big canvas are what makes frames late on the tablet).
+const DIRTY_RECT_ENABLED = DRAW_SWITCHES.get('dirty') !== 'off'
+// ?layerdom=on puts the off-screen layer canvases on the page, invisible (tests whether detached canvases are drawn slowly).
+const LAYERS_ON_PAGE = DRAW_SWITCHES.get('layerdom') === 'on'
+layerCanvasOptions.attachToPage = LAYERS_ON_PAGE
 // ?dpr=N draws the page canvas with at most N pixels per CSS pixel (the tablet uses 2.125), to test whether canvas size is the cost.
 const DPR_CAP = Number(DRAW_SWITCHES.get('dpr'))
 const canvasPixelRatio = () => Math.max(1, Math.min(window.devicePixelRatio || 1, DPR_CAP > 0 ? DPR_CAP : Infinity))
@@ -94,6 +100,8 @@ const DRAW_FLAGS_TEXT = formatDrawFlags({
   dprCap: DPR_CAP > 0 ? DPR_CAP : null,
   oneLayer: ONE_LAYER_ENABLED,
   group: GROUP_SEGMENTS_ENABLED,
+  dirty: DIRTY_RECT_ENABLED,
+  layerDom: LAYERS_ON_PAGE,
 })
 
 /** The canvas area (device pixels) a growing stroke can touch: its bounding box plus line width and curve overshoot. */
@@ -793,7 +801,7 @@ function App() {
     // With a pen stroke over a saved picture of the page, only the area around the stroke changes, so only that area is repainted.
     // Mid-gesture the saved picture is drawn straight onto the canvas, skipping the ink layer.
     const directGesture = cacheUsable && gestureFrame && !sameViewport
-    const dirtyRect = penStrokeFrame && sameViewport && !gestureFrame && liveStroke && !liveStroke.shape && shapePreviewRef.current === null
+    const dirtyRect = DIRTY_RECT_ENABLED && penStrokeFrame && sameViewport && !gestureFrame && liveStroke && !liveStroke.shape && shapePreviewRef.current === null
       ? getDirtyRect(liveStroke.points, liveStroke.width, viewport, dpr, canvas.width, canvas.height)
       : null
     // A Raw pen stroke over the saved page picture is drawn piece by piece: each frame repaints only the small area

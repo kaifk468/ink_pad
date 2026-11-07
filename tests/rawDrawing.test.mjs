@@ -71,3 +71,25 @@ test('the page switches: one layer, cpu canvas, pixel ratio cap, grouping', asyn
   assert.match(app, /if \(oneLayer\) \{\s*\/\/ nothing to copy/)
   assert.match(app, /globalCompositeOperation = 'destination-over'\s*drawSheetBorders\(\)/)
 })
+
+test('?dirty=off repaints the whole canvas and ?layerdom=on attaches the layer canvases to the page', async () => {
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /DIRTY_RECT_ENABLED = DRAW_SWITCHES\.get\('dirty'\) !== 'off'/)
+  assert.match(app, /const dirtyRect = DIRTY_RECT_ENABLED && penStrokeFrame/)
+  assert.match(app, /layerCanvasOptions\.attachToPage = LAYERS_ON_PAGE/)
+  const calls = []
+  const body = { appendChild: (el) => calls.push(el) }
+  globalThis.document = { createElement: () => ({ width: 0, height: 0, style: {}, setAttribute() {} }), body }
+  try {
+    const ref = { current: null }
+    renderer.getReusableCanvasLayer(ref, 10, 10)
+    assert.equal(calls.length, 0, 'detached by default')
+    renderer.layerCanvasOptions.attachToPage = true
+    const attached = { current: null }
+    const canvas = renderer.getReusableCanvasLayer(attached, 20, 30)
+    assert.equal(calls.length, 1)
+    assert.equal(canvas.width, 20)
+    assert.equal(renderer.getReusableCanvasLayer(attached, 20, 30), canvas, 'reused, not attached twice')
+    assert.equal(calls.length, 1)
+  } finally { renderer.layerCanvasOptions.attachToPage = false; delete globalThis.document }
+})

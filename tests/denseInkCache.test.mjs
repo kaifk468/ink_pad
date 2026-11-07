@@ -27,7 +27,7 @@ test('the minimap is not redrawn on every frame while writing', () => {
 
 test('a growing pen stroke only repaints the area around it', () => {
   assert.match(app, /function getDirtyRect\(/)
-  assert.match(app, /const dirtyRect = penStrokeFrame && sameViewport && !gestureFrame/)
+  assert.match(app, /const dirtyRect = DIRTY_RECT_ENABLED && penStrokeFrame && sameViewport && !gestureFrame/)
   // shapes and held-shape previews, erasers and gestures always repaint everything
   assert.match(app, /!liveStroke\.shape && shapePreviewRef\.current === null/)
   assert.match(app, /ctx\.rect\(dirty\.x, dirty\.y, dirty\.width, dirty\.height\)/)
@@ -48,7 +48,7 @@ test('a Raw pen stroke is drawn piece by piece on the page canvas, with no extra
   assert.doesNotMatch(app, /live-canvas|liveCanvasRef|liveOverlayActiveRef/)
   assert.doesNotMatch(css, /\.live-canvas/)
   // only pen strokes over a usable page picture qualify; eraser, shapes, previews and gestures keep the page-canvas path
-  assert.match(app, /const dirtyRect = penStrokeFrame && sameViewport && !gestureFrame && liveStroke && !liveStroke\.shape && shapePreviewRef\.current === null/)
+  assert.match(app, /const dirtyRect = DIRTY_RECT_ENABLED && penStrokeFrame && sameViewport && !gestureFrame && liveStroke && !liveStroke\.shape && shapePreviewRef\.current === null/)
   assert.match(app, /const incrementalLive = LIVE_INCREMENTAL_ENABLED && dirtyRect !== null && liveStroke !== null && liveStroke\.kind === 'stroke'\s*&& !liveStroke\.erase && strokeDisplayMode === 'raw'/)
   // while it runs, a frame draws only the newest part of the stroke and returns before the full render
   assert.match(app, /liveState\.strokeId === liveStroke!\.id[\s\S]*?drawLiveFrame\(\)[\s\S]*?return\n    \}/)

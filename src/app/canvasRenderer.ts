@@ -9,12 +9,22 @@ import type { MinimapGeometry } from '../viewport'
 
 /** Canvas drawing for every item kind. Pure functions of (context, item, settings): no React state. */
 
+/** ?layerdom=on puts the off-screen layer canvases on the page (invisible) instead of leaving them detached. */
+export const layerCanvasOptions = { attachToPage: false }
+
 export function getReusableCanvasLayer(
   layerRef: { current: HTMLCanvasElement | null },
   width: number,
   height: number,
 ): HTMLCanvasElement {
-  if (!layerRef.current) layerRef.current = document.createElement('canvas')
+  if (!layerRef.current) {
+    layerRef.current = document.createElement('canvas')
+    if (layerCanvasOptions.attachToPage) {
+      layerRef.current.setAttribute('aria-hidden', 'true')
+      layerRef.current.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1;'
+      document.body.appendChild(layerRef.current)
+    }
+  }
   if (layerRef.current.width !== width) layerRef.current.width = width
   if (layerRef.current.height !== height) layerRef.current.height = height
   return layerRef.current
