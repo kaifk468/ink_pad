@@ -3,10 +3,12 @@ import { useEffect, useRef, useState } from 'react'
 type InsertTrayProps = {
   textActive: boolean
   classActive: boolean
+  inkClassActive: boolean
   shapeActive: boolean
   onText: () => void
   onTextOptions: () => void
   onClass: () => void
+  onInkClass: () => void
   onShapes: () => void
 }
 
@@ -17,11 +19,11 @@ const SOON_ENTRIES = [
 ]
 
 /** The Insert button and the tray that opens upward from the bottom dock. Entries reuse the existing tool handlers. */
-export function InsertTray({ textActive, classActive, shapeActive, onText, onTextOptions, onClass, onShapes }: InsertTrayProps) {
+export function InsertTray({ textActive, classActive, inkClassActive, shapeActive, onText, onTextOptions, onClass, onInkClass, onShapes }: InsertTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const lastTapRef = useRef(0)
-  const anyActive = textActive || classActive || shapeActive
+  const anyActive = textActive || classActive || inkClassActive || shapeActive
 
   useEffect(() => {
     if (!open) return
@@ -68,6 +70,9 @@ export function InsertTray({ textActive, classActive, shapeActive, onText, onTex
         <div className="insert-tray-heading">LLD</div>
         <button className={`insert-entry${classActive ? ' selected' : ''}`} type="button" aria-label="Class box" aria-pressed={classActive} title="Tap the sheet with the S Pen to add a UML class box; tap a box or rectangle to edit it" onClick={choose(onClass)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9.5h16M4 14.5h16"/></svg><span>Class box</span>
+        </button>
+        <button className={`insert-entry${inkClassActive ? ' selected' : ''}`} type="button" aria-label="Ink class box" aria-pressed={inkClassActive} title="Tap or drag with the S Pen to add a class box you write in by hand: name, variables and methods, with movable dividers" onClick={choose(onInkClass)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 9.5h16M4 14.5h16"/><path d="m8 7.2 2.2-.6M8 12.4c1.2-1 2-1 3 0M8 18c1.5-1 2.5-1 4 0"/></svg><span>Ink class box</span>
         </button>
         <div className="insert-tray-heading">HLD</div>
         {SOON_ENTRIES.map(({ label, icon }) => (

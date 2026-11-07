@@ -224,14 +224,49 @@ function drawClassBox(ctx: CanvasRenderingContext2D, rectangle: RectangleObject)
   ctx.restore()
 }
 
-export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: RectangleObject): void {
+const INK_BOX_CORNER_RADIUS = 14
+
+/** The pen strokes written inside an ink class box (erase strokes only cut this ink), clipped to the box. */
+function drawInkBoxInk(ctx: CanvasRenderingContext2D, rectangle: RectangleObject, strokeDisplayMode: StrokeDisplayMode): void {
+  const box = rectangle.inkBox
+  if (!box || !box.ink.length) return
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(rectangle.x, rectangle.y, rectangle.width, rectangle.height)
+  ctx.clip()
+  for (const stroke of box.ink) drawStroke(ctx, stroke, strokeDisplayMode)
+  ctx.restore()
+}
+
+function drawInkBoxDividers(ctx: CanvasRenderingContext2D, rectangle: RectangleObject): void {
+  const box = rectangle.inkBox
+  if (!box) return
+  ctx.save()
+  ctx.strokeStyle = rectangle.strokeColor
+  ctx.lineWidth = Math.max(1, rectangle.strokeWidth / 2)
+  ctx.beginPath()
+  for (const y of [box.top, box.mid]) {
+    ctx.moveTo(rectangle.x, y)
+    ctx.lineTo(rectangle.x + rectangle.width, y)
+  }
+  ctx.stroke()
+  ctx.restore()
+}
+
+export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: RectangleObject, strokeDisplayMode: StrokeDisplayMode = 'raw'): void {
   if (rectangle.classBox) drawClassBox(ctx, rectangle)
+  if (rectangle.inkBox) drawInkBoxInk(ctx, rectangle, strokeDisplayMode)
+  if (rectangle.inkBox) drawInkBoxDividers(ctx, rectangle)
   ctx.save()
   ctx.strokeStyle = rectangle.strokeColor
   ctx.lineWidth = rectangle.strokeWidth
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  ctx.strokeRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height)
+  if (rectangle.inkBox) {
+    ctx.beginPath()
+    ctx.roundRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, INK_BOX_CORNER_RADIUS)
+    ctx.stroke()
+  } else ctx.strokeRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height)
   ctx.restore()
 }
 
@@ -322,7 +357,7 @@ export function drawText(ctx: CanvasRenderingContext2D, text: TextObject): void 
 }
 
 export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, strokeDisplayMode: StrokeDisplayMode): void {
-  if (item.kind === 'rectangle') drawRectangle(ctx, item)
+  if (item.kind === 'rectangle') drawRectangle(ctx, item, strokeDisplayMode)
   else if (item.kind === 'text') drawText(ctx, item)
   else if (item.kind === 'connector') drawConnector(ctx, item)
   else drawStroke(ctx, item, strokeDisplayMode)

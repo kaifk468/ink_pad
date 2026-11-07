@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
+import { INK_BOX_DEFAULT_HEIGHT, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
 import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
 import { loadStrokeDisplayMode, saveStrokeDisplayMode, type StrokeDisplayMode } from './strokeDisplayMode'
@@ -185,7 +186,10 @@ function App() {
   const activeDragRef = useRef<{ pointerId: number; itemKey: string; start: Point; originalItems: CanvasItem[]; moved: boolean; editTextId?: number | null; editClassBoxId?: number | null } | null>(null)
   const textTapRef = useRef<{ pointerId: number; point: Point } | null>(null)
   const classTapRef = useRef<{ pointerId: number; point: Point } | null>(null)
-  const activeResizeRef = useRef<{ pointerId: number; rectangleId: number | null; selectedKeys: Set<string> | null; handle: RectangleResizeHandle; start: Point; originalBounds: RectangleBounds; originalItems: CanvasItem[]; moved: boolean } | null>(null)
+  /** The ink class box the current pen/eraser stroke started inside: the stroke is stored in the box. */
+  const activeStrokeBoxRef = useRef<number | null>(null)
+  const activeDividerRef = useRef<{ pointerId: number; rectangleId: number; which: InkBoxDivider; originalItems: CanvasItem[]; moved: boolean } | null>(null)
+  const activeResizeRef = useRef<{ pointerId: number; rectangleId: number | null; selectedKeys: Set<string> | null; handle: RectangleResizeHandle; start: Point; originalBounds: RectangleBounds; originalItems: CanvasItem[]; moved: boolean; created?: boolean } | null>(null)
   const activeLassoRef = useRef<{ pointerId: number; points: Point[] } | null>(null)
   const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean } | null>(null)
   const selectedKeysRef = useRef<Set<string>>(new Set())
@@ -246,6 +250,8 @@ function App() {
       activeStrokeRef.current = null
       activeConnectorRef.current = null
       activeResizeRef.current = null
+      activeDividerRef.current = null
+      activeStrokeBoxRef.current = null
       shapePreviewRef.current = null
       activeLassoRef.current = null
       lassoDragRef.current = null
@@ -283,6 +289,8 @@ function App() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [textMode, setTextMode] = useState(false)
   const [classMode, setClassMode] = useState(false)
+  /** With classMode on: true = the hand-written (ink) class box tool, false = the typed class box tool. */
+  const [inkClassTool, setInkClassTool] = useState(false)
   const [classBoxEditor, setClassBoxEditor] = useState<{ rectangleId: number | null; x: number; y: number; content: ClassBoxContent } | null>(null)
   const [textSize, setTextSize] = useState(DEFAULT_TEXT_FONT_SIZE)
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null)
@@ -1051,6 +1059,20 @@ function App() {
       ctx.strokeRect(groupBounds.x - 5, groupBounds.y - 5, groupBounds.width + 10, groupBounds.height + 10)
       ctx.restore()
     }
+    if (soleSelectedRectangle?.inkBox) {
+      // Grips on the two dividers: drag them up or down to resize the name, variables and methods sections.
+      ctx.save()
+      ctx.fillStyle = '#ffffff'
+      ctx.strokeStyle = '#5269df'
+      ctx.lineWidth = 2
+      for (const dividerY of [soleSelectedRectangle.inkBox.top, soleSelectedRectangle.inkBox.mid]) {
+        ctx.beginPath()
+        ctx.arc(soleSelectedRectangle.x + soleSelectedRectangle.width, dividerY, 7, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
     if (resizeBounds) {
       ctx.save()
       ctx.fillStyle = '#ffffff'
@@ -1488,6 +1510,8 @@ function App() {
       }
       saveHistory()
       let stroke = shapePreviewRef.current
+      const inkBoxId = activeStrokeBoxRef.current
+      if (!stroke && inkBoxId !== null) stroke = activeStrokeRef.current
       if (!stroke) {
         const heldStroke = activeStrokeRef.current
         const heldForMs = performance.now() - lastSignificantMoveAtRef.current
@@ -1501,10 +1525,20 @@ function App() {
           : heldLongEnough ? recognizeLine(heldStroke) : heldStroke
       }
       if (stroke.kind === 'stroke' && STROKE_THINNING_ENABLED) stroke = thinStroke(stroke)
-      strokesRef.current.push(stroke)
-      if (stroke.kind === 'stroke' && stroke.erase) strokesRef.current = compactAfterErase(strokesRef.current, () => nextStrokeIdRef.current++)
+      const targetBox = inkBoxId !== null && stroke.kind === 'stroke'
+        ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === inkBoxId && item.inkBox !== undefined)
+        : undefined
+      if (targetBox && stroke.kind === 'stroke') {
+        // The box keeps its own ink: it is one item, so move, undo and erase treat box and writing together.
+        const grown = addStrokeToInkBox(targetBox, stroke)
+        strokesRef.current = strokesRef.current.map((item) => (item === targetBox ? grown : item))
+      } else {
+        strokesRef.current.push(stroke)
+        if (stroke.kind === 'stroke' && stroke.erase) strokesRef.current = compactAfterErase(strokesRef.current, () => nextStrokeIdRef.current++)
+      }
       setHasInk(true)
     }
+    activeStrokeBoxRef.current = null
     activeStrokeRef.current = null
     predictedPointsRef.current = []
     activeConnectorRef.current = null
@@ -1560,7 +1594,7 @@ function App() {
       touchNav.down(event.pointerId, getScreenPoint(event), performance.now())
       return
     }
-    if (event.pointerType !== 'pen' || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null) return
+    if (event.pointerType !== 'pen' || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null) return
     event.preventDefault()
     const rawPoint = getPoint(event)
     if (!isPointWithinBounds(rawPoint)) return
@@ -1569,6 +1603,27 @@ function App() {
     if (textMode) {
       event.currentTarget.setPointerCapture(event.pointerId)
       textTapRef.current = { pointerId: event.pointerId, point }
+      return
+    }
+    if (classMode && inkClassTool) {
+      // Press where the box's top-left corner goes, then drag to size it; a plain tap makes a default-sized box.
+      event.currentTarget.setPointerCapture(event.pointerId)
+      saveHistory()
+      const box = createInkClassBox(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH)
+      strokesRef.current.push(box)
+      setHasInk(true)
+      activeResizeRef.current = {
+        pointerId: event.pointerId,
+        rectangleId: box.id,
+        selectedKeys: null,
+        handle: 'se',
+        start: { x: box.x + box.width, y: box.y + box.height, pressure: 1 },
+        originalBounds: { x: box.x, y: box.y, width: box.width, height: box.height },
+        originalItems: strokesRef.current.slice(),
+        moved: false,
+        created: true,
+      }
+      renderAll()
       return
     }
     if (classMode) {
@@ -1610,6 +1665,13 @@ function App() {
         }
         return
       }
+      const lassoInkBox = singleSelectedRectangle?.inkBox ? singleSelectedRectangle : null
+      const lassoDividerHit = lassoInkBox ? hitInkBoxDivider(lassoInkBox, point, 14 / viewportRef.current.scale) : null
+      if (lassoInkBox && lassoDividerHit) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        activeDividerRef.current = { pointerId: event.pointerId, rectangleId: lassoInkBox.id, which: lassoDividerHit, originalItems: strokesRef.current.slice(), moved: false }
+        return
+      }
       const hitSelected = [...selectedItems].reverse().some((item) => itemHitTest(item, point, 12 / viewportRef.current.scale))
       if (selectedKeysRef.current.size > 0 && hitSelected) {
         event.currentTarget.setPointerCapture(event.pointerId)
@@ -1646,6 +1708,13 @@ function App() {
         }
         return
       }
+      const selectedInkBox = currentlySelectedRectangle?.inkBox ? currentlySelectedRectangle : null
+      const dividerHit = selectedInkBox ? hitInkBoxDivider(selectedInkBox, point, 14 / viewportRef.current.scale) : null
+      if (selectedInkBox && dividerHit) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        activeDividerRef.current = { pointerId: event.pointerId, rectangleId: selectedInkBox.id, which: dividerHit, originalItems: strokesRef.current.slice(), moved: false }
+        return
+      }
       const previouslySelectedRectangleId = selectedRectangleIdRef.current
       const textHit = hitTestText(point)
       const rectangle = textHit ? null : hitTestRectangle(point)
@@ -1678,6 +1747,7 @@ function App() {
     event.currentTarget.setPointerCapture(event.pointerId)
     activePointerRef.current = event.pointerId
     lastSignificantMoveAtRef.current = performance.now()
+    activeStrokeBoxRef.current = shapeMode ? null : findInkBoxAt(strokesRef.current, point)?.id ?? null
     activeStrokeRef.current = eraser
       ? createEraserStroke(nextStrokeIdRef.current++, point, color, eraserSize)
       : { kind: 'stroke', id: nextStrokeIdRef.current++, points: [point], color, width, erase: false }
@@ -1693,7 +1763,7 @@ function App() {
     shapePreviewRef.current = null
     predictedPointsRef.current = []
     holdAnchorRef.current = point
-    scheduleShapePreview(point)
+    if (activeStrokeBoxRef.current === null) scheduleShapePreview(point)
     scheduleRender()
   }
 
@@ -1736,6 +1806,22 @@ function App() {
       scheduleRender()
       return
     }
+    const activeDivider = activeDividerRef.current
+    if (activeDivider?.pointerId === event.pointerId) {
+      event.preventDefault()
+      const point = getBoundedPoint(event)
+      const original = activeDivider.originalItems.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === activeDivider.rectangleId)
+      if (!original) return
+      const moved = moveInkBoxDivider(original, activeDivider.which, point.y)
+      if (moved === original) return
+      if (!activeDivider.moved) {
+        saveHistory()
+        activeDivider.moved = true
+      }
+      strokesRef.current = activeDivider.originalItems.map((item) => (item === original ? moved : item))
+      renderAll()
+      return
+    }
     const activeResize = activeResizeRef.current
     if (activeResize?.pointerId === event.pointerId) {
       event.preventDefault()
@@ -1754,7 +1840,7 @@ function App() {
         ? resizeRectangleItems(activeResize.originalItems, activeResize.rectangleId, bounds)
         : resizeSelectedItems(activeResize.originalItems, activeResize.selectedKeys ?? new Set(), bounds)
       if (!activeResize.moved) {
-        saveHistory()
+        if (!activeResize.created) saveHistory()
         activeResize.moved = true
       }
       strokesRef.current = nextItems
@@ -1859,7 +1945,8 @@ function App() {
       // Like text, the dialog opens on pen-up so the keyboard is allowed to appear.
       const tap = classTapRef.current
       classTapRef.current = null
-      const existing = hitTestRectangle(tap.point)
+      const hitRectangle = hitTestRectangle(tap.point)
+      const existing = hitRectangle?.inkBox ? null : hitRectangle
       if (existing) openClassBoxEditor({ rectangleId: existing.id, x: existing.x, y: existing.y, content: existing.classBox ?? EMPTY_CLASS_BOX })
       else openClassBoxEditor({ rectangleId: null, x: tap.point.x, y: tap.point.y, content: EMPTY_CLASS_BOX })
       return
@@ -1892,8 +1979,26 @@ function App() {
       renderAll()
       return
     }
+    if (activeDividerRef.current?.pointerId === event.pointerId) {
+      activeDividerRef.current = null
+      renderAll()
+      return
+    }
     if (activeResizeRef.current?.pointerId === event.pointerId) {
+      const finished = activeResizeRef.current
       activeResizeRef.current = null
+      if (finished.created && finished.rectangleId !== null) {
+        if (!finished.moved) {
+          const x = Math.min(finished.originalBounds.x, WORKSPACE_BOUNDS.x + WORKSPACE_BOUNDS.width - INK_BOX_DEFAULT_WIDTH)
+          const y = Math.min(finished.originalBounds.y, WORKSPACE_BOUNDS.y + WORKSPACE_BOUNDS.height - INK_BOX_DEFAULT_HEIGHT)
+          strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: INK_BOX_DEFAULT_WIDTH, height: INK_BOX_DEFAULT_HEIGHT })
+        }
+        // The new box is ready to write in: back to the pen, with the box selected.
+        setClassMode(false)
+        setInkClassTool(false)
+        setSelectedRectangle(finished.rectangleId)
+        updateSelectedItems([])
+      }
       renderAll()
       return
     }
@@ -1955,6 +2060,11 @@ function App() {
     }
     if (activeConnectorRef.current?.pointerId === event.pointerId) {
       activeConnectorRef.current = null
+      renderAll()
+      return
+    }
+    if (activeDividerRef.current?.pointerId === event.pointerId) {
+      activeDividerRef.current = null
       renderAll()
       return
     }
@@ -2100,6 +2210,8 @@ function App() {
     activeStrokeRef.current = null
     activeConnectorRef.current = null
     activeResizeRef.current = null
+    activeDividerRef.current = null
+    activeStrokeBoxRef.current = null
     shapePreviewRef.current = null
     activeLassoRef.current = null
     lassoDragRef.current = null
@@ -2136,7 +2248,8 @@ function App() {
   const toggleSelectTool = () => { const next = !selectionMode; setSelectionMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
   const openTextOptions = () => { setTextMode(true); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); clearLassoSelection(); setOptionsFor('text') }
   const toggleTextTool = () => { const next = !textMode; setTextMode(next); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
-  const toggleClassTool = () => { const next = !classMode; setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleInkClassTool = () => { const next = !(classMode && inkClassTool); setInkClassTool(next); setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleClassTool = () => { const next = !(classMode && !inkClassTool); setInkClassTool(false); setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
   const toggleLassoTool = () => { const next = !lassoMode; setLassoMode(next); setTextMode(false); setClassMode(false); setSelectionMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); setSelectedRectangle(null); clearLassoSelection() }
   const toggleConnectorTool = () => { const next = !connectorMode; setConnectorMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setSelectionMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
   const isDoubleTap = (tool: string) => {
@@ -2374,7 +2487,8 @@ function App() {
         lassoActive={lassoMode}
         connectorActive={connectorMode || umlConnectorType !== null}
         textActive={textMode}
-        classActive={classMode}
+        classActive={classMode && !inkClassTool}
+        inkClassActive={classMode && inkClassTool}
         shapeActive={shapeMode}
         onPen={tapPenTool}
         onEraser={tapEraserTool}
@@ -2384,6 +2498,7 @@ function App() {
         onText={toggleTextTool}
         onTextOptions={openTextOptions}
         onClass={toggleClassTool}
+        onInkClass={toggleInkClassTool}
         onShapes={toggleShapeTool}
       />
       {classBoxEditor && <ClassBoxDialog

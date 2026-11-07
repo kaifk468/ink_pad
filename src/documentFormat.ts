@@ -1,4 +1,4 @@
-import type { CanvasItem, ClassBoxContent, ConnectorAttachment, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
+import type { CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 
 /**
  * Versioned InkPad document (.inkpad file / stored diagram).
@@ -182,6 +182,25 @@ function sanitizeClassBox(value: unknown): ClassBoxContent | undefined {
   return { name: clean(value.name), attributes: clean(value.attributes), methods: clean(value.methods) }
 }
 
+const MAX_INK_BOX_STROKES = 20000
+
+/** Ink class box content is optional on a rectangle; if it is malformed the plain rectangle is kept without it. */
+function sanitizeInkBox(value: unknown, y: number, height: number): InkBoxContent | undefined {
+  if (!isRecord(value) || !isNum(value.top) || !isNum(value.mid) || !Array.isArray(value.ink)) return undefined
+  const ink: Stroke[] = []
+  for (const raw of value.ink.slice(0, MAX_INK_BOX_STROKES)) {
+    const item = sanitizeItem(raw)
+    if (item && item.kind === 'stroke') ink.push(item)
+  }
+  // Keep both dividers inside the box with room for each section, even if the file was edited by hand (same limits as canvasModel's clampInkBoxDividers).
+  const band = 24
+  const bottom = y + height
+  if (height < 72) return { top: y + height / 3, mid: y + (height * 2) / 3, ink }
+  const top = Math.min(Math.max(value.top, y + band), bottom - band * 2)
+  const mid = Math.min(Math.max(value.mid, top + band), bottom - band)
+  return { top, mid, ink }
+}
+
 function sanitizeAttachment(value: unknown): ConnectorAttachment | undefined {
   if (!isRecord(value) || !isId(value.rectangleId) || !isNum(value.offsetX) || !isNum(value.offsetY)) return undefined
   return { rectangleId: value.rectangleId, offsetX: value.offsetX, offsetY: value.offsetY }
@@ -205,7 +224,8 @@ function sanitizeItem(value: unknown): CanvasItem | null {
   if (value.kind === 'rectangle') {
     if (!isNum(value.x) || !isNum(value.y) || !isNum(value.width) || !isNum(value.height) || !isColor(value.strokeColor) || !isNum(value.strokeWidth) || value.strokeWidth <= 0) return null
     const classBox = sanitizeClassBox(value.classBox)
-    const rectangle: RectangleObject = { kind: 'rectangle', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth, ...(classBox ? { classBox } : {}) }
+    const inkBox = sanitizeInkBox(value.inkBox, value.y, value.height)
+    const rectangle: RectangleObject = { kind: 'rectangle', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth, ...(classBox ? { classBox } : {}), ...(inkBox ? { inkBox } : {}) }
     return rectangle
   }
   if (value.kind === 'text') {
@@ -257,7 +277,13 @@ function repairAttachments(items: CanvasItem[]): CanvasItem[] {
 
 function cloneItem(item: CanvasItem): CanvasItem {
   if (item.kind === 'stroke') return { ...item, points: item.points.map((point) => ({ ...point })) }
-  if (item.kind === 'rectangle' && item.classBox) return { ...item, classBox: { ...item.classBox } }
+  if (item.kind === 'rectangle' && (item.classBox || item.inkBox)) {
+    return {
+      ...item,
+      ...(item.classBox ? { classBox: { ...item.classBox } } : {}),
+      ...(item.inkBox ? { inkBox: { ...item.inkBox, ink: item.inkBox.ink.map((stroke) => ({ ...stroke, points: stroke.points.map((point) => ({ ...point })) })) } } : {}),
+    }
+  }
   if (item.kind === 'connector') {
     return {
       ...item,

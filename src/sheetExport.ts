@@ -72,8 +72,33 @@ function classBoxElement(rectangle: RectangleObject): string {
     + (dividers ? `<path d="${dividers}" fill="none" stroke="${color}" stroke-width="${n(Math.max(1, rectangle.strokeWidth / 2))}"/>` : '')
 }
 
+let inkBoxCount = 0
+
+/** Pen strokes written inside an ink class box, cut by the box's own eraser strokes and clipped to the box. */
+function inkBoxInkElement(rectangle: RectangleObject): string {
+  const box = rectangle.inkBox
+  if (!box || !box.ink.length) return ''
+  inkBoxCount += 1
+  const id = `ink-box-${inkBoxCount}`
+  const area = `x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}"`
+  const erasers = box.ink.filter((stroke) => stroke.erase)
+  const strokes = box.ink.filter((stroke) => !stroke.erase).map(strokeElement).join('')
+  const mask = erasers.length
+    ? `<mask id="${id}-mask" maskUnits="userSpaceOnUse" ${area}><rect ${area} fill="#fff"/>${erasers.map((eraser) => strokeElement({ ...eraser, color: '#000000' })).join('')}</mask>`
+    : ''
+  return `<clipPath id="${id}"><rect ${area}/></clipPath>${mask}<g clip-path="url(#${id})"${erasers.length ? ` mask="url(#${id}-mask)"` : ''}>${strokes}</g>`
+}
+
+function inkBoxLinesElement(rectangle: RectangleObject): string {
+  const box = rectangle.inkBox
+  if (!box) return ''
+  const d = [box.top, box.mid].map((y) => `M${n(rectangle.x)} ${n(y)}H${n(rectangle.x + rectangle.width)}`).join('')
+  return `<path d="${d}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(Math.max(1, rectangle.strokeWidth / 2))}"/>`
+}
+
 function rectangleElement(rectangle: RectangleObject): string {
-  return classBoxElement(rectangle) + `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"/>`
+  const rounded = rectangle.inkBox ? ' rx="14" ry="14"' : ''
+  return classBoxElement(rectangle) + inkBoxInkElement(rectangle) + inkBoxLinesElement(rectangle) + `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}"${rounded} fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"/>`
 }
 
 const pt = (p: Point) => `${n(p.x)} ${n(p.y)}`
@@ -124,6 +149,7 @@ function itemElement(item: CanvasItem): string {
  * (SVG mask per eraser group), matching the canvas "destination-out" behavior.
  */
 export function buildSheetSvg(items: CanvasItem[], options: SheetExportOptions): string {
+  inkBoxCount = 0
   const { width, height } = options
   const defs: string[] = []
   let body = ''

@@ -74,7 +74,7 @@ test('only plain pen strokes are thinned', () => {
 test('finishing a stroke thins it (switch ?thin=off)', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
   assert.match(app, /STROKE_THINNING_ENABLED = DRAW_SWITCHES\.get\('thin'\) !== 'off'/)
-  assert.match(app, /stroke = thinStroke\(stroke\)\s*strokesRef\.current\.push\(stroke\)/)
+  assert.match(app, /stroke = thinStroke\(stroke\)\s*const targetBox[\s\S]*?strokesRef\.current\.push\(stroke\)/)
 })
 
 test('slimming a page keeps untouched items by identity and reports counts', () => {

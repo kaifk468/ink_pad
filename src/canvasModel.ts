@@ -1,7 +1,9 @@
 export type Point = { x: number; y: number; pressure: number }
 export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line' }
+/** Ink class box: three bands (name, variables, methods) divided at the canvas heights `top` and `mid`, holding its own pen strokes (canvas coordinates). */
+export type InkBoxContent = { top: number; mid: number; ink: Stroke[] }
 export type ClassBoxContent = { name: string; attributes: string; methods: string }
-export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent }
+export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent }
 export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string }
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
@@ -264,7 +266,7 @@ export function getResizedRectangleBounds(
 export function resizeRectangleItems(items: CanvasItem[], rectangleId: number, bounds: RectangleBounds): CanvasItem[] {
   const original = items.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === rectangleId)
   if (!original || original.width <= 0 || original.height <= 0) return items
-  const resized = { ...original, ...bounds }
+  const resized = clampInkBoxDividers({ ...original, ...constrainInkBoxBounds(original, bounds) })
   const scaleX = resized.width / original.width
   const scaleY = resized.height / original.height
   return items.map((item) => {
@@ -366,6 +368,7 @@ export function resizeSelectedItems(items: CanvasItem[], selectedKeys: ReadonlyS
       width: rectangle.width * scaleX,
       height: rectangle.height * scaleY,
       strokeWidth: rectangle.strokeWidth * strokeScale,
+      ...(rectangle.inkBox ? { inkBox: transformInkBox(rectangle.inkBox, (x) => bounds.x + (x - originalBounds.x) * scaleX, (y) => bounds.y + (y - originalBounds.y) * scaleY, strokeScale) } : {}),
     }]))
   const stationaryRectangles = new Map(items
     .filter((item): item is RectangleObject => item.kind === 'rectangle' && !selectedKeys.has(canvasItemKey(item)))
@@ -441,7 +444,13 @@ export function resizeSelectedItems(items: CanvasItem[], selectedKeys: ReadonlyS
 
 export function cloneCanvasItems(items: CanvasItem[]): CanvasItem[] {
   return items.map((item) => {
-    if (item.kind === 'rectangle') return item.classBox ? { ...item, classBox: { ...item.classBox } } : { ...item }
+    if (item.kind === 'rectangle') {
+      return {
+        ...item,
+        ...(item.classBox ? { classBox: { ...item.classBox } } : {}),
+        ...(item.inkBox ? { inkBox: { ...item.inkBox, ink: item.inkBox.ink.map((stroke) => ({ ...stroke, points: stroke.points.map((point) => ({ ...point })) })) } } : {}),
+      }
+    }
     if (item.kind === 'text') return { ...item }
     if (item.kind === 'connector') return {
       ...item,
@@ -466,7 +475,8 @@ export function translateSelectedItems(items: CanvasItem[], selectedKeys: Readon
     .map((rectangle) => [rectangle.id, rectangle]))
   return items.map((item) => {
     const itemSelected = selectedKeys.has(canvasItemKey(item))
-    if (item.kind === 'rectangle' || item.kind === 'text') return itemSelected ? { ...item, x: item.x + dx, y: item.y + dy } : item
+    if (item.kind === 'rectangle') return itemSelected ? { ...item, x: item.x + dx, y: item.y + dy, ...(item.inkBox ? { inkBox: translateInkBox(item.inkBox, dx, dy) } : {}) } : item
+    if (item.kind === 'text') return itemSelected ? { ...item, x: item.x + dx, y: item.y + dy } : item
     if (item.kind === 'connector') {
       const connectorSelected = itemSelected
       const startRectangleMoves = !!item.startAttachment && selectedRectangleIds.has(item.startAttachment.rectangleId)
@@ -561,4 +571,92 @@ export class CanvasSnapshotHistory {
     this.undoStack.push(current.slice())
     return next
   }
+}
+
+// --- Ink class box helpers used by the item functions above (more in inkClassBox.ts) ---
+/** Smallest height of each of the three bands (name, variables, methods), in canvas units. */
+export const INK_BOX_MIN_BAND = 24
+export const INK_BOX_MIN_HEIGHT = INK_BOX_MIN_BAND * 3
+export const INK_BOX_MIN_WIDTH = 64
+/** Space kept between written ink and the box edge when the box grows to cover the ink. */
+export const INK_BOX_INK_PADDING = 8
+
+/** Keeps both dividers inside the box with at least INK_BOX_MIN_BAND per band (thirds if the box is too small for that). Returns the same object when nothing changes. */
+export function clampInkBoxDividers(rectangle: RectangleObject): RectangleObject {
+  const box = rectangle.inkBox
+  if (!box) return rectangle
+  const bottom = rectangle.y + rectangle.height
+  let top: number
+  let mid: number
+  if (rectangle.height < INK_BOX_MIN_HEIGHT) {
+    top = rectangle.y + rectangle.height / 3
+    mid = rectangle.y + (rectangle.height * 2) / 3
+  } else {
+    top = Math.min(Math.max(box.top, rectangle.y + INK_BOX_MIN_BAND), bottom - INK_BOX_MIN_BAND * 2)
+    mid = Math.min(Math.max(box.mid, top + INK_BOX_MIN_BAND), bottom - INK_BOX_MIN_BAND)
+  }
+  if (top === box.top && mid === box.mid) return rectangle
+  return { ...rectangle, inkBox: { ...box, top, mid } }
+}
+
+function mapStroke(stroke: Stroke, mapPoint: (point: Point) => Point, widthScale = 1): Stroke {
+  return { ...stroke, points: stroke.points.map(mapPoint), width: stroke.width * widthScale }
+}
+
+export function translateInkBox(box: InkBoxContent, dx: number, dy: number): InkBoxContent {
+  return {
+    top: box.top + dy,
+    mid: box.mid + dy,
+    ink: box.ink.map((stroke) => mapStroke(stroke, (point) => ({ ...point, x: point.x + dx, y: point.y + dy }))),
+  }
+}
+
+/** For a group resize: dividers and ink follow the same mapping as the box. */
+export function transformInkBox(box: InkBoxContent, mapX: (x: number) => number, mapY: (y: number) => number, widthScale: number): InkBoxContent {
+  return {
+    top: mapY(box.top),
+    mid: mapY(box.mid),
+    ink: box.ink.map((stroke) => mapStroke(stroke, (point) => ({ ...point, x: mapX(point.x), y: mapY(point.y) }), widthScale)),
+  }
+}
+
+/** Bounds of the written (not erased) ink including line width, or null when there is none. */
+export function inkBoxInkBounds(box: InkBoxContent): RectangleBounds | null {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const stroke of box.ink) {
+    if (stroke.erase) continue
+    const half = stroke.width / 2
+    for (const point of stroke.points) {
+      minX = Math.min(minX, point.x - half)
+      minY = Math.min(minY, point.y - half)
+      maxX = Math.max(maxX, point.x + half)
+      maxY = Math.max(maxY, point.y + half)
+    }
+  }
+  return Number.isFinite(minX) ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : null
+}
+
+/** Grows bounds so they cover all the ink (plus padding). Unchanged bounds are returned as they are. */
+export function coverInkBounds(bounds: RectangleBounds, box: InkBoxContent): RectangleBounds {
+  const ink = inkBoxInkBounds(box)
+  if (!ink) return bounds
+  const left = Math.min(bounds.x, ink.x - INK_BOX_INK_PADDING)
+  const top = Math.min(bounds.y, ink.y - INK_BOX_INK_PADDING)
+  const right = Math.max(bounds.x + bounds.width, ink.x + ink.width + INK_BOX_INK_PADDING)
+  const bottom = Math.max(bounds.y + bounds.height, ink.y + ink.height + INK_BOX_INK_PADDING)
+  if (left === bounds.x && top === bounds.y && right === bounds.x + bounds.width && bottom === bounds.y + bounds.height) return bounds
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
+/** The bounds a resize may produce: at least the minimum size, and never smaller than the ink. */
+export function constrainInkBoxBounds(rectangle: RectangleObject, bounds: RectangleBounds): RectangleBounds {
+  const box = rectangle.inkBox
+  if (!box) return bounds
+  let { x, y, width, height } = bounds
+  if (width < INK_BOX_MIN_WIDTH) width = INK_BOX_MIN_WIDTH
+  if (height < INK_BOX_MIN_HEIGHT) height = INK_BOX_MIN_HEIGHT
+  return coverInkBounds({ x, y, width, height }, box)
 }

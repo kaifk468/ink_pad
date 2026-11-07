@@ -12,6 +12,7 @@ type ToolDockProps = {
   connectorActive: boolean
   textActive: boolean
   classActive: boolean
+  inkClassActive: boolean
   shapeActive: boolean
   onPen: () => void
   onEraser: () => void
@@ -21,6 +22,7 @@ type ToolDockProps = {
   onText: () => void
   onTextOptions: () => void
   onClass: () => void
+  onInkClass: () => void
   onShapes: () => void
 }
 
@@ -51,10 +53,12 @@ export function ToolDock(props: ToolDockProps) {
       <InsertTray
         textActive={props.textActive}
         classActive={props.classActive}
+        inkClassActive={props.inkClassActive}
         shapeActive={props.shapeActive}
         onText={props.onText}
         onTextOptions={props.onTextOptions}
         onClass={props.onClass}
+        onInkClass={props.onInkClass}
         onShapes={props.onShapes}
       />
     </nav>
