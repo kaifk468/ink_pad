@@ -105,7 +105,7 @@ test('top bars: menu, library, title, undo/redo and account button', () => {
   assert.match(topLeft, /aria-label="Page template"/)
   assert.match(topLeft, /aria-label="Sheet background color"/)
   assert.match(topLeft, /Clear canvas/)
-  assert.match(topLeft, /File…/)
+  assert.match(topLeft, /Export and import/)
   assert.match(app, /<HomeScreen/)
   assert.match(app, /<span>Undo<\/span>|HistoryBar/)
   assert.match(app, /<AccountButton profile=\{driveProfile\}/)

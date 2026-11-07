@@ -255,22 +255,41 @@ button { font: inherit; }
 
 .top-left-bar { position: absolute; z-index: 3; top: max(16px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); display: flex; align-items: center; gap: 8px; }
 .menu-control { position: relative; }
-.menu-panel { position: absolute; z-index: 5; top: calc(100% + 10px); left: 0; display: flex; flex-direction: column; width: 288px; padding: 6px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .99); box-shadow: 0 10px 32px rgba(31, 39, 52, .2); }
-.menu-brand { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 10px; }
-.menu-divider { height: 1px; margin: 4px 6px; background: #e7eaf0; }
-.menu-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 10px; border: 0; border-radius: 9px; background: transparent; color: #343944; font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
+/* Menu (design A): 340 px, three labelled groups, page settings on their own full-width lines, Clear canvas apart. */
+.menu-panel { position: absolute; z-index: 5; top: calc(100% + 10px); left: 0; display: flex; flex-direction: column; gap: 2px; width: min(340px, calc(100vw - 32px)); max-height: calc(100dvh - 96px); overflow-y: auto; box-sizing: border-box; padding: 10px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 18px; background: #fff; box-shadow: 0 14px 40px rgba(31, 39, 52, .22); }
+.menu-brand { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px 6px; }
+.menu-brand .brand-name { flex: 1 1 auto; font-size: 15px; }
+.menu-save-status { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: #8a5a00; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.menu-save-status > span { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: #e0a72b; }
+.menu-save-status.ok { color: #2e7d4f; }
+.menu-save-status.ok > span { background: #2fa565; }
+.menu-section-title { padding: 8px 10px 2px; color: #6a707c; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.menu-divider { flex: 0 0 1px; height: 1px; margin: 6px 4px; background: #e7eaf0; }
+.menu-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: #343944; font: inherit; font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; }
 button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1f2f5; }
 .menu-row:disabled { opacity: .4; cursor: default; }
 .menu-row > svg { flex: 0 0 20px; width: 20px; height: 20px; fill: none; stroke: #5d626b; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.menu-row-label { flex: 1 1 auto; white-space: nowrap; }
-.menu-row-hint { color: #7b818d; font-size: 11px; font-weight: 500; white-space: nowrap; }
-.menu-choice-row { cursor: default; }
-.menu-choices { display: inline-flex; align-items: center; gap: 4px; }
-.menu-choice { min-width: 44px; height: 36px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: #5d626b; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.menu-choice.selected { background: #e9edff; color: #354fc2; }
-.menu-color { width: 32px; height: 32px; border: 2px solid #d3d7e0; border-radius: 50%; cursor: pointer; }
-.menu-color.selected { border-color: #5574ed; box-shadow: 0 0 0 2px #fff inset; }
-.menu-choice-row .menu-row-label { flex: 0 0 auto; min-width: 40px; }
+.menu-row-label { flex: 1 1 auto; min-width: 0; white-space: nowrap; }
+.menu-row-hint { flex: 0 1 auto; min-width: 0; overflow: hidden; color: #6a707c; font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.menu-row-stack { display: flex; flex-direction: column; gap: 1px; }
+.menu-row-sub { color: #6a707c; font-size: 12px; font-weight: 500; }
+.menu-switch-row { min-height: 56px; }
+.menu-switch { position: relative; flex: 0 0 44px; width: 44px; height: 26px; border-radius: 13px; background: #cfd4dd; transition: background .15s; }
+.menu-switch > span { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: left .15s; }
+.menu-switch.on { background: #475fdb; }
+.menu-switch.on > span { left: 21px; }
+.menu-setting { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px 8px; }
+.menu-setting-label { color: #4b505b; font-size: 13px; font-weight: 600; }
+.menu-segments { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: #f1f3f7; }
+.menu-segment { min-width: 0; height: 40px; padding: 0 4px; border: 0; border-radius: 9px; background: transparent; color: #4b505b; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.menu-segment.selected { background: #fff; color: #354fc2; font-weight: 700; box-shadow: 0 1px 3px rgba(31, 39, 52, .16); }
+.menu-swatches { display: flex; justify-content: space-between; gap: 6px; }
+.menu-color { width: 44px; height: 44px; padding: 0; border: 1px solid #d3d7e0; border-radius: 50%; cursor: pointer; }
+.menu-color.selected { border: 2px solid #475fdb; box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 4px #d3d7e0; }
+.menu-panel .menu-row.clear-row { background: #fdf1f0; color: #b3261e; font-weight: 700; }
+.menu-panel .menu-row.clear-row > svg { stroke: currentColor; }
+.menu-panel .menu-row.clear-row .menu-row-hint { color: #9c2a22; }
+.menu-panel .menu-row.clear-row:hover:not(:disabled) { background: #fbe4e2; }
 .top-icon-button, .account-button { display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .96); color: #343944; box-shadow: 0 3px 12px rgba(31, 39, 52, .12); cursor: pointer; touch-action: manipulation; }
 .top-icon-button svg, .account-button svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .top-icon-button.selected { border-color: #cbd3ff; background: #e9edff; color: #354fc2; }
@@ -438,8 +457,6 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 }
 
 /* File / diagram panel */
-.file-button { height: 32px; padding: 0 12px; border: 1px solid #e4e7ef; border-radius: 9px; background: #fff; color: #343944; font-size: 11px; font-weight: 700; cursor: pointer; }
-.file-button.selected, .file-button:hover { background: #f1f2f5; }
 .file-panel-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(32, 33, 36, .28); }
 .file-panel { width: min(440px, 100%); max-height: min(86vh, 640px); overflow: auto; padding: 16px 18px 18px; border-radius: 16px; background: #fff; box-shadow: 0 18px 50px rgba(35, 42, 54, .28); color: #292b30; font-size: 14px; }
 .file-panel h3 { margin: 16px 0 8px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #777c85; }
@@ -480,9 +497,6 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .stroke-width-range { width: 100%; height: 44px; margin: 0; accent-color: #3568d4; cursor: pointer; touch-action: pan-y; }
 
 /* Menu rows share one look; this also overrides the older standalone File and Perf button styles. */
-.menu-panel .menu-row.file-button, .menu-panel .menu-row.perf-diagnostics-toggle { flex: 0 0 auto; height: auto; min-height: 44px; padding: 0 10px; border: 0; border-radius: 9px; background: transparent; color: #343944; font-size: 14px; font-weight: 600; }
-.menu-panel .menu-row.file-button:hover, .menu-panel .menu-row.file-button.selected, .menu-panel .menu-row.perf-diagnostics-toggle:hover, .menu-panel .menu-row.perf-diagnostics-toggle.selected { background: #f1f2f5; color: #343944; }
-.menu-panel .menu-row .menu-row-hint { font-size: 11px; font-weight: 500; }
 
 
 .file-panel-title-row { display: flex; gap: 8px; }

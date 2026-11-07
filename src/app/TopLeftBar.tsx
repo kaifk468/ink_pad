@@ -22,6 +22,9 @@ type TopLeftBarProps = {
   onClear: () => void
   onSlimInk: () => void
   libraryOpen: boolean
+  /** Save state shown in the menu header, e.g. "Saved to Google Drive". */
+  statusText: string
+  statusOk: boolean
   onOpenLibrary: () => void
   storage: StorageInfo
   onOpenStorage: () => void
@@ -46,7 +49,7 @@ const PAGE_COLOR_CHOICES: Array<{ value: PageBackground; label: string }> = [
   { value: 'green', label: 'Green' },
 ]
 
-/** Menu, Library button and the diagram title. The menu holds the File panel entry, page template, sheet color and Clear. */
+/** Menu, Library button and the diagram title. The menu has three labelled groups (File, Page, Canvas) and Clear canvas apart at the bottom. */
 export function TopLeftBar(props: TopLeftBarProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -93,62 +96,72 @@ export function TopLeftBar(props: TopLeftBarProps) {
           <div className="menu-brand">
             <span className="brand-mark" aria-hidden="true"><span /></span>
             <span className="brand-name">Ink Pad</span>
+            <span className={`menu-save-status${props.statusOk ? ' ok' : ''}`} role="status"><span aria-hidden="true" />{props.statusText}</span>
           </div>
-          <div className="menu-divider" role="separator" />
+
+          <div className="menu-section-title">File</div>
+          <button className="menu-row library-row" type="button" onClick={() => { props.onOpenLibrary(); setMenuOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+            <span className="menu-row-label">Library</span><span className="menu-row-hint">All diagrams</span>
+          </button>
           <button className={`menu-row file-button${props.filePanelOpen ? ' selected' : ''}`} type="button" aria-haspopup="dialog" aria-expanded={props.filePanelOpen} onClick={() => { props.onToggleFilePanel(); setMenuOpen(false) }}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>
-            <span className="menu-row-label">File…</span><span className="menu-row-hint">Export, import</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+            <span className="menu-row-label">Export and import</span><span className="menu-row-hint">PNG, SVG, .inkpad</span>
           </button>
           <button className="menu-row storage-row" type="button" aria-haspopup="dialog" onClick={() => { props.onOpenStorage(); setMenuOpen(false) }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17 8.5a4.75 4.75 0 0 1 .5 9.5z"/></svg>
-            <span className="menu-row-label">Storage…</span><span className="menu-row-hint">{props.storage.locked ? 'Sign in needed' : props.storage.kind === 'drive' ? 'Google Drive' : props.storage.kind === 'device' ? 'Device folder' : 'This browser'}</span>
+            <span className="menu-row-label">Storage</span><span className="menu-row-hint">{props.storage.locked ? 'Sign in needed' : props.storage.kind === 'drive' ? 'Google Drive' : props.storage.kind === 'device' ? 'Device folder' : 'This browser'}</span>
           </button>
+
           <div className="menu-divider" role="separator" />
-          <div className="menu-row menu-choice-row" role="group" aria-label="Page template">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M4 15h16"/></svg>
-            <span className="menu-row-label">Page</span>
-            <span className="menu-choices">
+          <div className="menu-section-title">Page</div>
+          <div className="menu-setting">
+            <span className="menu-setting-label" id="menu-page-style">Style</span>
+            <div className="menu-segments" role="group" aria-label="Page template">
               {PAGE_TEMPLATE_CHOICES.map(({ value, label }) => (
-                <button key={value} className={`menu-choice${props.pageTemplate === value ? ' selected' : ''}`} type="button" aria-pressed={props.pageTemplate === value} onClick={() => props.onPageTemplate(value)}>{label}</button>
+                <button key={value} className={`menu-segment${props.pageTemplate === value ? ' selected' : ''}`} type="button" aria-pressed={props.pageTemplate === value} onClick={() => props.onPageTemplate(value)}>{label}</button>
               ))}
-            </span>
+            </div>
           </div>
-          {props.pageTemplate !== 'blank' && <div className="menu-row menu-choice-row" role="group" aria-label="Line and dot spacing">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 11h16M4 18h16"/></svg>
-            <span className="menu-row-label">Spacing</span>
-            <span className="menu-choices">
+          {props.pageTemplate !== 'blank' && <div className="menu-setting" role="group" aria-label="Line and dot spacing">
+            <span className="menu-setting-label">Line and dot spacing</span>
+            <div className="menu-segments">
               {PAGE_SPACING_CHOICES.map(({ value, label }) => (
-                <button key={value} className={`menu-choice${props.pageSpacing === value ? ' selected' : ''}`} type="button" aria-pressed={props.pageSpacing === value} onClick={() => props.onPageSpacing(value)}>{label}</button>
+                <button key={value} className={`menu-segment${props.pageSpacing === value ? ' selected' : ''}`} type="button" aria-pressed={props.pageSpacing === value} onClick={() => props.onPageSpacing(value)}>{label}</button>
               ))}
-            </span>
+            </div>
           </div>}
-          <div className="menu-row menu-choice-row" role="group" aria-label="Sheet background color">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c4 4.4 6 7.3 6 10a6 6 0 0 1-12 0c0-2.7 2-5.6 6-10z"/></svg>
-            <span className="menu-row-label">Color</span>
-            <span className="menu-choices">
+          <div className="menu-setting">
+            <span className="menu-setting-label">Sheet colour</span>
+            <div className="menu-swatches" role="group" aria-label="Sheet background color">
               {PAGE_COLOR_CHOICES.map(({ value, label }) => (
                 <button key={value} className={`menu-color${props.pageBackground === value ? ' selected' : ''}`} type="button" title={label} aria-label={`${label} sheet`} aria-pressed={props.pageBackground === value} style={{ backgroundColor: PAGE_BACKGROUND_COLORS[value] }} onClick={() => props.onPageBackground(value)} />
               ))}
-            </span>
+            </div>
           </div>
+
           <div className="menu-divider" role="separator" />
-          <button className={`menu-row${props.oneFingerPan ? ' selected' : ''}`} type="button" role="switch" aria-checked={props.oneFingerPan} title="One finger pans the page. Ignored while the pen is near or touching the screen." onClick={() => props.onOneFingerPan(!props.oneFingerPan)}>
+          <div className="menu-section-title">Canvas</div>
+          <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.oneFingerPan} onClick={() => props.onOneFingerPan(!props.oneFingerPan)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V5a1.5 1.5 0 0 1 3 0v6M12 10.5a1.5 1.5 0 0 1 3 0V12M15 11.5a1.5 1.5 0 0 1 3 0V16a5 5 0 0 1-5 5h-1.5a5 5 0 0 1-4-2L5 15.5a1.5 1.5 0 0 1 2.4-1.8L9 15"/></svg>
-            <span className="menu-row-label">One-finger pan</span><span className="menu-row-hint">{props.oneFingerPan ? 'On' : 'Off'}</span>
+            <span className="menu-row-label menu-row-stack"><span>One-finger pan</span><span className="menu-row-sub">Ignored while the pen is near</span></span>
+            <span className={`menu-switch${props.oneFingerPan ? ' on' : ''}`} aria-hidden="true"><span /></span>
           </button>
-          <button className="menu-row slim-row" type="button" title="Drop pen points that do not change the shape. One-time, undoable." onClick={() => { props.onSlimInk(); setMenuOpen(false) }} disabled={!props.hasInk}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16c3-8 5 6 8-2s5 2 8-4"/></svg>
-            <span className="menu-row-label">Slim ink points</span>
-          </button>
+
+          <div className="menu-divider" role="separator" />
           <button className="menu-row clear-row" type="button" onClick={() => { props.onClear(); setMenuOpen(false) }} disabled={!props.hasInk}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg>
-            <span className="menu-row-label">Clear canvas</span>
+            <span className="menu-row-label">Clear canvas</span><span className="menu-row-hint">Undo brings it back</span>
           </button>
           {props.diagnostics.enabled && <>
             <div className="menu-divider" role="separator" />
             <button className={`menu-row perf-diagnostics-toggle${props.diagnostics.open ? ' selected' : ''}`} type="button" aria-expanded={props.diagnostics.open} aria-controls="inkpad-performance-panel" onClick={() => { props.diagnostics.onToggle(); setMenuOpen(false) }}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M21 19H3"/></svg>
               <span className="menu-row-label">Perf</span><span className="menu-row-hint">Developer only</span>
+            </button>
+            <button className="menu-row slim-row" type="button" title="Drop pen points that do not change the shape. One-time, undoable. New strokes are already thinned on pen-up." onClick={() => { props.onSlimInk(); setMenuOpen(false) }} disabled={!props.hasInk}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16c3-8 5 6 8-2s5 2 8-4"/></svg>
+              <span className="menu-row-label">Slim ink points</span><span className="menu-row-hint">Developer only</span>
             </button>
             <button className="menu-row" type="button" onClick={() => { props.diagnostics.onFillTestInk(6000); setMenuOpen(false) }}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c3-4 5 4 8 0s5 4 8 0M4 16c3-4 5 4 8 0s5 4 8 0"/></svg>

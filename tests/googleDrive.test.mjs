@@ -158,7 +158,7 @@ test('storage lives in the menu and the Library screen, not in the per-diagram F
   const { readFile } = await import('node:fs/promises')
   const read = (name) => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')
   const [bar, folders, file, app, hook] = await Promise.all([read('app/TopLeftBar.tsx'), read('app/HomeScreen.tsx'), read('FilePanel.tsx'), read('App.tsx'), read('app/useDocuments.ts')])
-  assert.match(bar, /Storage…/)
+  assert.match(bar, /<span className="menu-row-label">Storage<\/span>/)
   assert.match(bar, /onOpenStorage\(\)/)
   assert.match(folders, /Saved in:/)
   assert.match(folders, /props\.onChangeStorage/)

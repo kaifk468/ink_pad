@@ -2625,6 +2625,8 @@ function App() {
           onClear={clearCanvas}
           onSlimInk={slimInk}
           libraryOpen={libraryOpen}
+          statusText={statusLabel(saveStatus, storage.kind)}
+          statusOk={saveStatus === 'saved'}
           onOpenLibrary={() => {
             void refreshLibrary()
             if (!libraryOpen) window.setTimeout(() => void captureThumbnail(), 250) // after the Library has painted
