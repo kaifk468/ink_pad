@@ -65,14 +65,32 @@ test('an erase stroke is stored in the box and does not grow it', () => {
   assert.equal(erased.height, rect.height)
 })
 
-test('resizing smaller stops at the ink edge and at the minimum size', () => {
+test('resizing scales the writing, dividers and pen width in proportion with the box', () => {
   const written = box.addStrokeToInkBox(make(), line(2, [p(150, 150), p(380, 300)]))
-  const items = model.resizeRectangleItems([written], 1, { x: 100, y: 100, width: 10, height: 10 })
+  const items = model.resizeRectangleItems([written], 1, { x: 100, y: 100, width: 240, height: 180 })
   const resized = items[0]
-  assert.ok(resized.x + resized.width >= 380)
-  assert.ok(resized.y + resized.height >= 300)
+  assert.equal(resized.width, 240)
+  assert.equal(resized.height, 180)
+  const stroke = resized.inkBox.ink[0]
+  assert.equal(stroke.points[0].x, 100 + (150 - 100) * 0.75)
+  assert.equal(stroke.points[1].y, 100 + (300 - 100) * 0.75)
+  assert.equal(stroke.width, 3)
+  assert.equal(resized.inkBox.top, 100 + (written.inkBox.top - 100) * 0.75)
+  assert.equal(written.inkBox.ink[0].points[0].x, 150, 'original untouched')
+})
+
+test('resizing never goes below the minimum size', () => {
+  const resized = model.resizeRectangleItems([make()], 1, { x: 100, y: 100, width: 10, height: 10 })[0]
   assert.ok(resized.width >= box.INK_BOX_MIN_WIDTH && resized.height >= box.INK_BOX_MIN_HEIGHT)
   assert.ok(resized.inkBox.top < resized.inkBox.mid && resized.inkBox.mid < resized.y + resized.height)
+})
+
+test('default box is 560 x 420 and its sections start at 15 / 70 / 15 percent', () => {
+  assert.equal(box.INK_BOX_DEFAULT_WIDTH, 560)
+  assert.equal(box.INK_BOX_DEFAULT_HEIGHT, 420)
+  const content = box.newInkBoxContent(0, 420)
+  assert.ok(Math.abs(content.top - 63) < 1e-9)
+  assert.ok(Math.abs(content.mid - 357) < 1e-9)
 })
 
 test('moving the box moves its ink and dividers together', () => {
@@ -127,6 +145,8 @@ test('App wires the tool, drag-to-size creation, ink capture and divider draggin
   assert.match(app, /addStrokeToInkBox\(targetBox, stroke\)/)
   assert.match(app, /hitInkBoxDivider\(/)
   assert.match(app, /moveInkBoxDivider\(/)
+  assert.match(app, /ERASER_CURSOR_QUIET_MS/)
+  assert.match(app, /handles, dividers and border come first/)
   assert.match(app, /onInkClass=\{toggleInkClassTool\}/)
   const tray = await readFile(new URL('../src/app/InsertTray.tsx', import.meta.url), 'utf8')
   assert.match(tray, /Ink class box/)

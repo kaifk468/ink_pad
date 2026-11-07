@@ -2,15 +2,18 @@ import { INK_BOX_MIN_BAND, INK_BOX_MIN_HEIGHT, clampInkBoxDividers, coverInkBoun
 import type { InkBoxContent, Point, RectangleBounds, RectangleObject, Stroke } from './canvasModel'
 
 export { INK_BOX_INK_PADDING, INK_BOX_MIN_BAND, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, clampInkBoxDividers, constrainInkBoxBounds, coverInkBounds, inkBoxInkBounds, transformInkBox, translateInkBox } from './canvasModel'
-export const INK_BOX_DEFAULT_WIDTH = 320
-export const INK_BOX_DEFAULT_HEIGHT = 240
+export const INK_BOX_DEFAULT_WIDTH = 560
+export const INK_BOX_DEFAULT_HEIGHT = 420
+/** Name, variables and methods start at 15%, 70% and 15% of the box height. */
+export const INK_BOX_TOP_SHARE = 0.15
+export const INK_BOX_MID_SHARE = 0.85
 
 
 export type InkBoxDivider = 'top' | 'mid'
 
 /** Dividers sit at absolute canvas heights (like the ink), so resizing the box never moves them relative to the writing. */
 export function newInkBoxContent(y: number, height: number): InkBoxContent {
-  return { top: y + height * 0.25, mid: y + height * 0.6, ink: [] }
+  return { top: y + height * INK_BOX_TOP_SHARE, mid: y + height * INK_BOX_MID_SHARE, ink: [] }
 }
 
 export function createInkClassBox(id: number, x: number, y: number, width: number, height: number, strokeColor: string, strokeWidth: number): RectangleObject {

@@ -266,7 +266,20 @@ export function getResizedRectangleBounds(
 export function resizeRectangleItems(items: CanvasItem[], rectangleId: number, bounds: RectangleBounds): CanvasItem[] {
   const original = items.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === rectangleId)
   if (!original || original.width <= 0 || original.height <= 0) return items
-  const resized = clampInkBoxDividers({ ...original, ...constrainInkBoxBounds(original, bounds) })
+  let resized: RectangleObject
+  if (original.inkBox) {
+    // An ink class box scales as one picture: writing, dividers and pen width follow the box in proportion.
+    const next = { x: bounds.x, y: bounds.y, width: Math.max(bounds.width, INK_BOX_MIN_WIDTH), height: Math.max(bounds.height, INK_BOX_MIN_HEIGHT) }
+    const sx = next.width / original.width
+    const sy = next.height / original.height
+    resized = clampInkBoxDividers({
+      ...original,
+      ...next,
+      inkBox: transformInkBox(original.inkBox, (x) => next.x + (x - original.x) * sx, (y) => next.y + (y - original.y) * sy, (sx + sy) / 2),
+    })
+  } else {
+    resized = { ...original, ...bounds }
+  }
   const scaleX = resized.width / original.width
   const scaleY = resized.height / original.height
   return items.map((item) => {

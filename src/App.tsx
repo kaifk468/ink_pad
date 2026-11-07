@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
-import { INK_BOX_DEFAULT_HEIGHT, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
+import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
 import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
 import { loadStrokeDisplayMode, saveStrokeDisplayMode, type StrokeDisplayMode } from './strokeDisplayMode'
@@ -44,6 +44,8 @@ import { loadNavigationSettings, saveNavigationSettings } from './navigationSett
 
 
 const DOUBLE_TAP_MS = 400
+/** The eraser circle hides this long after the last pen event (lifting the pen away sends none). */
+const ERASER_CURSOR_QUIET_MS = 350
 // While a stroke is being written the minimap is not touched (it updates after pen-up). Otherwise the viewport box and the saved ink
 // picture are redrawn at once on every frame (cheap), while the ink itself is redrawn only after a quiet moment (heavy).
 // After a stroke ends (or any other change) the minimap waits this long without a new stroke before it redraws all the ink,
@@ -172,6 +174,7 @@ function App() {
   if (PERFORMANCE_DIAGNOSTICS_ENABLED && performanceDiagnosticsRef.current === null) performanceDiagnosticsRef.current = new PerformanceDiagnostics()
   const activeStrokeRef = useRef<Stroke | null>(null)
   const eraserCursorRef = useRef<HTMLDivElement>(null)
+  const eraserCursorTimerRef = useRef<number | null>(null)
   const activeObjectEraserRef = useRef<{ pointerId: number; lastPoint: Point; changed: boolean } | null>(null)
   const activeConnectorRef = useRef<{
     pointerId: number
@@ -1583,6 +1586,12 @@ function App() {
     cursor.style.width = `${diameter}px`
     cursor.style.height = `${diameter}px`
     cursor.style.transform = `translate(${event.clientX - rect.left - diameter / 2}px, ${event.clientY - rect.top - diameter / 2}px)`
+    // Lifting the pen away sends no event, so the circle also hides after a short quiet moment (never while the pen is erasing).
+    if (eraserCursorTimerRef.current !== null) window.clearTimeout(eraserCursorTimerRef.current)
+    eraserCursorTimerRef.current = window.setTimeout(() => {
+      eraserCursorTimerRef.current = null
+      if (activePointerRef.current === null && activeObjectEraserRef.current === null) hideEraserCursor()
+    }, ERASER_CURSOR_QUIET_MS)
   }
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1737,6 +1746,48 @@ function App() {
         editClassBoxId: rectangle?.classBox && previouslySelectedRectangleId === rectangle.id ? rectangle.id : null,
       }
       return
+    }
+    if (!eraser && !shapeMode && selectedRectangleIdRef.current !== null) {
+      // A selected ink class box: its handles, dividers and border come first, so resizing or moving never draws ink. Only presses inside write.
+      const selectedBox = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === selectedRectangleIdRef.current && item.inkBox !== undefined)
+      if (selectedBox) {
+        const tolerance = 14 / viewportRef.current.scale
+        const handle = hitTestRectangleResizeHandle(selectedBox, point, tolerance)
+        if (handle) {
+          event.currentTarget.setPointerCapture(event.pointerId)
+          activeResizeRef.current = {
+            pointerId: event.pointerId,
+            rectangleId: selectedBox.id,
+            selectedKeys: null,
+            handle,
+            start: point,
+            originalBounds: { x: selectedBox.x, y: selectedBox.y, width: selectedBox.width, height: selectedBox.height },
+            originalItems: strokesRef.current.slice(),
+            moved: false,
+          }
+          return
+        }
+        const divider = hitInkBoxDivider(selectedBox, point, tolerance)
+        if (divider) {
+          event.currentTarget.setPointerCapture(event.pointerId)
+          activeDividerRef.current = { pointerId: event.pointerId, rectangleId: selectedBox.id, which: divider, originalItems: strokesRef.current.slice(), moved: false }
+          return
+        }
+        const nearBorder = point.x >= selectedBox.x - tolerance && point.x <= selectedBox.x + selectedBox.width + tolerance
+          && point.y >= selectedBox.y - tolerance && point.y <= selectedBox.y + selectedBox.height + tolerance
+          && (point.x <= selectedBox.x + tolerance || point.x >= selectedBox.x + selectedBox.width - tolerance
+            || point.y <= selectedBox.y + tolerance || point.y >= selectedBox.y + selectedBox.height - tolerance)
+        if (nearBorder) {
+          event.currentTarget.setPointerCapture(event.pointerId)
+          activeDragRef.current = { pointerId: event.pointerId, itemKey: canvasItemKey(selectedBox), start: point, originalItems: strokesRef.current.slice(), moved: false, editTextId: null, editClassBoxId: null }
+          return
+        }
+        // Writing somewhere else puts the box away (no handles) so they never get in the way of the page.
+        if (!findInkBoxAt([selectedBox], point)) {
+          setSelectedRectangle(null)
+          renderAll()
+        }
+      }
     }
     if (eraser && objectEraser) {
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -1993,6 +2044,8 @@ function App() {
           const y = Math.min(finished.originalBounds.y, WORKSPACE_BOUNDS.y + WORKSPACE_BOUNDS.height - INK_BOX_DEFAULT_HEIGHT)
           strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: INK_BOX_DEFAULT_WIDTH, height: INK_BOX_DEFAULT_HEIGHT })
         }
+        // A new box is empty, so its sections start at the standard 15 / 70 / 15 split of its final size.
+        strokesRef.current = strokesRef.current.map((item) => (item.kind === 'rectangle' && item.id === finished.rectangleId && item.inkBox ? { ...item, inkBox: newInkBoxContent(item.y, item.height) } : item))
         // The new box is ready to write in: back to the pen, with the box selected.
         setClassMode(false)
         setInkClassTool(false)
