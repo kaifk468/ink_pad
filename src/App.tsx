@@ -4,6 +4,7 @@ import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
+import { tidyItems, tidyScope } from './tidyLayout'
 import { HLD_DEFAULT_SIZE, createHldShape, type HldShape } from './hldShapes'
 import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
 import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, hitInkBoxMoveGrip, inkBoxMoveGrip, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
@@ -397,6 +398,16 @@ function App() {
     if (next === strokesRef.current) return
     strokesRef.current = next
     scheduleAutosave()
+    renderAll()
+  }
+
+  /** Tidy button: arranges the selected class boxes (two or more selected) or all of them. One undo step; nothing happens when they are already tidy. */
+  const tidyDiagram = () => {
+    const scope = tidyScope(strokesRef.current, selectedKeysRef.current)
+    const next = tidyItems(strokesRef.current, scope.ids)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
     renderAll()
   }
 
@@ -2611,7 +2622,7 @@ function App() {
           diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open), onFillTestInk: fillTestInk, onRemoveTestInk: removeTestInk }}
         />
       )}
-      <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
+      <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} tidyLabel={tidyScope(strokesRef.current, selectedKeysRef.current).selection ? 'Tidy selected' : 'Tidy all'} onTidy={tidyDiagram} />
       {!navigationSettings.zoomLocked && <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} onOpenStorage={() => setStoragePanelOpen(true)} />}
       <ContextPanel
         showStyle={optionsFor === 'pen' && penModeActive}

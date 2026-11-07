@@ -392,9 +392,16 @@ function sidePoints(box: Box, pressure: number): Point[] {
  * the right of another to its left. It only switches when the saving is at least SWITCH_MIN_SAVING and the new cost is
  * at most SWITCH_MAX_RATIO of the old one, so nudging a box leaves everything as it was. Elbow connectors are compared by
  * routed length plus bends, straight ones by distance. Ends not attached to a box stay where they are. Returns the same
- * array when nothing changes.
+ * array when nothing changes. `thresholds` replaces the two limits above (Tidy passes tiny ones so every connector takes
+ * its best sides).
  */
-export function reattachConnectorSides(items: CanvasItem[], movedRectangleIds: ReadonlySet<number>): CanvasItem[] {
+export function reattachConnectorSides(
+  items: CanvasItem[],
+  movedRectangleIds: ReadonlySet<number>,
+  thresholds: { minSaving?: number; maxRatio?: number } = {},
+): CanvasItem[] {
+  const minSaving = thresholds.minSaving ?? SWITCH_MIN_SAVING
+  const maxRatio = thresholds.maxRatio ?? SWITCH_MAX_RATIO
   if (movedRectangleIds.size === 0) return items
   let rectangles: Map<number, RectangleObject> | null = null
   let result: CanvasItem[] | null = null
@@ -424,7 +431,7 @@ export function reattachConnectorSides(items: CanvasItem[], movedRectangleIds: R
         if (candidate < best.cost) best = { cost: candidate, start: a, end: b }
       }
     }
-    if (best.cost > current - SWITCH_MIN_SAVING || best.cost > current * SWITCH_MAX_RATIO) continue
+    if (best.cost > current - minSaving || best.cost > current * maxRatio) continue
     const attach = (box: Box | undefined, id: number | undefined, p: Point, old?: ConnectorObject['startAttachment']) => (box && id !== undefined ? { rectangleId: id, offsetX: p.x - box.x, offsetY: p.y - box.y } : old)
     const startAttachment = attach(startBox, startId, best.start, connector.startAttachment)
     const endAttachment = attach(endBox, endId, best.end, connector.endAttachment)
