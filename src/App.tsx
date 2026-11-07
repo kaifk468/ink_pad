@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
-import { routeConnectors } from './connectorRoute'
+import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
 import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, hitInkBoxMoveGrip, inkBoxMoveGrip, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
 import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
@@ -383,6 +383,17 @@ function App() {
     saveHistory()
     strokesRef.current = updateConnectorRouting(strokesRef.current, selectedConnectorId, elbow ? 'elbow' : 'straight')
     setSelectedConnectorElbow(elbow)
+    renderAll()
+  }
+
+  /** After a drag: connectors attached to the boxes that moved may switch to facing sides when that makes them clearly shorter (same undo step as the drag). */
+  const switchConnectorSides = (keys: ReadonlySet<string>) => {
+    const movedIds = new Set<number>()
+    for (const key of keys) if (key.startsWith('rectangle:')) movedIds.add(Number(key.slice('rectangle:'.length)))
+    const next = reattachConnectorSides(strokesRef.current, movedIds)
+    if (next === strokesRef.current) return
+    strokesRef.current = next
+    scheduleAutosave()
     renderAll()
   }
 
@@ -2140,12 +2151,15 @@ function App() {
       return
     }
     if (lassoDragRef.current?.pointerId === event.pointerId) {
+      const lassoDrag = lassoDragRef.current
       lassoDragRef.current = null
+      if (lassoDrag.moved) switchConnectorSides(lassoDrag.keys)
       return
     }
     if (activeDragRef.current?.pointerId === event.pointerId) {
       const drag = activeDragRef.current
       activeDragRef.current = null
+      if (drag.moved) switchConnectorSides(new Set([drag.itemKey]))
       if (!drag.moved && drag.editTextId != null) {
         const tapped = strokesRef.current.find((item): item is TextObject => item.kind === 'text' && item.id === drag.editTextId)
         if (tapped) editTextItem(tapped)

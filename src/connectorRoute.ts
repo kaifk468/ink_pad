@@ -365,3 +365,77 @@ export function routeConnectors(items: CanvasItem[]): CanvasItem[] {
   }
   return result ?? items
 }
+
+/** A switch to other box sides must make the line at least this much shorter (canvas units)... */
+const SWITCH_MIN_SAVING = 60
+/** ...and at most this share of the current length (cost), so a small nudge never makes a connector jump sides. */
+const SWITCH_MAX_RATIO = 0.8
+
+function pathCost(path: Point[]): number {
+  let length = 0
+  for (let index = 1; index < path.length; index += 1) length += Math.hypot(path[index].x - path[index - 1].x, path[index].y - path[index - 1].y)
+  return length + Math.max(0, path.length - 2) * BEND_PENALTY
+}
+
+function sidePoints(box: Box, pressure: number): Point[] {
+  return [
+    point(box.x, box.y + box.height / 2, pressure),
+    point(box.x + box.width, box.y + box.height / 2, pressure),
+    point(box.x + box.width / 2, box.y, pressure),
+    point(box.x + box.width / 2, box.y + box.height, pressure),
+  ]
+}
+
+/**
+ * After boxes have been moved: every connector attached to one of them may pick other sides of its boxes (the middle of
+ * the left, right, top or bottom side) when that makes the line clearly shorter, for example after dragging a box from
+ * the right of another to its left. It only switches when the saving is at least SWITCH_MIN_SAVING and the new cost is
+ * at most SWITCH_MAX_RATIO of the old one, so nudging a box leaves everything as it was. Elbow connectors are compared by
+ * routed length plus bends, straight ones by distance. Ends not attached to a box stay where they are. Returns the same
+ * array when nothing changes.
+ */
+export function reattachConnectorSides(items: CanvasItem[], movedRectangleIds: ReadonlySet<number>): CanvasItem[] {
+  if (movedRectangleIds.size === 0) return items
+  let rectangles: Map<number, RectangleObject> | null = null
+  let result: CanvasItem[] | null = null
+  for (let index = 0; index < items.length; index += 1) {
+    const connector = items[index]
+    if (connector.kind !== 'connector') continue
+    const startId = connector.startAttachment?.rectangleId
+    const endId = connector.endAttachment?.rectangleId
+    if (!((startId !== undefined && movedRectangleIds.has(startId)) || (endId !== undefined && movedRectangleIds.has(endId)))) continue
+    if (!rectangles) {
+      rectangles = new Map()
+      for (const item of items) if (item.kind === 'rectangle') rectangles.set(item.id, item)
+    }
+    const startBox = startId === undefined ? undefined : rectangles.get(startId)
+    const endBox = endId === undefined ? undefined : rectangles.get(endId)
+    if (!startBox && !endBox) continue
+    const others = [...rectangles.values()].filter((box) => box !== startBox && box !== endBox)
+    const elbow = connector.routing === 'elbow'
+    const cost = (a: Point, b: Point) => (elbow ? pathCost(elbowPath(a, b, startBox, endBox, others)) : Math.hypot(b.x - a.x, b.y - a.y))
+    const current = cost(connector.start, connector.end)
+    let best = { cost: current, start: connector.start, end: connector.end }
+    const startOptions = startBox ? sidePoints(startBox, connector.start.pressure) : [connector.start]
+    const endOptions = endBox ? sidePoints(endBox, connector.end.pressure) : [connector.end]
+    for (const a of startOptions) {
+      for (const b of endOptions) {
+        const candidate = cost(a, b)
+        if (candidate < best.cost) best = { cost: candidate, start: a, end: b }
+      }
+    }
+    if (best.cost > current - SWITCH_MIN_SAVING || best.cost > current * SWITCH_MAX_RATIO) continue
+    const attach = (box: Box | undefined, id: number | undefined, p: Point, old?: ConnectorObject['startAttachment']) => (box && id !== undefined ? { rectangleId: id, offsetX: p.x - box.x, offsetY: p.y - box.y } : old)
+    const startAttachment = attach(startBox, startId, best.start, connector.startAttachment)
+    const endAttachment = attach(endBox, endId, best.end, connector.endAttachment)
+    if (!result) result = items.slice()
+    result[index] = {
+      ...connector,
+      start: best.start,
+      end: best.end,
+      ...(startAttachment ? { startAttachment } : {}),
+      ...(endAttachment ? { endAttachment } : {}),
+    }
+  }
+  return result ?? items
+}

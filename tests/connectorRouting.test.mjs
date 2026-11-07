@@ -320,3 +320,59 @@ test('routing round many boxes stays fast and clean', () => {
   route.routeConnectors([...boxes, conn])
   assert.ok(performance.now() - again < 200, 'a second call uses the cache')
 })
+
+// ---- switching to facing sides after a box is moved ----
+const joined = (routing) => {
+  const c = model.createConnector(7, p(200, 60), p(500, 60), '#111', 3, { rectangleId: 1, offsetX: 200, offsetY: 60 }, { rectangleId: 2, offsetX: 0, offsetY: 60 })
+  return routing ? { ...c, routing } : c
+}
+const sideOf = (box, att) => (att.offsetX === 0 ? 'left' : att.offsetX === box.width ? 'right' : att.offsetY === 0 ? 'top' : 'bottom')
+
+for (const routing of ['elbow', null]) {
+  test(`${routing ?? 'straight'}: dragging B past A to the left switches to the facing sides`, () => {
+    const items = [rect(1, 0, 0), rect(2, 500, 0), joined(routing)]
+    const moved = model.translateSelectedItems(items, new Set(['rectangle:2']), -1000, 0)
+    const result = route.reattachConnectorSides(moved, new Set([2]))
+    const c = result[2]
+    assert.equal(sideOf(result[0], c.startAttachment), 'left')
+    assert.equal(sideOf(result[1], c.endAttachment), 'right')
+    assert.deepEqual([c.start.x, c.start.y], [0, 60])
+    assert.deepEqual([c.end.x, c.end.y], [-300, 60])
+    assert.equal(c.routing, routing ?? undefined)
+  })
+}
+
+test('a small move never makes a connector jump sides, and the list is unchanged', () => {
+  const items = [rect(1, 0, 0), rect(2, 500, 0), joined('elbow')]
+  const nudged = model.translateSelectedItems(items, new Set(['rectangle:2']), -150, 40)
+  assert.equal(route.reattachConnectorSides(nudged, new Set([2])), nudged)
+  const above = model.translateSelectedItems(items, new Set(['rectangle:2']), -450, 0)
+  assert.equal(route.reattachConnectorSides(above, new Set([2])), above, 'B just right of A still keeps right-to-left')
+})
+
+test('only connectors on a moved box switch; free ends and unrelated connectors stay', () => {
+  const other = { ...model.createConnector(8, p(200, 60), p(1400, 60), '#111', 3, { rectangleId: 1, offsetX: 200, offsetY: 60 }), routing: 'elbow' }
+  const items = [rect(1, 0, 0), rect(2, 500, 0), rect(3, 0, 400), joined('elbow'), other]
+  const moved = model.translateSelectedItems(items, new Set(['rectangle:3']), 10, 0)
+  assert.equal(route.reattachConnectorSides(moved, new Set([3])), moved)
+  const movedB = model.translateSelectedItems(items, new Set(['rectangle:2']), -1000, 0)
+  const result = route.reattachConnectorSides(movedB, new Set([2]))
+  assert.equal(result[4], movedB[4], 'the connector with a free end is not touched')
+  assert.notEqual(result[3], movedB[3])
+  assert.equal(route.reattachConnectorSides(items, new Set()), items)
+})
+
+test('after switching sides the elbow path still routes cleanly (orthogonal, attached ends)', () => {
+  const items = [rect(1, 0, 0), rect(2, 500, 0), joined('elbow')]
+  const moved = model.translateSelectedItems(items, new Set(['rectangle:2']), -1000, 300)
+  const result = route.reattachConnectorSides(moved, new Set([2]))
+  const path = route.routeConnectors(result)[2].routedPath
+  assert.ok(orthogonal(path))
+  assert.ok(path.length <= 4)
+})
+
+test('the app switches sides at the end of a box drag in Select and Lasso', async () => {
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /if \(drag\.moved\) switchConnectorSides\(new Set\(\[drag\.itemKey\]\)\)/)
+  assert.match(app, /if \(lassoDrag\.moved\) switchConnectorSides\(lassoDrag\.keys\)/)
+})
