@@ -15,7 +15,7 @@ import { MAX_PREDICTION_DISTANCE_SCREEN_PX, getPointerSamples, getPredictedPoint
 import { shouldAppendStrokeSample } from './strokeSampling'
 import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserStallSummary, type StrokeDiagnosticRow } from './performanceDiagnostics'
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
-import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPageTemplate, savePageTemplate, type PageTemplate, type SheetLayerState } from './pageTemplates'
+import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
 import { getNextIds } from './documentFormat'
 import { FilePanel } from './FilePanel'
@@ -238,6 +238,9 @@ function App() {
   const [strokeDisplayMode, setStrokeDisplayMode] = useState<StrokeDisplayMode>(() => loadStrokeDisplayMode())
   const [pageTemplate, setPageTemplate] = useState<PageTemplate>(() => loadPageTemplate())
   const [pageBackground, setPageBackground] = useState<PageBackground>(() => loadPageBackground())
+  const [pageSpacing, setPageSpacing] = useState<PageSpacing>(() => loadPageSpacing())
+  const pageSpacingRef = useRef(pageSpacing)
+  pageSpacingRef.current = pageSpacing
   const pageTemplateRef = useRef(pageTemplate)
   const pageBackgroundRef = useRef(pageBackground)
   pageTemplateRef.current = pageTemplate
@@ -251,7 +254,7 @@ function App() {
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile,
   } = useDocuments({
     getItems: () => strokesRef.current,
-    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current }),
+    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current }),
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null,
     loadDocument: (loaded) => {
       clearShapeHoldTimer()
@@ -285,6 +288,8 @@ function App() {
       setHasInk(strokesRef.current.length > 0)
       pageTemplateRef.current = loaded.page.template
       pageBackgroundRef.current = loaded.page.background
+      pageSpacingRef.current = loaded.page.spacing ?? 'standard'
+      setPageSpacing(loaded.page.spacing ?? 'standard')
       setPageTemplate(loaded.page.template)
       setPageBackground(loaded.page.background)
       renderAll()
@@ -934,6 +939,7 @@ function App() {
         benchmarkBackground?.template ?? pageTemplate,
         PAGE_BACKGROUND_COLORS[benchmarkBackground ? 'white' : pageBackground],
         viewport,
+        pageSpacing,
       ))
     }
     if (benchmarkBackground) benchmarkBackground.onBackgroundRendered(performance.now() - backgroundStartedAt)
@@ -1213,7 +1219,7 @@ function App() {
     }
     if (measureFrame) diagnostics?.recordMinimapRender(performance.now() - minimapStartedAt)
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
-  }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageTemplate, renderNavigator, strokeDisplayMode, width])
+  }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageSpacing, pageTemplate, renderNavigator, strokeDisplayMode, width])
 
   const applyViewport = (viewport: Viewport, gesture = false) => {
     if (textEditorRef.current) commitTextEditor()
@@ -1305,6 +1311,12 @@ function App() {
     renderAll()
     scheduleAutosave()
   }, [pageTemplate, renderAll])
+
+  useEffect(() => {
+    savePageSpacing(pageSpacing)
+    renderAll()
+    scheduleAutosave()
+  }, [pageSpacing, renderAll])
 
   useEffect(() => {
     savePageBackground(pageBackground)
@@ -2600,6 +2612,8 @@ function App() {
           currentId={currentDocId}
           pageTemplate={pageTemplate}
           onPageTemplate={setPageTemplate}
+          pageSpacing={pageSpacing}
+          onPageSpacing={setPageSpacing}
           pageBackground={pageBackground}
           onPageBackground={setPageBackground}
           oneFingerPan={navigationSettings.oneFingerPan}

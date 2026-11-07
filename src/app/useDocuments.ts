@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CanvasItem } from '../canvasModel'
-import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
+import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
 import { downloadBlob, loadCurrentDocumentId, saveCurrentDocumentId, type DocumentSummary, type FolderRecord } from '../documentStore'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
 import { folderAndDescendantIds } from '../folderTree'
@@ -20,7 +20,7 @@ import { SHEET_HEIGHT, SHEET_WIDTH } from '../viewport'
  */
 export type DocumentHost = {
   getItems: () => CanvasItem[]
-  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground }
+  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing }
   /** True while a pen/touch stroke or gesture is in progress; autosave waits for it to end. */
   isInputActive: () => boolean
   /** Replace the sheet contents and page settings, reset undo history, id counters and selection, and redraw. */
@@ -121,6 +121,7 @@ export function useDocuments(host: DocumentHost) {
       createdAt: docMetaRef.current.createdAt,
       template: page.template,
       background: page.background,
+      spacing: page.spacing,
       items: hostRef.current.getItems(),
       shareStrokes: true,
     })
@@ -134,7 +135,7 @@ export function useDocuments(host: DocumentHost) {
    */
   const currentSignature = (): DocumentSignature => {
     const page = hostRef.current.getPage()
-    return { title: docMetaRef.current.title, template: page.template, background: page.background, items: hostRef.current.getItems().slice() }
+    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, items: hostRef.current.getItems().slice() }
   }
 
   const refreshLibrary = async () => {
@@ -248,7 +249,7 @@ export function useDocuments(host: DocumentHost) {
 
   const blankDocument = () => {
     const page = hostRef.current.getPage()
-    return createDocument({ template: page.template, background: page.background, items: [] })
+    return createDocument({ template: page.template, background: page.background, spacing: page.spacing, items: [] })
   }
 
   const newDiagram = async () => {
@@ -399,6 +400,7 @@ export function useDocuments(host: DocumentHost) {
       width: SHEET_WIDTH,
       height: SHEET_HEIGHT,
       template: page.template,
+      spacing: page.spacing,
       backgroundColor: PAGE_BACKGROUND_COLORS[page.background],
     }), bounds)
     return { svg, bounds, baseName: documentFileName(docMetaRef.current.title).replace(/\.inkpad$/, '') }

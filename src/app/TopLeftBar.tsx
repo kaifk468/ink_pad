@@ -4,7 +4,7 @@ import { FoldersSidebar } from './FoldersSidebar'
 import { storageLabel } from '../StoragePanel'
 import type { StorageInfo } from './useDocuments'
 import { PAGE_BACKGROUND_COLORS, type PageBackground } from '../pageBackground'
-import type { PageTemplate } from '../pageTemplates'
+import type { PageSpacing, PageTemplate } from '../pageTemplates'
 
 type TopLeftBarProps = {
   title: string
@@ -13,6 +13,8 @@ type TopLeftBarProps = {
   currentId: string | null
   pageTemplate: PageTemplate
   onPageTemplate: (value: PageTemplate) => void
+  pageSpacing: PageSpacing
+  onPageSpacing: (value: PageSpacing) => void
   pageBackground: PageBackground
   onPageBackground: (value: PageBackground) => void
   oneFingerPan: boolean
@@ -39,6 +41,11 @@ const PAGE_TEMPLATE_CHOICES: Array<{ value: PageTemplate; label: string }> = [
   { value: 'blank', label: 'Blank' },
   { value: 'lined', label: 'Lined' },
   { value: 'dotted', label: 'Dotted' },
+]
+const PAGE_SPACING_CHOICES: Array<{ value: PageSpacing; label: string }> = [
+  { value: 'narrow', label: 'Narrow' },
+  { value: 'standard', label: 'Standard' },
+  { value: 'wide', label: 'Wide' },
 ]
 const PAGE_COLOR_CHOICES: Array<{ value: PageBackground; label: string }> = [
   { value: 'white', label: 'White' },
@@ -114,6 +121,15 @@ export function TopLeftBar(props: TopLeftBarProps) {
               ))}
             </span>
           </div>
+          {props.pageTemplate !== 'blank' && <div className="menu-row menu-choice-row" role="group" aria-label="Line and dot spacing">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 11h16M4 18h16"/></svg>
+            <span className="menu-row-label">Spacing</span>
+            <span className="menu-choices">
+              {PAGE_SPACING_CHOICES.map(({ value, label }) => (
+                <button key={value} className={`menu-choice${props.pageSpacing === value ? ' selected' : ''}`} type="button" aria-pressed={props.pageSpacing === value} onClick={() => props.onPageSpacing(value)}>{label}</button>
+              ))}
+            </span>
+          </div>}
           <div className="menu-row menu-choice-row" role="group" aria-label="Sheet background color">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c4 4.4 6 7.3 6 10a6 6 0 0 1-12 0c0-2.7 2-5.6 6-10z"/></svg>
             <span className="menu-row-label">Color</span>

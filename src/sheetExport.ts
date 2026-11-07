@@ -10,6 +10,8 @@ export type SheetExportOptions = {
   width: number
   height: number
   template: ExportTemplate
+  /** Distance between lines or dots: narrow (20% tighter), standard (default) or wide (20% looser). */
+  spacing?: 'narrow' | 'standard' | 'wide'
   backgroundColor: string
   /** Transparent background (no sheet fill, no template) for pasting into other documents. */
   transparent?: boolean
@@ -17,7 +19,8 @@ export type SheetExportOptions = {
 
 const SPACING = 32
 const LINE_COLOR = '#aebfd8'
-const DOT_COLOR = '#566477'
+const DOT_COLOR = '#788392'
+const SPACING_FACTOR = { narrow: 0.8, standard: 1, wide: 1.2 }
 
 const n = (value: number) => String(Math.round(value * 100) / 100)
 const esc = (value: string) => value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string)
@@ -200,10 +203,11 @@ export function buildSheetSvg(rawItems: CanvasItem[], options: SheetExportOption
 
   const template = options.transparent ? 'blank' : options.template
   if (template !== 'blank') {
+    const spacing = Math.round(SPACING * SPACING_FACTOR[options.spacing ?? 'standard'] * 100) / 100
     const mark = template === 'lined'
-      ? `<path d="M0 ${SPACING - 0.5}H${SPACING}" stroke="${LINE_COLOR}" stroke-width="1.25" fill="none"/>`
+      ? `<path d="M0 ${spacing - 0.5}H${spacing}" stroke="${LINE_COLOR}" stroke-width="1.25" fill="none"/>`
       : `<circle cx="2" cy="2" r="1.65" fill="${DOT_COLOR}"/>`
-    defs.unshift(`<pattern id="template" width="${SPACING}" height="${SPACING}" patternUnits="userSpaceOnUse">${mark}</pattern>`)
+    defs.unshift(`<pattern id="template" width="${spacing}" height="${spacing}" patternUnits="userSpaceOnUse">${mark}</pattern>`)
   }
   const sheet = options.transparent ? '' : `<rect width="${width}" height="${height}" fill="${esc(options.backgroundColor)}"/>`
   const templateRect = template !== 'blank' ? `<rect width="${width}" height="${height}" fill="url(#template)"/>` : ''

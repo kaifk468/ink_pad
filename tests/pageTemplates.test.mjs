@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import ts from 'typescript'
 import { readAppSource } from './helpers/appSource.mjs'
+import { loadModule } from './helpers/loadModule.mjs'
 
 const pageTemplateSource = await readFile(new URL('../src/pageTemplates.ts', import.meta.url), 'utf8')
 const appSource = await readAppSource()
@@ -23,7 +24,7 @@ test('page template supports blank, lined, and dotted with one shared default sp
   assert.deepEqual(['blank', 'lined', 'dotted'].map(templates.parsePageTemplate), ['blank', 'lined', 'dotted'])
   assert.equal(templates.DEFAULT_PAGE_TEMPLATE, 'blank')
   assert.equal(templates.PAGE_TEMPLATE_SPACING, 32)
-  assert.equal(templates.PAGE_TEMPLATE_DOT_COLOR, '#566477')
+  assert.equal(templates.PAGE_TEMPLATE_DOT_COLOR, '#788392')
   assert.equal(templates.PAGE_TEMPLATE_LINE_COLOR, '#aebfd8')
   assert.equal(templates.PAGE_TEMPLATE_OVERVIEW_SPACING, 8)
   assert.equal(templates.PAGE_TEMPLATE_OVERVIEW_DOT_RADIUS, 1.35)
@@ -50,7 +51,7 @@ test('template selector updates the sheet layer and shares it with the workspace
 
 test('dotted marks are opaque and remain legible in overview scale', () => {
   assert.match(pageTemplateSource, /tileContext\.fillStyle = tileContext\.strokeStyle/)
-  assert.match(pageTemplateSource, /export const PAGE_TEMPLATE_DOT_COLOR = '#566477'/)
+  assert.match(pageTemplateSource, /export const PAGE_TEMPLATE_DOT_COLOR = '#788392'/)
   assert.match(pageTemplateSource, /tileContext\.arc\(center, center, radius/)
   assert.match(pageTemplateSource, /export function drawPageTemplateOverview/)
   assert.match(pageTemplateSource, /const radius = PAGE_TEMPLATE_OVERVIEW_DOT_RADIUS/)
@@ -65,7 +66,7 @@ test('lined and dotted marks are described as CSS tiled at the shared page spaci
   assert.match(lined.backgroundImage, /^linear-gradient\(to bottom, transparent 30\.875px, #aebfd8 30\.875px\)$/)
   const dotted = templates.getPageTemplateCss('dotted')
   assert.equal(dotted.backgroundSize, '32px 32px')
-  assert.match(dotted.backgroundImage, /^radial-gradient\(circle at 2px 2px, #566477 1\.5px, transparent 1\.9px\)$/)
+  assert.match(dotted.backgroundImage, /^radial-gradient\(circle at 2px 2px, #788392 1\.5px, transparent 1\.9px\)$/)
   assert.equal(templates.PAGE_TEMPLATE_SPACING, 32)
 })
 
@@ -112,4 +113,65 @@ test('sheet layer sits behind a transparent canvas and never receives pointer in
   assert.match(sheetRule, /transform-origin: 0 0;/)
   assert.match(sheetRule, /position: absolute;/)
   assert.match(stylesSource, /\.drawing-canvas \{\s*position: absolute;\s*inset: 0;/)
+})
+
+test('page spacing: narrow is 20% tighter and wide 20% looser than the standard 32 units, for lined and dotted', () => {
+  assert.deepEqual(['narrow', 'standard', 'wide'].map(templates.pageSpacingUnits), [25.6, 32, 38.4])
+  assert.equal(templates.DEFAULT_PAGE_SPACING, 'standard')
+  const narrow = templates.getPageTemplateCss('lined', 'narrow')
+  assert.equal(narrow.backgroundSize, '25.6px 25.6px')
+  assert.match(narrow.backgroundImage, /transparent 24\.475px, #aebfd8 24\.475px/)
+  const wide = templates.getPageTemplateCss('dotted', 'wide')
+  assert.equal(wide.backgroundSize, '38.4px 38.4px')
+  assert.match(wide.backgroundImage, /#788392 1\.5px/)
+  assert.deepEqual(templates.getPageTemplateCss('lined'), templates.getPageTemplateCss('lined', 'standard'))
+  assert.equal(templates.getPageTemplateCss('blank', 'wide').backgroundImage, 'none')
+  assert.equal(templates.getSheetLayerState('dotted', '#fff', { scale: 1, offsetX: 0, offsetY: 0 }, 'narrow').backgroundSize, '25.6px 25.6px')
+})
+
+test('page spacing setting defaults to standard, rejects invalid values and persists', () => {
+  const values = new Map()
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }
+  assert.equal(templates.loadPageSpacing(storage), 'standard')
+  templates.savePageSpacing('wide', storage)
+  assert.equal(templates.loadPageSpacing(storage), 'wide')
+  assert.equal(templates.parsePageSpacing('huge'), 'standard')
+  assert.equal(templates.parsePageSpacing(null), 'standard')
+})
+
+test('dots are fainter than before', () => {
+  const channel = (hex, i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16)
+  for (let i = 0; i < 3; i += 1) assert.ok(channel(templates.PAGE_TEMPLATE_DOT_COLOR, i) > channel('#566477', i))
+})
+
+test('spacing is saved only when not standard, repaired when invalid, and counts as a change', async () => {
+  const format = await loadModule('documentFormat.ts')
+  const base = { template: 'lined', background: 'white', items: [] }
+  assert.equal('spacing' in format.createDocument(base).page, false)
+  assert.equal('spacing' in format.createDocument({ ...base, spacing: 'standard' }).page, false)
+  assert.equal(format.createDocument({ ...base, spacing: 'narrow' }).page.spacing, 'narrow')
+  const round = format.parseDocument(format.stringifyDocument(format.createDocument({ ...base, spacing: 'wide' })))
+  assert.equal(round.document.page.spacing, 'wide')
+  const bad = format.parseDocument(JSON.stringify({ format: 'inkpad-document', version: 1, page: { template: 'lined', background: 'white', spacing: 'tiny' }, items: [] }))
+  assert.equal('spacing' in bad.document.page, false)
+  const sig = (spacing) => ({ title: 't', template: 'lined', background: 'white', spacing, items: [] })
+  assert.equal(format.sameSignature(sig(undefined), sig('standard')), true)
+  assert.equal(format.sameSignature(sig(undefined), sig('wide')), false)
+})
+
+test('SVG export uses the chosen spacing', async () => {
+  const exp = await loadModule('sheetExport.ts')
+  const svg = (spacing) => exp.buildSheetSvg([], { width: 400, height: 300, template: 'lined', spacing, backgroundColor: '#fff' })
+  assert.match(svg('narrow'), /<pattern id="template" width="25.6" height="25.6"/)
+  assert.match(svg('wide'), /<pattern id="template" width="38.4" height="38.4"/)
+  assert.match(svg(undefined), /<pattern id="template" width="32" height="32"/)
+})
+
+test('menu: a Spacing row (Narrow, Standard, Wide) shows under Page for lined and dotted, and is wired through the app and saved files', async () => {
+  const bar = await readFile(new URL('../src/app/TopLeftBar.tsx', import.meta.url), 'utf8')
+  assert.match(bar, /pageTemplate !== 'blank' && <div[^>]*aria-label="Line and dot spacing"/)
+  for (const label of ['Narrow', 'Standard', 'Wide']) assert.match(bar, new RegExp(`label: '${label}'`))
+  assert.match(appSource, /pageSpacing=\{pageSpacing\}/)
+  assert.match(appSource, /savePageSpacing\(pageSpacing\)/)
+  assert.match(appSource, /loaded\.page\.spacing \?\? 'standard'/)
 })

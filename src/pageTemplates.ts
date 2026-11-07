@@ -3,11 +3,18 @@ export type PageTemplate = 'blank' | 'lined' | 'dotted'
 export const DEFAULT_PAGE_TEMPLATE: PageTemplate = 'blank'
 export const PAGE_TEMPLATE_SPACING = 32
 export const PAGE_TEMPLATE_LINE_COLOR = '#aebfd8'
-export const PAGE_TEMPLATE_DOT_COLOR = '#566477'
+/** Dots are a little fainter than before (#566477 faded about 20% towards white). */
+export const PAGE_TEMPLATE_DOT_COLOR = '#788392'
+export type PageSpacing = 'narrow' | 'standard' | 'wide'
+export const PAGE_SPACINGS: readonly PageSpacing[] = ['narrow', 'standard', 'wide']
+export const DEFAULT_PAGE_SPACING: PageSpacing = 'standard'
+/** Narrow is 20% tighter than Standard (the original 32 units), Wide is 20% looser. */
+export const PAGE_SPACING_FACTOR: Record<PageSpacing, number> = { narrow: 0.8, standard: 1, wide: 1.2 }
 export const PAGE_TEMPLATE_OVERVIEW_SPACING = 8
 export const PAGE_TEMPLATE_OVERVIEW_DOT_RADIUS = 1.35
 
 const STORAGE_KEY = 'inkpad.pageTemplate'
+const SPACING_STORAGE_KEY = 'inkpad.pageSpacing'
 const tileCanvases = new Map<string, HTMLCanvasElement>()
 const patterns = new WeakMap<CanvasRenderingContext2D, Map<string, CanvasPattern>>()
 
@@ -26,6 +33,31 @@ export function loadPageTemplate(storage?: Pick<Storage, 'getItem'>): PageTempla
 export function savePageTemplate(template: PageTemplate, storage?: Pick<Storage, 'setItem'>): void {
   try {
     ;(storage ?? window.localStorage).setItem(STORAGE_KEY, parsePageTemplate(template))
+  } catch {
+    // Storage can be unavailable in private browsing or restricted contexts.
+  }
+}
+
+/** Distance between lines or dots in canvas units: 25.6, 32 or 38.4. */
+export function pageSpacingUnits(spacing: PageSpacing): number {
+  return Math.round(PAGE_TEMPLATE_SPACING * PAGE_SPACING_FACTOR[spacing] * 100) / 100
+}
+
+export function parsePageSpacing(value: string | null | undefined): PageSpacing {
+  return value === 'narrow' || value === 'wide' ? value : DEFAULT_PAGE_SPACING
+}
+
+export function loadPageSpacing(storage?: Pick<Storage, 'getItem'>): PageSpacing {
+  try {
+    return parsePageSpacing((storage ?? window.localStorage).getItem(SPACING_STORAGE_KEY))
+  } catch {
+    return DEFAULT_PAGE_SPACING
+  }
+}
+
+export function savePageSpacing(spacing: PageSpacing, storage?: Pick<Storage, 'setItem'>): void {
+  try {
+    ;(storage ?? window.localStorage).setItem(SPACING_STORAGE_KEY, parsePageSpacing(spacing))
   } catch {
     // Storage can be unavailable in private browsing or restricted contexts.
   }
@@ -82,10 +114,11 @@ export type SheetLayerElement = { style: { transform: string; backgroundColor: s
  * CSS equivalent of the lined and dotted marks. The main canvas stays transparent so the browser composites this
  * static layer instead of the canvas repainting a patterned sheet every frame.
  */
-export function getPageTemplateCss(template: PageTemplate): Pick<SheetLayerState, 'backgroundImage' | 'backgroundSize'> {
-  const tile = `${PAGE_TEMPLATE_SPACING}px ${PAGE_TEMPLATE_SPACING}px`
+export function getPageTemplateCss(template: PageTemplate, spacing: PageSpacing = DEFAULT_PAGE_SPACING): Pick<SheetLayerState, 'backgroundImage' | 'backgroundSize'> {
+  const units = pageSpacingUnits(spacing)
+  const tile = `${units}px ${units}px`
   if (template === 'lined') {
-    const lineTop = PAGE_TEMPLATE_SPACING - 1.125
+    const lineTop = units - 1.125
     return { backgroundImage: `linear-gradient(to bottom, transparent ${lineTop}px, ${PAGE_TEMPLATE_LINE_COLOR} ${lineTop}px)`, backgroundSize: tile }
   }
   if (template === 'dotted') {
@@ -99,8 +132,8 @@ export function getSheetLayerTransform(viewport: SheetLayerViewport): string {
   return `translate3d(${viewport.offsetX}px, ${viewport.offsetY}px, 0) scale(${viewport.scale})`
 }
 
-export function getSheetLayerState(template: PageTemplate, backgroundColor: string, viewport: SheetLayerViewport): SheetLayerState {
-  return { transform: getSheetLayerTransform(viewport), backgroundColor, ...getPageTemplateCss(template) }
+export function getSheetLayerState(template: PageTemplate, backgroundColor: string, viewport: SheetLayerViewport, spacing: PageSpacing = DEFAULT_PAGE_SPACING): SheetLayerState {
+  return { transform: getSheetLayerTransform(viewport), backgroundColor, ...getPageTemplateCss(template, spacing) }
 }
 
 /** Writes only the style properties that changed since the last call, so unchanged frames cause no style invalidation. */

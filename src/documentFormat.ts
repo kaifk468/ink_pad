@@ -11,6 +11,7 @@ export const DOCUMENT_FILE_EXTENSION = '.inkpad'
 export const DOCUMENT_MIME_TYPE = 'application/json'
 
 export type DocumentPageTemplate = 'blank' | 'lined' | 'dotted'
+export type DocumentPageSpacing = 'narrow' | 'standard' | 'wide'
 export type DocumentPageBackground = 'white' | 'warm' | 'blue' | 'yellow' | 'green'
 
 export type InkPadDocument = {
@@ -19,7 +20,8 @@ export type InkPadDocument = {
   title: string
   createdAt: string
   updatedAt: string
-  page: { template: DocumentPageTemplate; background: DocumentPageBackground }
+  /** `spacing` is written only when it is not the standard one. */
+  page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing }
   items: CanvasItem[]
 }
 
@@ -29,6 +31,7 @@ export type DocumentInput = {
   updatedAt?: string
   template: DocumentPageTemplate
   background: DocumentPageBackground
+  spacing?: DocumentPageSpacing
   items: CanvasItem[]
   /** Reuse finished strokes as they are instead of copying them (committed strokes are never changed afterwards). Used for autosave. */
   shareStrokes?: boolean
@@ -58,7 +61,7 @@ export function createDocument(input: DocumentInput, now = new Date().toISOStrin
     title: cleanTitle(input.title),
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
-    page: { template: input.template, background: input.background },
+    page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}) },
     items: input.items.map((item) => (input.shareStrokes && item.kind === 'stroke' ? item : cloneItem(item))),
   }
 }
@@ -83,11 +86,11 @@ export function stringifyDocument(document: InkPadDocument): string {
 }
 
 /** An open diagram's content for "did anything change since the last save" checks. */
-export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; items: CanvasItem[] }
+export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; items: CanvasItem[] }
 
 export function sameSignature(a: DocumentSignature | null, b: DocumentSignature | null): boolean {
   if (!a || !b) return false
-  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || a.items.length !== b.items.length) return false
+  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || a.items.length !== b.items.length) return false
   for (let index = 0; index < a.items.length; index += 1) if (a.items[index] !== b.items[index]) return false
   return true
 }
@@ -158,6 +161,7 @@ export function parseDocument(text: string): ParseResult {
       page: {
         template: TEMPLATES.includes(page.template as DocumentPageTemplate) ? (page.template as DocumentPageTemplate) : 'blank',
         background: BACKGROUNDS.includes(page.background as DocumentPageBackground) ? (page.background as DocumentPageBackground) : 'white',
+        ...(page.spacing === 'narrow' || page.spacing === 'wide' ? { spacing: page.spacing } : {}),
       },
       items: finalItems,
     },
