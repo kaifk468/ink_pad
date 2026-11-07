@@ -16,12 +16,16 @@ const modelOutput = ts.transpileModule(modelSource, {
 const model = await import(`data:text/javascript;base64,${Buffer.from(modelOutput).toString('base64')}`)
 const appSource = await readAppSource()
 
-test('pen hover erasing is enabled only for the contact-free standard eraser', () => {
-  assert.equal(eraserInput.isPenHoverEraseInput('pen', 0, true, false), true)
-  assert.equal(eraserInput.isPenHoverEraseInput('pen', 1, true, false), false)
-  assert.equal(eraserInput.isPenHoverEraseInput('touch', 0, true, false), false)
-  assert.equal(eraserInput.isPenHoverEraseInput('pen', 0, false, false), false)
-  assert.equal(eraserInput.isPenHoverEraseInput('pen', 0, true, true), false)
+test('erasing needs pen contact: hover no longer erases, and a circle at the pen shows the eraser size', () => {
+  assert.equal(eraserInput.isPenHoverEraseInput, undefined)
+  assert.doesNotMatch(appSource, /isPenHoverEraseInput|hoverErasePointerRef/)
+  assert.equal(eraserInput.eraserCursorDiameter(28, 1, false), 28)
+  assert.equal(eraserInput.eraserCursorDiameter(28, 2.5, false), 70)
+  assert.equal(eraserInput.eraserCursorDiameter(8, 0.1, false), 6)
+  assert.equal(eraserInput.eraserCursorDiameter(96, 3, true), eraserInput.WHOLE_ERASER_HIT_RADIUS_PX * 2)
+  assert.match(appSource, /const moveEraserCursor = \(event: React\.PointerEvent<HTMLCanvasElement>\) => \{[\s\S]*?if \(!eraser \|\| event\.pointerType !== 'pen'\) \{\s*cursor\.style\.display = 'none'/)
+  assert.match(appSource, /if \(event\.pointerType === 'pen'\) touchNav\.penSeen\(performance\.now\(\)\)\s*moveEraserCursor\(event\)/)
+  assert.match(appSource, /className="eraser-cursor"/)
 })
 
 test('hover and contact erasing create the same pressure-preserving erase stroke model', () => {
@@ -35,7 +39,6 @@ test('hover and contact erasing create the same pressure-preserving erase stroke
     erase: true,
   })
   assert.match(appSource, /activeStrokeRef\.current = eraser\s*\? createEraserStroke/)
-  assert.match(appSource, /activeStrokeRef\.current = createEraserStroke\(nextStrokeIdRef\.current\+\+, point, color, eraserSize\)/)
 })
 
 test('normal erasing still records localized erase strokes with the selected width', () => {
@@ -88,11 +91,8 @@ test('erase stroke history still undoes and redoes an erase operation', () => {
   assert.deepEqual(history.redo(undone), afterErase)
 })
 
-test('hover erasing is finalized on pen contact, pointer end, or leaving the canvas', () => {
-  assert.match(appSource, /isPenHoverEraseInput\(event\.pointerType, event\.buttons, eraser, objectEraser\)/)
-  assert.match(appSource, /activePointerRef\.current === null\s*&& touchNav\.touchCount\(\) === 0/)
-  assert.match(appSource, /isPointWithinBounds\(point\) && hitTestObject\(point\) !== -1/)
-  assert.match(appSource, /hoverErasePointerRef\.current === event\.pointerId\) finishStroke\(event\.pointerId\)/)
+test('the eraser circle is hidden when the pen leaves the canvas', () => {
+  assert.match(appSource, /const onPointerLeave = \(event: React\.PointerEvent<HTMLCanvasElement>\) => \{[\s\S]*?hideEraserCursor\(\)/)
   assert.match(appSource, /onPointerLeave=\{onPointerLeave\}/)
 })
 

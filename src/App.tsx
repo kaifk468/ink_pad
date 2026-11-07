@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
-import { createEraserStroke, getEraserSweepPoints, isPenHoverEraseInput } from './eraserInput'
+import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
 import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
@@ -170,7 +170,7 @@ function App() {
   const performanceDiagnosticsRef = useRef<PerformanceDiagnostics | null>(null)
   if (PERFORMANCE_DIAGNOSTICS_ENABLED && performanceDiagnosticsRef.current === null) performanceDiagnosticsRef.current = new PerformanceDiagnostics()
   const activeStrokeRef = useRef<Stroke | null>(null)
-  const hoverErasePointerRef = useRef<number | null>(null)
+  const eraserCursorRef = useRef<HTMLDivElement>(null)
   const activeObjectEraserRef = useRef<{ pointerId: number; lastPoint: Point; changed: boolean } | null>(null)
   const activeConnectorRef = useRef<{
     pointerId: number
@@ -250,7 +250,6 @@ function App() {
       activeLassoRef.current = null
       lassoDragRef.current = null
       activePointerRef.current = null
-      hoverErasePointerRef.current = null
       activeObjectEraserRef.current = null
       holdAnchorRef.current = null
       updateSelectedItems([])
@@ -1511,7 +1510,6 @@ function App() {
     activeConnectorRef.current = null
     shapePreviewRef.current = null
     activePointerRef.current = null
-    if (hoverErasePointerRef.current === pointerId) hoverErasePointerRef.current = null
     activeDragRef.current = null
     holdAnchorRef.current = null
     lastSignificantMoveAtRef.current = 0
@@ -1533,7 +1531,28 @@ function App() {
     return true
   }
 
+  /** A circle at the pen tip shows what the eraser will remove: it follows the pen while it hovers and while it erases. It is a plain element moved directly, so it costs no canvas redraw. */
+  const hideEraserCursor = () => {
+    const cursor = eraserCursorRef.current
+    if (cursor) cursor.style.display = 'none'
+  }
+  const moveEraserCursor = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const cursor = eraserCursorRef.current
+    if (!cursor) return
+    if (!eraser || event.pointerType !== 'pen') {
+      cursor.style.display = 'none'
+      return
+    }
+    const rect = event.currentTarget.getBoundingClientRect()
+    const diameter = eraserCursorDiameter(eraserSize, viewportRef.current.scale, objectEraser)
+    cursor.style.display = 'block'
+    cursor.style.width = `${diameter}px`
+    cursor.style.height = `${diameter}px`
+    cursor.style.transform = `translate(${event.clientX - rect.left - diameter / 2}px, ${event.clientY - rect.top - diameter / 2}px)`
+  }
+
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    moveEraserCursor(event)
     if (event.pointerType === 'pen') touchNav.penDown()
     if (event.pointerType === 'touch') {
       event.preventDefault()
@@ -1541,7 +1560,6 @@ function App() {
       touchNav.down(event.pointerId, getScreenPoint(event), performance.now())
       return
     }
-    if (event.pointerType === 'pen' && hoverErasePointerRef.current === event.pointerId) finishStroke(event.pointerId)
     if (event.pointerType !== 'pen' || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null) return
     event.preventDefault()
     const rawPoint = getPoint(event)
@@ -1681,6 +1699,7 @@ function App() {
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === 'pen') touchNav.penSeen(performance.now())
+    moveEraserCursor(event)
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       event.preventDefault()
       updateTouchPoint(event)
@@ -1706,27 +1725,6 @@ function App() {
       }
       if (changed) renderAll()
       return
-    }
-    if (isPenHoverEraseInput(event.pointerType, event.buttons, eraser, objectEraser)
-      && activePointerRef.current === null
-      && touchNav.touchCount() === 0
-      && activeConnectorRef.current === null
-      && activeResizeRef.current === null
-      && activeLassoRef.current === null
-      && lassoDragRef.current === null
-      && activeDragRef.current === null) {
-      const point = getPoint(event)
-      if (isPointWithinBounds(point) && hitTestObject(point) !== -1) {
-        event.preventDefault()
-        activePointerRef.current = event.pointerId
-        hoverErasePointerRef.current = event.pointerId
-        activeStrokeRef.current = createEraserStroke(nextStrokeIdRef.current++, point, color, eraserSize)
-        shapePreviewRef.current = null
-        holdAnchorRef.current = point
-        lastSignificantMoveAtRef.current = performance.now()
-        scheduleRender()
-        return
-      }
     }
     const activeConnector = activeConnectorRef.current
     if (activeConnector?.pointerId === event.pointerId) {
@@ -1866,10 +1864,6 @@ function App() {
       else openClassBoxEditor({ rectangleId: null, x: tap.point.x, y: tap.point.y, content: EMPTY_CLASS_BOX })
       return
     }
-    if (hoverErasePointerRef.current === event.pointerId) {
-      finishStroke(event.pointerId)
-      return
-    }
     if (activeObjectEraserRef.current?.pointerId === event.pointerId) {
       activeObjectEraserRef.current = null
       return
@@ -1953,10 +1947,6 @@ function App() {
     }
     if (classTapRef.current?.pointerId === event.pointerId) {
       classTapRef.current = null
-      return
-    }
-    if (hoverErasePointerRef.current === event.pointerId) {
-      finishStroke(event.pointerId)
       return
     }
     if (activeObjectEraserRef.current?.pointerId === event.pointerId) {
@@ -2115,7 +2105,6 @@ function App() {
     lassoDragRef.current = null
     updateSelectedItems([])
     activePointerRef.current = null
-    hoverErasePointerRef.current = null
     activeObjectEraserRef.current = null
     holdAnchorRef.current = null
     setSelectedRectangle(null)
@@ -2135,9 +2124,12 @@ function App() {
     scheduleAutosave()
   }
 
+  // Switching tool or eraser mode/size hides the circle until the pen moves again.
+  useEffect(() => { eraserCursorRef.current?.style.setProperty('display', 'none') }, [eraser, objectEraser, eraserSize])
+
   const onPointerLeave = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === 'pen') touchNav.penGone()
-    if (hoverErasePointerRef.current === event.pointerId) finishStroke(event.pointerId)
+    hideEraserCursor()
   }
 
   const toggleShapeTool = () => { setOptionsFor(null); setShapeMode((value) => !value); setTextMode(false); setClassMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser(false) }
@@ -2186,6 +2178,7 @@ function App() {
     <main className="app-shell">
       <section className="canvas-stage" aria-label="Drawing canvas">
         <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: SHEET_HEIGHT }} />
+        <div ref={eraserCursorRef} className="eraser-cursor" aria-hidden="true" />
         <canvas
           ref={canvasRef}
           className={`drawing-canvas${selectionMode ? ' selecting' : ''}${connectorMode || umlConnectorType !== null ? ' connecting' : ''}`}
