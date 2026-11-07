@@ -2622,7 +2622,7 @@ function App() {
           diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open), onFillTestInk: fillTestInk, onRemoveTestInk: removeTestInk }}
         />
       )}
-      <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} tidyLabel={tidyScope(strokesRef.current, selectedKeysRef.current).selection ? 'Tidy selected' : 'Tidy all'} onTidy={tidyDiagram} />
+      <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
       {!navigationSettings.zoomLocked && <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} onOpenStorage={() => setStoragePanelOpen(true)} />}
       <ContextPanel
         showStyle={optionsFor === 'pen' && penModeActive}
@@ -2667,6 +2667,8 @@ function App() {
         onClass={toggleClassTool}
         onInkClass={toggleInkClassTool}
         onShapes={toggleShapeTool}
+        tidyLabel={tidyScope(strokesRef.current, selectedKeysRef.current).selection ? 'Tidy selected' : 'Tidy all'}
+        onTidy={tidyDiagram}
       />
       {classBoxEditor && <ClassBoxDialog
         key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}

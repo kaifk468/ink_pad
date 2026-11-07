@@ -317,7 +317,8 @@ export function tidyItems(items: CanvasItem[], scopeIds: ReadonlySet<number> | n
     const dy = position.y + shiftY - box.y
     if (dx !== 0 || dy !== 0) deltas.set(id, { dx, dy })
   }
-  if (deltas.size === 0) return items
+  const needsElbow = items.some((item) => item.kind === 'connector' && item.routing !== 'elbow' && !!item.startAttachment && !!item.endAttachment && inScope.has(item.startAttachment.rectangleId) && inScope.has(item.endAttachment.rectangleId))
+  if (deltas.size === 0 && !needsElbow) return items
 
   const moved = new Map<number, RectangleObject>()
   const withBoxes = items.map((item): CanvasItem => {
@@ -330,6 +331,9 @@ export function tidyItems(items: CanvasItem[], scopeIds: ReadonlySet<number> | n
   })
   const withConnectors = withBoxes.map((item): CanvasItem => {
     if (item.kind !== 'connector') return item
+    // A connector between two arranged boxes becomes an Elbow line (straight lines look diagonal and crowded after a tidy).
+    const between = !!item.startAttachment && !!item.endAttachment && inScope.has(item.startAttachment.rectangleId) && inScope.has(item.endAttachment.rectangleId)
+    if (between && item.routing !== 'elbow') item = { ...item, routing: 'elbow' }
     const start = item.startAttachment ? moved.get(item.startAttachment.rectangleId) : undefined
     const end = item.endAttachment ? moved.get(item.endAttachment.rectangleId) : undefined
     if (!start && !end) return item
@@ -339,5 +343,5 @@ export function tidyItems(items: CanvasItem[], scopeIds: ReadonlySet<number> | n
       ...(end ? { end: { ...item.end, x: end.x + item.endAttachment!.offsetX, y: end.y + item.endAttachment!.offsetY } } : {}),
     }
   })
-  return reattachConnectorSides(withConnectors, new Set(deltas.keys()), { minSaving: 0.5, maxRatio: 1 })
+  return reattachConnectorSides(withConnectors, inScope, { minSaving: 0.5, maxRatio: 1 })
 }

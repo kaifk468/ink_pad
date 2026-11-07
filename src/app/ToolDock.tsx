@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
 import type { HldShape } from '../hldShapes'
 import { InsertTray } from './InsertTray'
+import { MoreTray } from './MoreTray'
 
 type ToolDockProps = {
   dockRef: RefObject<HTMLElement>
@@ -27,6 +28,8 @@ type ToolDockProps = {
   onInkClass: () => void
   onHldShape: (shape: HldShape) => void
   onShapes: () => void
+  tidyLabel: string
+  onTidy: () => void
 }
 
 /** Bottom-center tool dock: Pen, Eraser | Select, Lasso | Connectors, Insert. */
@@ -67,6 +70,7 @@ export function ToolDock(props: ToolDockProps) {
         onClass={props.onClass}
         onShapes={props.onShapes}
       />
+      <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} />
     </nav>
   )
 }

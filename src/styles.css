@@ -369,7 +369,6 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 .eraser-size:hover, .eraser-size.selected { background: #e9edff; }
 .eraser-size.selected span { background: #354fc2; }
 .history-button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 38px; height: 54px; padding: 2px; border: 0; border-radius: 9px; background: transparent; color: #5d626b; font-size: 9px; font-weight: 600; cursor: pointer; }
-.tidy-button { width: 62px; margin-left: 4px; border-left: 1px solid rgba(36, 42, 52, .1); border-radius: 0 9px 9px 0; }
 .history-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .history-button span { line-height: 1; }
 .history-button:hover:not(:disabled) { background: #f1f2f5; color: #343944; }
@@ -426,7 +425,7 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
   .diagram-title { display: none; }
   .context-panel { top: auto; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); right: 12px; width: 200px; }
   .viewport-navigator { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); }
-  .history-button:not(.tidy-button) span, .stroke-mode-button span { display: none; }
+  .history-button span, .stroke-mode-button span { display: none; }
 }
 
 @media (max-width: 410px) {
