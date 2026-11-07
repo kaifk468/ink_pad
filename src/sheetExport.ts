@@ -1,4 +1,5 @@
-import { getConnectorRenderSpec, getConnectorSymbolGeometry } from './canvasModel'
+import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry } from './canvasModel'
+import { routeConnectors } from './connectorRoute'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 import { getClassBoxGeometry, type ClassBoxCompartment } from './classBoxLayout'
 import { getTextBaselines, splitTextLines, TEXT_FONT_FAMILY } from './textLayout'
@@ -103,6 +104,13 @@ function rectangleElement(rectangle: RectangleObject): string {
 
 const pt = (p: Point) => `${n(p.x)} ${n(p.y)}`
 
+/** SVG path through the connector's points; with `replaceTip` the end that carries the symbol stops at that point instead. */
+function connectorPathData(connector: ConnectorObject, atStart: boolean, replaceTip?: Point): string {
+  const path = connectorPoints(connector)
+  const points = !replaceTip ? path : atStart ? [replaceTip, ...path.slice(1)] : [...path.slice(0, -1), replaceTip]
+  return points.map((p, index) => `${index === 0 ? 'M' : 'L'}${pt(p)}`).join('')
+}
+
 function connectorElement(connector: ConnectorObject): string {
   const spec = getConnectorRenderSpec(connector)
   const geometry = getConnectorSymbolGeometry(connector)
@@ -111,18 +119,19 @@ function connectorElement(connector: ConnectorObject): string {
   const dash = spec.lineStyle === 'dashed' ? ` stroke-dasharray="${n(Math.max(6, connector.strokeWidth * 2.5))} ${n(Math.max(4, connector.strokeWidth * 1.8))}"` : ''
   const base = `stroke="${color}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"`
   const parts: string[] = []
-  const { tip, other } = geometry ?? {}
-  if (spec.symbol === 'hollow-triangle' && geometry && tip && other) {
-    parts.push(`<path d="M${pt(other)}L${pt(geometry.base)}" fill="none" ${base}${dash}/>`)
+  const tip = geometry?.tip
+  const atStart = spec.endpoint === 'start'
+  if (spec.symbol === 'hollow-triangle' && geometry && tip) {
+    parts.push(`<path d="${connectorPathData(connector, atStart, geometry.base)}" fill="none" ${base}${dash}/>`)
     parts.push(`<path d="M${pt(tip)}L${pt(geometry.sideA)}L${pt(geometry.sideB)}Z" fill="#ffffff" ${base}/>`)
   } else if (spec.symbol === 'open-arrow' && geometry && tip) {
-    parts.push(`<path d="M${pt(connector.start)}L${pt(connector.end)}" fill="none" ${base}${dash}/>`)
+    parts.push(`<path d="${connectorPathData(connector, atStart)}" fill="none" ${base}${dash}/>`)
     parts.push(`<path d="M${pt(geometry.sideA)}L${pt(tip)}L${pt(geometry.sideB)}" fill="none" ${base}/>`)
-  } else if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip && other) {
-    parts.push(`<path d="M${pt(geometry.far)}L${pt(other)}" fill="none" ${base}${dash}/>`)
+  } else if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip) {
+    parts.push(`<path d="${connectorPathData(connector, atStart, geometry.far)}" fill="none" ${base}${dash}/>`)
     parts.push(`<path d="M${pt(tip)}L${pt(geometry.sideA)}L${pt(geometry.far)}L${pt(geometry.sideB)}Z" fill="${spec.symbol === 'filled-diamond' ? color : '#ffffff'}" ${base}/>`)
   } else {
-    parts.push(`<path d="M${pt(connector.start)}L${pt(connector.end)}" fill="none" ${base}${dash}/>`)
+    parts.push(`<path d="${connectorPathData(connector, false)}" fill="none" ${base}${dash}/>`)
   }
   return parts.join('')
 }
@@ -148,7 +157,8 @@ function itemElement(item: CanvasItem): string {
  * Builds a standalone SVG of the sheet. Eraser strokes cut through everything drawn before them
  * (SVG mask per eraser group), matching the canvas "destination-out" behavior.
  */
-export function buildSheetSvg(items: CanvasItem[], options: SheetExportOptions): string {
+export function buildSheetSvg(rawItems: CanvasItem[], options: SheetExportOptions): string {
+  const items = routeConnectors(rawItems)
   inkBoxCount = 0
   const { width, height } = options
   const defs: string[] = []
@@ -194,7 +204,8 @@ export function buildSheetSvg(items: CanvasItem[], options: SheetExportOptions):
 }
 
 /** Bounding box (sheet coordinates) of all content, with padding, clamped to the sheet. Null when empty. */
-export function getContentBounds(items: CanvasItem[], sheet: { width: number; height: number }, padding = 40): { x: number; y: number; width: number; height: number } | null {
+export function getContentBounds(rawItems: CanvasItem[], sheet: { width: number; height: number }, padding = 40): { x: number; y: number; width: number; height: number } | null {
+  const items = routeConnectors(rawItems)
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   const include = (x: number, y: number, r: number) => {
     minX = Math.min(minX, x - r); minY = Math.min(minY, y - r)
@@ -211,8 +222,7 @@ export function getContentBounds(items: CanvasItem[], sheet: { width: number; he
       include(item.x, item.y, item.strokeWidth)
       include(item.x + item.width, item.y + item.height, item.strokeWidth)
     } else {
-      include(item.start.x, item.start.y, item.strokeWidth + 16)
-      include(item.end.x, item.end.y, item.strokeWidth + 16)
+      for (const p of connectorPoints(item)) include(p.x, p.y, item.strokeWidth + 16)
     }
   }
   if (!Number.isFinite(minX)) return null

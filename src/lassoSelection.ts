@@ -1,4 +1,4 @@
-import { getConnectorRenderSpec } from './canvasModel'
+import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry } from './canvasModel'
 import type { CanvasItem, Point, Stroke } from './canvasModel'
 
 const SAMPLE_SPACING = 4
@@ -47,7 +47,10 @@ function strokeSegments(stroke: Stroke): Array<[Point, Point]> {
 }
 
 function itemSegments(item: CanvasItem): Array<[Point, Point]> {
-  if (item.kind === 'connector') return [[item.start, item.end]]
+  if (item.kind === 'connector') {
+    const points = connectorPoints(item)
+    return points.slice(1).map((p, index): [Point, Point] => [points[index], p])
+  }
   return item.kind === 'stroke' ? strokeSegments(item) : []
 }
 
@@ -72,41 +75,24 @@ function pointInPolygon(point: Point, polygon: Point[]) {
 
 function connectorSymbolHitTest(item: Extract<CanvasItem, { kind: 'connector' }>, point: Point, tolerance: number) {
   const spec = getConnectorRenderSpec(item)
-  if (!spec.endpoint || spec.symbol === 'none') return false
-  const dx = item.end.x - item.start.x
-  const dy = item.end.y - item.start.y
-  const length = Math.hypot(dx, dy)
-  if (!length) return false
-  const unit = { x: dx / length, y: dy / length }
-  const normal = { x: -unit.y, y: unit.x }
-  const atStart = spec.endpoint === 'start'
-  const tip = atStart ? item.start : item.end
-  const towardOther = atStart ? unit : { x: -unit.x, y: -unit.y }
-  const symbolLength = Math.min(Math.max(12, item.strokeWidth * 4), length * (spec.symbol.includes('diamond') ? 0.23 : 0.42))
-  const halfWidth = symbolLength * 0.52
-  const base = { x: tip.x + towardOther.x * symbolLength, y: tip.y + towardOther.y * symbolLength }
-  const sideA = { x: base.x + normal.x * halfWidth, y: base.y + normal.y * halfWidth, pressure: 1 }
-  const sideB = { x: base.x - normal.x * halfWidth, y: base.y - normal.y * halfWidth, pressure: 1 }
-  const tipPoint = { ...tip, pressure: 1 }
-
+  const geometry = getConnectorSymbolGeometry(item)
+  if (!geometry) return false
+  const { tip, sideA, sideB, far } = geometry
+  const reach = tolerance + item.strokeWidth / 2
   if (spec.symbol === 'hollow-triangle') {
-    const triangle = [tipPoint, sideA, sideB]
-    return pointInPolygon(point, triangle) || triangle.some((vertex, index) => distanceToSegment(point, vertex, triangle[(index + 1) % triangle.length]) <= tolerance + item.strokeWidth / 2)
+    const triangle = [tip, sideA, sideB]
+    return pointInPolygon(point, triangle) || triangle.some((vertex, index) => distanceToSegment(point, vertex, triangle[(index + 1) % triangle.length]) <= reach)
   }
   if (spec.symbol === 'open-arrow') {
-    return distanceToSegment(point, tipPoint, sideA) <= tolerance + item.strokeWidth / 2
-      || distanceToSegment(point, tipPoint, sideB) <= tolerance + item.strokeWidth / 2
+    return distanceToSegment(point, tip, sideA) <= reach || distanceToSegment(point, tip, sideB) <= reach
   }
-
-  const far = { x: tip.x + towardOther.x * symbolLength * 2, y: tip.y + towardOther.y * symbolLength * 2, pressure: 1 }
-  const diamond = [tipPoint, sideA, far, sideB]
-  return pointInPolygon(point, diamond) || diamond.some((vertex, index) => distanceToSegment(point, vertex, diamond[(index + 1) % diamond.length]) <= tolerance + item.strokeWidth / 2)
+  const diamond = [tip, sideA, far, sideB]
+  return pointInPolygon(point, diamond) || diamond.some((vertex, index) => distanceToSegment(point, vertex, diamond[(index + 1) % diamond.length]) <= reach)
 }
 
 export function itemHitTest(item: CanvasItem, point: Point, tolerance = 12): boolean {
   if (item.kind === 'connector') {
-    const [a, b] = [item.start, item.end]
-    return distanceToSegment(point, a, b) <= tolerance + item.strokeWidth / 2
+    return itemSegments(item).some(([a, b]) => distanceToSegment(point, a, b) <= tolerance + item.strokeWidth / 2)
       || connectorSymbolHitTest(item, point, tolerance)
   }
   if (item.kind === 'rectangle' || item.kind === 'text') {

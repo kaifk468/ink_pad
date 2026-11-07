@@ -244,6 +244,7 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     const connector: ConnectorObject = {
       kind: 'connector', id: value.id, start, end, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth,
       relationshipType, reversed: value.reversed === true,
+      ...(value.routing === 'elbow' ? { routing: 'elbow' as const } : {}),
       ...(startAttachment ? { startAttachment } : {}),
       ...(endAttachment ? { endAttachment } : {}),
     }

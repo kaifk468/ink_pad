@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
-import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { routeConnectors } from './connectorRoute'
 import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
 import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, hitInkBoxMoveGrip, inkBoxMoveGrip, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
 import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
@@ -308,6 +309,7 @@ function App() {
   const [selectedConnectorId, setSelectedConnectorId] = useState<number | null>(null)
   const [selectedConnectorType, setSelectedConnectorType] = useState<ConnectorRelationshipType | null>(null)
   const [selectedConnectorReversed, setSelectedConnectorReversed] = useState(false)
+  const [selectedConnectorElbow, setSelectedConnectorElbow] = useState(false)
   // The eraser mode and size used last are remembered (saved), so holding the S Pen button erases the way the person last chose.
   const [savedEraser] = useState(() => loadEraserPrefs())
   const [eraserSize, setEraserSize] = useState(savedEraser.size)
@@ -344,6 +346,7 @@ function App() {
     setSelectedConnectorId(connector?.id ?? null)
     setSelectedConnectorType(connector?.relationshipType ?? null)
     setSelectedConnectorReversed(connector?.reversed ?? false)
+    setSelectedConnectorElbow(connector?.routing === 'elbow')
   }
 
   const reconcileSelectedItems = () => {
@@ -374,6 +377,14 @@ function App() {
   useEffect(() => {
     setUmlConnectorType(null)
   }, [color])
+
+  const changeSelectedConnectorRouting = (elbow: boolean) => {
+    if (selectedConnectorId === null || selectedConnectorElbow === elbow) return
+    saveHistory()
+    strokesRef.current = updateConnectorRouting(strokesRef.current, selectedConnectorId, elbow ? 'elbow' : 'straight')
+    setSelectedConnectorElbow(elbow)
+    renderAll()
+  }
 
   const reverseSelectedConnector = () => {
     if (selectedConnectorId === null || selectedConnectorType === null || selectedConnectorType === 'association') return
@@ -463,8 +474,9 @@ function App() {
   }
 
   const hitTestObject = (point: Point) => {
+    const routedItems = routeConnectors(strokesRef.current)
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
-      const item = strokesRef.current[index]
+      const item = routedItems[index]
       if (item.kind === 'text') {
         if (itemHitTest(item, point, 8 / viewportRef.current.scale)) return index
         continue
@@ -524,9 +536,10 @@ function App() {
   }
 
   const hitTestConnector = (point: Point) => {
+    const routedItems = routeConnectors(strokesRef.current)
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
-      const item = strokesRef.current[index]
-      if (item.kind === 'connector' && itemHitTest(item, point, Math.max(12 / viewportRef.current.scale, item.strokeWidth * 2))) return item
+      const item = routedItems[index]
+      if (item.kind === 'connector' && itemHitTest(item, point, Math.max(12 / viewportRef.current.scale, item.strokeWidth * 2))) return strokesRef.current[index] as ConnectorObject
     }
     return null
   }
@@ -685,7 +698,7 @@ function App() {
   }, [strokeDisplayMode])
 
   const drawMinimapItems = useCallback((ctx: CanvasRenderingContext2D, geometry: MinimapGeometry) => {
-    drawMinimapItemsToCanvas(ctx, canvasItemsForRendering(strokesRef.current), geometry)
+    drawMinimapItemsToCanvas(ctx, canvasItemsForRendering(routeConnectors(strokesRef.current)), geometry)
   }, [])
 
 
@@ -834,7 +847,7 @@ function App() {
         historyContext.beginPath()
         historyContext.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
         historyContext.clip()
-        for (const added of appendedItemsForRendering(items)) drawItem(historyContext, added)
+        for (const added of appendedItemsForRendering(routeConnectors(items))) drawItem(historyContext, added)
         historyContext.restore()
         cache!.snapshot = items.slice()
         itemsMatch = true
@@ -916,7 +929,7 @@ function App() {
     ctx.beginPath()
     ctx.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
     ctx.clip()
-    strokesRef.current.forEach((item) => {
+    routeConnectors(strokesRef.current).forEach((item) => {
       if (!selectedKeysRef.current.has(canvasItemKey(item))) return
       if (item.kind === 'rectangle') {
         ctx.save()
@@ -970,7 +983,7 @@ function App() {
       target.restore()
     } else {
       const redrawStartedAt = DRAW_READOUT_ENABLED && cacheAllowed ? performance.now() : 0
-      canvasItemsForRendering(items).forEach((item) => { if (!isItemVisible(item, view)) return; if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(target, item) })
+      canvasItemsForRendering(routeConnectors(items)).forEach((item) => { if (!isItemVisible(item, view)) return; if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(target, item) })
       if (redrawStartedAt) {
         // Time of this full redraw (zoom, pan, undo, erase, opening a diagram): JS drawing time, and time until the next frame starts.
         const redrawJs = performance.now() - redrawStartedAt
@@ -1058,7 +1071,7 @@ function App() {
         ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && selectedKeysRef.current.has(canvasItemKey(item)))
         : undefined
     const groupBounds = !soleSelectedRectangle && selectedKeysRef.current.size > 1
-      ? getCanvasSelectionBounds(strokesRef.current, selectedKeysRef.current)
+      ? getCanvasSelectionBounds(routeConnectors(strokesRef.current), selectedKeysRef.current)
       : null
     const resizeBounds = soleSelectedRectangle ?? groupBounds ?? undefined
     if (groupBounds) {
@@ -1431,7 +1444,7 @@ function App() {
   }
 
   const translateWithinWorkspace = (items: CanvasItem[], keys: Set<string>, dx: number, dy: number): CanvasItem[] => {
-    const bounds = getCanvasSelectionBounds(items, keys)
+    const bounds = getCanvasSelectionBounds(routeConnectors(items), keys)
     if (!bounds) return translateSelectedItems(items, keys, dx, dy)
     const translation = clampTranslationToBounds(bounds, dx, dy)
     return translateSelectedItems(items, keys, translation.dx, translation.dy)
@@ -1461,7 +1474,7 @@ function App() {
     if (navigationSettingsRef.current.zoomLocked) return
     const canvas = canvasRef.current
     if (!canvas) return
-    const bounds = getCanvasSelectionBounds(strokesRef.current, new Set(strokesRef.current.map(canvasItemKey)))
+    const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
     if (!bounds) {
       fitCanvasView()
       return
@@ -1695,11 +1708,11 @@ function App() {
       return
     }
     if (lassoMode) {
-      const selectedItems = strokesRef.current.filter((item) => selectedKeysRef.current.has(canvasItemKey(item)))
+      const selectedItems = routeConnectors(strokesRef.current).filter((item) => selectedKeysRef.current.has(canvasItemKey(item)))
       const singleSelectedRectangle = selectedItems.length === 1 && selectedItems[0].kind === 'rectangle' ? selectedItems[0] : null
       const selectedBounds = singleSelectedRectangle
         ? { x: singleSelectedRectangle.x, y: singleSelectedRectangle.y, width: singleSelectedRectangle.width, height: singleSelectedRectangle.height }
-        : selectedItems.length > 1 ? getCanvasSelectionBounds(strokesRef.current, selectedKeysRef.current) : null
+        : selectedItems.length > 1 ? getCanvasSelectionBounds(routeConnectors(strokesRef.current), selectedKeysRef.current) : null
       const resizeHandle = selectedBounds ? hitTestRectangleResizeHandle(selectedBounds, point, 14 / viewportRef.current.scale) : null
       if (selectedBounds && resizeHandle) {
         event.currentTarget.setPointerCapture(event.pointerId)
@@ -2119,7 +2132,7 @@ function App() {
       const previous = activeLasso.points[activeLasso.points.length - 1]
       if (Math.hypot(finalPoint.x - previous.x, finalPoint.y - previous.y) >= 1.5) activeLasso.points.push(finalPoint)
       activeLassoRef.current = null
-      updateSelectedItems(selectItemsByLasso(strokesRef.current, activeLasso.points))
+      updateSelectedItems(selectItemsByLasso(routeConnectors(strokesRef.current), activeLasso.points))
       setSelectedRectangle(null)
       renderAll()
       return
@@ -2589,7 +2602,7 @@ function App() {
         selectedItemCount={selectedItemCount}
         onClearSelection={clearLassoSelection}
         relationship={selectedConnectorId !== null && selectedConnectorType !== null
-          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector }
+          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
           : null}
       />
       <ZoomControls zoomPercent={zoomPercent} locked={navigationSettings.zoomLocked} onToggleLock={() => updateNavigationSettings({ zoomLocked: !navigationSettings.zoomLocked })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />

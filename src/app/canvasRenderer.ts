@@ -1,4 +1,4 @@
-import { getConnectorRenderSpec, getConnectorSymbolGeometry } from '../canvasModel'
+import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry } from '../canvasModel'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from '../canvasModel'
 import { filterDisplayPoints } from '../oneEuroFilter'
 import { buildInterpolatingCurve, buildMidpointCurve, type InterpolatingStrokeSegment } from '../strokeCurves'
@@ -270,11 +270,20 @@ export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
   ctx.restore()
 }
 
+/** The line through `path` as one open path; with `replaceTip` the end that carries the symbol stops at that point instead. */
+function tracePath(ctx: CanvasRenderingContext2D, path: Point[], atStart: boolean, replaceTip?: Point): void {
+  const points = !replaceTip ? path : atStart ? [replaceTip, ...path.slice(1)] : [...path.slice(0, -1), replaceTip]
+  ctx.beginPath()
+  ctx.moveTo(points[0].x, points[0].y)
+  for (let index = 1; index < points.length; index += 1) ctx.lineTo(points[index].x, points[index].y)
+}
+
 export function drawConnector(ctx: CanvasRenderingContext2D, connector: ConnectorObject, color = connector.strokeColor, width = connector.strokeWidth): void {
   const spec = getConnectorRenderSpec(connector)
   const geometry = getConnectorSymbolGeometry(connector, width)
   const tip = geometry?.tip
-  const other = geometry?.other
+  const path = connectorPoints(connector)
+  const atStart = spec.endpoint === 'start'
 
   ctx.save()
   ctx.strokeStyle = color
@@ -283,10 +292,8 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
   ctx.lineJoin = 'round'
   ctx.setLineDash(spec.lineStyle === 'dashed' ? [Math.max(6, width * 2.5), Math.max(4, width * 1.8)] : [])
 
-  if (spec.symbol === 'hollow-triangle' && geometry && tip && other) {
-    ctx.beginPath()
-    ctx.moveTo(other.x, other.y)
-    ctx.lineTo(geometry.base.x, geometry.base.y)
+  if (spec.symbol === 'hollow-triangle' && geometry && tip) {
+    tracePath(ctx, path, atStart, geometry.base)
     ctx.stroke()
     ctx.setLineDash([])
     ctx.beginPath()
@@ -298,9 +305,7 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
     ctx.fill()
     ctx.stroke()
   } else if (spec.symbol === 'open-arrow' && geometry && tip) {
-    ctx.beginPath()
-    ctx.moveTo(connector.start.x, connector.start.y)
-    ctx.lineTo(connector.end.x, connector.end.y)
+    tracePath(ctx, path, atStart)
     ctx.stroke()
     ctx.setLineDash([])
     ctx.beginPath()
@@ -308,10 +313,8 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
     ctx.lineTo(tip.x, tip.y)
     ctx.lineTo(geometry.sideB.x, geometry.sideB.y)
     ctx.stroke()
-  } else if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip && other) {
-    ctx.beginPath()
-    ctx.moveTo(geometry.far.x, geometry.far.y)
-    ctx.lineTo(other.x, other.y)
+  } else if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip) {
+    tracePath(ctx, path, atStart, geometry.far)
     ctx.stroke()
     ctx.setLineDash([])
     ctx.beginPath()
@@ -324,9 +327,7 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
     ctx.fill()
     ctx.stroke()
   } else {
-    ctx.beginPath()
-    ctx.moveTo(connector.start.x, connector.start.y)
-    ctx.lineTo(connector.end.x, connector.end.y)
+    tracePath(ctx, path, false)
     ctx.stroke()
   }
   ctx.restore()
@@ -385,8 +386,7 @@ export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasIte
       ctx.strokeStyle = item.strokeColor
       ctx.lineWidth = Math.max(1, item.strokeWidth * geometry.scale)
       ctx.beginPath()
-      ctx.moveTo(toMiniX(item.start.x), toMiniY(item.start.y))
-      ctx.lineTo(toMiniX(item.end.x), toMiniY(item.end.y))
+      connectorPoints(item).forEach((p, index) => (index === 0 ? ctx.moveTo(toMiniX(p.x), toMiniY(p.y)) : ctx.lineTo(toMiniX(p.x), toMiniY(p.y))))
       ctx.stroke()
     } else if (item.points.length > 0) {
       ctx.globalCompositeOperation = item.erase ? 'destination-out' : 'source-over'

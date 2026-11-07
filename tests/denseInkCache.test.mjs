@@ -15,7 +15,7 @@ test('the ink already on the page is kept as a picture between frames and betwee
   }
   // a finished pen stroke is drawn onto the picture instead of redrawing the whole page
   assert.match(app, /items\.length === cache!\.snapshot\.length \+ 1 && sameItems\(cache!\.snapshot, items, cache!\.snapshot\.length\)/)
-  assert.match(app, /for \(const added of appendedItemsForRendering\(items\)\) drawItem\(historyContext, added\)/)
+  assert.match(app, /for \(const added of appendedItemsForRendering\(routeConnectors\(items\)\)\) drawItem\(historyContext, added\)/)
   // no longer thrown away when the stroke ends
   assert.doesNotMatch(app, /cacheable/)
 })

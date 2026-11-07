@@ -7,6 +7,7 @@ export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: num
 export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string }
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
+export type ConnectorRouting = 'straight' | 'elbow'
 export type ConnectorAttachment = { rectangleId: number; offsetX: number; offsetY: number }
 export type ConnectorRelationshipType = 'association' | 'directed-association' | 'inheritance' | 'realization' | 'dependency' | 'aggregation' | 'composition'
 export type ConnectorObject = {
@@ -20,6 +21,10 @@ export type ConnectorObject = {
   reversed: boolean
   startAttachment?: ConnectorAttachment
   endAttachment?: ConnectorAttachment
+  /** Line shape: straight (default when missing) or elbow (right angles). Saved. */
+  routing?: ConnectorRouting
+  /** The right-angle path worked out for an elbow connector. Derived while drawing, never saved: only on copies made by routeConnectors. */
+  routedPath?: Point[]
 }
 export type CanvasItem = Stroke | RectangleObject | ConnectorObject | TextObject
 export const CONNECTOR_SNAP_TOLERANCE = 36
@@ -84,21 +89,26 @@ export type ConnectorSymbolGeometry = {
   far: Point
 }
 
+/** The points a connector is drawn through: its routed path when it has one, otherwise the straight line from start to end. */
+export function connectorPoints(connector: ConnectorObject): Point[] {
+  return connector.routedPath && connector.routedPath.length >= 2 ? connector.routedPath : [connector.start, connector.end]
+}
+
 export function getConnectorSymbolGeometry(connector: ConnectorObject, width = connector.strokeWidth): ConnectorSymbolGeometry | null {
   const spec = getConnectorRenderSpec(connector)
   if (!spec.endpoint || spec.symbol === 'none') return null
-  const dx = connector.end.x - connector.start.x
-  const dy = connector.end.y - connector.start.y
+  const path = connectorPoints(connector)
+  const atStart = spec.endpoint === 'start'
+  const tip = atStart ? path[0] : path[path.length - 1]
+  const neighbour = atStart ? path[1] : path[path.length - 2]
+  const other = atStart ? path[path.length - 1] : path[0]
+  // The symbol sits on the last straight piece of the line at that end, so on a bent line it follows the bend.
+  const dx = neighbour.x - tip.x
+  const dy = neighbour.y - tip.y
   const length = Math.hypot(dx, dy)
   if (!length) return null
-  const unit = { x: dx / length, y: dy / length }
-  const normal = { x: -unit.y, y: unit.x }
-  const atStart = spec.endpoint === 'start'
-  const tip = atStart ? connector.start : connector.end
-  const other = atStart ? connector.end : connector.start
-  const towardOther = atStart
-    ? { ...unit, pressure: tip.pressure }
-    : { x: -unit.x, y: -unit.y, pressure: tip.pressure }
+  const towardOther = { x: dx / length, y: dy / length, pressure: tip.pressure }
+  const normal = { x: -towardOther.y, y: towardOther.x }
   const symbolLength = Math.min(Math.max(12, width * 4), length * (spec.symbol.includes('diamond') ? 0.23 : 0.42))
   const halfWidth = symbolLength * 0.52
   const base = { x: tip.x + towardOther.x * symbolLength, y: tip.y + towardOther.y * symbolLength, pressure: tip.pressure }
@@ -153,6 +163,14 @@ export function updateConnectorRelationship(items: CanvasItem[], connectorId: nu
   return items.map((item) => item.kind === 'connector' && item.id === connectorId && item.relationshipType !== relationshipType
     ? { ...item, relationshipType, reversed: relationshipType === 'association' ? false : item.reversed }
     : item)
+}
+
+export function updateConnectorRouting(items: CanvasItem[], connectorId: number, routing: ConnectorRouting): CanvasItem[] {
+  return items.map((item) => {
+    if (item.kind !== 'connector' || item.id !== connectorId || (item.routing ?? 'straight') === routing) return item
+    const { routing: _old, routedPath: _path, ...rest } = item
+    return routing === 'elbow' ? { ...rest, routing } : rest
+  })
 }
 
 export function reverseConnectorDirection(items: CanvasItem[], connectorId: number): CanvasItem[] {
@@ -324,8 +342,7 @@ export function getCanvasSelectionBounds(items: CanvasItem[], selectedKeys: Read
       include(item.x, item.y, item.strokeWidth / 2)
       include(item.x + item.width, item.y + item.height, item.strokeWidth / 2)
     } else if (item.kind === 'connector') {
-      include(item.start.x, item.start.y, item.strokeWidth / 2)
-      include(item.end.x, item.end.y, item.strokeWidth / 2)
+      for (const p of connectorPoints(item)) include(p.x, p.y, item.strokeWidth / 2)
       const geometry = getConnectorSymbolGeometry(item)
       if (geometry) {
         include(geometry.sideA.x, geometry.sideA.y, item.strokeWidth / 2)

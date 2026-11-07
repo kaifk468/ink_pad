@@ -7,8 +7,10 @@ import { COLORS, MAX_STROKE_WIDTH, MIN_STROKE_WIDTH, WIDTHS } from './appConfig'
 type RelationshipProps = {
   type: ConnectorRelationshipType
   reversed: boolean
+  elbow: boolean
   onChange: (type: ConnectorRelationshipType) => void
   onReverse: () => void
+  onElbow: (elbow: boolean) => void
 }
 
 type ContextPanelProps = {
@@ -117,6 +119,10 @@ export function ContextPanel(props: ContextPanelProps) {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h15l-4-4m4 4-4 4M20 16H5l4 4m-4-4 4-4"/></svg>
           <span>Reverse</span>
         </button>
+        <div className="routing-toggle" role="group" aria-label="Connector line shape">
+          <button type="button" className={relationship.elbow ? '' : 'active'} aria-pressed={!relationship.elbow} onClick={() => relationship.onElbow(false)}>Straight</button>
+          <button type="button" className={relationship.elbow ? 'active' : ''} aria-pressed={relationship.elbow} onClick={() => relationship.onElbow(true)}>Elbow</button>
+        </div>
       </div>}
     </aside>
   )
