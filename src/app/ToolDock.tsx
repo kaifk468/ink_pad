@@ -50,15 +50,16 @@ export function ToolDock(props: ToolDockProps) {
       <button className={`tool-button connector-button${props.connectorActive ? ' selected' : ''}`} type="button" aria-label="Connector" aria-pressed={props.connectorActive} title="Draw a straight UML relationship connector with the S Pen" onClick={props.onConnector}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="6" height="6" rx="1"/><rect x="14.5" y="14" width="6" height="6" rx="1"/><path d="m9.5 8.5 5 6"/></svg><span>Connector</span>
       </button>
+      <button className={`tool-button ink-class-button${props.inkClassActive ? ' selected' : ''}`} type="button" aria-label="Class box" aria-pressed={props.inkClassActive} title="Tap or drag with the S Pen to add a class box you write in by hand: name, variables and methods, with movable dividers" onClick={props.onInkClass}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 9.5h16M4 14.5h16"/><path d="m8 7.2 2.2-.6M8 12.4c1.2-1 2-1 3 0M8 18c1.5-1 2.5-1 4 0"/></svg><span>Class box</span>
+      </button>
       <InsertTray
         textActive={props.textActive}
         classActive={props.classActive}
-        inkClassActive={props.inkClassActive}
         shapeActive={props.shapeActive}
         onText={props.onText}
         onTextOptions={props.onTextOptions}
         onClass={props.onClass}
-        onInkClass={props.onInkClass}
         onShapes={props.onShapes}
       />
     </nav>

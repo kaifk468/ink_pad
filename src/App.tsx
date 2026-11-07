@@ -2521,36 +2521,39 @@ function App() {
           <div className={`navigator-status status-${saveStatus}`} role="status">{statusLabel(saveStatus, storage.kind)}</div>
         </aside>
       </section>
-      <TopLeftBar
-        title={docTitle}
-        library={library}
-        folders={folders}
-        currentId={currentDocId}
-        pageTemplate={pageTemplate}
-        onPageTemplate={setPageTemplate}
-        pageBackground={pageBackground}
-        onPageBackground={setPageBackground}
-        oneFingerPan={navigationSettings.oneFingerPan}
-        onOneFingerPan={(value) => updateNavigationSettings({ oneFingerPan: value })}
-        hasInk={hasInk}
-        filePanelOpen={filePanelOpen}
-        onToggleFilePanel={() => setFilePanelOpen((open) => !open)}
-        onClear={clearCanvas}
-        onSlimInk={slimInk}
-        onOpenDiagram={(id) => void openStoredDiagram(id)}
-        onFoldersOpen={() => void refreshLibrary()}
-        onNewDiagramIn={(folderId) => void newDiagramIn(folderId)}
-        onCreateFolder={(name, parentId) => void createFolder(name, parentId)}
-        onRenameFolder={(id, name) => void renameFolder(id, name)}
-        onDeleteFolder={(id) => void deleteFolder(id)}
-        onMoveDiagram={(docId, folderId) => void moveDiagram(docId, folderId)}
-        notice={fileNotice}
-        storage={storage}
-        onOpenStorage={() => setStoragePanelOpen(true)}
-        diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open), onFillTestInk: fillTestInk, onRemoveTestInk: removeTestInk }}
-      />
+      {/* With the zoom lock on the screen is in focus mode: the menu, folders, title and account hide; undo/redo, the dock and the zoom controls stay. */}
+      {!navigationSettings.zoomLocked && (
+        <TopLeftBar
+          title={docTitle}
+          library={library}
+          folders={folders}
+          currentId={currentDocId}
+          pageTemplate={pageTemplate}
+          onPageTemplate={setPageTemplate}
+          pageBackground={pageBackground}
+          onPageBackground={setPageBackground}
+          oneFingerPan={navigationSettings.oneFingerPan}
+          onOneFingerPan={(value) => updateNavigationSettings({ oneFingerPan: value })}
+          hasInk={hasInk}
+          filePanelOpen={filePanelOpen}
+          onToggleFilePanel={() => setFilePanelOpen((open) => !open)}
+          onClear={clearCanvas}
+          onSlimInk={slimInk}
+          onOpenDiagram={(id) => void openStoredDiagram(id)}
+          onFoldersOpen={() => void refreshLibrary()}
+          onNewDiagramIn={(folderId) => void newDiagramIn(folderId)}
+          onCreateFolder={(name, parentId) => void createFolder(name, parentId)}
+          onRenameFolder={(id, name) => void renameFolder(id, name)}
+          onDeleteFolder={(id) => void deleteFolder(id)}
+          onMoveDiagram={(docId, folderId) => void moveDiagram(docId, folderId)}
+          notice={fileNotice}
+          storage={storage}
+          onOpenStorage={() => setStoragePanelOpen(true)}
+          diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open), onFillTestInk: fillTestInk, onRemoveTestInk: removeTestInk }}
+        />
+      )}
       <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
-      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} onOpenStorage={() => setStoragePanelOpen(true)} />
+      {!navigationSettings.zoomLocked && <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} onOpenStorage={() => setStoragePanelOpen(true)} />}
       <ContextPanel
         showStyle={optionsFor === 'pen' && penModeActive}
         color={color}
