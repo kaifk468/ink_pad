@@ -35,6 +35,8 @@ import { ContextPanel } from './app/ContextPanel'
 import { HistoryBar } from './app/HistoryBar'
 import { ToolDock } from './app/ToolDock'
 import { TopLeftBar } from './app/TopLeftBar'
+import { HomeScreen } from './app/HomeScreen'
+import { storageLabel } from './StoragePanel'
 import { ZoomControls } from './app/ZoomControls'
 import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
@@ -297,6 +299,7 @@ function App() {
     },
   })
   const [eraser, setEraser] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [hasInk, setHasInk] = useState(false)
   const [shapeMode, setShapeMode] = useState(false)
   const [selectionMode, setSelectionMode] = useState(false)
@@ -2607,9 +2610,6 @@ function App() {
       {!navigationSettings.zoomLocked && (
         <TopLeftBar
           title={docTitle}
-          library={library}
-          folders={folders}
-          currentId={currentDocId}
           pageTemplate={pageTemplate}
           onPageTemplate={setPageTemplate}
           pageSpacing={pageSpacing}
@@ -2623,14 +2623,8 @@ function App() {
           onToggleFilePanel={() => setFilePanelOpen((open) => !open)}
           onClear={clearCanvas}
           onSlimInk={slimInk}
-          onOpenDiagram={(id) => void openStoredDiagram(id)}
-          onFoldersOpen={() => void refreshLibrary()}
-          onNewDiagramIn={(folderId) => void newDiagramIn(folderId)}
-          onCreateFolder={(name, parentId) => void createFolder(name, parentId)}
-          onRenameFolder={(id, name) => void renameFolder(id, name)}
-          onDeleteFolder={(id) => void deleteFolder(id)}
-          onMoveDiagram={(docId, folderId) => void moveDiagram(docId, folderId)}
-          notice={fileNotice}
+          libraryOpen={libraryOpen}
+          onOpenLibrary={() => { void refreshLibrary(); setLibraryOpen((open) => !open) }}
           storage={storage}
           onOpenStorage={() => setStoragePanelOpen(true)}
           diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open), onFillTestInk: fillTestInk, onRemoveTestInk: removeTestInk }}
@@ -2703,19 +2697,34 @@ function App() {
         onUseBrowserStorage={() => void useBrowserStorage()}
         onCopyBrowserHere={() => void copyBrowserToDevice()}
       />}
+      {libraryOpen && <HomeScreen
+        library={library}
+        folders={folders}
+        currentId={currentDocId}
+        notice={fileNotice}
+        storageText={storageLabel(storage)}
+        storageLocked={storage.locked}
+        showConnectHint={storage.kind === 'browser'}
+        onClose={() => setLibraryOpen(false)}
+        onOpenDiagram={(id) => { setLibraryOpen(false); void openStoredDiagram(id) }}
+        onNewDiagram={(folderId) => { setLibraryOpen(false); void newDiagramIn(folderId) }}
+        onImportFile={(file) => void importDocumentFile(file)}
+        onCreateFolder={(name, parentId) => void createFolder(name, parentId)}
+        onRenameFolder={(id, name) => void renameFolder(id, name)}
+        onDeleteFolder={(id) => void deleteFolder(id)}
+        onMoveDiagram={(docId, folderId) => void moveDiagram(docId, folderId)}
+        onDeleteDiagram={(id) => void deleteStoredDiagram(id)}
+        onChangeStorage={() => { setLibraryOpen(false); setStoragePanelOpen(true) }}
+      />}
       {filePanelOpen && <FilePanel
         title={docTitle}
         saveStatus={saveStatus}
         notice={fileNotice}
-        library={library}
-        currentId={currentDocId}
         canExport={hasInk}
         storage={storage}
         onClose={() => setFilePanelOpen(false)}
         onTitleChange={renameDiagram}
         onNew={() => void newDiagram()}
-        onOpen={(id) => void openStoredDiagram(id)}
-        onDelete={(id) => void deleteStoredDiagram(id)}
         onExportDocument={exportDocumentFile}
         onImportFile={(file) => void importDocumentFile(file)}
         onExportSvg={exportSvgFile}

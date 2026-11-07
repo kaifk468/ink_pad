@@ -154,10 +154,10 @@ test('the app wires Drive in: sign-in button, locked state and token renewal', a
   assert.match(panel, /Reconnect Drive/)
 })
 
-test('storage lives in the menu and the Folders panel, not in the per-diagram File panel', async () => {
+test('storage lives in the menu and the Library screen, not in the per-diagram File panel', async () => {
   const { readFile } = await import('node:fs/promises')
   const read = (name) => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')
-  const [bar, folders, file, app, hook] = await Promise.all([read('app/TopLeftBar.tsx'), read('app/FoldersSidebar.tsx'), read('FilePanel.tsx'), read('App.tsx'), read('app/useDocuments.ts')])
+  const [bar, folders, file, app, hook] = await Promise.all([read('app/TopLeftBar.tsx'), read('app/HomeScreen.tsx'), read('FilePanel.tsx'), read('App.tsx'), read('app/useDocuments.ts')])
   assert.match(bar, /Storage…/)
   assert.match(bar, /onOpenStorage\(\)/)
   assert.match(folders, /Saved in:/)

@@ -99,14 +99,14 @@ test('connector relationship controls and Clear selection moved into the context
   assert.match(app, /relationship=\{selectedConnectorId !== null && selectedConnectorType !== null/)
 })
 
-test('top bars: menu, folders, title, undo/redo and account button', () => {
+test('top bars: menu, library, title, undo/redo and account button', () => {
   assert.match(topLeft, /aria-label="Menu"/)
-  assert.match(topLeft, /aria-label="Folders"/)
+  assert.match(topLeft, /aria-label="Library"/)
   assert.match(topLeft, /aria-label="Page template"/)
   assert.match(topLeft, /aria-label="Sheet background color"/)
   assert.match(topLeft, /Clear canvas/)
   assert.match(topLeft, /File…/)
-  assert.match(topLeft, /<FoldersSidebar/)
+  assert.match(app, /<HomeScreen/)
   assert.match(app, /<span>Undo<\/span>|HistoryBar/)
   assert.match(app, /<AccountButton profile=\{driveProfile\}/)
   assert.match(app, /onOpenStorage=\{\(\) => setStoragePanelOpen\(true\)\} \/>/)

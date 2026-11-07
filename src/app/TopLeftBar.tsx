@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DocumentSummary, FolderRecord } from '../documentStore'
-import { FoldersSidebar } from './FoldersSidebar'
-import { storageLabel } from '../StoragePanel'
 import type { StorageInfo } from './useDocuments'
 import { PAGE_BACKGROUND_COLORS, type PageBackground } from '../pageBackground'
 import type { PageSpacing, PageTemplate } from '../pageTemplates'
 
 type TopLeftBarProps = {
   title: string
-  library: DocumentSummary[]
-  folders: FolderRecord[]
-  currentId: string | null
   pageTemplate: PageTemplate
   onPageTemplate: (value: PageTemplate) => void
   pageSpacing: PageSpacing
@@ -24,14 +18,8 @@ type TopLeftBarProps = {
   onToggleFilePanel: () => void
   onClear: () => void
   onSlimInk: () => void
-  onOpenDiagram: (id: string) => void
-  onFoldersOpen: () => void
-  onNewDiagramIn: (folderId: string | null) => void
-  onCreateFolder: (name: string, parentId: string | null) => void
-  onRenameFolder: (id: string, name: string) => void
-  onDeleteFolder: (id: string) => void
-  onMoveDiagram: (docId: string, folderId: string | null) => void
-  notice: string | null
+  libraryOpen: boolean
+  onOpenLibrary: () => void
   storage: StorageInfo
   onOpenStorage: () => void
   diagnostics: { enabled: boolean; open: boolean; onToggle: () => void; onFillTestInk: (targetPoints: number) => void; onRemoveTestInk: () => void }
@@ -55,10 +43,9 @@ const PAGE_COLOR_CHOICES: Array<{ value: PageBackground; label: string }> = [
   { value: 'green', label: 'Green' },
 ]
 
-/** Menu, Folders and the diagram title. The menu holds the File panel entry, page template, sheet color and Clear. */
+/** Menu, Library button and the diagram title. The menu holds the File panel entry, page template, sheet color and Clear. */
 export function TopLeftBar(props: TopLeftBarProps) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const [foldersOpen, setFoldersOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -74,22 +61,6 @@ export function TopLeftBar(props: TopLeftBarProps) {
       window.removeEventListener('keydown', onKey)
     }
   }, [menuOpen])
-
-  useEffect(() => {
-    if (!foldersOpen) return
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Element | null
-      if (target?.closest?.('.folders-sidebar, .folders-toggle')) return
-      setFoldersOpen(false)
-    }
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setFoldersOpen(false) }
-    window.addEventListener('pointerdown', onPointerDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [foldersOpen])
 
   return (
     <div className="top-left-bar">
@@ -173,26 +144,10 @@ export function TopLeftBar(props: TopLeftBarProps) {
           </>}
         </div>}
       </div>
-      <button className={`top-icon-button folders-toggle${foldersOpen ? ' selected' : ''}`} type="button" aria-label="Folders" aria-pressed={foldersOpen} title="Folders" onClick={() => { if (!foldersOpen) props.onFoldersOpen(); setFoldersOpen((value) => !value) }}>
+      <button className={`top-icon-button library-toggle${props.libraryOpen ? ' selected' : ''}`} type="button" aria-label="Library" aria-pressed={props.libraryOpen} title="Library: all diagrams and folders" onClick={props.onOpenLibrary}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
       </button>
       <button className="diagram-title" type="button" title="Open the File panel to rename this diagram" onClick={props.onToggleFilePanel}>{props.title || 'Untitled diagram'}</button>
-      {foldersOpen && <FoldersSidebar
-        library={props.library}
-        folders={props.folders}
-        currentId={props.currentId}
-        onOpenDiagram={(id) => { props.onOpenDiagram(id); setFoldersOpen(false) }}
-        onNewDiagram={(folderId) => { props.onNewDiagramIn(folderId); setFoldersOpen(false) }}
-        onCreateFolder={props.onCreateFolder}
-        onRenameFolder={props.onRenameFolder}
-        onDeleteFolder={props.onDeleteFolder}
-        onMoveDiagram={props.onMoveDiagram}
-        notice={props.notice}
-        storageText={storageLabel(props.storage)}
-        storageLocked={props.storage.locked}
-        showConnectHint={props.storage.kind === 'browser'}
-        onChangeStorage={() => { props.onOpenStorage(); setFoldersOpen(false) }}
-      />}
     </div>
   )
 }

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DocumentSummary } from './documentStore'
 import type { StorageInfo } from './app/useDocuments'
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'locked'
@@ -8,13 +7,9 @@ type FilePanelProps = {
   title: string
   saveStatus: SaveStatus
   notice: string | null
-  library: DocumentSummary[]
-  currentId: string | null
   onClose: () => void
   onTitleChange: (title: string) => void
   onNew: () => void
-  onOpen: (id: string) => void
-  onDelete: (id: string) => void
   onExportDocument: () => void
   onImportFile: (file: File) => void
   onExportSvg: () => void
@@ -40,7 +35,6 @@ export function statusLabel(status: SaveStatus, storageKind: 'browser' | 'device
 export function FilePanel(props: FilePanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [draftTitle, setDraftTitle] = useState(props.title)
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [titleSaved, setTitleSaved] = useState(false)
   useEffect(() => setDraftTitle(props.title), [props.title])
   const draftRef = useRef(draftTitle)
@@ -111,21 +105,6 @@ export function FilePanel(props: FilePanelProps) {
         </div>
         <p className="file-panel-hint">Images are cropped to your drawing and include the sheet color and page style.</p>
 
-        <h3>{props.storage.kind === 'device' ? 'Saved in your device folder' : props.storage.kind === 'drive' ? 'Saved in Google Drive' : 'Saved in this browser'}</h3>
-        <ul className="file-panel-list">
-          {props.library.length === 0 && <li className="file-panel-empty">Nothing saved yet. Drawing is saved automatically.</li>}
-          {props.library.map((entry) => (
-            <li key={entry.id} className={entry.id === props.currentId ? 'current' : undefined}>
-              <button type="button" className="file-panel-open" onClick={() => props.onOpen(entry.id)} disabled={entry.id === props.currentId}>
-                <span className="file-panel-entry-title">{entry.title}</span>
-                <span className="file-panel-entry-meta">{entry.itemCount} items · {new Date(entry.updatedAt).toLocaleString()}</span>
-              </button>
-              {confirmDeleteId === entry.id
-                ? <button type="button" className="file-panel-danger" onClick={() => { setConfirmDeleteId(null); props.onDelete(entry.id) }}>Delete?</button>
-                : <button type="button" aria-label={`Delete ${entry.title}`} onClick={() => setConfirmDeleteId(entry.id)}>Delete</button>}
-            </li>
-          ))}
-        </ul>
       </section>
     </div>
   )
