@@ -1,4 +1,5 @@
 import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry } from '../canvasModel'
+import { hldOutlinePath } from '../hldShapes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from '../canvasModel'
 import { filterDisplayPoints } from '../oneEuroFilter'
 import { buildInterpolatingCurve, buildMidpointCurve, type InterpolatingStrokeSegment } from '../strokeCurves'
@@ -256,13 +257,15 @@ function drawInkBoxDividers(ctx: CanvasRenderingContext2D, rectangle: RectangleO
 export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: RectangleObject, strokeDisplayMode: StrokeDisplayMode = 'raw'): void {
   if (rectangle.classBox) drawClassBox(ctx, rectangle)
   if (rectangle.inkBox) drawInkBoxInk(ctx, rectangle, strokeDisplayMode)
-  if (rectangle.inkBox) drawInkBoxDividers(ctx, rectangle)
+  if (rectangle.inkBox && !rectangle.hldShape) drawInkBoxDividers(ctx, rectangle)
   ctx.save()
   ctx.strokeStyle = rectangle.strokeColor
   ctx.lineWidth = rectangle.strokeWidth
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  if (rectangle.inkBox) {
+  if (rectangle.hldShape) {
+    ctx.stroke(new Path2D(hldOutlinePath(rectangle, rectangle.hldShape)))
+  } else if (rectangle.inkBox) {
     ctx.beginPath()
     ctx.roundRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, INK_BOX_CORNER_RADIUS)
     ctx.stroke()

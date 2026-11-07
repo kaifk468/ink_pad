@@ -1,4 +1,4 @@
-import type { CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
+import type { HldShape, CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 
 /**
  * Versioned InkPad document (.inkpad file / stored diagram).
@@ -42,6 +42,8 @@ export type NextIds = { stroke: number; rectangle: number; connector: number; te
 
 const TEMPLATES: DocumentPageTemplate[] = ['blank', 'lined', 'dotted']
 const BACKGROUNDS: DocumentPageBackground[] = ['white', 'warm', 'blue', 'yellow', 'green']
+/** Same kinds as HLD_SHAPES in canvasModel.ts (not imported: this file only takes types from there). */
+const HLD_SHAPE_KINDS: string[] = ['database', 'queue', 'service']
 const RELATIONSHIPS: ConnectorRelationshipType[] = ['association', 'directed-association', 'inheritance', 'realization', 'dependency', 'aggregation', 'composition']
 const MAX_TITLE_LENGTH = 120
 const MAX_TEXT_LENGTH = 2000
@@ -225,7 +227,7 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     if (!isNum(value.x) || !isNum(value.y) || !isNum(value.width) || !isNum(value.height) || !isColor(value.strokeColor) || !isNum(value.strokeWidth) || value.strokeWidth <= 0) return null
     const classBox = sanitizeClassBox(value.classBox)
     const inkBox = sanitizeInkBox(value.inkBox, value.y, value.height)
-    const rectangle: RectangleObject = { kind: 'rectangle', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth, ...(classBox ? { classBox } : {}), ...(inkBox ? { inkBox } : {}) }
+    const rectangle: RectangleObject = { kind: 'rectangle', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth, ...(classBox ? { classBox } : {}), ...(inkBox ? { inkBox } : {}), ...(inkBox && HLD_SHAPE_KINDS.includes(value.hldShape as string) ? { hldShape: value.hldShape as HldShape } : {}) }
     return rectangle
   }
   if (value.kind === 'text') {

@@ -4,6 +4,7 @@ import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
+import { HLD_DEFAULT_SIZE, createHldShape, type HldShape } from './hldShapes'
 import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
 import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, hitInkBoxMoveGrip, inkBoxMoveGrip, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
 import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
@@ -297,6 +298,8 @@ function App() {
   const [classMode, setClassMode] = useState(false)
   /** With classMode on: true = the hand-written (ink) class box tool, false = the typed class box tool. */
   const [inkClassTool, setInkClassTool] = useState(false)
+  // Which HLD shape the Insert tray picked (only meaningful while the ink class tool is on); null = the class box.
+  const [hldShapeTool, setHldShapeTool] = useState<HldShape | null>(null)
   const [classBoxEditor, setClassBoxEditor] = useState<{ rectangleId: number | null; x: number; y: number; content: ClassBoxContent } | null>(null)
   const [textSize, setTextSize] = useState(DEFAULT_TEXT_FONT_SIZE)
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null)
@@ -1123,7 +1126,7 @@ function App() {
       ctx.fillStyle = '#ffffff'
       ctx.strokeStyle = '#5269df'
       ctx.lineWidth = 2
-      for (const dividerY of [soleSelectedRectangle.inkBox.top, soleSelectedRectangle.inkBox.mid]) {
+      for (const dividerY of soleSelectedRectangle.hldShape ? [] : [soleSelectedRectangle.inkBox.top, soleSelectedRectangle.inkBox.mid]) {
         ctx.beginPath()
         ctx.arc(soleSelectedRectangle.x + soleSelectedRectangle.width, dividerY, 7, 0, Math.PI * 2)
         ctx.fill()
@@ -1685,7 +1688,9 @@ function App() {
       // Press where the box's top-left corner goes, then drag to size it; a plain tap makes a default-sized box.
       event.currentTarget.setPointerCapture(event.pointerId)
       saveHistory()
-      const box = createInkClassBox(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH)
+      const box = hldShapeTool
+        ? createHldShape(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, hldShapeTool)
+        : createInkClassBox(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH)
       strokesRef.current.push(box)
       setHasInk(true)
       activeResizeRef.current = {
@@ -2124,15 +2129,18 @@ function App() {
       activeResizeRef.current = null
       if (finished.created && finished.rectangleId !== null) {
         if (!finished.moved) {
-          const x = Math.min(finished.originalBounds.x, WORKSPACE_BOUNDS.x + WORKSPACE_BOUNDS.width - INK_BOX_DEFAULT_WIDTH)
-          const y = Math.min(finished.originalBounds.y, WORKSPACE_BOUNDS.y + WORKSPACE_BOUNDS.height - INK_BOX_DEFAULT_HEIGHT)
-          strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: INK_BOX_DEFAULT_WIDTH, height: INK_BOX_DEFAULT_HEIGHT })
+          const createdShape = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === finished.rectangleId)?.hldShape
+          const size = createdShape ? HLD_DEFAULT_SIZE[createdShape] : { width: INK_BOX_DEFAULT_WIDTH, height: INK_BOX_DEFAULT_HEIGHT }
+          const x = Math.min(finished.originalBounds.x, WORKSPACE_BOUNDS.x + WORKSPACE_BOUNDS.width - size.width)
+          const y = Math.min(finished.originalBounds.y, WORKSPACE_BOUNDS.y + WORKSPACE_BOUNDS.height - size.height)
+          strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: size.width, height: size.height })
         }
         // A new box is empty, so its sections start at the standard 15 / 70 / 15 split of its final size.
         strokesRef.current = strokesRef.current.map((item) => (item.kind === 'rectangle' && item.id === finished.rectangleId && item.inkBox ? { ...item, inkBox: newInkBoxContent(item.y, item.height) } : item))
         // The new box is ready to write in: back to the pen, with the box selected.
         setClassMode(false)
         setInkClassTool(false)
+        setHldShapeTool(null)
         setSelectedRectangle(finished.rectangleId)
         updateSelectedItems([])
       }
@@ -2388,8 +2396,9 @@ function App() {
   const toggleSelectTool = () => { const next = !selectionMode; setSelectionMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
   const openTextOptions = () => { setTextMode(true); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); clearLassoSelection(); setOptionsFor('text') }
   const toggleTextTool = () => { const next = !textMode; setTextMode(next); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
-  const toggleInkClassTool = () => { const next = !(classMode && inkClassTool); setInkClassTool(next); setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
-  const toggleClassTool = () => { const next = !(classMode && !inkClassTool); setInkClassTool(false); setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleHldShapeTool = (shape: HldShape) => { const next = !(classMode && inkClassTool && hldShapeTool === shape); setHldShapeTool(next ? shape : null); setInkClassTool(next); setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleInkClassTool = () => { const next = !(classMode && inkClassTool && hldShapeTool === null); setHldShapeTool(null); setInkClassTool(next); setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleClassTool = () => { const next = !(classMode && !inkClassTool); setHldShapeTool(null); setInkClassTool(false); setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
   const toggleLassoTool = () => { const next = !lassoMode; setLassoMode(next); setTextMode(false); setClassMode(false); setSelectionMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); setSelectedRectangle(null); clearLassoSelection() }
   const toggleConnectorTool = () => { const next = !connectorMode; setConnectorMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setSelectionMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
   const isDoubleTap = (tool: string) => {
@@ -2633,7 +2642,9 @@ function App() {
         connectorActive={connectorMode || umlConnectorType !== null}
         textActive={textMode}
         classActive={classMode && !inkClassTool}
-        inkClassActive={classMode && inkClassTool}
+        inkClassActive={classMode && inkClassTool && hldShapeTool === null}
+        hldShapeActive={classMode && inkClassTool ? hldShapeTool : null}
+        onHldShape={toggleHldShapeTool}
         shapeActive={shapeMode}
         onPen={tapPenTool}
         onEraser={tapEraserTool}

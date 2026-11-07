@@ -1,27 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
+import { HLD_SHAPE_LABELS } from '../hldShapes'
+import type { HldShape } from '../hldShapes'
 
 type InsertTrayProps = {
   textActive: boolean
   classActive: boolean
   shapeActive: boolean
+  hldActive: HldShape | null
+  onHldShape: (shape: HldShape) => void
   onText: () => void
   onTextOptions: () => void
   onClass: () => void
   onShapes: () => void
 }
 
-const SOON_ENTRIES = [
-  { label: 'Database', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6"/></svg> },
-  { label: 'Queue', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M8 7v10M12 7v10M16 7v10"/></svg> },
-  { label: 'Service', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="5"/></svg> },
+const HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint: string }> = [
+  { shape: 'database', hint: 'a cylinder', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6"/></svg> },
+  { shape: 'queue', hint: 'a box with arrow ends', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M8 7v10M16 7v10"/></svg> },
+  { shape: 'service', hint: 'a rounded box', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="5"/></svg> },
 ]
 
 /** The Insert button and the tray that opens upward from the bottom dock. Entries reuse the existing tool handlers. */
-export function InsertTray({ textActive, classActive, shapeActive, onText, onTextOptions, onClass, onShapes }: InsertTrayProps) {
+export function InsertTray({ textActive, classActive, shapeActive, hldActive, onHldShape, onText, onTextOptions, onClass, onShapes }: InsertTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const lastTapRef = useRef(0)
-  const anyActive = textActive || classActive || shapeActive
+  const anyActive = textActive || classActive || shapeActive || hldActive !== null
 
   useEffect(() => {
     if (!open) return
@@ -70,9 +74,9 @@ export function InsertTray({ textActive, classActive, shapeActive, onText, onTex
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9.5h16M4 14.5h16"/></svg><span>Typed class box</span>
         </button>
         <div className="insert-tray-heading">HLD</div>
-        {SOON_ENTRIES.map(({ label, icon }) => (
-          <button className="insert-entry insert-entry-soon" type="button" key={label} disabled aria-disabled="true" title={`${label} is coming soon`}>
-            {icon}<span>{label}</span><span className="soon-badge">soon</span>
+        {HLD_ENTRIES.map(({ shape, icon, hint }) => (
+          <button className={`insert-entry${hldActive === shape ? ' selected' : ''}`} type="button" key={shape} aria-label={HLD_SHAPE_LABELS[shape]} aria-pressed={hldActive === shape} title={`Tap or drag with the S Pen to add ${hint} you write in`} onClick={choose(() => onHldShape(shape))}>
+            {icon}<span>{HLD_SHAPE_LABELS[shape]}</span>
           </button>
         ))}
       </div>}

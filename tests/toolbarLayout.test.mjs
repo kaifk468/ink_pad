@@ -59,11 +59,11 @@ test('every dock tool keeps its label, pressed state and selected styling', () =
   assert.match(styles, /\.tool-button\.selected\s*\{[^}]*background:\s*#e9edff/)
 })
 
-test('the Insert tray holds Text label, Shapes, Typed class box and disabled soon entries for the HLD shapes', () => {
+test('the Insert tray holds Text label, Shapes, Typed class box and the three HLD shapes', () => {
   for (const label of ['Text', 'Shapes', 'Typed class box']) assert.match(tray, new RegExp(`aria-label="${label}"`))
-  for (const label of ['Database', 'Queue', 'Service']) assert.match(tray, new RegExp(`label: '${label}'`))
-  assert.match(tray, /insert-entry-soon[\s\S]*?disabled aria-disabled="true"/)
-  assert.match(tray, /soon-badge/)
+  for (const shape of ['database', 'queue', 'service']) assert.match(tray, new RegExp(`shape: '${shape}'`))
+  assert.match(tray, /onHldShape\(shape\)/)
+  assert.doesNotMatch(tray, /soon-badge/)
   assert.match(tray, /key === 'Escape'/)
   assert.match(tray, /rootRef\.current\.contains/)
   assert.match(tray, /aria-expanded=\{open\}/)

@@ -1,5 +1,6 @@
 import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry } from './canvasModel'
 import { routeConnectors } from './connectorRoute'
+import { hldOutlinePath } from './hldShapes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 import { getClassBoxGeometry, type ClassBoxCompartment } from './classBoxLayout'
 import { getTextBaselines, splitTextLines, TEXT_FONT_FAMILY } from './textLayout'
@@ -92,12 +93,15 @@ function inkBoxInkElement(rectangle: RectangleObject): string {
 
 function inkBoxLinesElement(rectangle: RectangleObject): string {
   const box = rectangle.inkBox
-  if (!box) return ''
+  if (!box || rectangle.hldShape) return ''
   const d = [box.top, box.mid].map((y) => `M${n(rectangle.x)} ${n(y)}H${n(rectangle.x + rectangle.width)}`).join('')
   return `<path d="${d}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(Math.max(1, rectangle.strokeWidth / 2))}"/>`
 }
 
 function rectangleElement(rectangle: RectangleObject): string {
+  if (rectangle.hldShape) {
+    return inkBoxInkElement(rectangle) + `<path d="${hldOutlinePath(rectangle, rectangle.hldShape)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"/>`
+  }
   const rounded = rectangle.inkBox ? ' rx="14" ry="14"' : ''
   return classBoxElement(rectangle) + inkBoxInkElement(rectangle) + inkBoxLinesElement(rectangle) + `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}"${rounded} fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"/>`
 }

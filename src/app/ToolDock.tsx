@@ -1,4 +1,5 @@
 import type { RefObject } from 'react'
+import type { HldShape } from '../hldShapes'
 import { InsertTray } from './InsertTray'
 
 type ToolDockProps = {
@@ -13,6 +14,7 @@ type ToolDockProps = {
   textActive: boolean
   classActive: boolean
   inkClassActive: boolean
+  hldShapeActive: HldShape | null
   shapeActive: boolean
   onPen: () => void
   onEraser: () => void
@@ -23,6 +25,7 @@ type ToolDockProps = {
   onTextOptions: () => void
   onClass: () => void
   onInkClass: () => void
+  onHldShape: (shape: HldShape) => void
   onShapes: () => void
 }
 
@@ -57,6 +60,8 @@ export function ToolDock(props: ToolDockProps) {
         textActive={props.textActive}
         classActive={props.classActive}
         shapeActive={props.shapeActive}
+        hldActive={props.hldShapeActive}
+        onHldShape={props.onHldShape}
         onText={props.onText}
         onTextOptions={props.onTextOptions}
         onClass={props.onClass}

@@ -22,7 +22,7 @@ export function createInkClassBox(id: number, x: number, y: number, width: numbe
 
 export function moveInkBoxDivider(rectangle: RectangleObject, which: InkBoxDivider, y: number): RectangleObject {
   const box = rectangle.inkBox
-  if (!box) return rectangle
+  if (!box || rectangle.hldShape) return rectangle
   const bottom = rectangle.y + rectangle.height
   if (rectangle.height < INK_BOX_MIN_HEIGHT) return clampInkBoxDividers(rectangle)
   if (which === 'top') {
@@ -36,7 +36,7 @@ export function moveInkBoxDivider(rectangle: RectangleObject, which: InkBoxDivid
 /** Which divider line is within tolerance of the point (only inside the box's width). */
 export function hitInkBoxDivider(rectangle: RectangleObject, point: Point, tolerance: number): InkBoxDivider | null {
   const box = rectangle.inkBox
-  if (!box) return null
+  if (!box || rectangle.hldShape) return null
   if (point.x < rectangle.x - tolerance || point.x > rectangle.x + rectangle.width + tolerance) return null
   const topDistance = Math.abs(point.y - box.top)
   const midDistance = Math.abs(point.y - box.mid)
