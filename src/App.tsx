@@ -17,7 +17,7 @@ import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
 import { thinItems, thinStroke } from './strokeThinning'
 import { createTestInk, isTestInk } from './testInk'
-import { createFrameRecorder, formatDrawFlags, formatFrameSummary } from './app/frameRecorder'
+import { createFrameRecorder, createRedrawTracker, formatDrawFlags, formatFrameSummary, formatRedrawSummary } from './app/frameRecorder'
 import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
 import { chooseDrawMode, countVisiblePoints, DEFAULT_DIRECT_MAX_VISIBLE_POINTS, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
 import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, layerCanvasOptions, rawDrawingOptions } from './app/canvasRenderer'
@@ -198,6 +198,8 @@ function App() {
   const frameRef = useRef<number | null>(null)
   const frameRecorderRef = useRef(createFrameRecorder())
   const frameReadoutRef = useRef<HTMLDivElement>(null)
+  const redrawReadoutRef = useRef<HTMLDivElement>(null)
+  const redrawTrackerRef = useRef(createRedrawTracker())
   const initialViewDoneRef = useRef(false)
   const viewportRef = useRef<Viewport>({ scale: INITIAL_ZOOM, offsetX: 0, offsetY: 0 })
   const touchPointsRef = useRef(new Map<number, Point>())
@@ -931,7 +933,16 @@ function App() {
       else target.drawImage(historyLayerRef.current, 0, 0)
       target.restore()
     } else {
+      const redrawStartedAt = DRAW_READOUT_ENABLED && cacheAllowed ? performance.now() : 0
       canvasItemsForRendering(items).forEach((item) => { if (!isItemVisible(item, view)) return; if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(target, item) })
+      if (redrawStartedAt) {
+        // Time of this full redraw (zoom, pan, undo, erase, opening a diagram): JS drawing time, and time until the next frame starts.
+        const redrawJs = performance.now() - redrawStartedAt
+        requestAnimationFrame(() => {
+          redrawTrackerRef.current.record(redrawJs, performance.now() - redrawStartedAt)
+          if (redrawReadoutRef.current) redrawReadoutRef.current.textContent = formatRedrawSummary(redrawTrackerRef.current.stats, Number(canvas.dataset.visiblePoints ?? 0))
+        })
+      }
       if (cacheAllowed) {
         const historyLayer = getReusableCanvasLayer(historyLayerRef, canvas.width, canvas.height)
         const historyContext = historyLayer.getContext('2d', LAYER_CANVAS_OPTIONS)
@@ -2208,6 +2219,7 @@ function App() {
           <div className="draw-readouts" aria-hidden="true">
             <div className="draw-readout">{DRAW_FLAGS_TEXT}</div>
             <div ref={frameReadoutRef} className="draw-readout">last stroke: write a stroke to see frame timing</div>
+            <div ref={redrawReadoutRef} className="draw-readout">page redraw (zoom/pan/undo/open): none yet</div>
             <div ref={drawReadoutRef} className="draw-readout" />
           </div>
         )}

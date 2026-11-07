@@ -79,6 +79,30 @@ export function formatFrameSummary(summary: FrameSummary): string {
   return `last stroke: gap ${ms(summary.gapP50)}/${ms(summary.gapP95)}/${ms(summary.gapMax)} ms (mid/95%/max) · slow ${Math.round(summary.slowShare * 100)}% · draw ${ms(summary.drawP50)}/${ms(summary.drawMax)} ms · ${summary.samplesPerFrame.toFixed(1)} samples/frame · ${summary.frames} frames`
 }
 
+export type RedrawStats = { count: number; lastJs: number; lastFrame: number; worstJs: number; worstFrame: number }
+
+/** Keeps the time of full page redraws (zoom, pan, undo, erase, opening a diagram): JS drawing time, and time until the next frame starts. */
+export function createRedrawTracker() {
+  const stats: RedrawStats = { count: 0, lastJs: 0, lastFrame: 0, worstJs: 0, worstFrame: 0 }
+  return {
+    stats,
+    /** js: ms spent issuing the redraw; frame: ms from the start of the redraw until the next animation frame began. */
+    record(js: number, frame: number) {
+      stats.count += 1
+      stats.lastJs = js
+      stats.lastFrame = frame
+      stats.worstJs = Math.max(stats.worstJs, js)
+      stats.worstFrame = Math.max(stats.worstFrame, frame)
+    },
+  }
+}
+
+export function formatRedrawSummary(stats: RedrawStats, visiblePoints: number): string {
+  if (!stats.count) return 'page redraw (zoom/pan/undo/open): none yet'
+  const ms = (value: number) => (value < 10 ? value.toFixed(1) : String(Math.round(value)))
+  return `page redraw: last ${ms(stats.lastFrame)} ms to next frame (JS ${ms(stats.lastJs)}) · worst ${ms(stats.worstFrame)} (JS ${ms(stats.worstJs)}) · ${stats.count} redraws · ${visiblePoints} visible points`
+}
+
 /** The switches that change drawing, as "name=value" for the on-screen flags line. */
 export function formatDrawFlags(flags: {
   directMax: number; live: 'whole' | 'incremental'; predict: boolean; thin: boolean; cache: boolean; desync: boolean

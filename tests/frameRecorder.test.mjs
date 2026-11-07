@@ -54,3 +54,19 @@ test('App shows the flags line and the frame line with ?debug=on and always uses
   assert.match(app, /frameRecorderRef\.current\.finish\(\)/)
   assert.match(app, /frameRecorderRef\.current\.samples\(samples\.length\)/)
 })
+
+test('redraw tracker keeps last and worst times and the readout line says what was measured', () => {
+  const tracker = rec.createRedrawTracker()
+  assert.equal(rec.formatRedrawSummary(tracker.stats, 0), 'page redraw (zoom/pan/undo/open): none yet')
+  tracker.record(95, 120)
+  tracker.record(8, 14)
+  assert.deepEqual({ ...tracker.stats }, { count: 2, lastJs: 8, lastFrame: 14, worstJs: 95, worstFrame: 120 })
+  assert.equal(rec.formatRedrawSummary(tracker.stats, 20000), 'page redraw: last 14 ms to next frame (JS 8.0) · worst 120 (JS 95) · 2 redraws · 20000 visible points')
+})
+
+test('App times full page redraws with ?debug=on and shows them on their own line', async () => {
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /const redrawStartedAt = DRAW_READOUT_ENABLED && cacheAllowed \? performance\.now\(\) : 0/)
+  assert.match(app, /redrawTrackerRef\.current\.record\(redrawJs, performance\.now\(\) - redrawStartedAt\)/)
+  assert.match(app, /<div ref=\{redrawReadoutRef\} className="draw-readout">/)
+})
