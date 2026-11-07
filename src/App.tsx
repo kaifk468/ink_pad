@@ -249,7 +249,7 @@ function App() {
   pageBackgroundRef.current = pageBackground
 
   const {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
@@ -2624,7 +2624,11 @@ function App() {
           onClear={clearCanvas}
           onSlimInk={slimInk}
           libraryOpen={libraryOpen}
-          onOpenLibrary={() => { void refreshLibrary(); setLibraryOpen((open) => !open) }}
+          onOpenLibrary={() => {
+            void refreshLibrary()
+            if (!libraryOpen) window.setTimeout(() => void captureThumbnail(), 250) // after the Library has painted
+            setLibraryOpen((open) => !open)
+          }}
           storage={storage}
           onOpenStorage={() => setStoragePanelOpen(true)}
           diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open), onFillTestInk: fillTestInk, onRemoveTestInk: removeTestInk }}
@@ -2701,6 +2705,7 @@ function App() {
         library={library}
         folders={folders}
         currentId={currentDocId}
+        thumbnails={thumbnails}
         notice={fileNotice}
         storageText={storageLabel(storage)}
         storageLocked={storage.locked}

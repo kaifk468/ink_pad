@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CanvasItem } from '../canvasModel'
 import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
-import { downloadBlob, loadCurrentDocumentId, saveCurrentDocumentId, type DocumentSummary, type FolderRecord } from '../documentStore'
+import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
+import { THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
 import { folderAndDescendantIds } from '../folderTree'
 import { DriveAuthError, createDriveBackend, fetchDriveProfile, type DriveEnv } from '../googleDrive'
@@ -83,6 +84,10 @@ export function useDocuments(host: DocumentHost) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [fileNotice, setFileNotice] = useState<string | null>(null)
   const [library, setLibrary] = useState<DocumentSummary[]>([])
+  /** Small page pictures for the Library cards, by diagram id. They live in this browser only. */
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
+  /** What the open diagram looked like when its picture was last made, so an unchanged diagram is not pictured again. */
+  const thumbnailOfRef = useRef<{ id: string; signature: DocumentSignature } | null>(null)
   const [currentDocId, setCurrentDocId] = useState<string | null>(null)
   const [folders, setFolders] = useState<FolderRecord[]>([])
   const [driveProfile, setDriveProfile] = useState<DriveProfile | null>(() => (readStorageMode() === 'drive' ? readStoredProfile() : null))
@@ -289,6 +294,8 @@ export function useDocuments(host: DocumentHost) {
     try {
       await backendRef.current.remove(id)
       if (docIdRef.current === id) forgetCurrentDiagram()
+      void deleteThumbnail(id).catch(() => undefined)
+      setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
     } catch {
       setFileNotice('Could not delete that diagram.')
     }
@@ -406,6 +413,41 @@ export function useDocuments(host: DocumentHost) {
     return { svg, bounds, baseName: documentFileName(docMetaRef.current.title).replace(/\.inkpad$/, '') }
   }
 
+  /**
+   * Makes the Library picture of the open diagram. It runs only when the Library opens (never while writing, because it
+   * draws the whole page once) and only if the diagram changed since its last picture. A page too large to draw cheaply
+   * keeps its old picture or icon.
+   */
+  const captureThumbnail = async () => {
+    const id = docIdRef.current
+    if (!id || !readyRef.current || hostRef.current.isInputActive()) return
+    const signature = currentSignature()
+    const last = thumbnailOfRef.current
+    if (last && last.id === id && sameSignature(signature, last.signature)) return
+    const exported = getImageExport()
+    try {
+      if (!exported) {
+        thumbnailOfRef.current = { id, signature }
+        await deleteThumbnail(id)
+        setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
+        return
+      }
+      if (exported.svg.length > THUMBNAIL_MAX_SVG_CHARS) return
+      const size = thumbnailSize(exported.bounds.width, exported.bounds.height)
+      const blob = await svgToPngBlob(exported.svg, size.width, size.height, 1)
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(reader.error ?? new Error('Could not read the picture.'))
+        reader.readAsDataURL(blob)
+      })
+      if (docIdRef.current !== id) return
+      await saveThumbnail(id, dataUrl)
+      thumbnailOfRef.current = { id, signature }
+      setThumbnails((current) => ({ ...current, [id]: dataUrl }))
+    } catch { /* the card keeps its icon or older picture */ }
+  }
+
   const exportSvgFile = () => {
     const exported = getImageExport()
     if (!exported) return
@@ -427,6 +469,10 @@ export function useDocuments(host: DocumentHost) {
   useEffect(() => {
     if (filePanelOpen) void refreshLibrary()
   }, [filePanelOpen])
+
+  useEffect(() => {
+    void loadThumbnails().then(setThumbnails).catch(() => undefined)
+  }, [])
 
   /** Fetches who is signed in and remembers it. Another Google account than before means the browser copies belong to someone else, so they are dropped. */
   const loadDriveProfile = async () => {
@@ -644,7 +690,7 @@ export function useDocuments(host: DocumentHost) {
   }, [])
 
   return {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,

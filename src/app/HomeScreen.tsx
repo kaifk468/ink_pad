@@ -7,6 +7,8 @@ type HomeScreenProps = {
   library: DocumentSummary[]
   folders: FolderRecord[]
   currentId: string | null
+  /** Small page pictures by diagram id; a card without one shows an icon. */
+  thumbnails: Record<string, string>
   notice: string | null
   storageText: string
   storageLocked: boolean
@@ -168,7 +170,9 @@ export function HomeScreen(props: HomeScreenProps) {
               <li key={entry.id} className={`home-card${entry.id === props.currentId ? ' current' : ''}`}>
                 <button type="button" className="home-card-open" aria-label={`Open ${entry.title || 'Untitled diagram'}`} onClick={() => props.onOpenDiagram(entry.id)}>
                   <span className="home-card-preview" aria-hidden="true">
-                    <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>
+                    {props.thumbnails[entry.id]
+                      ? <img src={props.thumbnails[entry.id]} alt="" draggable={false} />
+                      : <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>}
                   </span>
                   <span className="home-card-title">{entry.title || 'Untitled diagram'}</span>
                   <span className="home-card-folder">{where || 'No folder'}</span>

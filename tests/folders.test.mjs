@@ -44,7 +44,7 @@ test('the move picker lists folders in tree order with depth', () => {
 
 test('storage keeps the document format and adds folder stores without touching existing data', async () => {
   const store = await read('documentStore.ts')
-  assert.match(store, /DB_VERSION = 2/)
+  assert.match(store, /DB_VERSION = 3/) // 3 added the thumbnails store; every store is created only if missing
   assert.match(store, /createObjectStore\(FOLDER_STORE/)
   assert.match(store, /createObjectStore\(PLACEMENT_STORE/)
   assert.match(store, /if \(!request\.result\.objectStoreNames\.contains\(STORE\)\)/)

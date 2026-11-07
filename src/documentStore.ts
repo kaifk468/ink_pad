@@ -1,11 +1,13 @@
 import { parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
+import { isThumbnailDataUrl } from './thumbnail'
 
 /** Browser-local library of diagrams (IndexedDB). One record per diagram, keyed by id. */
 const DB_NAME = 'inkpad'
-const DB_VERSION = 2
+const DB_VERSION = 3
 const STORE = 'documents'
 const FOLDER_STORE = 'folders'
 const PLACEMENT_STORE = 'placements'
+const THUMBNAIL_STORE = 'thumbnails'
 const CURRENT_KEY = 'inkpad.currentDocument'
 
 export type DocumentSummary = { id: string; title: string; updatedAt: string; itemCount: number; folderId: string | null }
@@ -49,6 +51,7 @@ function open(): Promise<IDBDatabase> {
       if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE, { keyPath: 'id' })
       if (!request.result.objectStoreNames.contains(FOLDER_STORE)) request.result.createObjectStore(FOLDER_STORE, { keyPath: 'id' })
       if (!request.result.objectStoreNames.contains(PLACEMENT_STORE)) request.result.createObjectStore(PLACEMENT_STORE, { keyPath: 'docId' })
+      if (!request.result.objectStoreNames.contains(THUMBNAIL_STORE)) request.result.createObjectStore(THUMBNAIL_STORE, { keyPath: 'id' })
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error ?? new Error('Could not open browser storage.'))
@@ -101,6 +104,22 @@ export async function listStoredDocuments(): Promise<DocumentSummary[]> {
   return records
     .map((record) => summaryFromRecord(record, folderOf.get(record.id) ?? null))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+/** Library card pictures, one per diagram id, on this device only. A missing or unreadable store simply means no pictures. */
+export async function saveThumbnail(id: string, dataUrl: string): Promise<void> {
+  await run('readwrite', (store) => store.put({ id, dataUrl }), THUMBNAIL_STORE)
+}
+
+export async function loadThumbnails(): Promise<Record<string, string>> {
+  const records = await run<Array<{ id: string; dataUrl: string }>>('readonly', (store) => store.getAll(), THUMBNAIL_STORE)
+  const pictures: Record<string, string> = {}
+  for (const record of records) if (isThumbnailDataUrl(record.dataUrl)) pictures[record.id] = record.dataUrl
+  return pictures
+}
+
+export async function deleteThumbnail(id: string): Promise<void> {
+  await run('readwrite', (store) => store.delete(id), THUMBNAIL_STORE)
 }
 
 export async function listFolders(): Promise<FolderRecord[]> {
