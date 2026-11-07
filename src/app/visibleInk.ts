@@ -15,7 +15,9 @@ export type DrawMode = 'direct' | 'cached'
  *    enough ink is on screen that redrawing it every frame would stall.
  * The choice depends on how many points of ink are visible in the current view, not on the whole canvas.
  */
-export const DEFAULT_DIRECT_MAX_VISIBLE_POINTS = 18000
+/** 0 = always cached. Tablet tests (full repaint): cached stayed 11/11/11 ms, 0% slow from 5,000 to 28,900 visible points with 1-2.5 ms draw;
+ *  direct drew in 6-9 ms at 9,600-13,000 points and slipped on long strokes. ?direct=N brings direct back up to N points. */
+export const DEFAULT_DIRECT_MAX_VISIBLE_POINTS = 0
 /** Once cached, go back to direct only when the visible ink has dropped well below the limit, so scrolling near it does not flip-flop. */
 export const DIRECT_RETURN_RATIO = 0.65
 

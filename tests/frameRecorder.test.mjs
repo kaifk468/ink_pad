@@ -43,10 +43,10 @@ test('text lines are compact and list every flag', () => {
   assert.equal(flags, 'direct<=18000 · live=whole · predict=off · thin=on · cache=on · group=on · layers=two · canvas=gpu · dpr<=any · dirty=box · layerdom=off · desync=off')
 })
 
-test('App shows the flags line and the frame line with ?debug=on and defaults to 18,000, whole-stroke, no prediction', async () => {
+test('App shows the flags line and the frame line with ?debug=on and always uses the cached path, whole-stroke, no prediction', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
   const ink = await readFile(new URL('../src/app/visibleInk.ts', import.meta.url), 'utf8')
-  assert.match(ink, /DEFAULT_DIRECT_MAX_VISIBLE_POINTS = 18000/)
+  assert.match(ink, /DEFAULT_DIRECT_MAX_VISIBLE_POINTS = 0\b/)
   assert.match(app, /LIVE_INCREMENTAL_ENABLED = DRAW_SWITCHES\.get\('live'\) === 'incremental'/)
   assert.match(app, /PEN_PREDICTION_ENABLED = DRAW_SWITCHES\.get\('predict'\) === 'on'/)
   assert.match(app, /formatDrawFlags\(/)

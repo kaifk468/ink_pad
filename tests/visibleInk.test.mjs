@@ -44,10 +44,15 @@ test('the drawing path changes only past the limit, with room before it changes 
   assert.equal(ink.chooseDrawMode('cached', 0, 1e9), 'direct')
 })
 
+test('the default draw path is always cached, and a limit of 0 never goes direct', () => {
+  assert.equal(ink.DEFAULT_DIRECT_MAX_VISIBLE_POINTS, 0)
+  for (const previous of ['direct', 'cached']) for (const points of [0, 1, 5000, 28900, 162000]) assert.equal(ink.chooseDrawMode(previous, points, ink.DEFAULT_DIRECT_MAX_VISIBLE_POINTS), 'cached')
+})
+
 test('renderAll picks the path from the visible ink, only between strokes, and skips off-screen strokes when redrawing', () => {
   assert.match(app, /if \(!benchmarkBackground && liveStroke === null\) \{\s*const visiblePoints = countVisiblePoints\(items, view\)[\s\S]*?const nextMode = chooseDrawMode\(drawModeRef\.current, visiblePoints, DIRECT_MAX_VISIBLE_POINTS\)/)
   assert.match(app, /const cacheAllowed = !benchmarkBackground && editingTextId === null && PAGE_CACHE_ENABLED && drawMode === 'cached'/)
-  // direct drawing below 18,000 visible points, cached above; ?direct=N overrides (0 = always cached)
+  // cached by default (limit 0); ?direct=N turns direct drawing on up to N visible points
   assert.match(app, /DRAW_SWITCHES\.get\('direct'\) !== null \? Number\(DRAW_SWITCHES\.get\('direct'\)\) : DEFAULT_DIRECT_MAX_VISIBLE_POINTS/)
   assert.match(app, /if \(!isItemVisible\(item, view\)\) return/)
   assert.match(app, /DRAW_SWITCHES\.get\('direct'\)/)
