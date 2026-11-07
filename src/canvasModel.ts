@@ -128,9 +128,18 @@ export function canvasItemsForRendering(items: CanvasItem[]): CanvasItem[] {
     .filter((item): item is RectangleObject => item.kind === 'rectangle')
     .map((rectangle) => [rectangle.id, rectangle]))
   const renderItems: CanvasItem[] = []
-  for (const item of items) {
+  // The stroke eraser only cuts ink: connectors are drawn again after each run of eraser strokes, so it never leaves a gap in one.
+  const connectorsSoFar: ConnectorObject[] = []
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index]
     renderItems.push(item)
+    if (item.kind === 'stroke' && item.erase) {
+      const next = items[index + 1]
+      if (!(next && next.kind === 'stroke' && next.erase)) renderItems.push(...connectorsSoFar)
+      continue
+    }
     if (item.kind !== 'connector') continue
+    connectorsSoFar.push(item)
     const attachedRectangleIds = new Set([item.startAttachment?.rectangleId, item.endAttachment?.rectangleId])
     for (const rectangleId of attachedRectangleIds) {
       const rectangle = rectangleId === undefined ? undefined : rectangles.get(rectangleId)
@@ -148,6 +157,7 @@ export function canvasItemsForRendering(items: CanvasItem[]): CanvasItem[] {
 export function appendedItemsForRendering(items: CanvasItem[]): CanvasItem[] {
   const last = items[items.length - 1]
   if (!last) return []
+  if (last.kind === 'stroke' && last.erase) return [last, ...items.filter((item): item is ConnectorObject => item.kind === 'connector')]
   if (last.kind !== 'connector') return [last]
   const result: CanvasItem[] = [last]
   for (const rectangleId of new Set([last.startAttachment?.rectangleId, last.endAttachment?.rectangleId])) {

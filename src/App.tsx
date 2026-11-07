@@ -1010,6 +1010,8 @@ function App() {
       const preview = shapePreviewRef.current
       const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
       drawItem(target, preview ?? activeStrokeRef.current)
+      // the stroke eraser never cuts a connector: draw them again over the live erase stroke
+      if (!preview && activeStrokeRef.current.erase) for (const item of routeConnectors(items)) if (item.kind === 'connector') drawItem(target, item)
       if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
     }
     target.restore()

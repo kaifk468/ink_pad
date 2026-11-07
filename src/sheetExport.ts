@@ -165,13 +165,15 @@ export function buildSheetSvg(rawItems: CanvasItem[], options: SheetExportOption
   let body = ''
   let maskCount = 0
   let pending = ''
+  // The stroke eraser only cuts ink, never connectors: they are put on top of each eraser mask again.
+  const connectorElements: string[] = []
 
   const flushWithEraser = (erasers: Stroke[]) => {
     maskCount += 1
     const id = `erase-${maskCount}`
     const cuts = erasers.map((eraser) => strokeElement({ ...eraser, color: '#000000' })).join('')
     defs.push(`<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#fff"/>${cuts}</mask>`)
-    body = `<g mask="url(#${id})">${body}${pending}</g>`
+    body = `<g mask="url(#${id})">${body}${pending}</g>${connectorElements.join('')}`
     pending = ''
   }
 
@@ -185,7 +187,9 @@ export function buildSheetSvg(rawItems: CanvasItem[], options: SheetExportOption
       flushWithEraser(eraserRun)
       eraserRun = []
     }
-    pending += itemElement(item)
+    const element = itemElement(item)
+    if (item.kind === 'connector') connectorElements.push(element)
+    pending += element
   }
   if (eraserRun.length) flushWithEraser(eraserRun)
   body += pending

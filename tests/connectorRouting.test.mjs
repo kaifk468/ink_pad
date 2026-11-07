@@ -206,3 +206,31 @@ test('the app draws, hit-tests, selects and exports through the routed list and 
   const model2 = await readFile(new URL('../src/canvasModel.ts', import.meta.url), 'utf8')
   assert.match(model2, /routing\?: ConnectorRouting/)
 })
+
+const eraserStroke = (id) => ({ kind: 'stroke', id, points: [p(100, 40), p(300, 40)], color: '#000', width: 20, erase: true })
+
+test('the stroke eraser never cuts a connector: connectors are drawn again after each run of eraser strokes', () => {
+  const conn = attached('association', null)
+  const items = [A, B, conn, eraserStroke(11), eraserStroke(12)]
+  const order = model.canvasItemsForRendering(items)
+  const lastEraser = order.lastIndexOf(items[4])
+  assert.equal(order[lastEraser + 1], conn)
+  assert.equal(order.filter((i) => i === conn).length, 2)
+  // a connector drawn after the erasers needs no second draw
+  const after = model.canvasItemsForRendering([A, B, eraserStroke(11), conn])
+  assert.equal(after.filter((i) => i === conn).length, 1)
+  // appended picture update for a new eraser stroke includes the connectors
+  assert.deepEqual(model.appendedItemsForRendering(items), [items[4], conn])
+})
+
+test('SVG export keeps connectors outside the eraser mask', () => {
+  const items = [A, B, attached('association', null), eraserStroke(11)]
+  const svg = exp.buildSheetSvg(items, { width: 900, height: 700, template: 'blank', backgroundColor: '#fff' })
+  const afterMask = svg.slice(svg.lastIndexOf('</g>'))
+  assert.ok(afterMask.includes('<path'), 'the connector is drawn after the masked group')
+})
+
+test('the live erase stroke redraws connectors over itself', async () => {
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /activeStrokeRef\.current\.erase\) for \(const item of routeConnectors\(items\)\)/)
+})
