@@ -1,5 +1,19 @@
 # InkPad Project Context
 
+## Benchmark: smooth Raw writing on a large page (2026-11-07, tag `smooth-writing-benchmark`)
+
+Galaxy Tab S9 FE+ with S Pen, Chrome, 90 Hz, `?debug=on`, Zepto test diagram. Last-stroke line: gap between frames mid/95%/max ms, slow frames over 20 ms, draw ms.
+
+| Case | Gap ms | Slow | Draw ms |
+|---|---|---|---|
+| Slimmed Zepto, 5,000 visible points, cached | 11/11/11 | 0% | 1.0-1.4 |
+| Slimmed Zepto, 28,900 points, long strokes, cached | 11/11/17 | 0% | 1.0-2.5 |
+| Unslimmed Zepto (~160k points), minimap closed | 11/11/11 | 0% | 0.8-1.3 |
+| Unslimmed Zepto, minimap open, before the idle delay | 11/22/33 | 8% | 0.8-17 |
+| Unslimmed Zepto, minimap open, final build | 11/11/11 | 0% | 0.8-1.5 |
+
+What got there: cached path is the only default (direct limit 0), the whole page canvas is repainted each frame (`?dirty=box` restores the box repaint; the box repaint was the cause of late frames), strokes are thinned on pen-up, undo history shares strokes, the minimap is not redrawn while writing and waits 600 ms of quiet afterwards. Not measured: the redraw time after zoom or pan on a big page (felt under a second); the debug readout gets a timer for it next. Not pushed at the time of tagging.
+
 ## Current Status — 2026-11-06
 
 - **Minimap redraw waits for a quiet moment (2026-11-07):** tablet test on the full unslimmed Zepto (about 160k points), cached path, `?debug=on`: minimap open, short stroke 11/17/28 ms, 3% slow (34 frames); minimap open, long strokes 11/22/33, 8% slow, draw 0.8-17 ms (86 frames); minimap closed 11/11/11, 0% slow, draw 0.8-1.3 ms (327 frames). So the minimap still hurt even with no refresh while writing; the likely cause is the full-ink redraw right at pen-up delaying the next stroke (unproven). Now a non-gesture minimap redraw is scheduled `MINIMAP_IDLE_DELAY_MS` (600 ms) after the last render and dropped if a stroke starts (or the pen is down when it fires); pinch/pan still redraws at most once a second. Checks: npm test 325/325, tsc -b clean, vite build passes (Linux copy). Needs a tablet check (unslimmed Zepto, minimap open, strokes written quickly one after another). If still late: keep a saved minimap picture that changes only when ink changes.
