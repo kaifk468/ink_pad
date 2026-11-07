@@ -7,6 +7,8 @@ export type LibraryQuery = {
   query: string
   /** null = every diagram; otherwise that folder and everything below it. */
   folderId: string | null
+  /** When given, only these diagrams (the Starred view). */
+  onlyIds?: ReadonlySet<string>
 }
 
 export type LibraryLayout = 'grid' | 'list'
@@ -31,12 +33,13 @@ export function folderLabel(folders: FolderRecord[], folderId: string | null): s
 }
 
 /** Diagrams that match the search and the chosen folder, newest edit first. Never changes the input. */
-export function searchLibrary(library: DocumentSummary[], folders: FolderRecord[], { query, folderId }: LibraryQuery): DocumentSummary[] {
+export function searchLibrary(library: DocumentSummary[], folders: FolderRecord[], { query, folderId, onlyIds }: LibraryQuery): DocumentSummary[] {
   const inside = folderId ? new Set(folderAndDescendantIds(folders, folderId)) : null
   const known = new Set(folders.map((folder) => folder.id))
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)
   return library
     .filter((entry) => (inside ? entry.folderId !== null && inside.has(entry.folderId) : true))
+    .filter((entry) => (onlyIds ? onlyIds.has(entry.id) : true))
     .filter((entry) => {
       if (words.length === 0) return true
       const text = `${entry.title || 'Untitled diagram'} ${folderLabel(folders, entry.folderId && known.has(entry.folderId) ? entry.folderId : null)}`.toLowerCase()

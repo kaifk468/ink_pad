@@ -48,7 +48,8 @@ test('the picture is made when the Library opens, never during writing, and only
   assert.match(hook, /exported\.svg\.length > THUMBNAIL_MAX_SVG_CHARS\) return/)
   // not part of save: doPersist must not draw the page
   const persist = hook.slice(hook.indexOf('const doPersist'), hook.indexOf('const persistNow'))
-  assert.doesNotMatch(persist, /Thumbnail|svgToPngBlob|getImageExport/)
+  // saving never draws the page; it may only drop the old picture when a renamed file got a new id
+  assert.doesNotMatch(persist, /captureThumbnail|saveThumbnail|svgToPngBlob|getImageExport/)
   assert.match(app, /if \(!libraryOpen\) window\.setTimeout\(\(\) => void captureThumbnail\(\), 250\)/)
 })
 

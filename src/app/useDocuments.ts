@@ -3,6 +3,7 @@ import type { CanvasItem } from '../canvasModel'
 import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
 import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
 import { THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
+import { moveStarred, readStarred, writeStarred } from '../starred'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
 import { folderAndDescendantIds } from '../folderTree'
 import { DriveAuthError, createDriveBackend, fetchDriveProfile, type DriveEnv } from '../googleDrive'
@@ -190,6 +191,12 @@ export function useDocuments(host: DocumentHost) {
       docIdRef.current = newId
       docMetaRef.current = { title: saved.title, createdAt: saved.createdAt }
       savedSignatureRef.current = signature
+      if (previousId && previousId !== newId) {
+        // A device-folder file was renamed, so its id changed: the star follows it and the old picture is dropped (a new one is made when the Library opens).
+        writeStarred(moveStarred(readStarred(), previousId, newId))
+        void deleteThumbnail(previousId).catch(() => undefined)
+        setThumbnails((current) => { if (!(previousId in current)) return current; const { [previousId]: _gone, ...rest } = current; return rest })
+      }
       writeCurrentId(newId)
       setCurrentDocId(newId)
       setSaveStatus('saved')
