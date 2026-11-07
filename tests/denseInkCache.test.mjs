@@ -22,7 +22,10 @@ test('the ink already on the page is kept as a picture between frames and betwee
 
 test('the minimap is not redrawn on every frame while writing', () => {
   assert.match(app, /MINIMAP_LIVE_REFRESH_MS/)
-  assert.match(app, /\(!activeStrokeRef\.current && !gestureFrame\) \|\| minimapNow - minimapRenderedAtRef\.current > MINIMAP_LIVE_REFRESH_MS/)
+  assert.match(app, /MINIMAP_LIVE_REFRESH_MS = 1000/)
+  assert.match(app, /if \(!activeStrokeRef\.current && \(!gestureFrame \|\| minimapNow - minimapRenderedAtRef\.current > MINIMAP_LIVE_REFRESH_MS\)\) \{/)
+  // the piece-by-piece live path no longer touches the minimap
+  assert.doesNotMatch(app, /drawLiveFrame\(\)\s*const minimapNow/)
 })
 
 test('a growing pen stroke only repaints the area around it', () => {

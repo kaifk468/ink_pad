@@ -41,7 +41,8 @@ import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEI
 
 
 const DOUBLE_TAP_MS = 400
-const MINIMAP_LIVE_REFRESH_MS = 300
+// The minimap is not redrawn at all while a stroke is being written (it updates once on pen-up); during pinch/pan at most once a second.
+const MINIMAP_LIVE_REFRESH_MS = 1000
 const GESTURE_SETTLE_MS = 140
 const ZOOM_STEP = 1.25
 
@@ -823,11 +824,7 @@ function App() {
     if (incrementalLive && liveState && liveState.strokeId === liveStroke!.id
       && liveBaseRef.current?.width === canvas.width && liveBaseRef.current.height === canvas.height) {
       drawLiveFrame()
-      const minimapNow = performance.now()
-      if (minimapNow - minimapRenderedAtRef.current > MINIMAP_LIVE_REFRESH_MS) {
-        minimapRenderedAtRef.current = minimapNow
-        renderNavigator()
-      }
+      // No minimap refresh while writing.
       if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
       return
     }
@@ -1070,9 +1067,9 @@ function App() {
     }
     if (measureFrame) diagnostics?.recordMainCanvasRender(performance.now() - mainCanvasStartedAt)
     const minimapStartedAt = measureFrame ? performance.now() : 0
-    // The minimap redraws every item, so while a stroke is being written it is refreshed a few times a second at most.
+    // The minimap redraws every item: never while a stroke is being written (the next frame after pen-up draws it), at most once a second during pinch/pan.
     const minimapNow = performance.now()
-    if ((!activeStrokeRef.current && !gestureFrame) || minimapNow - minimapRenderedAtRef.current > MINIMAP_LIVE_REFRESH_MS) {
+    if (!activeStrokeRef.current && (!gestureFrame || minimapNow - minimapRenderedAtRef.current > MINIMAP_LIVE_REFRESH_MS)) {
       minimapRenderedAtRef.current = minimapNow
       renderNavigator()
     }
