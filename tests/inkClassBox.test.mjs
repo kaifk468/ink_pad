@@ -67,15 +67,15 @@ test('an erase stroke is stored in the box and does not grow it', () => {
 
 test('resizing scales the writing, dividers and pen width in proportion with the box', () => {
   const written = box.addStrokeToInkBox(make(), line(2, [p(150, 150), p(380, 300)]))
-  const items = model.resizeRectangleItems([written], 1, { x: 100, y: 100, width: 240, height: 180 })
+  const items = model.resizeRectangleItems([written], 1, { x: 100, y: 100, width: 480, height: 360 })
   const resized = items[0]
-  assert.equal(resized.width, 240)
-  assert.equal(resized.height, 180)
+  assert.equal(resized.width, 480)
+  assert.equal(resized.height, 360)
   const stroke = resized.inkBox.ink[0]
-  assert.equal(stroke.points[0].x, 100 + (150 - 100) * 0.75)
-  assert.equal(stroke.points[1].y, 100 + (300 - 100) * 0.75)
-  assert.equal(stroke.width, 3)
-  assert.equal(resized.inkBox.top, 100 + (written.inkBox.top - 100) * 0.75)
+  assert.equal(stroke.points[0].x, 100 + (150 - 100) * 1.5)
+  assert.equal(stroke.points[1].y, 100 + (300 - 100) * 1.5)
+  assert.equal(stroke.width, 6)
+  assert.equal(resized.inkBox.top, 100 + (written.inkBox.top - 100) * 1.5)
   assert.equal(written.inkBox.ink[0].points[0].x, 150, 'original untouched')
 })
 
@@ -85,12 +85,12 @@ test('resizing never goes below the minimum size', () => {
   assert.ok(resized.inkBox.top < resized.inkBox.mid && resized.inkBox.mid < resized.y + resized.height)
 })
 
-test('default box is 560 x 420 and its sections start at 15 / 70 / 15 percent', () => {
+test('default box is 560 x 420 and its sections start at 12 / 80 / 8 percent', () => {
   assert.equal(box.INK_BOX_DEFAULT_WIDTH, 560)
   assert.equal(box.INK_BOX_DEFAULT_HEIGHT, 420)
   const content = box.newInkBoxContent(0, 420)
-  assert.ok(Math.abs(content.top - 63) < 1e-9)
-  assert.ok(Math.abs(content.mid - 357) < 1e-9)
+  assert.ok(Math.abs(content.top - 50.4) < 1e-9)
+  assert.ok(Math.abs(content.mid - 386.4) < 1e-9)
 })
 
 test('moving the box moves its ink and dividers together', () => {
@@ -128,6 +128,15 @@ test('a damaged ink box in a file is repaired instead of failing the whole file'
   assert.ok(fixed.inkBox.top > fixed.y && fixed.inkBox.mid < fixed.y + fixed.height)
 })
 
+test('the move grip sits above the top edge and is hit only near it', () => {
+  const rect = make()
+  const grip = box.inkBoxMoveGrip(rect, 1)
+  assert.ok(grip.y < rect.y)
+  assert.equal(box.hitInkBoxMoveGrip(rect, p(grip.x, grip.y), 1), true)
+  assert.equal(box.hitInkBoxMoveGrip(rect, p(grip.x + 200, grip.y), 1), false)
+  assert.equal(box.hitInkBoxMoveGrip(rect, p(rect.x + 50, rect.y + 50), 1), false)
+})
+
 test('SVG export draws the ink inside a rounded box with its dividers', () => {
   const written = box.addStrokeToInkBox(make(), line(2, [p(150, 150), p(200, 160)]))
   const svg = exp.buildSheetSvg([written], { width: 2500, height: 1500, template: 'blank', backgroundColor: '#ffffff' })
@@ -145,6 +154,7 @@ test('App wires the tool, drag-to-size creation, ink capture and divider draggin
   assert.match(app, /addStrokeToInkBox\(targetBox, stroke\)/)
   assert.match(app, /hitInkBoxDivider\(/)
   assert.match(app, /moveInkBoxDivider\(/)
+  assert.match(app, /hitInkBoxMoveGrip\(selectedBox/)
   assert.match(app, /ERASER_CURSOR_QUIET_MS/)
   assert.match(app, /handles, dividers and border come first/)
   assert.match(app, /onInkClass=\{toggleInkClassTool\}/)

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship } from './canvasModel'
-import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
+import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, hitInkBoxMoveGrip, inkBoxMoveGrip, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
 import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
 import { loadStrokeDisplayMode, saveStrokeDisplayMode, type StrokeDisplayMode } from './strokeDisplayMode'
@@ -1063,6 +1063,28 @@ function App() {
       ctx.restore()
     }
     if (soleSelectedRectangle?.inkBox) {
+      // Move grip above the top edge: pressing it always moves the whole box, whatever tool is active.
+      const grip = inkBoxMoveGrip(soleSelectedRectangle, viewportRef.current.scale)
+      ctx.save()
+      ctx.fillStyle = '#ffffff'
+      ctx.strokeStyle = '#5269df'
+      ctx.lineWidth = 2 / viewportRef.current.scale
+      ctx.beginPath()
+      ctx.arc(grip.x, grip.y, grip.radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      const arm = grip.radius * 0.6
+      const tip = grip.radius * 0.28
+      ctx.beginPath()
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        ctx.moveTo(grip.x - dx * arm, grip.y - dy * arm)
+        ctx.lineTo(grip.x + dx * arm, grip.y + dy * arm)
+        ctx.moveTo(grip.x + dx * arm - (dx + dy) * tip * (dx !== 0 ? 1 : 1), grip.y + dy * arm - (dy - dx) * tip)
+        ctx.lineTo(grip.x + dx * arm, grip.y + dy * arm)
+        ctx.lineTo(grip.x + dx * arm - (dx - dy) * tip, grip.y + dy * arm - (dy + dx) * tip)
+      }
+      ctx.stroke()
+      ctx.restore()
       // Grips on the two dividers: drag them up or down to resize the name, variables and methods sections.
       ctx.save()
       ctx.fillStyle = '#ffffff'
@@ -1752,6 +1774,11 @@ function App() {
       const selectedBox = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === selectedRectangleIdRef.current && item.inkBox !== undefined)
       if (selectedBox) {
         const tolerance = 14 / viewportRef.current.scale
+        if (hitInkBoxMoveGrip(selectedBox, point, viewportRef.current.scale)) {
+          event.currentTarget.setPointerCapture(event.pointerId)
+          activeDragRef.current = { pointerId: event.pointerId, itemKey: canvasItemKey(selectedBox), start: point, originalItems: strokesRef.current.slice(), moved: false, editTextId: null, editClassBoxId: null }
+          return
+        }
         const handle = hitTestRectangleResizeHandle(selectedBox, point, tolerance)
         if (handle) {
           event.currentTarget.setPointerCapture(event.pointerId)
@@ -1773,10 +1800,11 @@ function App() {
           activeDividerRef.current = { pointerId: event.pointerId, rectangleId: selectedBox.id, which: divider, originalItems: strokesRef.current.slice(), moved: false }
           return
         }
-        const nearBorder = point.x >= selectedBox.x - tolerance && point.x <= selectedBox.x + selectedBox.width + tolerance
-          && point.y >= selectedBox.y - tolerance && point.y <= selectedBox.y + selectedBox.height + tolerance
-          && (point.x <= selectedBox.x + tolerance || point.x >= selectedBox.x + selectedBox.width - tolerance
-            || point.y <= selectedBox.y + tolerance || point.y >= selectedBox.y + selectedBox.height - tolerance)
+        const band = 26 / viewportRef.current.scale
+        const nearBorder = point.x >= selectedBox.x - band && point.x <= selectedBox.x + selectedBox.width + band
+          && point.y >= selectedBox.y - band && point.y <= selectedBox.y + selectedBox.height + band
+          && (point.x <= selectedBox.x + band || point.x >= selectedBox.x + selectedBox.width - band
+            || point.y <= selectedBox.y + band || point.y >= selectedBox.y + selectedBox.height - band)
         if (nearBorder) {
           event.currentTarget.setPointerCapture(event.pointerId)
           activeDragRef.current = { pointerId: event.pointerId, itemKey: canvasItemKey(selectedBox), start: point, originalItems: strokesRef.current.slice(), moved: false, editTextId: null, editClassBoxId: null }

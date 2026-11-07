@@ -4,9 +4,9 @@ import type { InkBoxContent, Point, RectangleBounds, RectangleObject, Stroke } f
 export { INK_BOX_INK_PADDING, INK_BOX_MIN_BAND, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, clampInkBoxDividers, constrainInkBoxBounds, coverInkBounds, inkBoxInkBounds, transformInkBox, translateInkBox } from './canvasModel'
 export const INK_BOX_DEFAULT_WIDTH = 560
 export const INK_BOX_DEFAULT_HEIGHT = 420
-/** Name, variables and methods start at 15%, 70% and 15% of the box height. */
-export const INK_BOX_TOP_SHARE = 0.15
-export const INK_BOX_MID_SHARE = 0.85
+/** Name, variables and methods start at 12%, 80% and 8% of the box height. */
+export const INK_BOX_TOP_SHARE = 0.12
+export const INK_BOX_MID_SHARE = 0.92
 
 
 export type InkBoxDivider = 'top' | 'mid'
@@ -42,6 +42,16 @@ export function hitInkBoxDivider(rectangle: RectangleObject, point: Point, toler
   const midDistance = Math.abs(point.y - box.mid)
   if (Math.min(topDistance, midDistance) > tolerance) return null
   return topDistance <= midDistance ? 'top' : 'mid'
+}
+
+/** The move grip sits just above the middle of the top edge; its size is fixed on screen (scale = zoom). */
+export function inkBoxMoveGrip(rectangle: RectangleBounds, scale: number): { x: number; y: number; radius: number } {
+  return { x: rectangle.x + rectangle.width / 2, y: rectangle.y - 26 / scale, radius: 18 / scale }
+}
+
+export function hitInkBoxMoveGrip(rectangle: RectangleBounds, point: Point, scale: number): boolean {
+  const grip = inkBoxMoveGrip(rectangle, scale)
+  return Math.hypot(point.x - grip.x, point.y - grip.y) <= grip.radius + 6 / scale
 }
 
 export function pointInRectangle(rectangle: RectangleBounds, point: Point): boolean {
