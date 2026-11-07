@@ -43,8 +43,8 @@ import { loadNavigationSettings, saveNavigationSettings } from './navigationSett
 
 
 const DOUBLE_TAP_MS = 400
-// The minimap is not redrawn at all while a stroke is being written (it updates once on pen-up); during pinch/pan at most once a second.
-const MINIMAP_LIVE_REFRESH_MS = 1000
+// While a stroke is being written the minimap is not touched (it updates after pen-up). Otherwise the viewport box and the saved ink
+// picture are redrawn at once on every frame (cheap), while the ink itself is redrawn only after a quiet moment (heavy).
 // After a stroke ends (or any other change) the minimap waits this long without a new stroke before it redraws all the ink,
 // so a big redraw never lands on the start of the next stroke.
 const MINIMAP_IDLE_DELAY_MS = 600
@@ -155,6 +155,8 @@ function App() {
   const drawModeRef = useRef<DrawMode>(DIRECT_MAX_VISIBLE_POINTS <= 0 ? 'cached' : 'direct')
   const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
   const minimapRenderedAtRef = useRef(0)
+  // What the saved minimap ink picture was drawn for (canvas size and map geometry); the ink is redrawn when this changes.
+  const minimapInkKeyRef = useRef('')
   const minimapIdleTimerRef = useRef<number | null>(null)
   // True while a pinch or three-finger pan is moving: the page is shown as a moved copy of a saved picture, then redrawn sharply once it settles.
   const viewportGestureRef = useRef(false)
@@ -674,7 +676,8 @@ function App() {
 
 
 
-  const renderNavigator = useCallback(() => {
+  /** redrawInk=false repaints only the background, the saved ink picture and the viewport box (cheap); true also redraws every item into the picture. */
+  const renderNavigator = useCallback((redrawInk = true) => {
     const minimap = minimapRef.current
     const mainCanvas = canvasRef.current
     const ctx = minimap?.getContext('2d')
@@ -716,13 +719,17 @@ function App() {
     ctx.lineWidth = 1
     ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
 
+    const inkKey = `${pixelWidth}x${pixelHeight}|${geometry.scale}|${geometry.offsetX}|${geometry.offsetY}`
     const inkLayer = getReusableCanvasLayer(minimapInkLayerRef, pixelWidth, pixelHeight)
-    const inkContext = inkLayer.getContext('2d')
-    if (!inkContext) return
-    inkContext.setTransform(1, 0, 0, 1, 0, 0)
-    inkContext.clearRect(0, 0, pixelWidth, pixelHeight)
-    inkContext.setTransform(dpr, 0, 0, dpr, 0, 0)
-    drawMinimapItems(inkContext, geometry)
+    if (redrawInk || minimapInkKeyRef.current !== inkKey) {
+      const inkContext = inkLayer.getContext('2d')
+      if (!inkContext) return
+      inkContext.setTransform(1, 0, 0, 1, 0, 0)
+      inkContext.clearRect(0, 0, pixelWidth, pixelHeight)
+      inkContext.setTransform(dpr, 0, 0, dpr, 0, 0)
+      drawMinimapItems(inkContext, geometry)
+      minimapInkKeyRef.current = inkKey
+    }
 
     ctx.save()
     ctx.beginPath()
@@ -1094,27 +1101,22 @@ function App() {
     }
     if (measureFrame) diagnostics?.recordMainCanvasRender(performance.now() - mainCanvasStartedAt)
     const minimapStartedAt = measureFrame ? performance.now() : 0
-    // The minimap redraws every item: never while a stroke is being written, at most once a second during pinch/pan, and otherwise
-    // only after MINIMAP_IDLE_DELAY_MS without a new stroke (a pending redraw is dropped when a stroke starts).
-    const minimapNow = performance.now()
+    // Never while a stroke is being written. Otherwise the viewport box moves at once (pinch, pan, minimap drag), using the saved ink
+    // picture; the ink itself is redrawn MINIMAP_IDLE_DELAY_MS after the last change (dropped when a stroke starts).
     if (minimapIdleTimerRef.current !== null) {
       window.clearTimeout(minimapIdleTimerRef.current)
       minimapIdleTimerRef.current = null
     }
-    if (activeStrokeRef.current) {
-      // nothing: the pending redraw was dropped above and pen-up schedules a new one
-    } else if (gestureFrame) {
-      if (minimapNow - minimapRenderedAtRef.current > MINIMAP_LIVE_REFRESH_MS) {
-        minimapRenderedAtRef.current = minimapNow
-        renderNavigator()
+    if (!activeStrokeRef.current) {
+      renderNavigator(false)
+      if (!gestureFrame) {
+        minimapIdleTimerRef.current = window.setTimeout(() => {
+          minimapIdleTimerRef.current = null
+          if (activeStrokeRef.current !== null || activePointerRef.current !== null) return
+          minimapRenderedAtRef.current = performance.now()
+          renderNavigator(true)
+        }, MINIMAP_IDLE_DELAY_MS)
       }
-    } else {
-      minimapIdleTimerRef.current = window.setTimeout(() => {
-        minimapIdleTimerRef.current = null
-        if (activeStrokeRef.current !== null || activePointerRef.current !== null) return
-        minimapRenderedAtRef.current = performance.now()
-        renderNavigator()
-      }, MINIMAP_IDLE_DELAY_MS)
     }
     if (measureFrame) diagnostics?.recordMinimapRender(performance.now() - minimapStartedAt)
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
