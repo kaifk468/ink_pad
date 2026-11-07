@@ -1556,7 +1556,8 @@ function App() {
       if (targetBox && stroke.kind === 'stroke') {
         // The box keeps its own ink: it is one item, so move, undo and erase treat box and writing together.
         const grown = addStrokeToInkBox(targetBox, stroke)
-        strokesRef.current = strokesRef.current.map((item) => (item === targetBox ? grown : item))
+        // The box just written in comes to the front, so its grown area and ink are never hidden under a neighbouring box.
+        strokesRef.current = [...strokesRef.current.filter((item) => item !== targetBox), grown]
       } else {
         strokesRef.current.push(stroke)
         if (stroke.kind === 'stroke' && stroke.erase) strokesRef.current = compactAfterErase(strokesRef.current, () => nextStrokeIdRef.current++)
@@ -1697,6 +1698,11 @@ function App() {
         return
       }
       const lassoInkBox = singleSelectedRectangle?.inkBox ? singleSelectedRectangle : null
+      if (lassoInkBox && hitInkBoxMoveGrip(lassoInkBox, point, viewportRef.current.scale)) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        lassoDragRef.current = { pointerId: event.pointerId, start: point, keys: new Set(selectedKeysRef.current), originalItems: strokesRef.current.slice(), moved: false }
+        return
+      }
       const lassoDividerHit = lassoInkBox ? hitInkBoxDivider(lassoInkBox, point, 14 / viewportRef.current.scale) : null
       if (lassoInkBox && lassoDividerHit) {
         event.currentTarget.setPointerCapture(event.pointerId)
@@ -1740,6 +1746,11 @@ function App() {
         return
       }
       const selectedInkBox = currentlySelectedRectangle?.inkBox ? currentlySelectedRectangle : null
+      if (selectedInkBox && hitInkBoxMoveGrip(selectedInkBox, point, viewportRef.current.scale)) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        activeDragRef.current = { pointerId: event.pointerId, itemKey: canvasItemKey(selectedInkBox), start: point, originalItems: strokesRef.current.slice(), moved: false, editTextId: null, editClassBoxId: null }
+        return
+      }
       const dividerHit = selectedInkBox ? hitInkBoxDivider(selectedInkBox, point, 14 / viewportRef.current.scale) : null
       if (selectedInkBox && dividerHit) {
         event.currentTarget.setPointerCapture(event.pointerId)
