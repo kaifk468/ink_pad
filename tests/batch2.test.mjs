@@ -41,8 +41,8 @@ test('the sheet fills the screen: zoom-out stops where the sheet exactly fits', 
       }
     }
   }
-  assert.match(app, /clampViewportToSheet\(viewport, rect\.width, rect\.height\)/)
-  assert.match(app, /return \{ \.\.\.SHEET_BOUNDS \}/)
+  assert.match(app, /clampViewportToSheet\(viewport, rect\.width, rect\.height, sheetHeightRef\.current\)/)
+  assert.match(app, /return \{ \.\.\.sheetBoundsRef\.current \}/)
 })
 
 test('fresh app and opened diagrams start at 110% centered on the sheet; Fit drawing remains', () => {

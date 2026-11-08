@@ -74,5 +74,5 @@ test('recognized rectangle coordinates and snapshot undo/redo remain stable', ()
 test('the default pen end-hold and live preview both use rectangle recognition', () => {
   assert.match(appSource, /recognizeRectangleOnHold\(stroke, SHAPE_RECOGNITION_HOLD_MS/)
   assert.match(appSource, /recognizeRectangleOnHold\(heldStroke, heldForMs/)
-  assert.match(appSource, /clipSegmentToBounds\(previous, point\)/)
+  assert.match(appSource, /clipSegmentToBounds\(previous, point, workspaceBoundsRef\.current\)/)
 })

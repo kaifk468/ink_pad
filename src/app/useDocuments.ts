@@ -22,7 +22,7 @@ import { SHEET_HEIGHT, SHEET_WIDTH } from '../viewport'
  */
 export type DocumentHost = {
   getItems: () => CanvasItem[]
-  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing }
+  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number }
   /** True while a pen/touch stroke or gesture is in progress; autosave waits for it to end. */
   isInputActive: () => boolean
   /** Replace the sheet contents and page settings, reset undo history, id counters and selection, and redraw. */
@@ -139,6 +139,7 @@ export function useDocuments(host: DocumentHost) {
       template: page.template,
       background: page.background,
       spacing: page.spacing,
+      sheetHeight: page.sheetHeight,
       items: hostRef.current.getItems(),
       shareStrokes: true,
     })
@@ -152,7 +153,7 @@ export function useDocuments(host: DocumentHost) {
    */
   const currentSignature = (): DocumentSignature => {
     const page = hostRef.current.getPage()
-    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, items: hostRef.current.getItems().slice() }
+    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, items: hostRef.current.getItems().slice() }
   }
 
   const refreshLibrary = async () => {
@@ -474,12 +475,13 @@ export function useDocuments(host: DocumentHost) {
 
   const getImageExport = () => {
     const items = hostRef.current.getItems()
-    const bounds = getContentBounds(items, { width: SHEET_WIDTH, height: SHEET_HEIGHT })
-    if (!bounds) return null
     const page = hostRef.current.getPage()
+    const sheetHeight = page.sheetHeight ?? SHEET_HEIGHT
+    const bounds = getContentBounds(items, { width: SHEET_WIDTH, height: sheetHeight })
+    if (!bounds) return null
     const svg = cropSvg(buildSheetSvg(items, {
       width: SHEET_WIDTH,
-      height: SHEET_HEIGHT,
+      height: sheetHeight,
       template: page.template,
       spacing: page.spacing,
       backgroundColor: PAGE_BACKGROUND_COLORS[page.background],

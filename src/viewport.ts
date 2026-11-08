@@ -19,6 +19,37 @@ export const WORKSPACE_BOUNDS: ViewBounds = {
   width: WORKSPACE_WIDTH,
   height: WORKSPACE_HEIGHT,
 }
+/** The page starts SHEET_HEIGHT tall and grows downward in SHEET_GROW_STEP strips, up to SHEET_MAX_HEIGHT. */
+export const SHEET_MIN_HEIGHT = SHEET_HEIGHT
+export const SHEET_MAX_HEIGHT = 3000
+export const SHEET_GROW_STEP = 500
+/** Ink ending within this distance of the page bottom makes the page grow. */
+export const SHEET_GROW_ZONE = 200
+
+export function sheetBoundsFor(sheetHeight: number): ViewBounds {
+  return { x: 0, y: 0, width: SHEET_WIDTH, height: sheetHeight }
+}
+
+export function workspaceBoundsFor(sheetHeight: number): ViewBounds {
+  const marginX = WORKSPACE_MARGIN_X
+  const marginY = sheetHeight * WORKSPACE_MARGIN_RATIO
+  return { x: -marginX, y: -marginY, width: SHEET_WIDTH + marginX * 2, height: sheetHeight + marginY * 2 }
+}
+
+/** A saved page height forced into a valid one: a whole number of steps from the minimum, within the limits. */
+export function normalizeSheetHeight(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return SHEET_MIN_HEIGHT
+  const steps = Math.ceil((Math.max(SHEET_MIN_HEIGHT, Math.min(SHEET_MAX_HEIGHT, value)) - SHEET_MIN_HEIGHT) / SHEET_GROW_STEP)
+  return Math.min(SHEET_MAX_HEIGHT, SHEET_MIN_HEIGHT + steps * SHEET_GROW_STEP)
+}
+
+/** The page height after ink reaching `bottom` was added: grows strip by strip while the ink is within the grow zone of the bottom. */
+export function nextSheetHeight(current: number, bottom: number): number {
+  let height = current
+  while (height < SHEET_MAX_HEIGHT && bottom > height - SHEET_GROW_ZONE) height += SHEET_GROW_STEP
+  return Math.min(SHEET_MAX_HEIGHT, height)
+}
+
 export const DEFAULT_ZOOM = 1
 /** Zoom the app opens at. Reset and the zoom buttons still treat 100% as the default. */
 export const INITIAL_ZOOM = 1.1
@@ -68,8 +99,8 @@ export function getMinimapGeometry(
   }
 }
 
-export function getPageOverviewGeometry(width: number, height: number, padding = 8): MinimapGeometry {
-  return getMinimapGeometry(width, height, SHEET_BOUNDS, padding)
+export function getPageOverviewGeometry(width: number, height: number, padding = 8, sheetHeight = SHEET_HEIGHT): MinimapGeometry {
+  return getMinimapGeometry(width, height, sheetBoundsFor(sheetHeight), padding)
 }
 
 export function minimapToCanvasPoint(point: Point, geometry: MinimapGeometry): Point {
@@ -228,18 +259,20 @@ export function getCoverScale(viewportWidth: number, viewportHeight: number, bou
 }
 
 /** Clamp a viewport so it never shows anything outside the sheet: zoom-out stops where the sheet exactly fits. */
-export function clampViewportToSheet(viewport: Viewport, viewportWidth: number, viewportHeight: number): Viewport {
-  const minScale = getCoverScale(viewportWidth, viewportHeight)
+export function clampViewportToSheet(viewport: Viewport, viewportWidth: number, viewportHeight: number, sheetHeight = SHEET_HEIGHT): Viewport {
+  const bounds = sheetHeight === SHEET_HEIGHT ? SHEET_BOUNDS : sheetBoundsFor(sheetHeight)
+  const minScale = getCoverScale(viewportWidth, viewportHeight, bounds)
   const scale = Math.max(minScale, Math.min(MAX_ZOOM, viewport.scale))
-  return clampViewportToBounds({ ...viewport, scale }, viewportWidth, viewportHeight, SHEET_BOUNDS)
+  return clampViewportToBounds({ ...viewport, scale }, viewportWidth, viewportHeight, bounds)
 }
 
 /** The view a fresh app or a freshly opened diagram starts in: INITIAL_ZOOM centered on the sheet. */
-export function getInitialViewport(viewportWidth: number, viewportHeight: number): Viewport {
+export function getInitialViewport(viewportWidth: number, viewportHeight: number, sheetHeight = SHEET_HEIGHT): Viewport {
+  // Always opens on the first screen of the page (the top SHEET_MIN_HEIGHT), even on a page that has grown.
   const scale = Math.max(INITIAL_ZOOM, getCoverScale(viewportWidth, viewportHeight))
   return clampViewportToSheet({
     scale,
     offsetX: viewportWidth / 2 - (SHEET_WIDTH / 2) * scale,
     offsetY: viewportHeight / 2 - (SHEET_HEIGHT / 2) * scale,
-  }, viewportWidth, viewportHeight)
+  }, viewportWidth, viewportHeight, sheetHeight)
 }

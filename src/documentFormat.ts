@@ -20,8 +20,8 @@ export type InkPadDocument = {
   title: string
   createdAt: string
   updatedAt: string
-  /** `spacing` is written only when it is not the standard one. */
-  page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing }
+  /** `spacing` is written only when it is not the standard one; `sheetHeight` only when the page has grown past its first height. */
+  page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number }
   items: CanvasItem[]
 }
 
@@ -32,6 +32,8 @@ export type DocumentInput = {
   template: DocumentPageTemplate
   background: DocumentPageBackground
   spacing?: DocumentPageSpacing
+  /** Page height after it grew (2000, 2500 or 3000); left out for the first height. */
+  sheetHeight?: number
   items: CanvasItem[]
   /** Reuse finished strokes as they are instead of copying them (committed strokes are never changed afterwards). Used for autosave. */
   shareStrokes?: boolean
@@ -43,6 +45,10 @@ export type ParseResult =
 
 export type NextIds = { stroke: number; rectangle: number; connector: number; text: number }
 
+/** The grown page heights a document may hold; the first height (1500) is never written. Mirrors SHEET_MIN_HEIGHT, SHEET_GROW_STEP and SHEET_MAX_HEIGHT in viewport.ts (a test checks they agree). */
+const GROWN_SHEET_HEIGHTS = [2000, 2500, 3000]
+const grownSheetHeight = (value: unknown): { sheetHeight: number } | Record<string, never> =>
+  typeof value === 'number' && GROWN_SHEET_HEIGHTS.includes(value) ? { sheetHeight: value } : {}
 const TEMPLATES: DocumentPageTemplate[] = ['blank', 'lined', 'dotted']
 const BACKGROUNDS: DocumentPageBackground[] = ['white', 'warm', 'blue', 'yellow', 'green']
 /** Same kinds as HLD_SHAPES in canvasModel.ts (not imported: this file only takes types from there). */
@@ -61,7 +67,7 @@ export function createDocument(input: DocumentInput, now = new Date().toISOStrin
     title: cleanTitle(input.title),
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
-    page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}) },
+    page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}), ...grownSheetHeight(input.sheetHeight) },
     items: input.items.map((item) => (input.shareStrokes && item.kind === 'stroke' ? item : cloneItem(item))),
   }
 }
@@ -86,11 +92,11 @@ export function stringifyDocument(document: InkPadDocument): string {
 }
 
 /** An open diagram's content for "did anything change since the last save" checks. */
-export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; items: CanvasItem[] }
+export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; items: CanvasItem[] }
 
 export function sameSignature(a: DocumentSignature | null, b: DocumentSignature | null): boolean {
   if (!a || !b) return false
-  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || a.items.length !== b.items.length) return false
+  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || (a.sheetHeight ?? 1500) !== (b.sheetHeight ?? 1500) || a.items.length !== b.items.length) return false
   for (let index = 0; index < a.items.length; index += 1) if (a.items[index] !== b.items[index]) return false
   return true
 }
@@ -168,6 +174,7 @@ export function parseDocument(text: string): ParseResult {
         template: TEMPLATES.includes(page.template as DocumentPageTemplate) ? (page.template as DocumentPageTemplate) : 'blank',
         background: BACKGROUNDS.includes(page.background as DocumentPageBackground) ? (page.background as DocumentPageBackground) : 'white',
         ...(page.spacing === 'narrow' || page.spacing === 'wide' ? { spacing: page.spacing } : {}),
+        ...grownSheetHeight(page.sheetHeight),
       },
       items: finalItems,
     },

@@ -44,7 +44,8 @@ import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitCla
 import { DEFAULT_TEXT_FONT_SIZE, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeRectangleOnHold, recognizeRectangleStroke } from './shapeRecognition'
-import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_BOUNDS, SHEET_HEIGHT, SHEET_WIDTH, WORKSPACE_BOUNDS, centerViewportOnPoint, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
+import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
+import { itemBottom, sheetHeightForItems } from './sheetGrowth'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
 
@@ -247,16 +248,21 @@ function App() {
   const pageBackgroundRef = useRef(pageBackground)
   pageTemplateRef.current = pageTemplate
   pageBackgroundRef.current = pageBackground
+  // The page starts at SHEET_MIN_HEIGHT and grows downward when ink is lifted near its bottom (see growSheetFor).
+  const [sheetHeight, setSheetHeight] = useState(SHEET_MIN_HEIGHT)
+  const sheetHeightRef = useRef(sheetHeight)
+  const sheetBoundsRef = useRef(sheetBoundsFor(sheetHeight))
+  const workspaceBoundsRef = useRef(workspaceBoundsFor(sheetHeight))
 
   const {
     filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
-    scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
+    scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile,
   } = useDocuments({
     getItems: () => strokesRef.current,
-    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current }),
+    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current }),
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null,
     loadDocument: (loaded) => {
       clearShapeHoldTimer()
@@ -294,10 +300,17 @@ function App() {
       setPageSpacing(loaded.page.spacing ?? 'standard')
       setPageTemplate(loaded.page.template)
       setPageBackground(loaded.page.background)
+      // A saved height, grown if the content reaches past it (never shrunk).
+      applySheetHeight(sheetHeightForItems(strokesRef.current, normalizeSheetHeight(loaded.page.sheetHeight)))
       renderAll()
       openAtDefaultView()
     },
   })
+  /** Saves soon, and once the change is in place checks whether the page needs to grow (callers often schedule the save just before adding the item). */
+  const scheduleAutosave = () => {
+    scheduleAutosaveBase()
+    queueMicrotask(growSheetForNewestItem)
+  }
   const [eraser, setEraser] = useState(false)
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [hasInk, setHasInk] = useState(false)
@@ -347,7 +360,7 @@ function App() {
   const penModeActive = !eraser && !shapeMode && !selectionMode && !lassoMode && !connectorMode && !textMode && !classMode && umlConnectorType === null
 
   const getCurrentMinimapBounds = useCallback((): ViewBounds => {
-    return { ...SHEET_BOUNDS }
+    return { ...sheetBoundsRef.current }
   }, [])
 
   const updateSelectedItems = (keys: string[]) => {
@@ -412,7 +425,7 @@ function App() {
   /** Tidy button: arranges the selected class boxes (two or more selected) or all of them. One undo step; nothing happens when they are already tidy. */
   const tidyDiagram = () => {
     const scope = tidyScope(strokesRef.current, selectedKeysRef.current)
-    const next = tidyItems(strokesRef.current, scope.ids)
+    const next = tidyItems(strokesRef.current, scope.ids, workspaceBoundsRef.current)
     if (next === strokesRef.current) return
     saveHistory()
     strokesRef.current = next
@@ -762,14 +775,14 @@ function App() {
     const activeDrag = minimapDragPointerRef.current
     const bounds = activeDrag?.bounds ?? getCurrentMinimapBounds()
     const geometry = activeDrag?.geometry ?? getMinimapGeometry(rect.width, rect.height, bounds)
-    const workspaceX = WORKSPACE_BOUNDS.x * geometry.scale + geometry.offsetX
-    const workspaceY = WORKSPACE_BOUNDS.y * geometry.scale + geometry.offsetY
-    const workspaceWidth = WORKSPACE_BOUNDS.width * geometry.scale
-    const workspaceHeight = WORKSPACE_BOUNDS.height * geometry.scale
-    const pageX = SHEET_BOUNDS.x * geometry.scale + geometry.offsetX
-    const pageY = SHEET_BOUNDS.y * geometry.scale + geometry.offsetY
+    const workspaceX = workspaceBoundsRef.current.x * geometry.scale + geometry.offsetX
+    const workspaceY = workspaceBoundsRef.current.y * geometry.scale + geometry.offsetY
+    const workspaceWidth = workspaceBoundsRef.current.width * geometry.scale
+    const workspaceHeight = workspaceBoundsRef.current.height * geometry.scale
+    const pageX = sheetBoundsRef.current.x * geometry.scale + geometry.offsetX
+    const pageY = sheetBoundsRef.current.y * geometry.scale + geometry.offsetY
     const pageWidth = SHEET_WIDTH * geometry.scale
-    const pageHeight = SHEET_HEIGHT * geometry.scale
+    const pageHeight = sheetHeightRef.current * geometry.scale
     ctx.fillStyle = '#e9ebf0'
     ctx.fillRect(workspaceX, workspaceY, workspaceWidth, workspaceHeight)
     ctx.strokeStyle = '#c5cad4'
@@ -878,7 +891,7 @@ function App() {
         historyContext.save()
         historyContext.setTransform(dpr * viewport.scale, 0, 0, dpr * viewport.scale, dpr * viewport.offsetX, dpr * viewport.offsetY)
         historyContext.beginPath()
-        historyContext.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
+        historyContext.rect(workspaceBoundsRef.current.x, workspaceBoundsRef.current.y, workspaceBoundsRef.current.width, workspaceBoundsRef.current.height)
         historyContext.clip()
         for (const added of appendedItemsForRendering(routeConnectors(items))) drawItem(historyContext, added)
         historyContext.restore()
@@ -906,7 +919,7 @@ function App() {
       const live = liveLayerRef.current
       if (!base || !live || !liveStateRef.current || !liveStroke || liveStroke.kind !== 'stroke') return
       const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
-      drawLiveStrokeFrame({ page: ctx, base, live, stroke: liveStroke, predicted: PEN_PREDICTION_ENABLED ? predictedPointsRef.current : [], state: liveStateRef.current, transform: liveTransform, clip: WORKSPACE_BOUNDS })
+      drawLiveStrokeFrame({ page: ctx, base, live, stroke: liveStroke, predicted: PEN_PREDICTION_ENABLED ? predictedPointsRef.current : [], state: liveStateRef.current, transform: liveTransform, clip: workspaceBoundsRef.current })
       if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
     }
     if (incrementalLive && liveState && liveState.strokeId === liveStroke!.id
@@ -950,18 +963,18 @@ function App() {
       ctx.save()
       ctx.strokeStyle = '#d4d7de'
       ctx.lineWidth = 1
-      ctx.strokeRect(WORKSPACE_BOUNDS.x + 0.5, WORKSPACE_BOUNDS.y + 0.5, WORKSPACE_BOUNDS.width - 1, WORKSPACE_BOUNDS.height - 1)
+      ctx.strokeRect(workspaceBoundsRef.current.x + 0.5, workspaceBoundsRef.current.y + 0.5, workspaceBoundsRef.current.width - 1, workspaceBoundsRef.current.height - 1)
       ctx.restore()
       ctx.save()
       ctx.strokeStyle = '#d9dce2'
       ctx.lineWidth = 1
-      ctx.strokeRect(SHEET_BOUNDS.x + 0.5, SHEET_BOUNDS.y + 0.5, SHEET_WIDTH - 1, SHEET_HEIGHT - 1)
+      ctx.strokeRect(sheetBoundsRef.current.x + 0.5, sheetBoundsRef.current.y + 0.5, SHEET_WIDTH - 1, sheetHeightRef.current - 1)
       ctx.restore()
     }
     if (!oneLayer) drawSheetBorders()
     ctx.save()
     ctx.beginPath()
-    ctx.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
+    ctx.rect(workspaceBoundsRef.current.x, workspaceBoundsRef.current.y, workspaceBoundsRef.current.width, workspaceBoundsRef.current.height)
     ctx.clip()
     routeConnectors(strokesRef.current).forEach((item) => {
       if (!selectedKeysRef.current.has(canvasItemKey(item))) return
@@ -1004,7 +1017,7 @@ function App() {
     }
     target.save()
     target.beginPath()
-    target.rect(WORKSPACE_BOUNDS.x, WORKSPACE_BOUNDS.y, WORKSPACE_BOUNDS.width, WORKSPACE_BOUNDS.height)
+    target.rect(workspaceBoundsRef.current.x, workspaceBoundsRef.current.y, workspaceBoundsRef.current.width, workspaceBoundsRef.current.height)
     target.clip()
     const historyInkStartedAt = measureFrame ? performance.now() : 0
     if (directGesture) {
@@ -1224,12 +1237,35 @@ function App() {
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
   }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageSpacing, pageTemplate, renderNavigator, strokeDisplayMode, width])
 
+  /** Sets the page height (ref first, so the very next draw uses it) and keeps the view inside the new page. */
+  const applySheetHeight = (next: number) => {
+    if (next === sheetHeightRef.current && next === sheetBoundsRef.current.height) return
+    sheetHeightRef.current = next
+    sheetBoundsRef.current = sheetBoundsFor(next)
+    workspaceBoundsRef.current = workspaceBoundsFor(next)
+    setSheetHeight(next)
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (rect && rect.width > 0 && rect.height > 0) viewportRef.current = clampViewportToSheet(viewportRef.current, rect.width, rect.height, next)
+    renderAll()
+  }
+
+  /** After a pen lift (or any change): if the newest item ends near the bottom of the page, add a strip, up to the limit. Never shrinks. */
+  const growSheetForNewestItem = () => {
+    if (sheetHeightRef.current >= nextSheetHeight(SHEET_MIN_HEIGHT, Infinity)) return
+    const newest = strokesRef.current[strokesRef.current.length - 1]
+    if (!newest) return
+    const next = nextSheetHeight(sheetHeightRef.current, itemBottom(newest))
+    if (next === sheetHeightRef.current) return
+    applySheetHeight(next)
+    scheduleAutosaveBase()
+  }
+
   const applyViewport = (viewport: Viewport, gesture = false) => {
     if (textEditorRef.current) commitTextEditor()
     const canvas = canvasRef.current
     const rect = canvas?.getBoundingClientRect()
     const boundedViewport = rect
-      ? clampViewportToSheet(viewport, rect.width, rect.height)
+      ? clampViewportToSheet(viewport, rect.width, rect.height, sheetHeightRef.current)
       : viewport
     viewportRef.current = boundedViewport
     setZoomPercent(Math.round(boundedViewport.scale * 100))
@@ -1275,9 +1311,9 @@ function App() {
     canvas.height = Math.round(rect.height * dpr)
     if (!initialViewDoneRef.current && rect.width > 0 && rect.height > 0) {
       initialViewDoneRef.current = true
-      viewportRef.current = getInitialViewport(rect.width, rect.height)
+      viewportRef.current = getInitialViewport(rect.width, rect.height, sheetHeightRef.current)
     }
-    viewportRef.current = clampViewportToSheet(viewportRef.current, rect.width, rect.height)
+    viewportRef.current = clampViewportToSheet(viewportRef.current, rect.width, rect.height, sheetHeightRef.current)
     setZoomPercent(Math.round(viewportRef.current.scale * 100))
     if (textEditorRef.current) setTextEditor({ ...textEditorRef.current })
     const ctx = canvas.getContext('2d', MAIN_CANVAS_OPTIONS) as CanvasRenderingContext2D | null
@@ -1303,6 +1339,11 @@ function App() {
   useEffect(() => {
     renderAll()
   }, [navigatorMinimized, renderAll])
+
+  // The map box grows with the page; redraw it once the new size is laid out.
+  useEffect(() => {
+    renderNavigator(true)
+  }, [renderNavigator, sheetHeight])
 
   useEffect(() => {
     saveStrokeDisplayMode(strokeDisplayMode)
@@ -1429,7 +1470,7 @@ function App() {
 
   const getPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => screenToCanvasPoint(getScreenPoint(event), viewportRef.current)
 
-  const getBoundedPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => clampPointToBounds(getPoint(event))
+  const getBoundedPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => clampPointToBounds(getPoint(event), workspaceBoundsRef.current)
 
   const startUmlToolboxDrag = <T extends HTMLElement,>(event: React.PointerEvent<T>) => {
     event.stopPropagation()
@@ -1488,20 +1529,20 @@ function App() {
   const translateWithinWorkspace = (items: CanvasItem[], keys: Set<string>, dx: number, dy: number): CanvasItem[] => {
     const bounds = getCanvasSelectionBounds(routeConnectors(items), keys)
     if (!bounds) return translateSelectedItems(items, keys, dx, dy)
-    const translation = clampTranslationToBounds(bounds, dx, dy)
+    const translation = clampTranslationToBounds(bounds, dx, dy, workspaceBoundsRef.current)
     return translateSelectedItems(items, keys, translation.dx, translation.dy)
   }
 
   const snapConnectorEndpointWithinWorkspace = (point: Point) => {
     const snapped = snapConnectorEndpoint(point, strokesRef.current, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale)
-    return snapped && isPointWithinBounds(snapped.point) ? snapped : null
+    return snapped && isPointWithinBounds(snapped.point, workspaceBoundsRef.current) ? snapped : null
   }
 
   const fitCanvasView = () => {
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
-    applyViewport({ scale: getCoverScale(rect.width, rect.height), offsetX: 0, offsetY: 0 })
+    applyViewport({ scale: getCoverScale(rect.width, rect.height, sheetBoundsRef.current), offsetX: 0, offsetY: 0 })
   }
 
   const openAtDefaultView = () => {
@@ -1509,7 +1550,7 @@ function App() {
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     if (rect.width <= 0 || rect.height <= 0) return
-    applyViewport(getInitialViewport(rect.width, rect.height))
+    applyViewport(getInitialViewport(rect.width, rect.height, sheetHeightRef.current))
   }
 
   const fitDrawingView = () => {
@@ -1528,7 +1569,7 @@ function App() {
   const resetView = () => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
-    applyViewport({ scale: DEFAULT_ZOOM, offsetX: rect.width / 2 - SHEET_WIDTH / 2 * DEFAULT_ZOOM, offsetY: rect.height / 2 - SHEET_HEIGHT / 2 * DEFAULT_ZOOM })
+    applyViewport({ scale: DEFAULT_ZOOM, offsetX: rect.width / 2 - SHEET_WIDTH / 2 * DEFAULT_ZOOM, offsetY: rect.height / 2 - SHEET_MIN_HEIGHT / 2 * DEFAULT_ZOOM })
   }
 
   const getMinimapCanvasPoint = (event: React.PointerEvent<HTMLCanvasElement>, geometry: MinimapGeometry): Point => {
@@ -1642,11 +1683,11 @@ function App() {
     const stroke = activeStrokeRef.current
     if (!stroke) return false
     const previous = stroke.points[stroke.points.length - 1]
-    const clippedPoint = clipSegmentToBounds(previous, point)
+    const clippedPoint = clipSegmentToBounds(previous, point, workspaceBoundsRef.current)
     if (clippedPoint && shouldAppendStrokeSample(previous, clippedPoint)) {
       stroke.points.push(clippedPoint)
     }
-    if (!isPointWithinBounds(point)) {
+    if (!isPointWithinBounds(point, workspaceBoundsRef.current)) {
       finishStroke(pointerId)
       return false
     }
@@ -1699,7 +1740,7 @@ function App() {
     if (event.pointerType !== 'pen' || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null) return
     event.preventDefault()
     const rawPoint = getPoint(event)
-    if (!isPointWithinBounds(rawPoint)) return
+    if (!isPointWithinBounds(rawPoint, workspaceBoundsRef.current)) return
     const point = getBoundedPoint(event)
     // Holding the S Pen button turns this stroke into an erase with the eraser used last (mode and size); letting go goes back to the pen.
     const buttonErase = !eraser && isPenButtonHeld(event.nativeEvent)
@@ -1955,7 +1996,7 @@ function App() {
         }, viewportRef.current)
         const maxSpacing = 6 / viewportRef.current.scale
         for (const sweepPoint of getEraserSweepPoints(objectEraseGesture.lastPoint, point, maxSpacing)) {
-          if (isPointWithinBounds(sweepPoint) && deleteWholeObjectAtPoint(sweepPoint)) changed = true
+          if (isPointWithinBounds(sweepPoint, workspaceBoundsRef.current) && deleteWholeObjectAtPoint(sweepPoint)) changed = true
         }
         objectEraseGesture.lastPoint = point
       }
@@ -2036,7 +2077,7 @@ function App() {
       const samples = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent]
       for (const sample of samples) {
         const rect = event.currentTarget.getBoundingClientRect()
-        const point = clampPointToBounds(screenToCanvasPoint({ x: sample.clientX - rect.left, y: sample.clientY - rect.top, pressure: sample.pressure }, viewportRef.current))
+        const point = clampPointToBounds(screenToCanvasPoint({ x: sample.clientX - rect.left, y: sample.clientY - rect.top, pressure: sample.pressure }, viewportRef.current), workspaceBoundsRef.current)
         const previous = activeLasso.points[activeLasso.points.length - 1]
         if (Math.hypot(point.x - previous.x, point.y - previous.y) >= 1.5) activeLasso.points.push(point)
       }
@@ -2080,7 +2121,7 @@ function App() {
     predictedPointsRef.current = PEN_PREDICTION_ENABLED && liveNow?.kind === 'stroke' && !liveNow.erase
       ? getPredictedPoints(event.nativeEvent, (clientX, clientY) => {
         const point = screenToCanvasPoint({ x: clientX - rect.left, y: clientY - rect.top, pressure: 0 }, viewportRef.current)
-        return isPointWithinBounds(point) ? point : null
+        return isPointWithinBounds(point, workspaceBoundsRef.current) ? point : null
       }, liveNow.points[liveNow.points.length - 1], MAX_PREDICTION_DISTANCE_SCREEN_PX / viewportRef.current.scale)
       : []
     const latestPoint = activeStrokeRef.current.points[activeStrokeRef.current.points.length - 1]
@@ -2157,8 +2198,8 @@ function App() {
         if (!finished.moved) {
           const createdShape = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === finished.rectangleId)?.hldShape
           const size = createdShape ? HLD_DEFAULT_SIZE[createdShape] : { width: INK_BOX_DEFAULT_WIDTH, height: INK_BOX_DEFAULT_HEIGHT }
-          const x = Math.min(finished.originalBounds.x, WORKSPACE_BOUNDS.x + WORKSPACE_BOUNDS.width - size.width)
-          const y = Math.min(finished.originalBounds.y, WORKSPACE_BOUNDS.y + WORKSPACE_BOUNDS.height - size.height)
+          const x = Math.min(finished.originalBounds.x, workspaceBoundsRef.current.x + workspaceBoundsRef.current.width - size.width)
+          const y = Math.min(finished.originalBounds.y, workspaceBoundsRef.current.y + workspaceBoundsRef.current.height - size.height)
           strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: size.width, height: size.height })
         }
         // A new box is empty, so its sections start at the standard 15 / 70 / 15 split of its final size.
@@ -2356,7 +2397,7 @@ function App() {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
     cancelTextEditor()
-    const strokes = createTestInk(viewRectOf(viewportRef.current, rect.width, rect.height), SHEET_BOUNDS, targetPoints, nextStrokeIdRef.current)
+    const strokes = createTestInk(viewRectOf(viewportRef.current, rect.width, rect.height), sheetBoundsRef.current, targetPoints, nextStrokeIdRef.current)
     if (!strokes.length) return
     nextStrokeIdRef.current += strokes.length
     saveHistory()
@@ -2465,7 +2506,7 @@ function App() {
   return (
     <main className="app-shell">
       <section className="canvas-stage" aria-label="Drawing canvas">
-        <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: SHEET_HEIGHT }} />
+        <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: sheetHeight }} />
         <div ref={eraserCursorRef} className="eraser-cursor" aria-hidden="true" />
         {PEN_BUTTON_DEBUG && <div ref={penButtonReadoutRef} className="pen-button-readout" role="status">pen button: waiting for the pen</div>}
         <canvas
@@ -2587,6 +2628,7 @@ function App() {
                   <canvas
                     ref={minimapRef}
                     className="navigator-map"
+                    style={{ height: 108 + (sheetHeight - SHEET_MIN_HEIGHT) * 0.06 }}
                     aria-label="Workspace overview. Click or drag to navigate the full drawing area."
                     onPointerDown={onMinimapPointerDown}
                     onPointerMove={onMinimapPointerMove}
