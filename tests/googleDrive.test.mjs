@@ -168,3 +168,40 @@ test('storage lives in the menu and the Library screen, not in the per-diagram F
   assert.match(hook, /setStoragePanelOpen\(true\)/)
   assert.doesNotMatch(hook, /setFilePanelOpen\(true\)/)
 })
+
+test('a star is a tag on the Drive file: listed, removable, and never touches the diagram', async () => {
+  const { fake, store } = setup()
+  const id = await store.save(null, doc('Zepto', [stroke(1)]), null)
+  const before = fake.files.get(id).content
+  await store.setStarred(id, true)
+  assert.equal(fake.files.get(id).appProperties.starred, '1')
+  assert.equal(fake.files.get(id).content, before)
+  assert.equal((await store.list()).documents.find((d) => d.id === id).starred, true)
+  await store.setStarred(id, false)
+  assert.equal('starred' in fake.files.get(id).appProperties, false)
+  assert.equal('starred' in (await store.list()).documents.find((d) => d.id === id), false)
+})
+
+test('saving a starred diagram keeps the star and does not make an "other device" copy', async () => {
+  const { fake, store } = setup()
+  const id = await store.save(null, doc('Zepto', [stroke(1)]), null)
+  await store.save(id, doc('Zepto', [stroke(1), stroke(2)]), null)
+  await store.setStarred(id, true) // the fake moves the modified time, like a metadata change can on Drive
+  await store.save(id, doc('Zepto', [stroke(1), stroke(2), stroke(3)]), null)
+  assert.deepEqual(tree(fake), ['Zepto.inkpad'])
+  assert.equal(fake.files.get(id).appProperties.starred, '1')
+  assert.equal(fake.files.get(id).appProperties.itemCount, '3')
+})
+
+test('a star survives renaming and moving the diagram, and goes when the file is deleted', async () => {
+  const { fake, store } = setup()
+  const folder = await store.createFolder('LLD', null)
+  const id = await store.save(null, doc('Zepto', [stroke(1)]), null)
+  await store.setStarred(id, true)
+  const renamed = await store.save(id, doc('Zepto LLD', [stroke(1)]), null)
+  assert.equal(renamed, id)
+  await store.move(id, folder)
+  assert.equal((await store.list()).documents.find((d) => d.id === id).starred, true)
+  await store.remove(id)
+  assert.equal(fake.files.has(id), false)
+})

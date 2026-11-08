@@ -10,7 +10,8 @@ const PLACEMENT_STORE = 'placements'
 const THUMBNAIL_STORE = 'thumbnails'
 const CURRENT_KEY = 'inkpad.currentDocument'
 
-export type DocumentSummary = { id: string; title: string; updatedAt: string; itemCount: number; folderId: string | null }
+/** `starred` comes from storage that keeps stars with the file (Google Drive); elsewhere stars are a local list (see starred.ts). */
+export type DocumentSummary = { id: string; title: string; updatedAt: string; itemCount: number; folderId: string | null; starred?: boolean }
 export type FolderRecord = { id: string; name: string; parentId: string | null; createdAt: string }
 type PlacementRecord = { docId: string; folderId: string }
 /**

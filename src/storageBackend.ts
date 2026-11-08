@@ -28,6 +28,8 @@ export type StorageBackend = {
   renameFolder(id: string, name: string): Promise<{ from: string; to: string } | null>
   /** Deletes a folder, its subfolders and every diagram inside. Returns the ids of the deleted diagrams. */
   deleteFolder(id: string): Promise<string[]>
+  /** Only on storage that keeps stars with the file (Google Drive): stars or unstars a diagram without touching its contents. */
+  setStarred?(id: string, starred: boolean): Promise<void>
 }
 
 /** Copies every folder and diagram from one backend into another, keeping the folder hierarchy identical. */

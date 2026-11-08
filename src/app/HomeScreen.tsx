@@ -3,7 +3,6 @@ import type { DocumentSummary, FolderRecord } from '../documentStore'
 import { flattenFolders } from '../folderTree'
 import { NEW_DIAGRAM_PRESETS, countInFolder, describeEdited, folderLabel, searchLibrary, type LibraryLayout } from '../libraryView'
 import type { PageTemplate } from '../pageTemplates'
-import { readStarred, toggleStarred, writeStarred } from '../starred'
 
 type HomeScreenProps = {
   library: DocumentSummary[]
@@ -11,6 +10,11 @@ type HomeScreenProps = {
   currentId: string | null
   /** Small page pictures by diagram id; a card without one shows an icon. */
   thumbnails: Record<string, string>
+  /** Starred diagram ids (from Drive tags and/or this browser). */
+  starredIds: ReadonlySet<string>
+  onToggleStar: (id: string) => void
+  /** Stars follow the person to other devices (Google Drive storage). */
+  starsSync: boolean
   notice: string | null
   storageText: string
   storageLocked: boolean
@@ -40,7 +44,6 @@ export function HomeScreen(props: HomeScreenProps) {
   const [selected, setSelected] = useState<string | null>(null)
   /** 'starred' shows only starred diagrams from every folder. */
   const [view, setView] = useState<'all' | 'starred'>('all')
-  const [starred, setStarred] = useState<string[]>(readStarred)
   const [query, setQuery] = useState('')
   const [layout, setLayout] = useState<LibraryLayout>(readLayout)
   const [creating, setCreating] = useState(false)
@@ -55,7 +58,7 @@ export function HomeScreen(props: HomeScreenProps) {
   // If the chosen folder disappears (deleted), fall back to all diagrams.
   const here = view === 'all' && selected && folders.some((folder) => folder.id === selected) ? selected : null
   const hereFolder = here ? folders.find((folder) => folder.id === here) : undefined
-  const starredSet = useMemo(() => new Set(starred), [starred])
+  const starredSet = props.starredIds
   const starredCount = useMemo(() => library.filter((entry) => starredSet.has(entry.id)).length, [library, starredSet])
   const shown = useMemo(() => searchLibrary(library, folders, { query, folderId: here, onlyIds: view === 'starred' ? starredSet : undefined }), [library, folders, query, here, view, starredSet])
   const tree = useMemo(() => flattenFolders(folders), [folders])
@@ -92,7 +95,6 @@ export function HomeScreen(props: HomeScreenProps) {
   const submitCreate = () => { props.onCreateFolder(draftName, here); setCreating(false); setDraftName('') }
   const submitRename = () => { if (here) props.onRenameFolder(here, draftName); setRenaming(false); setDraftName('') }
   const heading = view === 'starred' ? 'Starred' : hereFolder ? hereFolder.name : 'All diagrams'
-  const changeStars = (next: string[]) => { setStarred(next); writeStarred(next) }
 
   return (
     <div className="home-screen" role="dialog" aria-modal="true" aria-label="Library">
@@ -218,20 +220,20 @@ export function HomeScreen(props: HomeScreenProps) {
                   <span className="home-card-folder">{where || 'No folder'}</span>
                   <span className="home-card-meta">{entry.id === props.currentId ? 'Open now · ' : ''}Edited {describeEdited(entry.updatedAt) || 'earlier'} · {entry.itemCount} item{entry.itemCount === 1 ? '' : 's'}</span>
                 </button>
-                <button type="button" className={`home-star${isStarred ? ' on' : ''}`} aria-pressed={isStarred} aria-label={`${isStarred ? 'Unstar' : 'Star'} ${entry.title || 'Untitled diagram'}`} onClick={() => changeStars(toggleStarred(starred, entry.id))}>
+                <button type="button" className={`home-star${isStarred ? ' on' : ''}`} aria-pressed={isStarred} aria-label={`${isStarred ? 'Unstar' : 'Star'} ${entry.title || 'Untitled diagram'}`} onClick={() => props.onToggleStar(entry.id)}>
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l2.4 5 5.4.7-4 3.8 1 5.4-4.8-2.7-4.8 2.7 1-5.4-4-3.8 5.4-.7z"/></svg>
                 </button>
                 <span className="home-card-actions">
                   <button type="button" aria-label={`Move ${entry.title || 'Untitled diagram'}`} onClick={() => setMovingId(entry.id)}>Move</button>
                   {confirmDiagramId === entry.id
-                    ? <button type="button" className="home-danger" onClick={() => { setConfirmDiagramId(null); changeStars(starred.filter((id) => id !== entry.id)); props.onDeleteDiagram(entry.id) }}>Delete?</button>
+                    ? <button type="button" className="home-danger" onClick={() => { setConfirmDiagramId(null); props.onDeleteDiagram(entry.id) }}>Delete?</button>
                     : <button type="button" aria-label={`Delete ${entry.title || 'Untitled diagram'}`} onClick={() => setConfirmDiagramId(entry.id)}>Delete</button>}
                 </span>
               </li>
             )
           })}
         </ul>
-        {shown.length === 0 && <p className="home-empty">{query.trim() ? 'No diagram matches your search.' : view === 'starred' ? 'No starred diagrams yet. Tap the star on a diagram to keep it here.' : here ? 'This folder is empty.' : 'Nothing saved yet. Tap “New diagram”, pick a sheet and start writing; it saves by itself.'}</p>}
+        {shown.length === 0 && <p className="home-empty">{query.trim() ? 'No diagram matches your search.' : view === 'starred' ? `No starred diagrams yet. Tap the star on a diagram to keep it here${props.starsSync ? ' (stars sync through Google Drive)' : ' (stars stay on this device)'}.` : here ? 'This folder is empty.' : 'Nothing saved yet. Tap “New diagram”, pick a sheet and start writing; it saves by itself.'}</p>}
       </main>
     </div>
   )

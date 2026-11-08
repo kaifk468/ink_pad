@@ -57,13 +57,25 @@ test('the Starred view lists only starred diagrams, still searchable and newest 
   assert.deepEqual(ids('', undefined), ['b', 'a', 'c'])
 })
 
-test('stars are per device, not in the saved diagram, and the Library wires them up', async () => {
+test('stars never go into the diagram file; the Library shows the stars from the hook and asks the hook to change them', async () => {
   const home = await read('app/HomeScreen.tsx')
   assert.match(home, /aria-pressed=\{isStarred\}/)
-  assert.match(home, /Starred/)
-  assert.match(home, /writeStarred\(/)
+  assert.match(home, /onClick=\{\(\) => props\.onToggleStar\(entry\.id\)\}/)
+  assert.match(home, /const starredSet = props\.starredIds/)
+  assert.doesNotMatch(home, /writeStarred|readStarred/)
   const format = await read('documentFormat.ts')
   assert.doesNotMatch(format, /starred/i)
   const hook = await read('app/useDocuments.ts')
-  assert.match(hook, /moveStarred\(readStarred\(\), previousId, newId\)/)
+  assert.match(hook, /changeLocalStars\(\(ids\) => moveStarred\(ids, previousId, newId\)\)/)
+  assert.match(hook, /if \(!backend\.setStarred\) \{\s+changeLocalStars\(\(ids\) => toggleStarred\(ids, id\)\)/)
+  assert.match(hook, /void uploadLocalStars\(backend, listed\.documents\)/)
+  const app = await read('App.tsx')
+  assert.match(app, /starsSync=\{storage\.kind === 'drive'\}/)
+})
+
+test('local stars move to Drive once: listed and not starred there are uploaded, already starred are dropped, unknown stay', () => {
+  const docs = [{ id: 'a' }, { id: 'b', starred: true }, { id: 'c', starred: false }]
+  assert.deepEqual(starred.starsToUpload(['a', 'b', 'c', 'elsewhere'], docs), { upload: ['a', 'c'], drop: ['b'] })
+  assert.deepEqual(starred.starsToUpload([], docs), { upload: [], drop: [] })
+  assert.deepEqual(starred.starsToUpload(['x'], []), { upload: [], drop: [] })
 })

@@ -1,4 +1,8 @@
-/** Starred diagrams: a short list of diagram ids kept in this browser (not inside the saved diagrams, so nothing about the file format changes). */
+/**
+ * Starred diagrams. On Google Drive a star is a tag on the Drive file (appProperties.starred = "1"), so it follows the person to
+ * every device. On browser and device-folder storage it is a short list of diagram ids kept in this browser. Neither touches
+ * the diagram file's contents.
+ */
 export const STARRED_KEY = 'inkpad.starredDiagrams'
 export const MAX_STARRED = 500
 
@@ -25,6 +29,23 @@ export function toggleStarred(ids: readonly string[], id: string): string[] {
 export function moveStarred(ids: readonly string[], from: string, to: string): string[] {
   if (from === to || !ids.includes(from)) return [...ids]
   return [...new Set(ids.map((id) => (id === from ? to : id)))]
+}
+
+/**
+ * Stars made in this browser before Drive kept them: which to put on Drive (diagram listed, not starred there yet) and which
+ * to simply forget here (already starred on Drive). Ids of diagrams not in the list stay local.
+ */
+export function starsToUpload(localIds: readonly string[], documents: ReadonlyArray<{ id: string; starred?: boolean }>): { upload: string[]; drop: string[] } {
+  const byId = new Map(documents.map((entry) => [entry.id, entry]))
+  const upload: string[] = []
+  const drop: string[] = []
+  for (const id of localIds) {
+    const entry = byId.get(id)
+    if (!entry) continue
+    if (entry.starred) drop.push(id)
+    else upload.push(id)
+  }
+  return { upload, drop }
 }
 
 export function readStarred(storage?: Pick<Storage, 'getItem'>): string[] {

@@ -249,7 +249,7 @@ function App() {
   pageBackgroundRef.current = pageBackground
 
   const {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
@@ -2709,6 +2709,9 @@ function App() {
         folders={folders}
         currentId={currentDocId}
         thumbnails={thumbnails}
+        starredIds={starredIds}
+        onToggleStar={(id) => void toggleStar(id)}
+        starsSync={storage.kind === 'drive'}
         notice={fileNotice}
         storageText={storageLabel(storage)}
         storageLocked={storage.locked}

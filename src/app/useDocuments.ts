@@ -3,7 +3,7 @@ import type { CanvasItem } from '../canvasModel'
 import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
 import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
 import { THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
-import { moveStarred, readStarred, writeStarred } from '../starred'
+import { moveStarred, readStarred, starsToUpload, toggleStarred, writeStarred } from '../starred'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
 import { folderAndDescendantIds } from '../folderTree'
 import { DriveAuthError, createDriveBackend, fetchDriveProfile, type DriveEnv } from '../googleDrive'
@@ -85,6 +85,17 @@ export function useDocuments(host: DocumentHost) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [fileNotice, setFileNotice] = useState<string | null>(null)
   const [library, setLibrary] = useState<DocumentSummary[]>([])
+  /** Stars kept in this browser (all stars on browser and device storage; on Drive only ones not yet uploaded). */
+  const [localStars, setLocalStars] = useState<string[]>(readStarred)
+  const localStarsRef = useRef(localStars)
+  localStarsRef.current = localStars
+  const changeLocalStars = (update: (ids: string[]) => string[]) => {
+    const next = update(localStarsRef.current)
+    localStarsRef.current = next
+    writeStarred(next)
+    setLocalStars(next)
+  }
+  const starUploadRunningRef = useRef(false)
   /** Small page pictures for the Library cards, by diagram id. They live in this browser only. */
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
   /** What the open diagram looked like when its picture was last made, so an unchanged diagram is not pictured again. */
@@ -158,11 +169,66 @@ export function useDocuments(host: DocumentHost) {
       if (backendRef.current !== backend) return
       setLibrary(listed.documents)
       setFolders(listed.folders)
+      void uploadLocalStars(backend, listed.documents)
     } catch {
       setLibrary([])
       setFolders([])
     }
   }
+
+  /** Stars made in this browser before Drive kept them (or while Drive could not be reached) are put on Drive once. */
+  const uploadLocalStars = async (backend: StorageBackend, documents: DocumentSummary[]) => {
+    if (!backend.setStarred || starUploadRunningRef.current) return
+    const { upload, drop } = starsToUpload(localStarsRef.current, documents)
+    if (upload.length === 0 && drop.length === 0) return
+    starUploadRunningRef.current = true
+    const done = [...drop]
+    try {
+      for (const id of upload) {
+        try {
+          await backend.setStarred(id, true)
+          done.push(id)
+        } catch {
+          break // offline or signed out: try again next time the list loads
+        }
+      }
+    } finally {
+      starUploadRunningRef.current = false
+    }
+    if (backendRef.current !== backend || done.length === 0) return
+    const moved = new Set(done)
+    changeLocalStars((ids) => ids.filter((id) => !moved.has(id)))
+    setLibrary((current) => current.map((entry) => (moved.has(entry.id) ? { ...entry, starred: true } : entry)))
+  }
+
+  /** Stars or unstars a diagram: on Drive as a tag on the file (shown at once, put back if Drive refuses), elsewhere in this browser. */
+  const toggleStar = async (id: string) => {
+    const backend = backendRef.current
+    const entry = library.find((item) => item.id === id)
+    const wasStarred = Boolean(entry?.starred) || localStarsRef.current.includes(id)
+    const next = !wasStarred
+    if (!backend.setStarred) {
+      changeLocalStars((ids) => toggleStarred(ids, id))
+      return
+    }
+    const setOnList = (value: boolean | undefined) => setLibrary((current) => current.map((item) => (item.id === id ? { ...item, starred: value } : item)))
+    setOnList(next)
+    if (!next) changeLocalStars((ids) => ids.filter((item) => item !== id))
+    try {
+      await backend.setStarred(id, next)
+    } catch {
+      if (backendRef.current !== backend) return
+      setOnList(entry?.starred)
+      if (next) {
+        changeLocalStars((ids) => (ids.includes(id) ? ids : [...ids, id]))
+        setFileNotice('Could not save the star to Google Drive. It is kept on this device and will be uploaded later.')
+      } else {
+        setFileNotice('Could not remove the star in Google Drive. Try again when you are online.')
+      }
+    }
+  }
+
+  const starredIds = new Set([...library.filter((entry) => entry.starred).map((entry) => entry.id), ...localStars])
 
   const doPersist = async () => {
     if (!readyRef.current) return
@@ -193,7 +259,7 @@ export function useDocuments(host: DocumentHost) {
       savedSignatureRef.current = signature
       if (previousId && previousId !== newId) {
         // A device-folder file was renamed, so its id changed: the star follows it and the old picture is dropped (a new one is made when the Library opens).
-        writeStarred(moveStarred(readStarred(), previousId, newId))
+        changeLocalStars((ids) => moveStarred(ids, previousId, newId))
         void deleteThumbnail(previousId).catch(() => undefined)
         setThumbnails((current) => { if (!(previousId in current)) return current; const { [previousId]: _gone, ...rest } = current; return rest })
       }
@@ -302,6 +368,7 @@ export function useDocuments(host: DocumentHost) {
       await backendRef.current.remove(id)
       if (docIdRef.current === id) forgetCurrentDiagram()
       void deleteThumbnail(id).catch(() => undefined)
+      if (localStarsRef.current.includes(id)) changeLocalStars((ids) => ids.filter((item) => item !== id))
       setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
     } catch {
       setFileNotice('Could not delete that diagram.')
@@ -697,7 +764,7 @@ export function useDocuments(host: DocumentHost) {
   }, [])
 
   return {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,

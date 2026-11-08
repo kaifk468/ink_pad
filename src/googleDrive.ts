@@ -18,6 +18,8 @@ export const GOOGLE_CLIENT_ID = '422120639138-p86fdlt7qg2fqp5sb1c6c59nevketg6e.a
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
 
 const FILES_URL = 'https://www.googleapis.com/drive/v3/files'
+/** A star is the app property `starred` = "1" on the diagram's Drive file. Saves only send `itemCount`, and Drive merges app properties, so a save keeps the star. */
+const STARRED_VALUE = '1'
 const ABOUT_URL = 'https://www.googleapis.com/drive/v3/about'
 const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files'
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
@@ -103,6 +105,7 @@ function organise(files: DriveFile[]) {
     title: fileBase(file.name),
     updatedAt: file.modifiedTime ?? '',
     itemCount: Number(file.appProperties?.itemCount) || 0,
+    ...(file.appProperties?.starred === STARRED_VALUE ? { starred: true } : {}),
     folderId: parentOf(file),
   }))
   return { folders, documents, parentOf, diagramFiles }
@@ -279,6 +282,22 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
         body: JSON.stringify({ name: clean, mimeType: FOLDER_MIME, parents: [parentId ?? ROOT_ALIAS] }),
       })).json() as DriveFile
       return result.id
+    },
+    async setStarred(id, starred) {
+      const result = await (await call(env, `${FILES_URL}/${encodeURIComponent(id)}?fields=id,modifiedTime`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        // null removes the property; the diagram's contents are never sent
+        body: JSON.stringify({ appProperties: { starred: starred ? STARRED_VALUE : null } }),
+      })).json() as DriveFile
+      // If Drive moved the file's modified time, remember it, so the next save is not mistaken for a clash with another device.
+      if (result.modifiedTime && knownModified.has(id)) {
+        knownModified.set(id, result.modifiedTime)
+        try {
+          const cached = cache ? await cache.get(id) : null
+          if (cached) await cache?.setState(id, { modifiedTime: result.modifiedTime, pending: cached.pending })
+        } catch { /* the browser copy keeps its older time; the next download corrects it */ }
+      }
     },
     async renameFolder(id, name) {
       await call(env, `${FILES_URL}/${encodeURIComponent(id)}?fields=id`, {

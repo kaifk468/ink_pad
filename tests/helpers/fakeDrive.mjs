@@ -59,7 +59,7 @@ export class FakeDrive {
     if (method === 'DELETE') { this.files.delete(id); return new Response(null, { status: 204 }) }
     if (method === 'PATCH' && upload) {
       const { meta, content } = parseMultipart(init)
-      Object.assign(file, { name: meta.name ?? file.name, appProperties: meta.appProperties ?? file.appProperties, content, modifiedTime: this.tick() })
+      Object.assign(file, { name: meta.name ?? file.name, appProperties: mergeProperties(file.appProperties, meta.appProperties), content, modifiedTime: this.tick() })
       return json(this.pick(file, fields))
     }
     if (method === 'PATCH') {
@@ -68,6 +68,8 @@ export class FakeDrive {
       if (add) file.parents = [...file.parents.filter((p) => !(remove ?? '').split(',').includes(p)), ...this.parents([add])]
       const meta = init.body ? JSON.parse(init.body) : {}
       if (meta.name) file.name = meta.name
+      // like real Drive: app properties merge key by key, null deletes a key; treat it as a change of the file
+      if (meta.appProperties) { file.appProperties = mergeProperties(file.appProperties, meta.appProperties); file.modifiedTime = this.tick() }
       return json(this.pick(file, fields))
     }
     return json({}, 400)
@@ -78,6 +80,13 @@ export class FakeDrive {
     file.content = content
     file.modifiedTime = this.tick()
   }
+}
+
+function mergeProperties(current = {}, changes) {
+  if (!changes) return current
+  const next = { ...current }
+  for (const [key, value] of Object.entries(changes)) { if (value === null) delete next[key]; else next[key] = value }
+  return next
 }
 
 function parseMultipart(init) {
