@@ -40,5 +40,5 @@ test('the title in the top bar is edited in place: Enter or tapping away saves, 
 test('a rename saves the open diagram right away', async () => {
   const hook = await read('app/useDocuments.ts')
   assert.match(hook, /const renameDiagram = \(title: string\) => \{\s+const cleaned = cleanTitle\(title\)/)
-  assert.match(hook, /if \(docIdRef\.current \|\| hostRef\.current\.getItems\(\)\.length > 0\) void persistNow\(\)/)
+  assert.match(hook, /if \(docIdRef\.current \|\| hasAnyItems\(\)\) void persistNow\(\)/)
 })

@@ -21,7 +21,10 @@ import { SHEET_HEIGHT, SHEET_WIDTH } from '../viewport'
  * "which diagram is open / saved" (this hook) and "how the canvas is edited" (App).
  */
 export type DocumentHost = {
+  /** The items of the page on screen. */
   getItems: () => CanvasItem[]
+  /** The items of every page in order (page 1 first), including the live items of the page on screen. */
+  getPageItems: () => CanvasItem[][]
   getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number }
   /** True while a pen/touch stroke or gesture is in progress; autosave waits for it to end. */
   isInputActive: () => boolean
@@ -131,6 +134,9 @@ export function useDocuments(host: DocumentHost) {
   /** What the open diagram looked like when it was last saved or loaded; an unchanged diagram is not saved again. */
   const savedSignatureRef = useRef<DocumentSignature | null>(null)
 
+  /** True when any page holds something; a diagram with only empty pages counts as blank. */
+  const hasAnyItems = () => hostRef.current.getPageItems().some((items) => items.length > 0)
+
   const buildCurrentDocument = (): InkPadDocument => {
     const page = hostRef.current.getPage()
     return createDocument({
@@ -140,7 +146,8 @@ export function useDocuments(host: DocumentHost) {
       background: page.background,
       spacing: page.spacing,
       sheetHeight: page.sheetHeight,
-      items: hostRef.current.getItems(),
+      items: hostRef.current.getPageItems()[0] ?? [],
+      extraPages: hostRef.current.getPageItems().slice(1),
       shareStrokes: true,
     })
   }
@@ -153,7 +160,7 @@ export function useDocuments(host: DocumentHost) {
    */
   const currentSignature = (): DocumentSignature => {
     const page = hostRef.current.getPage()
-    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, items: hostRef.current.getItems().slice() }
+    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()) }
   }
 
   const refreshLibrary = async () => {
@@ -238,7 +245,7 @@ export function useDocuments(host: DocumentHost) {
       autosaveTimerRef.current = null
     }
     // Never create an empty entry for a diagram that was never drawn on.
-    if (!docIdRef.current && hostRef.current.getItems().length === 0 && !forceSaveRef.current) return
+    if (!docIdRef.current && !hasAnyItems() && !forceSaveRef.current) return
     const forced = forceSaveRef.current
     forceSaveRef.current = false
     // Nothing changed since this diagram was last saved or opened: skip the upload (switching diagrams used to save every time).
@@ -447,7 +454,7 @@ export function useDocuments(host: DocumentHost) {
     const cleaned = cleanTitle(title)
     docMetaRef.current = { ...docMetaRef.current, title: cleaned }
     setDocTitle(cleaned)
-    if (docIdRef.current || hostRef.current.getItems().length > 0) void persistNow()
+    if (docIdRef.current || hasAnyItems()) void persistNow()
   }
 
   const exportDocumentFile = () => {
@@ -473,8 +480,9 @@ export function useDocuments(host: DocumentHost) {
     }
   }
 
-  const getImageExport = () => {
-    const items = hostRef.current.getItems()
+  /** The picture of one page: the one on screen for exports, the first page for the Library picture. */
+  const getImageExport = (which: 'current' | 'first' = 'current') => {
+    const items = which === 'first' ? (hostRef.current.getPageItems()[0] ?? []) : hostRef.current.getItems()
     const page = hostRef.current.getPage()
     const sheetHeight = page.sheetHeight ?? SHEET_HEIGHT
     const bounds = getContentBounds(items, { width: SHEET_WIDTH, height: sheetHeight })
@@ -500,7 +508,7 @@ export function useDocuments(host: DocumentHost) {
     const signature = currentSignature()
     const last = thumbnailOfRef.current
     if (last && last.id === id && sameSignature(signature, last.signature)) return
-    const exported = getImageExport()
+    const exported = getImageExport('first')
     try {
       if (!exported) {
         thumbnailOfRef.current = { id, signature }
@@ -568,7 +576,7 @@ export function useDocuments(host: DocumentHost) {
       try {
         const backend = backendRef.current
         const stored = await backend.load(id, fresherVersion(backend, id))
-        if (!isCancelled() && stored && hostRef.current.getItems().length === 0) applyDocument(id, stored)
+        if (!isCancelled() && stored && !hasAnyItems()) applyDocument(id, stored)
       } catch {
         // Storage unavailable: start with an empty sheet; saving will report the problem.
       }
@@ -623,7 +631,7 @@ export function useDocuments(host: DocumentHost) {
 
   const switchBackend = async (backend: StorageBackend, handle: DirHandle | null) => {
     // A sheet drawn while saving was off (device folder locked) is kept and saved into the new storage, never discarded.
-    const keepSheet = !readyRef.current && hostRef.current.getItems().length > 0
+    const keepSheet = !readyRef.current && hasAnyItems()
     backendRef.current = backend
     deviceHandleRef.current = handle
     readyRef.current = true
@@ -686,7 +694,7 @@ export function useDocuments(host: DocumentHost) {
     setSaveStatus('idle')
     await finishStartup()
     // A sheet drawn while storage was locked is saved now (as a new diagram if it never had a home).
-    if ((!docIdRef.current || unsavedWhileLockedRef.current) && hostRef.current.getItems().length > 0) await persistNow()
+    if ((!docIdRef.current || unsavedWhileLockedRef.current) && hasAnyItems()) await persistNow()
     unsavedWhileLockedRef.current = false
     await refreshLibrary()
   }

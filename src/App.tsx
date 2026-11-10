@@ -46,6 +46,8 @@ import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeRectangleOnHold, recognizeRectangleStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
+import { MAX_PAGES, canAddPage, clampPageIndex, insertPageAfter, removePageAt } from './pages'
+import { PageControls } from './app/PageControls'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
 
@@ -253,6 +255,12 @@ function App() {
   const sheetHeightRef = useRef(sheetHeight)
   const sheetBoundsRef = useRef(sheetBoundsFor(sheetHeight))
   const workspaceBoundsRef = useRef(workspaceBoundsFor(sheetHeight))
+  // Pages of the open diagram. Only the page on screen is live: its items are strokesRef and its undo history is historyRef.
+  // The slot of the page on screen is stale on purpose; it is filled in when the page is left. Other pages are plain data.
+  const pagesRef = useRef<Array<{ items: CanvasItem[]; history: CanvasSnapshotHistory | null }>>([{ items: [], history: null }])
+  const pageIndexRef = useRef(0)
+  const [pageIndex, setPageIndex] = useState(0)
+  const [pageCount, setPageCount] = useState(1)
 
   const {
     filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
@@ -262,34 +270,21 @@ function App() {
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile,
   } = useDocuments({
     getItems: () => strokesRef.current,
+    getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
     getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current }),
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null,
     loadDocument: (loaded) => {
-      clearShapeHoldTimer()
-      activeStrokeRef.current = null
-      activeConnectorRef.current = null
-      activeResizeRef.current = null
-      activeDividerRef.current = null
-      activeStrokeBoxRef.current = null
-      shapePreviewRef.current = null
-      activeLassoRef.current = null
-      lassoDragRef.current = null
-      activePointerRef.current = null
-      activeObjectEraserRef.current = null
-      holdAnchorRef.current = null
-      updateSelectedItems([])
-      setSelectedRectangle(null)
+      resetInteractionState()
       strokesRef.current = cloneCanvasItems(loaded.items)
-      const nextIds = getNextIds(strokesRef.current)
+      pagesRef.current = [{ items: strokesRef.current, history: null }, ...(loaded.pages ?? []).map((page) => ({ items: cloneCanvasItems(page.items), history: null }))]
+      pageIndexRef.current = 0
+      setPageIndex(0)
+      setPageCount(pagesRef.current.length)
+      const nextIds = getNextIds(pagesRef.current.flatMap((slot) => slot.items))
       nextStrokeIdRef.current = nextIds.stroke
       nextRectangleIdRef.current = nextIds.rectangle
       nextConnectorIdRef.current = nextIds.connector
       nextTextIdRef.current = nextIds.text
-      textEditorRef.current = null
-      textTapRef.current = null
-      classTapRef.current = null
-      setTextEditor(null)
-      setClassBoxEditor(null)
       historyRef.current = new CanvasSnapshotHistory()
       setCanUndo(false)
       setCanRedo(false)
@@ -306,6 +301,84 @@ function App() {
       openAtDefaultView()
     },
   })
+  /** Drops everything in progress on the canvas (strokes, drags, selection, text editing) before another diagram or page is shown. */
+  const resetInteractionState = () => {
+    clearShapeHoldTimer()
+    activeStrokeRef.current = null
+    activeConnectorRef.current = null
+    activeResizeRef.current = null
+    activeDividerRef.current = null
+    activeStrokeBoxRef.current = null
+    shapePreviewRef.current = null
+    activeLassoRef.current = null
+    lassoDragRef.current = null
+    activePointerRef.current = null
+    activeObjectEraserRef.current = null
+    holdAnchorRef.current = null
+    updateSelectedItems([])
+    setSelectedRectangle(null)
+    textEditorRef.current = null
+    textTapRef.current = null
+    classTapRef.current = null
+    setTextEditor(null)
+    setClassBoxEditor(null)
+  }
+
+  /** Shows the page at `index` of pagesRef: its items and its own undo history become the live ones. */
+  const showPageSlot = (index: number) => {
+    const slot = pagesRef.current[index]
+    strokesRef.current = slot.items
+    historyRef.current = slot.history ?? new CanvasSnapshotHistory()
+    slot.history = null
+    pageIndexRef.current = index
+    setPageIndex(index)
+    setPageCount(pagesRef.current.length)
+    setCanUndo(historyRef.current.canUndo)
+    setCanRedo(historyRef.current.canRedo)
+    setHasInk(strokesRef.current.length > 0)
+    renderAll()
+  }
+
+  /** Remembers the page on screen (its items and undo history) in its slot. Call before showing another page. */
+  const stashCurrentPage = () => {
+    pagesRef.current[pageIndexRef.current] = { items: strokesRef.current, history: historyRef.current }
+  }
+
+  const penBusy = () => activePointerRef.current !== null || activeStrokeRef.current !== null
+
+  const goToPage = (target: number) => {
+    const next = clampPageIndex(target, pagesRef.current.length)
+    if (next === pageIndexRef.current || penBusy()) return
+    if (textEditorRef.current) commitTextEditor()
+    stashCurrentPage()
+    resetInteractionState()
+    showPageSlot(next)
+  }
+
+  const addPage = () => {
+    if (penBusy()) return
+    if (!canAddPage(pagesRef.current.length)) {
+      setFileNotice(`A diagram can have up to ${MAX_PAGES} pages.`)
+      return
+    }
+    if (textEditorRef.current) commitTextEditor()
+    stashCurrentPage()
+    resetInteractionState()
+    pagesRef.current = insertPageAfter(pagesRef.current, pageIndexRef.current, { items: [], history: null })
+    showPageSlot(pageIndexRef.current + 1)
+    scheduleAutosave()
+  }
+
+  const deletePage = () => {
+    if (penBusy() || pagesRef.current.length <= 1) return
+    if (textEditorRef.current) cancelTextEditor()
+    resetInteractionState()
+    const removed = removePageAt(pagesRef.current, pageIndexRef.current)
+    pagesRef.current = removed.pages
+    showPageSlot(removed.index)
+    scheduleAutosave()
+  }
+
   /** Saves soon, and once the change is in place checks whether the page needs to grow (callers often schedule the save just before adding the item). */
   const scheduleAutosave = () => {
     scheduleAutosaveBase()
@@ -1251,6 +1324,7 @@ function App() {
 
   /** After a pen lift (or any change): if the newest item ends near the bottom of the page, add a strip, up to the limit. Never shrinks. */
   const growSheetForNewestItem = () => {
+    if (pagesRef.current.length > 1) return // growing and several pages stay apart for now: every page keeps the diagram's height
     if (sheetHeightRef.current >= nextSheetHeight(SHEET_MIN_HEIGHT, Infinity)) return
     const newest = strokesRef.current[strokesRef.current.length - 1]
     if (!newest) return
@@ -2665,6 +2739,9 @@ function App() {
           filePanelOpen={filePanelOpen}
           onToggleFilePanel={() => setFilePanelOpen((open) => !open)}
           onClear={clearCanvas}
+          pageCount={pageCount}
+          pageNumber={pageIndex + 1}
+          onDeletePage={deletePage}
           onSlimInk={slimInk}
           libraryOpen={libraryOpen}
           statusText={statusLabel(saveStatus, storage.kind)}
@@ -2698,6 +2775,7 @@ function App() {
           ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
           : null}
       />
+      <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount)} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} />
       <ZoomControls zoomPercent={zoomPercent} locked={navigationSettings.zoomLocked} onToggleLock={() => updateNavigationSettings({ zoomLocked: !navigationSettings.zoomLocked })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
         dockRef={toolbarRef}

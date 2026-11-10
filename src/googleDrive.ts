@@ -1,4 +1,4 @@
-import { DOCUMENT_FILE_EXTENSION, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
+import { documentItemCount, DOCUMENT_FILE_EXTENSION, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
 import type { DocumentSummary, FolderRecord } from './documentStore'
 import { fileBase, sanitizeName } from './deviceStore'
 import { cleanFolderName, folderAndDescendantIds } from './folderTree'
@@ -171,7 +171,7 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
   /** Uploads a diagram over an existing Drive file, keeping the other device's version as a copy when Drive changed meanwhile. */
   async function upload(id: string, document: InkPadDocument, content: string, folderId: string | null = null): Promise<string> {
     const name = `${sanitizeName(document.title)}${DOCUMENT_FILE_EXTENSION}`
-    const itemCount = document.items.length
+    const itemCount = documentItemCount(document)
     const known = knownModified.get(id)
     const remote = await getMeta(id)
     if (!remote) {

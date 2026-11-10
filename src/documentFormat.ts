@@ -7,6 +7,10 @@ import type { HldShape, CanvasItem, ClassBoxContent, ConnectorAttachment, InkBox
  */
 export const DOCUMENT_FORMAT = 'inkpad-document'
 export const DOCUMENT_VERSION = 1
+/** Written only by diagrams with more than one page. An InkPad that only knows v1 refuses these ("update InkPad") instead of opening page 1 and silently dropping the rest on its next save. */
+export const MULTI_PAGE_VERSION = 2
+/** Mirrors MAX_PAGES in pages.ts (a test checks they agree). */
+const MAX_DOCUMENT_PAGES = 50
 export const DOCUMENT_FILE_EXTENSION = '.inkpad'
 export const DOCUMENT_MIME_TYPE = 'application/json'
 
@@ -22,7 +26,9 @@ export type InkPadDocument = {
   updatedAt: string
   /** `spacing` is written only when it is not the standard one; `sheetHeight` only when the page has grown past its first height. */
   page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number }
+  /** `items` is page 1. Pages 2 and on, only when the diagram has more than one page. */
   items: CanvasItem[]
+  pages?: Array<{ items: CanvasItem[] }>
 }
 
 export type DocumentInput = {
@@ -34,7 +40,10 @@ export type DocumentInput = {
   spacing?: DocumentPageSpacing
   /** Page height after it grew (2000, 2500 or 3000); left out for the first height. */
   sheetHeight?: number
+  /** Page 1. */
   items: CanvasItem[]
+  /** Pages 2 and on. */
+  extraPages?: CanvasItem[][]
   /** Reuse finished strokes as they are instead of copying them (committed strokes are never changed afterwards). Used for autosave. */
   shareStrokes?: boolean
 }
@@ -61,14 +70,17 @@ const MAX_FONT_SIZE = 400
 export const DEFAULT_DOCUMENT_TITLE = 'Untitled diagram'
 
 export function createDocument(input: DocumentInput, now = new Date().toISOString()): InkPadDocument {
+  const extraPages = (input.extraPages ?? []).slice(0, MAX_DOCUMENT_PAGES - 1)
+  const copy = (item: CanvasItem) => (input.shareStrokes && item.kind === 'stroke' ? item : cloneItem(item))
   return {
     format: DOCUMENT_FORMAT,
-    version: DOCUMENT_VERSION,
+    version: extraPages.length > 0 ? MULTI_PAGE_VERSION : DOCUMENT_VERSION,
     title: cleanTitle(input.title),
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
     page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}), ...grownSheetHeight(input.sheetHeight) },
-    items: input.items.map((item) => (input.shareStrokes && item.kind === 'stroke' ? item : cloneItem(item))),
+    items: input.items.map(copy),
+    ...(extraPages.length > 0 ? { pages: extraPages.map((items) => ({ items: items.map(copy) })) } : {}),
   }
 }
 
@@ -77,9 +89,10 @@ const strokeJson = new WeakMap<object, string>()
 
 /** The document as JSON text, identical to JSON.stringify(document) but only serializing strokes it has not seen before. */
 export function stringifyDocument(document: InkPadDocument): string {
-  const head = JSON.stringify({ ...document, items: [] })
+  const { pages, ...rest } = document
+  const head = JSON.stringify({ ...rest, items: [] })
   if (!head.endsWith('"items":[]}')) return JSON.stringify(document)
-  const parts = document.items.map((item) => {
+  const itemsText = (items: CanvasItem[]) => items.map((item) => {
     if (item.kind !== 'stroke') return JSON.stringify(item)
     let text = strokeJson.get(item)
     if (text === undefined) {
@@ -87,17 +100,32 @@ export function stringifyDocument(document: InkPadDocument): string {
       strokeJson.set(item, text)
     }
     return text
-  })
-  return `${head.slice(0, -2)}${parts.join(',')}]}`
+  }).join(',')
+  const pagesText = pages && pages.length > 0 ? `,"pages":[${pages.map((page) => `{"items":[${itemsText(page.items)}]}`).join(',')}]` : ''
+  return `${head.slice(0, -2)}${itemsText(document.items)}]${pagesText}}`
+}
+
+/** Number of items in the whole diagram, every page counted. */
+export function documentItemCount(document: InkPadDocument): number {
+  let count = document.items.length
+  for (const page of document.pages ?? []) count += page.items.length
+  return count
 }
 
 /** An open diagram's content for "did anything change since the last save" checks. */
-export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; items: CanvasItem[] }
+export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; items: CanvasItem[]; extraPages?: CanvasItem[][] }
 
 export function sameSignature(a: DocumentSignature | null, b: DocumentSignature | null): boolean {
   if (!a || !b) return false
   if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || (a.sheetHeight ?? 1500) !== (b.sheetHeight ?? 1500) || a.items.length !== b.items.length) return false
   for (let index = 0; index < a.items.length; index += 1) if (a.items[index] !== b.items[index]) return false
+  const aPages = a.extraPages ?? []
+  const bPages = b.extraPages ?? []
+  if (aPages.length !== bPages.length) return false
+  for (let page = 0; page < aPages.length; page += 1) {
+    if (aPages[page].length !== bPages[page].length) return false
+    for (let index = 0; index < aPages[page].length; index += 1) if (aPages[page][index] !== bPages[page][index]) return false
+  }
   return true
 }
 
@@ -137,7 +165,7 @@ export function parseDocument(text: string): ParseResult {
   if (!isRecord(raw) || raw.format !== DOCUMENT_FORMAT) return { ok: false, error: 'This is not an InkPad document.' }
   const version = raw.version
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) return { ok: false, error: 'The document has no valid version.' }
-  if (version > DOCUMENT_VERSION) return { ok: false, error: `This document was saved by a newer InkPad (format v${version}). Update InkPad to open it.` }
+  if (version > MULTI_PAGE_VERSION) return { ok: false, error: `This document was saved by a newer InkPad (format v${version}). Update InkPad to open it.` }
 
   let current: Record<string, unknown> = raw
   for (let v = version; v < DOCUMENT_VERSION; v += 1) {
@@ -148,16 +176,19 @@ export function parseDocument(text: string): ParseResult {
   if (!Array.isArray(current.items)) return { ok: false, error: 'The document has no items list.' }
 
   const page = isRecord(current.page) ? current.page : {}
-  const items: CanvasItem[] = []
-  let droppedItems = 0
-  for (const candidate of current.items) {
-    const item = sanitizeItem(candidate)
-    if (item) items.push(item)
-    else droppedItems += 1
+  const first = cleanItems(current.items)
+  const finalItems = first.items
+  let droppedItems = first.dropped
+  const extraPages: Array<{ items: CanvasItem[] }> = []
+  if (Array.isArray(current.pages)) {
+    for (const rawPage of current.pages.slice(0, MAX_DOCUMENT_PAGES - 1)) {
+      // A page that cannot be read stays as an empty page, so the pages after it keep their place.
+      const cleaned = isRecord(rawPage) && Array.isArray(rawPage.items) ? cleanItems(rawPage.items) : { items: [], dropped: 0 }
+      droppedItems += cleaned.dropped
+      extraPages.push({ items: cleaned.items })
+    }
+    droppedItems += Math.max(0, current.pages.length - (MAX_DOCUMENT_PAGES - 1))
   }
-  const uniqueItems = dropDuplicateIds(items)
-  droppedItems += items.length - uniqueItems.length
-  const finalItems = repairAttachments(uniqueItems)
 
   const now = new Date().toISOString()
   return {
@@ -166,7 +197,7 @@ export function parseDocument(text: string): ParseResult {
     migratedFrom: version < DOCUMENT_VERSION ? version : null,
     document: {
       format: DOCUMENT_FORMAT,
-      version: DOCUMENT_VERSION,
+      version: extraPages.length > 0 ? MULTI_PAGE_VERSION : DOCUMENT_VERSION,
       title: cleanTitle(current.title),
       createdAt: typeof current.createdAt === 'string' ? current.createdAt : now,
       updatedAt: typeof current.updatedAt === 'string' ? current.updatedAt : now,
@@ -177,8 +208,22 @@ export function parseDocument(text: string): ParseResult {
         ...grownSheetHeight(page.sheetHeight),
       },
       items: finalItems,
+      ...(extraPages.length > 0 ? { pages: extraPages } : {}),
     },
   }
+}
+
+function cleanItems(candidates: unknown[]): { items: CanvasItem[]; dropped: number } {
+  const items: CanvasItem[] = []
+  let dropped = 0
+  for (const candidate of candidates) {
+    const item = sanitizeItem(candidate)
+    if (item) items.push(item)
+    else dropped += 1
+  }
+  const uniqueItems = dropDuplicateIds(items)
+  dropped += items.length - uniqueItems.length
+  return { items: repairAttachments(uniqueItems), dropped }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

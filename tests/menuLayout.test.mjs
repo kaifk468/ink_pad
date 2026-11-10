@@ -47,7 +47,7 @@ test('Slim ink points left the everyday menu and lives with the developer tools'
 })
 
 test('Clear canvas is red and undoable', () => {
-  assert.match(css, /\.menu-panel \.menu-row\.clear-row \{ background: #fdf1f0; color: #b3261e;/)
+  assert.match(css, /\.menu-panel \.menu-row\.clear-row, \.menu-panel \.menu-row\.delete-page-row \{ background: #fdf1f0; color: #b3261e;/)
   assert.match(app, /const clearCanvas = \(\) => \{[\s\S]*?saveHistory\(\)/)
 })
 

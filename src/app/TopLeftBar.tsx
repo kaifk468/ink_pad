@@ -20,6 +20,10 @@ type TopLeftBarProps = {
   filePanelOpen: boolean
   onToggleFilePanel: () => void
   onClear: () => void
+  /** Pages in the diagram, and the number (from 1) of the one on screen. */
+  pageCount: number
+  pageNumber: number
+  onDeletePage: () => void
   onSlimInk: () => void
   libraryOpen: boolean
   /** Save state shown in the menu header, e.g. "Saved to Google Drive". */
@@ -52,6 +56,8 @@ const PAGE_COLOR_CHOICES: Array<{ value: PageBackground; label: string }> = [
 /** Menu, Library button and the diagram title. The menu has three labelled groups (File, Page, Canvas) and Clear canvas apart at the bottom. */
 export function TopLeftBar(props: TopLeftBarProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [confirmDeletePage, setConfirmDeletePage] = useState(false)
+  useEffect(() => { if (!menuOpen) setConfirmDeletePage(false) }, [menuOpen])
   const menuRef = useRef<HTMLDivElement>(null)
   const [editingTitle, setEditingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
@@ -139,6 +145,13 @@ export function TopLeftBar(props: TopLeftBarProps) {
               ))}
             </div>
           </div>
+
+          {props.pageCount > 1 && (
+            <button className="menu-row delete-page-row" type="button" onClick={() => { if (confirmDeletePage) { props.onDeletePage(); setConfirmDeletePage(false); setMenuOpen(false) } else setConfirmDeletePage(true) }}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg>
+              <span className="menu-row-label">{confirmDeletePage ? `Tap again to delete page ${props.pageNumber}` : 'Delete this page'}</span><span className="menu-row-hint">Cannot be undone</span>
+            </button>
+          )}
 
           <div className="menu-divider" role="separator" />
           <div className="menu-section-title">Canvas</div>

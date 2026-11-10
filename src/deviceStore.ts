@@ -1,4 +1,4 @@
-import { DEFAULT_DOCUMENT_TITLE, DOCUMENT_FILE_EXTENSION, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
+import { documentItemCount, DEFAULT_DOCUMENT_TITLE, DOCUMENT_FILE_EXTENSION, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
 import type { DocumentSummary, FolderRecord } from './documentStore'
 import type { StorageBackend } from './storageBackend'
 
@@ -129,7 +129,7 @@ export function createDeviceBackend(root: DirHandle): StorageBackend {
             if (!info) {
               const parsed = parseDocument(await file.text())
               if (!parsed.ok) continue
-              info = { title: fileBase(name), itemCount: parsed.document.items.length }
+              info = { title: fileBase(name), itemCount: documentItemCount(parsed.document) }
               summaryCache.set(key, info)
             }
             documents.push({ id, title: info.title, updatedAt: new Date(file.lastModified).toISOString(), itemCount: info.itemCount, folderId: path })

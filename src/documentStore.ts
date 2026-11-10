@@ -1,4 +1,4 @@
-import { parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
+import { documentItemCount, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
 import { isThumbnailDataUrl } from './thumbnail'
 
 /** Browser-local library of diagrams (IndexedDB). One record per diagram, keyed by id. */
@@ -22,7 +22,7 @@ type PlacementRecord = { docId: string; folderId: string }
 export type StoredDocument = { id: string; json?: string; title?: string; updatedAt?: string; itemCount?: number; document?: InkPadDocument }
 
 export function toStoredRecord(id: string, document: InkPadDocument): StoredDocument {
-  return { id, json: stringifyDocument(document), title: document.title, updatedAt: document.updatedAt, itemCount: document.items.length }
+  return { id, json: stringifyDocument(document), title: document.title, updatedAt: document.updatedAt, itemCount: documentItemCount(document) }
 }
 
 export function documentFromRecord(record: StoredDocument | undefined): InkPadDocument | null {
@@ -38,7 +38,7 @@ export function documentFromRecord(record: StoredDocument | undefined): InkPadDo
 export function summaryFromRecord(record: StoredDocument, folderId: string | null): DocumentSummary {
   if (record.json !== undefined) return { id: record.id, title: record.title ?? '', updatedAt: record.updatedAt ?? '', itemCount: record.itemCount ?? 0, folderId }
   const document = record.document
-  return { id: record.id, title: document?.title ?? '', updatedAt: document?.updatedAt ?? '', itemCount: document?.items.length ?? 0, folderId }
+  return { id: record.id, title: document?.title ?? '', updatedAt: document?.updatedAt ?? '', itemCount: document ? documentItemCount(document) : 0, folderId }
 }
 
 function open(): Promise<IDBDatabase> {
