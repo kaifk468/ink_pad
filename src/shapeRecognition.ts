@@ -13,12 +13,16 @@ const ELLIPSE_RECTANGLE_MARGIN = 0.65
 const ELLIPSE_MIN_TURNS = 0.85
 const ELLIPSE_MAX_TURNS = 1.5
 const ELLIPSE_SAMPLES = 64
-const MIN_SHAPE_WIDTH = 38
-const MIN_SHAPE_HEIGHT = 30
+/** Smallest box (in canvas units) a stroke may have to become a rectangle, and to become an oval or circle. */
+const MIN_RECTANGLE_WIDTH = 38
+const MIN_RECTANGLE_HEIGHT = 30
+const MIN_RECTANGLE_DIAGONAL = 36
+export const MIN_OVAL_WIDTH = 24
+export const MIN_OVAL_HEIGHT = 20
 
 type ClosedLoop = { left: number; top: number; width: number; height: number; diagonal: number; points: Point[]; stroke: Stroke }
 
-/** What a rectangle and an ellipse both need: enough points, not an eraser stroke, a usable size and a roughly closed path. */
+/** What a rectangle and an ellipse both need: enough points, not an eraser stroke and a roughly closed path. Each shape checks its own minimum size. */
 function closedLoop(stroke: Stroke): ClosedLoop | null {
   const points = stroke.points
   if (points.length < 6 || stroke.erase) return null
@@ -37,7 +41,7 @@ function closedLoop(stroke: Stroke): ClosedLoop | null {
   const diagonal = Math.hypot(width, height)
   const first = points[0]
   const last = points[points.length - 1]
-  if (diagonal <= 36 || Math.hypot(first.x - last.x, first.y - last.y) >= diagonal * 0.32) return null
+  if (diagonal <= 0 || Math.hypot(first.x - last.x, first.y - last.y) >= diagonal * 0.32) return null
   return { left, top, width, height, diagonal, points, stroke }
 }
 
@@ -52,7 +56,7 @@ function rectangleFromLoop(loop: ClosedLoop, id: number): RectangleObject | null
   const { width, height, stroke } = loop
   const perimeter = 2 * (width + height)
   const pathLength = pathLengthOf(loop.points)
-  if (width <= MIN_SHAPE_WIDTH || height <= MIN_SHAPE_HEIGHT || pathLength / perimeter <= 0.68 || pathLength / perimeter >= 1.65) return null
+  if (loop.diagonal <= MIN_RECTANGLE_DIAGONAL || width <= MIN_RECTANGLE_WIDTH || height <= MIN_RECTANGLE_HEIGHT || pathLength / perimeter <= 0.68 || pathLength / perimeter >= 1.65) return null
   return {
     kind: 'rectangle',
     id,
@@ -156,7 +160,7 @@ function rectangleError(samples: Point[], loop: ClosedLoop): number {
 
 function ellipseFromLoop(loop: ClosedLoop, id: number): RectangleObject | null {
   const { width, height, stroke } = loop
-  if (width <= MIN_SHAPE_WIDTH || height <= MIN_SHAPE_HEIGHT) return null
+  if (width <= MIN_OVAL_WIDTH || height <= MIN_OVAL_HEIGHT) return null
   const samples = resamplePath(loop.points, ELLIPSE_SAMPLES)
   if (!samples) return null
 

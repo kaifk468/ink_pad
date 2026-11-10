@@ -197,8 +197,8 @@ test('rectangles and squares stay rectangles, also hand-drawn with round corners
 test('open arcs, circles traced twice, spirals, tiny circles and eraser paths are not ovals', () => {
   for (const turns of [0.55, 0.75]) assert.equal(recognition.recognizeEllipseStroke(loop({ a: 90, turns }), 1), null, `arc ${turns}`)
   for (const turns of [1.8, 2.05]) assert.equal(recognition.recognizeEllipseStroke(loop({ a: 90, turns }), 1), null, `turns ${turns}`)
-  assert.equal(recognition.recognizeClosedShapeStroke(loop({ a: 12 }), 1), null, 'tiny circle stays ink')
-  assert.equal(recognition.recognizeClosedShapeStroke(loop({ a: 18, b: 10 }), 1), null, 'small oval stays ink')
+  assert.equal(recognition.recognizeClosedShapeStroke(loop({ a: 8, jitter: 0.4 }), 1), null, 'a 16 x 16 circle stays ink')
+  assert.equal(recognition.recognizeClosedShapeStroke(loop({ a: 17, b: 8, jitter: 0.4 }), 1), null, 'a 34 x 16 oval is too flat and stays ink')
   assert.equal(recognition.recognizeClosedShapeStroke({ ...loop({ a: 100 }), erase: true }, 1), null)
   const eight = { kind: 'stroke', id: 1, color: '#000', width: 4, erase: false, points: Array.from({ length: 121 }, (_, i) => { const t = (i / 120) * 2 * Math.PI; return pen(400 + 160 * Math.sin(t), 400 + 80 * Math.sin(2 * t)) }) }
   assert.equal(recognition.recognizeEllipseStroke(eight, 1), null, 'a figure eight is not an oval')
@@ -261,4 +261,25 @@ test('the canvas, the minimap and Class mode treat an oval as an oval', () => {
   assert.match(rendererSource, /else if \(rectangle\.ellipse\) \{\s*ctx\.beginPath\(\)\s*ctx\.ellipse\(rectangle\.x \+ rectangle\.width \/ 2, rectangle\.y \+ rectangle\.height \/ 2, rectangle\.width \/ 2, rectangle\.height \/ 2, 0, 0, Math\.PI \* 2\)/)
   assert.match(rendererSource, /if \(item\.ellipse\) \{\s*ctx\.beginPath\(\)\s*ctx\.ellipse\(toMiniX/)
   assert.match(appSource, /hitRectangle\?\.inkBox \|\| hitRectangle\?\.ellipse \? null : hitRectangle/)
+})
+
+test('ovals and circles may be small (24 x 20 and up) while rectangles keep their 38 x 30 minimum', () => {
+  assert.equal(recognition.MIN_OVAL_WIDTH, 24)
+  assert.equal(recognition.MIN_OVAL_HEIGHT, 20)
+  const smallCircle = recognition.recognizeClosedShapeStroke(loop({ a: 14, jitter: 0.4 }), 1)
+  assert.equal(smallCircle.ellipse, true)
+  assert.equal(smallCircle.width, smallCircle.height)
+  assert.ok(Math.abs(smallCircle.width - 28) < 3, `diameter ${smallCircle.width}`)
+  const smallOval = recognition.recognizeClosedShapeStroke(loop({ a: 17, b: 12, jitter: 0.4 }), 1)
+  assert.equal(smallOval.ellipse, true)
+  assert.ok(smallOval.width > smallOval.height && smallOval.width < 40 && smallOval.height < 28, `${smallOval.width} x ${smallOval.height}`)
+  // The same size as a hand-drawn rectangle is still left as ink: boxes below 38 x 30 are not rectangles.
+  const smallBox = (w, h) => rectangleStroke({ points: [[0, 0], [w / 2, 0.5], [w, 0], [w + 0.5, h / 2], [w, h], [w / 2, h - 0.5], [0, h], [-0.5, h / 2], [0, 0]].map(([x, y]) => pen(200 + x, 200 + y)) })
+  assert.equal(recognition.recognizeClosedShapeStroke(smallBox(30, 24), 1), null)
+  assert.equal(recognition.recognizeClosedShapeStroke(smallBox(36, 28), 1), null)
+  const justBigEnough = recognition.recognizeClosedShapeStroke(smallBox(44, 34), 1)
+  assert.equal(justBigEnough?.kind, 'rectangle')
+  assert.equal(justBigEnough.ellipse, undefined)
+  // A rectangle rule that already rejected small boxes must not change for big strokes either.
+  assert.equal(recognition.recognizeRectangleStroke(loop({ a: 14, jitter: 0.4 }), 1), null)
 })
