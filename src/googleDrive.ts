@@ -1,4 +1,4 @@
-import { documentItemCount, DOCUMENT_FILE_EXTENSION, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
+import { documentItemCount, documentPageCount, DOCUMENT_FILE_EXTENSION, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
 import type { DocumentSummary, FolderRecord } from './documentStore'
 import { fileBase, sanitizeName } from './deviceStore'
 import { cleanFolderName, folderAndDescendantIds } from './folderTree'
@@ -105,6 +105,7 @@ function organise(files: DriveFile[]) {
     title: fileBase(file.name),
     updatedAt: file.modifiedTime ?? '',
     itemCount: Number(file.appProperties?.itemCount) || 0,
+    ...(Number(file.appProperties?.pageCount) > 1 ? { pageCount: Number(file.appProperties?.pageCount) } : {}),
     ...(file.appProperties?.starred === STARRED_VALUE ? { starred: true } : {}),
     folderId: parentOf(file),
   }))
@@ -137,8 +138,11 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
     }
   }
 
-  async function create(name: string, folderId: string | null, content: string, itemCount: number): Promise<string> {
-    const { body, headers } = multipart({ name, mimeType: 'application/json', parents: [folderId ?? ROOT_ALIAS], appProperties: { itemCount: String(itemCount) } }, content)
+  /** The summary tags every save carries. `pageCount` only exists for diagrams with several pages; null removes it again when pages were deleted. */
+  const summaryProperties = (itemCount: number, pageCount: number, updating: boolean) => ({ itemCount: String(itemCount), ...(pageCount > 1 ? { pageCount: String(pageCount) } : updating ? { pageCount: null } : {}) })
+
+  async function create(name: string, folderId: string | null, content: string, itemCount: number, pageCount = 1): Promise<string> {
+    const { body, headers } = multipart({ name, mimeType: 'application/json', parents: [folderId ?? ROOT_ALIAS], appProperties: summaryProperties(itemCount, pageCount, false) }, content)
     const result = await (await call(env, `${UPLOAD_URL}?uploadType=multipart&fields=id,modifiedTime`, { method: 'POST', headers, body })).json() as DriveFile
     if (result.modifiedTime) knownModified.set(result.id, result.modifiedTime)
     return result.id
@@ -172,11 +176,12 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
   async function upload(id: string, document: InkPadDocument, content: string, folderId: string | null = null): Promise<string> {
     const name = `${sanitizeName(document.title)}${DOCUMENT_FILE_EXTENSION}`
     const itemCount = documentItemCount(document)
+    const pageCount = documentPageCount(document)
     const known = knownModified.get(id)
     const remote = await getMeta(id)
     if (!remote) {
       // deleted elsewhere: keep the work as a new file
-      const newId = await create(name, folderId, content, itemCount)
+      const newId = await create(name, folderId, content, itemCount, pageCount)
       await quietly(cache?.remove(id))
       await quietly(cache?.putText(newId, content, { modifiedTime: knownModified.get(newId) ?? '', pending: false }))
       return newId
@@ -189,7 +194,7 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
         body: JSON.stringify({ name: `${fileBase(remote.name)} (other device ${stamp})${DOCUMENT_FILE_EXTENSION}`, parents: remote.parents }),
       })
     }
-    const { body, headers } = multipart({ name, appProperties: { itemCount: String(itemCount) } }, content)
+    const { body, headers } = multipart({ name, appProperties: summaryProperties(itemCount, pageCount, true) }, content)
     const result = await (await call(env, `${UPLOAD_URL}/${encodeURIComponent(id)}?uploadType=multipart&fields=id,modifiedTime`, { method: 'PATCH', headers, body })).json() as DriveFile
     if (result.modifiedTime) knownModified.set(id, result.modifiedTime)
     await quietly(cache?.setState(id, { modifiedTime: result.modifiedTime ?? known ?? '', pending: false }))
@@ -243,7 +248,7 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
       const content = stringifyDocument(document)
       if (!id) {
         const name = `${sanitizeName(document.title)}${DOCUMENT_FILE_EXTENSION}`
-        const newId = await create(name, folderId, content, document.items.length)
+        const newId = await create(name, folderId, content, documentItemCount(document), documentPageCount(document))
         await quietly(cache?.putText(newId, content, { modifiedTime: knownModified.get(newId) ?? '', pending: false }))
         return newId
       }

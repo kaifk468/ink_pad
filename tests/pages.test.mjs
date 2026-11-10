@@ -117,17 +117,79 @@ test('the app keeps one live page and per-page undo, and stays off the pen', () 
   assert.match(appSource, /pagesRef\.current\[pageIndexRef\.current\] = \{ items: strokesRef\.current, history: historyRef\.current \}/)
   assert.match(appSource, /historyRef\.current = slot\.history \?\? new CanvasSnapshotHistory\(\)/)
   assert.match(appSource, /const penBusy = \(\) => activePointerRef\.current !== null \|\| activeStrokeRef\.current !== null/)
-  for (const name of ['goToPage', 'addPage', 'deletePage']) assert.match(appSource, new RegExp(`const ${name} = \\(`))
+  for (const name of ['goToPage', 'addPage', 'deletePage', 'undoDeletePage']) assert.match(appSource, new RegExp(`const ${name} = \\(`))
   assert.match(appSource, /if \(next === pageIndexRef\.current \|\| penBusy\(\)\) return/)
   assert.match(appSource, /if \(pagesRef\.current\.length > 1\) return/, 'growing and several pages stay apart')
   assert.match(appSource, /<PageControls index=\{pageIndex\} count=\{pageCount\}/)
-  assert.match(appSource, /onDeletePage=\{deletePage\}/)
 })
 
-test('deleting a page asks a second tap and is not offered for the last page', async () => {
+test('a new page needs something on the current one first, in the button and in the action', () => {
+  assert.match(appSource, /canAdd=\{canAddPage\(pageCount\) && hasInk\}/)
+  assert.match(appSource, /if \(strokesRef\.current\.length === 0\) return/)
+  assert.match(appSource, /Write something on this page first/)
+})
+
+test('a deleted page comes back with its drawing and undo history, in the same place, for 8 seconds', () => {
+  assert.match(appSource, /const DELETED_PAGE_UNDO_MS = 8000/)
+  assert.match(appSource, /const removedSlot = \{ items: strokesRef\.current, history: historyRef\.current \}/)
+  assert.match(appSource, /deletedPageRef\.current = \{ index: removedIndex, slot: removedSlot \}/)
+  assert.match(appSource, /const at = Math\.min\(deleted\.index, pagesRef\.current\.length\)/)
+  assert.match(appSource, /insertPageAt\(pagesRef\.current, at, \{ items: deleted\.slot\.items, history: deleted\.slot\.history \}\)/)
+  assert.match(appSource, /if \(deletedPageRef\.current\) dismissDeletedPage\(\)/, 'drawing again settles the delete')
+  assert.match(appSource, /<PageUndoBar pageNumber=\{deletedPageNumber\} onUndo=\{undoDeletePage\} \/>/)
+})
+
+test('delete lives next to the page controls, only with several pages, and is gone from the menu', async () => {
   const { readFile } = await import('node:fs/promises')
+  const controls = await readFile(new URL('../src/app/PageControls.tsx', import.meta.url), 'utf8')
   const bar = await readFile(new URL('../src/app/TopLeftBar.tsx', import.meta.url), 'utf8')
-  assert.match(bar, /props\.pageCount > 1 && \(/)
-  assert.match(bar, /if \(confirmDeletePage\) \{ props\.onDeletePage\(\)/)
-  assert.match(bar, /Tap again to delete page \$\{props\.pageNumber\}/)
+  assert.match(controls, /several && <button type="button" className="page-delete"/)
+  assert.match(controls, /several && <button type="button" aria-label="Previous page"/)
+  assert.doesNotMatch(bar, /Delete this page|onDeletePage/)
+})
+
+test('pages can be put back at a position', () => {
+  assert.deepEqual(pages.insertPageAt(['a', 'b'], 0, 'x'), ['x', 'a', 'b'])
+  assert.deepEqual(pages.insertPageAt(['a', 'b'], 2, 'x'), ['a', 'b', 'x'])
+  assert.deepEqual(pages.insertPageAt(['a', 'b'], 9, 'x'), ['a', 'b', 'x'])
+  assert.equal(pages.insertPageAt(Array.from({ length: 50 }, () => 'p'), 3, 'x').length, 50)
+})
+
+test('the page you left is remembered per diagram, page 1 is the default, and bad data is ignored', () => {
+  assert.deepEqual(pages.parseLastPages(null), {})
+  assert.deepEqual(pages.parseLastPages('nonsense'), {})
+  assert.deepEqual(pages.parseLastPages('[1,2]'), {})
+  assert.deepEqual(pages.parseLastPages('{"a":2,"b":-1,"c":"x","d":1.5,"e":0}'), { a: 2 })
+  assert.deepEqual(pages.withLastPage({}, 'a', 3), { a: 3 })
+  assert.deepEqual(pages.withLastPage({ a: 3, b: 1 }, 'a', 0), { b: 1 }, 'back on page 1 forgets it')
+  let map = {}
+  for (let i = 0; i < 250; i += 1) map = pages.withLastPage(map, `d${i}`, 1 + (i % 5))
+  assert.equal(Object.keys(map).length, 200)
+  assert.equal('d0' in map, false)
+  assert.equal('d249' in map, true)
+})
+
+test('opening a diagram goes to the remembered page, and the page is written when it changes', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const hook = await readFile(new URL('../src/app/useDocuments.ts', import.meta.url), 'utf8')
+  assert.match(hook, /hostRef\.current\.loadDocument\(loaded, id \? readLastPage\(id\) : 0\)/)
+  assert.match(appSource, /const openIndex = clampPageIndex\(startPage, pagesRef\.current\.length\)/)
+  assert.match(appSource, /if \(currentDocId\) writeLastPage\(currentDocId, pageIndex\)/)
+})
+
+test('pen colours sit beside the profile button and show only while the pen is the tool', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const account = await readFile(new URL('../src/app/AccountButton.tsx', import.meta.url), 'utf8')
+  assert.match(account, /\{props\.leading\}/)
+  assert.match(appSource, /leading=\{penModeActive \? <PenColors color=\{color\} onColor=\{selectColor\} \/> : undefined\}/)
+})
+
+test('page counts reach the Library for multi-page diagrams only', async () => {
+  const store = await loadModule('documentStore.ts').catch(() => null)
+  assert.equal(format.documentPageCount(format.createDocument({ ...base, items: [] })), 1)
+  assert.equal(format.documentPageCount(format.createDocument({ ...base, items: [], extraPages: [[], []] })), 3)
+  const { readFile } = await import('node:fs/promises')
+  const home = await readFile(new URL('../src/app/HomeScreen.tsx', import.meta.url), 'utf8')
+  assert.match(home, /\$\{entry\.pageCount\} pages/)
+  void store
 })

@@ -218,7 +218,7 @@ export function HomeScreen(props: HomeScreenProps) {
                   </span>
                   <span className="home-card-title">{entry.title || 'Untitled diagram'}</span>
                   <span className="home-card-folder">{where || 'No folder'}</span>
-                  <span className="home-card-meta">{entry.id === props.currentId ? 'Open now · ' : ''}Edited {describeEdited(entry.updatedAt) || 'earlier'} · {entry.itemCount} item{entry.itemCount === 1 ? '' : 's'}</span>
+                  <span className="home-card-meta">{entry.id === props.currentId ? 'Open now · ' : ''}Edited {describeEdited(entry.updatedAt) || 'earlier'} · {entry.itemCount} item{entry.itemCount === 1 ? '' : 's'}{entry.pageCount && entry.pageCount > 1 ? ` · ${entry.pageCount} pages` : ''}</span>
                 </button>
                 <button type="button" className={`home-star${isStarred ? ' on' : ''}`} aria-pressed={isStarred} aria-label={`${isStarred ? 'Unstar' : 'Star'} ${entry.title || 'Untitled diagram'}`} onClick={() => props.onToggleStar(entry.id)}>
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l2.4 5 5.4.7-4 3.8 1 5.4-4.8-2.7-4.8 2.7 1-5.4-4-3.8 5.4-.7z"/></svg>

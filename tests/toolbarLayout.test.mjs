@@ -109,7 +109,7 @@ test('top bars: menu, library, title, undo/redo and account button', () => {
   assert.match(app, /<HomeScreen/)
   assert.match(app, /<span>Undo<\/span>|HistoryBar/)
   assert.match(app, /<AccountButton profile=\{driveProfile\}/)
-  assert.match(app, /onOpenStorage=\{\(\) => setStoragePanelOpen\(true\)\} \/>/)
+  assert.match(app, /onOpenStorage=\{\(\) => setStoragePanelOpen\(true\)\} leading=/)
 })
 
 test('zoom controls and save status are present and the old top toolbar is gone', () => {

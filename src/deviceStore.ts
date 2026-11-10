@@ -1,4 +1,4 @@
-import { documentItemCount, DEFAULT_DOCUMENT_TITLE, DOCUMENT_FILE_EXTENSION, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
+import { documentItemCount, documentPageCount, DEFAULT_DOCUMENT_TITLE, DOCUMENT_FILE_EXTENSION, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
 import type { DocumentSummary, FolderRecord } from './documentStore'
 import type { StorageBackend } from './storageBackend'
 
@@ -107,7 +107,7 @@ async function copyDirectory(from: DirHandle, to: DirHandle): Promise<void> {
 }
 
 export function createDeviceBackend(root: DirHandle): StorageBackend {
-  const summaryCache = new Map<string, { title: string; itemCount: number }>()
+  const summaryCache = new Map<string, { title: string; itemCount: number; pageCount: number }>()
 
   const scan = async () => {
     const documents: DocumentSummary[] = []
@@ -129,10 +129,10 @@ export function createDeviceBackend(root: DirHandle): StorageBackend {
             if (!info) {
               const parsed = parseDocument(await file.text())
               if (!parsed.ok) continue
-              info = { title: fileBase(name), itemCount: documentItemCount(parsed.document) }
+              info = { title: fileBase(name), itemCount: documentItemCount(parsed.document), pageCount: documentPageCount(parsed.document) }
               summaryCache.set(key, info)
             }
-            documents.push({ id, title: info.title, updatedAt: new Date(file.lastModified).toISOString(), itemCount: info.itemCount, folderId: path })
+            documents.push({ id, title: info.title, updatedAt: new Date(file.lastModified).toISOString(), itemCount: info.itemCount, folderId: path, ...(info.pageCount > 1 ? { pageCount: info.pageCount } : {}) })
           } catch {
             // An unreadable file is left out of the list rather than breaking it.
           }

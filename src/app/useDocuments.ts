@@ -15,6 +15,7 @@ import type { SaveStatus } from '../FilePanel'
 import { PAGE_BACKGROUND_COLORS } from '../pageBackground'
 import { buildSheetSvg, cropSvg, getContentBounds, svgToPngBlob } from '../sheetExport'
 import { SHEET_HEIGHT, SHEET_WIDTH } from '../viewport'
+import { readLastPage } from '../pages'
 
 /**
  * What the document layer needs from the drawing surface. Keeping this small is the seam between
@@ -29,7 +30,7 @@ export type DocumentHost = {
   /** True while a pen/touch stroke or gesture is in progress; autosave waits for it to end. */
   isInputActive: () => boolean
   /** Replace the sheet contents and page settings, reset undo history, id counters and selection, and redraw. */
-  loadDocument: (document: InkPadDocument) => void
+  loadDocument: (document: InkPadDocument, startPage: number) => void
 }
 
 const AUTOSAVE_DELAY_MS = 1200
@@ -315,7 +316,7 @@ export function useDocuments(host: DocumentHost) {
       autosaveTimerRef.current = null
     }
     pendingFolderRef.current = null
-    hostRef.current.loadDocument(loaded)
+    hostRef.current.loadDocument(loaded, id ? readLastPage(id) : 0)
     docIdRef.current = id
     docMetaRef.current = { title: loaded.title, createdAt: loaded.createdAt }
     savedSignatureRef.current = id ? currentSignature() : null

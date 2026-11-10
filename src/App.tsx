@@ -46,8 +46,9 @@ import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeRectangleOnHold, recognizeRectangleStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
-import { MAX_PAGES, canAddPage, clampPageIndex, insertPageAfter, removePageAt } from './pages'
-import { PageControls } from './app/PageControls'
+import { MAX_PAGES, canAddPage, clampPageIndex, insertPageAfter, insertPageAt, removePageAt, writeLastPage } from './pages'
+import { PageControls, PageUndoBar } from './app/PageControls'
+import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
 
@@ -62,6 +63,7 @@ const ERASER_CURSOR_QUIET_MS = 350
 const MINIMAP_IDLE_DELAY_MS = 600
 const GESTURE_SETTLE_MS = 140
 const ZOOM_STEP = 1.25
+const DELETED_PAGE_UNDO_MS = 8000
 
 /** True when the saved page picture was drawn from exactly these items (same objects in the same order). */
 function sameItems(snapshot: CanvasItem[], items: CanvasItem[], count: number): boolean {
@@ -273,12 +275,15 @@ function App() {
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
     getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current }),
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null,
-    loadDocument: (loaded) => {
+    loadDocument: (loaded, startPage) => {
       resetInteractionState()
-      strokesRef.current = cloneCanvasItems(loaded.items)
-      pagesRef.current = [{ items: strokesRef.current, history: null }, ...(loaded.pages ?? []).map((page) => ({ items: cloneCanvasItems(page.items), history: null }))]
-      pageIndexRef.current = 0
-      setPageIndex(0)
+      dismissDeletedPage()
+      // Every page is cloned as plain data; the page to open on (the one you left, remembered on this device) becomes the live one.
+      pagesRef.current = [{ items: cloneCanvasItems(loaded.items), history: null }, ...(loaded.pages ?? []).map((page) => ({ items: cloneCanvasItems(page.items), history: null }))]
+      const openIndex = clampPageIndex(startPage, pagesRef.current.length)
+      strokesRef.current = pagesRef.current[openIndex].items
+      pageIndexRef.current = openIndex
+      setPageIndex(openIndex)
       setPageCount(pagesRef.current.length)
       const nextIds = getNextIds(pagesRef.current.flatMap((slot) => slot.items))
       nextStrokeIdRef.current = nextIds.stroke
@@ -344,12 +349,18 @@ function App() {
     pagesRef.current[pageIndexRef.current] = { items: strokesRef.current, history: historyRef.current }
   }
 
+  // Reopening a saved diagram lands on the page you left (kept on this device, not in the diagram).
+  useEffect(() => {
+    if (currentDocId) writeLastPage(currentDocId, pageIndex)
+  }, [currentDocId, pageIndex])
+
   const penBusy = () => activePointerRef.current !== null || activeStrokeRef.current !== null
 
   const goToPage = (target: number) => {
     const next = clampPageIndex(target, pagesRef.current.length)
     if (next === pageIndexRef.current || penBusy()) return
     if (textEditorRef.current) commitTextEditor()
+    dismissDeletedPage()
     stashCurrentPage()
     resetInteractionState()
     showPageSlot(next)
@@ -357,11 +368,14 @@ function App() {
 
   const addPage = () => {
     if (penBusy()) return
+    // A new page needs something on this one first, so empty pages are not stacked by accident.
+    if (strokesRef.current.length === 0) return
     if (!canAddPage(pagesRef.current.length)) {
       setFileNotice(`A diagram can have up to ${MAX_PAGES} pages.`)
       return
     }
     if (textEditorRef.current) commitTextEditor()
+    dismissDeletedPage()
     stashCurrentPage()
     resetInteractionState()
     pagesRef.current = insertPageAfter(pagesRef.current, pageIndexRef.current, { items: [], history: null })
@@ -369,13 +383,47 @@ function App() {
     scheduleAutosave()
   }
 
+  // The page deleted last, kept (items and its undo history) for a few seconds so the Undo bar can put it back.
+  const deletedPageRef = useRef<{ index: number; slot: { items: CanvasItem[]; history: CanvasSnapshotHistory } } | null>(null)
+  const deletedPageTimerRef = useRef<number | null>(null)
+  const [deletedPageNumber, setDeletedPageNumber] = useState<number | null>(null)
+  function dismissDeletedPage() {
+    if (deletedPageTimerRef.current !== null) window.clearTimeout(deletedPageTimerRef.current)
+    deletedPageTimerRef.current = null
+    deletedPageRef.current = null
+    setDeletedPageNumber(null)
+  }
+
   const deletePage = () => {
     if (penBusy() || pagesRef.current.length <= 1) return
     if (textEditorRef.current) cancelTextEditor()
     resetInteractionState()
-    const removed = removePageAt(pagesRef.current, pageIndexRef.current)
+    const removedIndex = pageIndexRef.current
+    const removedSlot = { items: strokesRef.current, history: historyRef.current }
+    const removed = removePageAt(pagesRef.current, removedIndex)
     pagesRef.current = removed.pages
     showPageSlot(removed.index)
+    scheduleAutosave()
+    dismissDeletedPage()
+    deletedPageRef.current = { index: removedIndex, slot: removedSlot }
+    setDeletedPageNumber(removedIndex + 1)
+    deletedPageTimerRef.current = window.setTimeout(dismissDeletedPage, DELETED_PAGE_UNDO_MS)
+  }
+
+  const undoDeletePage = () => {
+    const deleted = deletedPageRef.current
+    if (!deleted || penBusy()) return
+    if (!canAddPage(pagesRef.current.length)) {
+      setFileNotice(`A diagram can have up to ${MAX_PAGES} pages.`)
+      return
+    }
+    if (textEditorRef.current) commitTextEditor()
+    stashCurrentPage()
+    resetInteractionState()
+    const at = Math.min(deleted.index, pagesRef.current.length)
+    pagesRef.current = insertPageAt(pagesRef.current, at, { items: deleted.slot.items, history: deleted.slot.history })
+    dismissDeletedPage()
+    showPageSlot(at)
     scheduleAutosave()
   }
 
@@ -453,6 +501,7 @@ function App() {
   }
 
   const saveHistory = () => {
+    if (deletedPageRef.current) dismissDeletedPage() // drawing again settles the delete
     historyRef.current.record(strokesRef.current)
     setCanUndo(historyRef.current.canUndo)
     setCanRedo(historyRef.current.canRedo)
@@ -2739,9 +2788,6 @@ function App() {
           filePanelOpen={filePanelOpen}
           onToggleFilePanel={() => setFilePanelOpen((open) => !open)}
           onClear={clearCanvas}
-          pageCount={pageCount}
-          pageNumber={pageIndex + 1}
-          onDeletePage={deletePage}
           onSlimInk={slimInk}
           libraryOpen={libraryOpen}
           statusText={statusLabel(saveStatus, storage.kind)}
@@ -2757,7 +2803,7 @@ function App() {
         />
       )}
       <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
-      {!navigationSettings.zoomLocked && <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} onOpenStorage={() => setStoragePanelOpen(true)} />}
+      {!navigationSettings.zoomLocked && <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} onOpenStorage={() => setStoragePanelOpen(true)} leading={penModeActive ? <PenColors color={color} onColor={selectColor} /> : undefined} />}
       <ContextPanel
         showStyle={optionsFor === 'pen' && penModeActive}
         color={color}
@@ -2775,7 +2821,8 @@ function App() {
           ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
           : null}
       />
-      <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount)} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} />
+      <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDelete={deletePage} />
+      {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
       <ZoomControls zoomPercent={zoomPercent} locked={navigationSettings.zoomLocked} onToggleLock={() => updateNavigationSettings({ zoomLocked: !navigationSettings.zoomLocked })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
         dockRef={toolbarRef}

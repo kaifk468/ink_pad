@@ -286,11 +286,10 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 .menu-swatches { display: flex; justify-content: space-between; gap: 6px; }
 .menu-color { width: 44px; height: 44px; padding: 0; border: 1px solid #d3d7e0; border-radius: 50%; cursor: pointer; }
 .menu-color.selected { border: 2px solid #475fdb; box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 4px #d3d7e0; }
-.menu-panel .menu-row.clear-row, .menu-panel .menu-row.delete-page-row { background: #fdf1f0; color: #b3261e; font-weight: 700; }
-.menu-panel .menu-row.clear-row > svg, .menu-panel .menu-row.delete-page-row > svg { stroke: currentColor; }
-.menu-panel .menu-row.clear-row .menu-row-hint, .menu-panel .menu-row.delete-page-row .menu-row-hint { color: #9c2a22; }
-.menu-panel .menu-row.clear-row:hover:not(:disabled), .menu-panel .menu-row.delete-page-row:hover { background: #fbe4e2; }
-.menu-panel .menu-row.delete-page-row { margin-top: 6px; }
+.menu-panel .menu-row.clear-row { background: #fdf1f0; color: #b3261e; font-weight: 700; }
+.menu-panel .menu-row.clear-row > svg { stroke: currentColor; }
+.menu-panel .menu-row.clear-row .menu-row-hint { color: #9c2a22; }
+.menu-panel .menu-row.clear-row:hover:not(:disabled) { background: #fbe4e2; }
 .top-icon-button, .account-button { display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .96); color: #343944; box-shadow: 0 3px 12px rgba(31, 39, 52, .12); cursor: pointer; touch-action: manipulation; }
 .top-icon-button svg, .account-button svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .top-icon-button.selected { border-color: #cbd3ff; background: #e9edff; color: #354fc2; }
@@ -332,13 +331,23 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 .zoom-controls button:hover { background: #f1f2f5; }
 .zoom-controls .zoom-indicator { min-width: 58px; font-size: 14px; }
 .zoom-controls button:disabled { opacity: .35; cursor: default; }
-/* Page controls sit right above the zoom controls (56 px tall, 16 px from the edge). */
-.page-controls { position: absolute; z-index: 2; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 64px); left: max(16px, env(safe-area-inset-left)); display: flex; align-items: center; height: 56px; padding: 0 4px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 16px; background: rgba(255, 255, 255, .96); box-shadow: 0 3px 12px rgba(31, 39, 52, .12); }
-.page-controls button { display: grid; place-items: center; width: 44px; height: 48px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: #343944; cursor: pointer; touch-action: manipulation; }
+/* Page controls: a slim bar right above the zoom controls (56 px tall, 16 px from the edge), 40 px buttons. */
+.page-controls { position: absolute; z-index: 2; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 64px); left: max(16px, env(safe-area-inset-left)); display: flex; align-items: center; height: 44px; padding: 0 2px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .96); box-shadow: 0 3px 12px rgba(31, 39, 52, .12); }
+.page-controls button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 11px; background: transparent; color: #343944; cursor: pointer; touch-action: manipulation; }
 .page-controls button:hover:not(:disabled) { background: #f1f2f5; }
 .page-controls button:disabled { opacity: .35; cursor: default; }
-.page-controls .page-indicator { min-width: 58px; font-size: 14px; font-weight: 600; text-align: center; color: #343944; }
-.page-controls .page-add { margin-left: 2px; border-left: 1px solid #e7eaf0; border-radius: 0 12px 12px 0; color: #354fc2; }
+.page-controls .page-indicator { min-width: 54px; font-size: 14px; font-weight: 600; text-align: center; color: #343944; }
+.page-controls .page-add { color: #354fc2; }
+.page-controls .page-delete { color: #b3261e; }
+.page-undo-bar { position: absolute; z-index: 4; left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); transform: translateX(-50%); display: flex; align-items: center; gap: 14px; height: 48px; padding: 0 6px 0 18px; border-radius: 14px; background: #292b30; color: #fff; font-size: 14px; font-weight: 600; box-shadow: 0 6px 20px rgba(31, 39, 52, .3); }
+.page-undo-bar button { height: 40px; padding: 0 14px; border: 0; border-radius: 10px; background: transparent; color: #a9b8ff; font: inherit; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+.page-undo-bar button:hover { background: rgba(255, 255, 255, .1); }
+/* Pen colours: a row left of the profile button; hit areas stay 40 px, the dot is 22 px. */
+.pen-colors { display: flex; align-items: center; gap: 0; height: 48px; padding: 0 4px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 24px; background: rgba(255, 255, 255, .96); box-shadow: 0 3px 12px rgba(31, 39, 52, .12); }
+.pen-color { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; touch-action: manipulation; }
+.pen-color::before { content: ''; width: 22px; height: 22px; border-radius: 50%; background: var(--swatch); }
+.pen-color.selected::before { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--swatch); }
+@media (max-width: 760px) { .pen-color { width: 34px; } }
 .zoom-controls .zoom-lock { display: grid; place-items: center; margin-left: 2px; border-left: 1px solid #e7eaf0; border-radius: 0 12px 12px 0; }
 .zoom-controls .zoom-lock.selected { background: #e9edff; color: #354fc2; }
 .navigator-status { margin-top: 6px; color: #5d626b; font-size: 10px; font-weight: 600; text-align: center; }

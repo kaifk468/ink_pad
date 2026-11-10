@@ -112,6 +112,11 @@ export function documentItemCount(document: InkPadDocument): number {
   return count
 }
 
+/** Number of pages in the diagram (at least 1). */
+export function documentPageCount(document: InkPadDocument): number {
+  return 1 + (document.pages?.length ?? 0)
+}
+
 /** An open diagram's content for "did anything change since the last save" checks. */
 export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; items: CanvasItem[]; extraPages?: CanvasItem[][] }
 

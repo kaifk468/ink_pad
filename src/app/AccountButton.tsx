@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { displayName, initialsOf, type DriveProfile } from '../driveProfile'
 
 type AccountButtonProps = {
@@ -9,6 +9,8 @@ type AccountButtonProps = {
   onReconnect: () => void
   /** Opens the Storage panel. */
   onOpenStorage: () => void
+  /** Extra controls shown to the left of the avatar (the pen colours). */
+  leading?: ReactNode
 }
 
 /** The profile picture (or initials) for the avatar button; falls back to initials if the picture does not load. */
@@ -31,6 +33,7 @@ export function AccountButton(props: AccountButtonProps) {
   const label = name ? `${name}, Google Drive. Open storage` : 'Storage and account'
   return (
     <div className="account-control">
+      {props.leading}
       {props.needsReconnect && <button className="reconnect-pill" type="button" onClick={props.onReconnect}>Reconnect Drive</button>}
       <button className={`account-button${profile ? ' has-profile' : ''}`} type="button" aria-label={label} title={name ?? 'Storage and account'} onClick={props.onOpenStorage}>
         {profile
