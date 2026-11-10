@@ -123,6 +123,13 @@ test('the app keeps one live page and per-page undo, and stays off the pen', () 
   assert.match(appSource, /<PageControls index=\{pageIndex\} count=\{pageCount\}/)
 })
 
+test('the page bar sits inside the minimap column, above the map or its icon', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
+  assert.match(appSource, /aria-label="Canvas navigation">\s*<PageControls /)
+  assert.match(css, /\.page-controls \{[^}]*bottom: calc\(100% \+ 8px\); right: 0;/)
+})
+
 test('a new page needs something on the current one first, in the button and in the action', () => {
   assert.match(appSource, /canAdd=\{canAddPage\(pageCount\) && hasInk\}/)
   assert.match(appSource, /if \(strokesRef\.current\.length === 0\) return/)

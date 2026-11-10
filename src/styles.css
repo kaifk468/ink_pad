@@ -332,7 +332,7 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 .zoom-controls .zoom-indicator { min-width: 58px; font-size: 14px; }
 .zoom-controls button:disabled { opacity: .35; cursor: default; }
 /* Page controls: a slim bar right above the zoom controls (56 px tall, 16 px from the edge), 40 px buttons. */
-.page-controls { position: absolute; z-index: 2; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 64px); left: max(16px, env(safe-area-inset-left)); display: flex; align-items: center; height: 44px; padding: 0 2px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .96); box-shadow: 0 3px 12px rgba(31, 39, 52, .12); }
+.page-controls { position: absolute; z-index: 2; bottom: calc(100% + 8px); right: 0; display: flex; align-items: center; height: 44px; padding: 0 2px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .96); box-shadow: 0 3px 12px rgba(31, 39, 52, .12); }
 .page-controls button { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 11px; background: transparent; color: #343944; cursor: pointer; touch-action: manipulation; }
 .page-controls button:hover:not(:disabled) { background: #f1f2f5; }
 .page-controls button:disabled { opacity: .35; cursor: default; }
@@ -452,7 +452,6 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
   /* Narrow tablets: the corner panels would meet the centered dock, so they sit above it. */
   .viewport-navigator { right: 12px; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); width: 238px; max-width: calc(100% - 24px); }
   .zoom-controls { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); }
-  .page-controls { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 148px); }
   .performance-panel { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); max-height: min(55vh, 380px); }
   .performance-table-scroll { max-height: min(43vh, 290px); }
 }

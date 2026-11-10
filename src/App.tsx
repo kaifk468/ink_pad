@@ -2727,6 +2727,7 @@ function App() {
           )}
         </aside>
         <aside className={`viewport-navigator${navigatorMinimized ? ' minimized' : ''}`} aria-label="Canvas navigation">
+          <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDelete={deletePage} />
           {navigatorMinimized ? (
             <button className="navigator-restore" type="button" aria-label="Show workspace map" title="Show workspace map" onClick={() => setNavigatorMinimized(false)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><rect x="7" y="8.5" width="6" height="5" rx="1"/></svg>
@@ -2821,7 +2822,6 @@ function App() {
           ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
           : null}
       />
-      <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDelete={deletePage} />
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
       <ZoomControls zoomPercent={zoomPercent} locked={navigationSettings.zoomLocked} onToggleLock={() => updateNavigationSettings({ zoomLocked: !navigationSettings.zoomLocked })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
