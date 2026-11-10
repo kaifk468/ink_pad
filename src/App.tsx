@@ -43,7 +43,7 @@ import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { DEFAULT_TEXT_FONT_SIZE, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { useDocuments } from './app/useDocuments'
-import { SHAPE_RECOGNITION_HOLD_MS, recognizeRectangleOnHold, recognizeRectangleStroke } from './shapeRecognition'
+import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
 import { MAX_PAGES, canAddPage, clampPageIndex, insertPageAfter, insertPageAt, removePageAt, writeLastPage } from './pages'
@@ -627,10 +627,10 @@ function App() {
           ? recognizedShape
           : recognizeLine(stroke)
       } else {
-        const rectangle = recognizeRectangleOnHold(stroke, SHAPE_RECOGNITION_HOLD_MS, nextRectangleIdRef.current)
-        if (rectangle) {
+        const closedShape = recognizeClosedShapeOnHold(stroke, SHAPE_RECOGNITION_HOLD_MS, nextRectangleIdRef.current)
+        if (closedShape) {
           nextRectangleIdRef.current += 1
-          recognized = rectangle
+          recognized = closedShape
         } else recognized = recognizeLine(stroke)
       }
       if (recognized.kind === 'rectangle' || (recognized.kind === 'stroke' && recognized.shape)) {
@@ -804,10 +804,11 @@ function App() {
 
   const recognizeShape = (stroke: Stroke): CanvasItem => {
     const points = stroke.points
-    const rectangle = recognizeRectangleStroke(stroke, nextRectangleIdRef.current)
-    if (rectangle) {
+    // A round closed stroke becomes an oval or circle, a box-like one a rectangle (both are rectangle objects).
+    const closedShape = recognizeClosedShapeStroke(stroke, nextRectangleIdRef.current)
+    if (closedShape) {
       nextRectangleIdRef.current += 1
-      return rectangle
+      return closedShape
     }
     if (points.length < 6 || stroke.erase) return stroke
     const first = points[0]
@@ -1769,7 +1770,7 @@ function App() {
         const heldLongEnough = heldForMs >= SHAPE_RECOGNITION_HOLD_MS
         const recognizedShape = shapeMode
           ? recognizeShape(heldStroke)
-          : recognizeRectangleOnHold(heldStroke, heldForMs, nextRectangleIdRef.current) ?? heldStroke
+          : recognizeClosedShapeOnHold(heldStroke, heldForMs, nextRectangleIdRef.current) ?? heldStroke
         if (!shapeMode && recognizedShape.kind === 'rectangle') nextRectangleIdRef.current += 1
         stroke = recognizedShape.kind === 'rectangle' || (recognizedShape.kind === 'stroke' && recognizedShape.shape)
           ? recognizedShape
@@ -2276,7 +2277,8 @@ function App() {
       const tap = classTapRef.current
       classTapRef.current = null
       const hitRectangle = hitTestRectangle(tap.point)
-      const existing = hitRectangle?.inkBox ? null : hitRectangle
+      // An ink class box keeps its own writing and an oval has no sections, so a tap on either starts a new class box.
+      const existing = hitRectangle?.inkBox || hitRectangle?.ellipse ? null : hitRectangle
       if (existing) openClassBoxEditor({ rectangleId: existing.id, x: existing.x, y: existing.y, content: existing.classBox ?? EMPTY_CLASS_BOX })
       else openClassBoxEditor({ rectangleId: null, x: tap.point.x, y: tap.point.y, content: EMPTY_CLASS_BOX })
       return

@@ -269,6 +269,10 @@ export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
     ctx.beginPath()
     ctx.roundRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, INK_BOX_CORNER_RADIUS)
     ctx.stroke()
+  } else if (rectangle.ellipse) {
+    ctx.beginPath()
+    ctx.ellipse(rectangle.x + rectangle.width / 2, rectangle.y + rectangle.height / 2, rectangle.width / 2, rectangle.height / 2, 0, 0, Math.PI * 2)
+    ctx.stroke()
   } else ctx.strokeRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height)
   ctx.restore()
 }
@@ -383,7 +387,11 @@ export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasIte
       ctx.globalCompositeOperation = 'source-over'
       ctx.strokeStyle = item.strokeColor
       ctx.lineWidth = Math.max(1, item.strokeWidth * geometry.scale)
-      ctx.strokeRect(toMiniX(item.x), toMiniY(item.y), item.width * geometry.scale, item.height * geometry.scale)
+      if (item.ellipse) {
+        ctx.beginPath()
+        ctx.ellipse(toMiniX(item.x + item.width / 2), toMiniY(item.y + item.height / 2), (item.width / 2) * geometry.scale, (item.height / 2) * geometry.scale, 0, 0, Math.PI * 2)
+        ctx.stroke()
+      } else ctx.strokeRect(toMiniX(item.x), toMiniY(item.y), item.width * geometry.scale, item.height * geometry.scale)
     } else if (item.kind === 'connector') {
       ctx.globalCompositeOperation = 'source-over'
       ctx.strokeStyle = item.strokeColor

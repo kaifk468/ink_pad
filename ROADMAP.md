@@ -31,7 +31,7 @@ Built status is taken from `project-context.md`. Items marked "verify" are built
 7. **Copy and paste.** Copy a selection and paste it at a point.
 8. **Box fill colour.** Fill rectangles and class boxes.
 9. **Resize an existing text label's font.** Today the size is fixed when the label is created; resizing a lasso selection is the only way to change it.
-10. **Hold-to-straighten for circles and ellipses.** Lines and rectangles already straighten on hold; circles and ellipses are not recognized yet.
+10. **Hold-to-straighten for circles and ellipses.** Done (2026-11-11): a closed round stroke held at the end snaps to a perfect circle or an upright oval; tilt is not kept yet. Needs checking with the S Pen.
 
 ## 5. Organising diagrams
 
@@ -46,7 +46,7 @@ Built status is taken from `project-context.md`. Items marked "verify" are built
 
 14. **PDF export.**
 15. **Mermaid and PlantUML export.**
-16. **Sketch-to-object recognition.** Turn a rough drawing into a clean shape. Only lines, rectangles and arrows are recognized today.
+16. **Sketch-to-object recognition.** Turn a rough drawing into a clean shape. Lines, rectangles, ovals, circles and arrows are recognized today.
 
 ## 8. Polish and tools
 
