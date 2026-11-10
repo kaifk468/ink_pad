@@ -130,6 +130,13 @@ test('the page bar sits inside the minimap column, above the map or its icon', a
   assert.match(css, /\.page-controls \{[^}]*bottom: calc\(100% \+ 8px\); right: 0;/)
 })
 
+test('the page bar is one slim vertical column and the pen colours are tight', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
+  assert.match(css, /\.page-controls \{[^}]*flex-direction: column;[^}]*width: 40px;/)
+  assert.match(css, /\.pen-color \{[^}]*width: 34px;/)
+})
+
 test('a new page needs something on the current one first, in the button and in the action', () => {
   assert.match(appSource, /canAdd=\{canAddPage\(pageCount\) && hasInk\}/)
   assert.match(appSource, /if \(strokesRef\.current\.length === 0\) return/)
