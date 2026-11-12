@@ -7,6 +7,8 @@
  * per-device preference, like the navigation settings.
  */
 
+import { canvasItemKey, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
+import { itemHitTest } from './lassoSelection'
 import { MAX_ZOOM, MIN_ZOOM, panViewport, zoomViewportAt, type Viewport } from './viewport'
 
 export type InputMode = 'tablet' | 'desktop'
@@ -178,4 +180,87 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
 /** True when a key press is going into something that types (so shortcuts must not take it). */
 export function isTypingTarget(tag: string, isEditable: boolean): boolean {
   return isEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag.toUpperCase())
+}
+
+/**
+ * Step 7: hover and click-to-select (Desktop mode), and the pen's edge hold (Tablet and Desktop).
+ * `hitTarget` is the one rule that decides which box, connector or text label is under a point, with the same
+ * order (text, then box, then connector; the topmost of each) and the same tolerances as the select tool.
+ * Pass the connector-routed items so elbow connectors are hit where they are drawn.
+ */
+export type HitTarget = { key: string; kind: 'rectangle' | 'connector' | 'text'; id: number }
+
+export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scale: number): HitTarget | null {
+  const pick = (kind: HitTarget['kind'], test: (item: CanvasItem) => boolean): HitTarget | null => {
+    for (let index = routedItems.length - 1; index >= 0; index -= 1) {
+      const item = routedItems[index]
+      if (item.kind === kind && test(item)) return { key: canvasItemKey(item), kind, id: item.id }
+    }
+    return null
+  }
+  return pick('text', (item) => itemHitTest(item, point, 8 / scale))
+    ?? pick('rectangle', (item) => {
+      if (item.kind !== 'rectangle') return false
+      const pad = Math.max(8 / scale, item.strokeWidth * 2)
+      return point.x >= item.x - pad && point.x <= item.x + item.width + pad && point.y >= item.y - pad && point.y <= item.y + item.height + pad
+    })
+    ?? pick('connector', (item) => item.kind === 'connector' && itemHitTest(item, point, Math.max(12 / scale, item.strokeWidth * 2)))
+}
+
+export type ClickTool = 'pen' | 'shape' | 'text' | 'connector' | 'lasso' | 'classBox' | 'select' | 'eraser'
+
+/**
+ * What a mouse press selects and drags, before the active tool sees it. Any tool except the eraser; the select tool
+ * already selects by itself, and the lasso tool keeps its own move and resize while something is selected.
+ * In the pen tool the inside of an ink class box stays writable: only its edge band is taken, and never the already
+ * selected box, whose handles and border have their own rules.
+ */
+export function clickSelectTarget(
+  routedItems: readonly CanvasItem[],
+  point: Point,
+  scale: number,
+  tool: ClickTool,
+  hasSelection: boolean,
+  selectedRectangleId: number | null = null,
+): HitTarget | null {
+  if (tool === 'eraser' || tool === 'select') return null
+  if (tool === 'lasso' && hasSelection) return null
+  const target = hitTarget(routedItems, point, scale)
+  if (!target || target.kind !== 'rectangle' || tool !== 'pen') return target
+  const box = routedItems.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === target.id)
+  if (!box?.inkBox) return target
+  // The selected ink box keeps its own handles, grip, dividers and border rules in the pen tool.
+  if (box.id === selectedRectangleId) return null
+  return pointInEdgeBand(box, point, EDGE_BAND_PX / scale) ? target : null
+}
+
+/** How close to a box's outline (screen px, divided by the zoom scale) counts as its edge: the same idea as the resize handles. */
+export const EDGE_BAND_PX = 14
+export const EDGE_HOLD_MS = 500
+/** A pen that wanders further than this (screen px) while holding is writing, not holding. */
+export const EDGE_HOLD_JITTER_PX = 7
+
+/** True when the point is within `band` of the box outline (outside or inside); the middle of a big box is not. */
+export function pointInEdgeBand(box: RectangleBounds, point: Point, band: number): boolean {
+  if (point.x < box.x - band || point.x > box.x + box.width + band || point.y < box.y - band || point.y > box.y + box.height + band) return false
+  const inner = point.x > box.x + band && point.x < box.x + box.width - band && point.y > box.y + band && point.y < box.y + box.height - band
+  return !inner
+}
+
+/** The topmost box under the point when the point is in its edge band; null in its interior or off every box. */
+export function edgeBandBox(items: readonly CanvasItem[], point: Point, scale: number): RectangleObject | null {
+  const band = EDGE_BAND_PX / scale
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index]
+    if (item.kind !== 'rectangle') continue
+    if (point.x < item.x - band || point.x > item.x + item.width + band || point.y < item.y - band || point.y > item.y + item.height + band) continue
+    return pointInEdgeBand(item, point, band) ? item : null
+  }
+  return null
+}
+
+/** What a held pen does at a check: keep waiting, select the box (held still for 500 ms), or give up and draw (moved too far). */
+export function edgeHoldDecision(start: Point, current: Point, elapsedMs: number, scale: number): 'wait' | 'select' | 'draw' {
+  if (Math.hypot(current.x - start.x, current.y - start.y) > EDGE_HOLD_JITTER_PX / scale) return 'draw'
+  return elapsedMs >= EDGE_HOLD_MS ? 'select' : 'wait'
 }

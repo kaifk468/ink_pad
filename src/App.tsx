@@ -51,7 +51,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, isTypingTarget, keyCommand, loadInputMode, pointerPressure, saveInputMode, spaceIsPanKey, startsMousePan, wheelViewport, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, clickSelectTarget, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, hitTarget, isTypingTarget, keyCommand, loadInputMode, pointerPressure, saveInputMode, spaceIsPanKey, startsMousePan, wheelViewport, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 const DOUBLE_TAP_MS = 400
@@ -246,6 +246,11 @@ function App() {
   // Desktop pan: a middle-button or Space + left drag moves the view (Desktop mode only).
   const mousePanRef = useRef<{ pointerId: number; start: Point; startViewport: Viewport } | null>(null)
   const spaceHeldRef = useRef(false)
+  // Step 7: the item the mouse is over (Desktop mode; only a change redraws), and the pen's edge hold (select a box by holding on its edge).
+  const hoverKeyRef = useRef<string | null>(null)
+  const hoverPointRef = useRef<Point | null>(null)
+  const hoverFrameRef = useRef<number | null>(null)
+  const edgeHoldRef = useRef<{ pointerId: number; boxId: number; start: Point; startedAt: number; timer: number } | null>(null)
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
   if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
   const touchNav = touchNavRef.current
@@ -1005,6 +1010,87 @@ function App() {
     return true
   }
 
+  // Step 7. The tool the mouse is using, as the click-to-select rule names it.
+  const clickToolName = (): ClickTool => eraser ? 'eraser'
+    : selectionMode ? 'select' : lassoMode ? 'lasso' : textMode ? 'text' : classMode ? 'classBox'
+    : (connectorMode || umlConnectorType !== null) ? 'connector' : shapeMode ? 'shape' : 'pen'
+
+  // Selects the hit box, connector or text exactly as the select tool does, and returns the item. A plain box needs the select
+  // tool for its handles to work, so from the pen, shapes, text, connector and class tools that tool is switched on; ink boxes
+  // keep the pen (their handles already work there) and the lasso keeps its own key-based selection.
+  const selectHitTarget = (target: HitTarget): CanvasItem | null => {
+    const item = strokesRef.current.find((candidate) => canvasItemKey(candidate) === target.key)
+    if (!item) return null
+    hoverKeyRef.current = null
+    if (item.kind === 'rectangle' && !lassoMode) {
+      if (!item.inkBox && !selectionMode) toggleSelectTool()
+      setSelectedRectangle(item.id)
+      updateSelectedItems([])
+    } else {
+      setSelectedRectangle(null)
+      updateSelectedItems([target.key])
+    }
+    renderAll()
+    return item
+  }
+
+  // Desktop hover: the item under the mouse gets a light outline and a pointer cursor. The pick runs at most once a frame and
+  // the canvas is redrawn only when the hovered item changes.
+  const refreshHover = () => {
+    hoverFrameRef.current = null
+    const point = hoverPointRef.current
+    const canvas = canvasRef.current
+    const ready = point !== null && inputModeRef.current === 'desktop' && !eraser
+    const target = ready ? hitTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale) : null
+    const key = target?.key ?? null
+    if (canvas && !spaceHeldRef.current && mousePanRef.current === null) {
+      canvas.style.cursor = key === null ? '' : (selectedKeysRef.current.has(key) || key === `rectangle:${selectedRectangleIdRef.current}`) ? 'move' : 'pointer'
+    }
+    if (key === hoverKeyRef.current) return
+    hoverKeyRef.current = key
+    renderAll()
+  }
+  const setMouseHover = (point: Point | null) => {
+    hoverPointRef.current = point
+    if (point === null) {
+      if (hoverFrameRef.current !== null) { cancelAnimationFrame(hoverFrameRef.current); hoverFrameRef.current = null }
+      if (hoverKeyRef.current !== null) { hoverKeyRef.current = null; renderAll() }
+      if (canvasRef.current && !spaceHeldRef.current && mousePanRef.current === null) canvasRef.current.style.cursor = ''
+      return
+    }
+    if (hoverFrameRef.current === null) hoverFrameRef.current = requestAnimationFrame(refreshHover)
+  }
+
+  // Tablet and Desktop, S Pen only: holding the pen still on a box's edge for 500 ms selects the box instead of drawing.
+  const cancelEdgeHold = () => {
+    const hold = edgeHoldRef.current
+    if (!hold) return
+    window.clearTimeout(hold.timer)
+    edgeHoldRef.current = null
+  }
+  const fireEdgeHold = (pointerId: number) => {
+    const hold = edgeHoldRef.current
+    if (!hold || hold.pointerId !== pointerId) return
+    edgeHoldRef.current = null
+    const stroke = activeStrokeRef.current
+    if (activePointerRef.current !== pointerId || !stroke || stroke.erase) return
+    const last = stroke.points[stroke.points.length - 1]
+    if (edgeHoldDecision(hold.start, last, performance.now() - hold.startedAt, viewportRef.current.scale) !== 'select') return
+    const box = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === hold.boxId)
+    if (!box) return
+    // Drop the dot the press started: nothing is drawn, and the press is spent until the pen lifts.
+    clearShapeHoldTimer()
+    activeStrokeRef.current = null
+    activeStrokeBoxRef.current = null
+    activePointerRef.current = null
+    predictedPointsRef.current = []
+    shapePreviewRef.current = null
+    holdAnchorRef.current = null
+    lastSignificantMoveAtRef.current = 0
+    selectHitTarget({ key: canvasItemKey(box), kind: 'rectangle', id: box.id })
+  }
+  useEffect(() => () => { cancelEdgeHold(); if (hoverFrameRef.current !== null) cancelAnimationFrame(hoverFrameRef.current) }, [])
+
   const renderAll = useCallback((benchmarkBackground?: { template: PageTemplate; dpr?: number; viewport?: Viewport; onBackgroundRendered: (durationMs: number) => void }) => {
     const diagnostics = performanceDiagnosticsRef.current
     const measureFrame = diagnostics?.isStrokeActive() ?? false
@@ -1269,6 +1355,19 @@ function App() {
           ctx.fill()
           ctx.stroke()
         }
+        ctx.restore()
+      }
+    }
+    const hoverKey = hoverKeyRef.current
+    if (hoverKey !== null && !selectedKeysRef.current.has(hoverKey) && hoverKey !== `rectangle:${selectedRectangleIdRef.current}`) {
+      const hovered = routeConnectors(strokesRef.current).find((item) => canvasItemKey(item) === hoverKey)
+      if (hovered) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(83, 111, 224, 0.55)'
+        ctx.lineWidth = 1.5 / viewport.scale
+        if (hovered.kind === 'rectangle') ctx.strokeRect(hovered.x - 4, hovered.y - 4, hovered.width + 8, hovered.height + 8)
+        else if (hovered.kind === 'text') ctx.strokeRect(hovered.x - 4, hovered.y - 4, hovered.width + 8, hovered.height + 8)
+        else if (hovered.kind === 'connector') drawConnector(ctx, hovered, 'rgba(83, 111, 224, 0.3)', hovered.strokeWidth + 6)
         ctx.restore()
       }
     }
@@ -2032,6 +2131,17 @@ function App() {
     const buttonErase = !eraser && isPenButtonHeld(event.nativeEvent)
     penButtonEraseRef.current = buttonErase
     if (textEditorRef.current) commitTextEditor()
+    if (event.pointerType === 'mouse') setMouseHover(null)
+    if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') {
+      // Desktop: a left click selects the box, connector or text under it with any tool but the eraser, and dragging moves it.
+      const clicked = clickSelectTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale, clickToolName(), selectedKeysRef.current.size > 0, selectedRectangleIdRef.current)
+      const clickedItem = clicked ? selectHitTarget(clicked) : null
+      if (clicked && clickedItem) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        activeDragRef.current = { pointerId: event.pointerId, itemKey: clicked.key, start: point, originalItems: strokesRef.current.slice(), moved: false, editTextId: null, editClassBoxId: null }
+        return
+      }
+    }
     if (textMode) {
       event.currentTarget.setPointerCapture(event.pointerId)
       textTapRef.current = { pointerId: event.pointerId, point }
@@ -2255,6 +2365,14 @@ function App() {
     shapePreviewRef.current = null
     predictedPointsRef.current = []
     holdAnchorRef.current = point
+    cancelEdgeHold()
+    if (event.pointerType === 'pen' && !eraser && !buttonErase && !shapeMode) {
+      const edgeBox = edgeBandBox(strokesRef.current, point, viewportRef.current.scale)
+      if (edgeBox && edgeBox.id !== selectedRectangleIdRef.current && !selectedKeysRef.current.has(canvasItemKey(edgeBox))) {
+        const pointerId = event.pointerId
+        edgeHoldRef.current = { pointerId, boxId: edgeBox.id, start: point, startedAt: performance.now(), timer: window.setTimeout(() => fireEdgeHold(pointerId), EDGE_HOLD_MS) }
+      }
+    }
     if (activeStrokeBoxRef.current === null) scheduleShapePreview(point)
     scheduleRender()
   }
@@ -2275,6 +2393,7 @@ function App() {
       updateTouchPoint(event)
       return
     }
+    if (event.pointerType === 'mouse' && event.buttons === 0 && inputModeRef.current === 'desktop') setMouseHover(getPoint(event))
     const objectEraseGesture = activeObjectEraserRef.current
     if (objectEraseGesture?.pointerId === event.pointerId) {
       event.preventDefault()
@@ -2418,6 +2537,8 @@ function App() {
       }, liveNow.points[liveNow.points.length - 1], MAX_PREDICTION_DISTANCE_SCREEN_PX / viewportRef.current.scale)
       : []
     const latestPoint = activeStrokeRef.current.points[activeStrokeRef.current.points.length - 1]
+    const edgeHold = edgeHoldRef.current
+    if (edgeHold?.pointerId === event.pointerId && edgeHoldDecision(edgeHold.start, latestPoint, 0, viewportRef.current.scale) === 'draw') cancelEdgeHold()
     if (!holdAnchorRef.current || Math.hypot(latestPoint.x - holdAnchorRef.current.x, latestPoint.y - holdAnchorRef.current.y) >= SHAPE_HOLD_JITTER_PX) {
       shapePreviewRef.current = null
       lastSignificantMoveAtRef.current = performance.now()
@@ -2427,6 +2548,7 @@ function App() {
   }
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (edgeHoldRef.current?.pointerId === event.pointerId) cancelEdgeHold()
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
     if (mousePanRef.current?.pointerId === event.pointerId) {
@@ -2556,6 +2678,7 @@ function App() {
   }
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (edgeHoldRef.current?.pointerId === event.pointerId) cancelEdgeHold()
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
     if (mousePanRef.current?.pointerId === event.pointerId) {
@@ -2762,6 +2885,7 @@ function App() {
 
   const onPointerLeave = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === 'pen') touchNav.penGone()
+    if (event.pointerType === 'mouse') setMouseHover(null)
     hideEraserCursor()
   }
 

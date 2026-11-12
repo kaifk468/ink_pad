@@ -86,7 +86,8 @@ test('a mouse in desktop mode is blocked by any gesture in progress, so it canno
 
 test('App wires the gate through canStartCanvasGesture and keeps the touch block and the pen checks as they were', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /import \{ canStartCanvasGesture, isTypingTarget, keyCommand, loadInputMode, pointerPressure, saveInputMode, spaceIsPanKey, startsMousePan, wheelViewport, type InputMode, type KeyCommand \} from '\.\/desktopInput'/)
+  const desktopImport = app.match(/import \{([^}]*)\} from '\.\/desktopInput'/)?.[1] ?? ''
+  for (const name of ['canStartCanvasGesture', 'isTypingTarget', 'keyCommand', 'loadInputMode', 'pointerPressure', 'saveInputMode', 'spaceIsPanKey', 'startsMousePan', 'wheelViewport', 'type InputMode', 'type KeyCommand']) assert.ok(desktopImport.includes(name), name)
   // the mode is read once from storage (default tablet) and saved whenever the switch changes it
   assert.match(app, /const \[inputMode, setInputMode\] = useState<InputMode>\(\(\) => loadInputMode\(\)\)/)
   assert.match(app, /const updateInputMode = \(mode: InputMode\) => \{\s*inputModeRef\.current = mode\s*setInputMode\(mode\)\s*saveInputMode\(mode\)\s*\}/)
