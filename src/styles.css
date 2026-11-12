@@ -29,7 +29,7 @@ button { font: inherit; }
 .canvas-stage {
   position: absolute;
   inset: 0;
-  background: #e9ebf0;
+  background: #dde0e7;
 }
 
 .sheet-layer {
@@ -38,7 +38,8 @@ button { font: inherit; }
   top: 0;
   transform-origin: 0 0;
   pointer-events: none;
-  box-shadow: 0 1.5px 6.5px rgba(35, 42, 54, .16);
+  /* Paper lying on a desk: a hairline edge plus a soft shadow, so the grey margin reads as not writable. */
+  box-shadow: 0 0 0 1px rgba(35, 42, 54, .10), 0 2px 12px rgba(35, 42, 54, .30);
 }
 
 .drawing-canvas {

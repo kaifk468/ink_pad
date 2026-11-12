@@ -76,7 +76,7 @@ test('the default pen end-hold, live preview and Shapes tool all use closed-shap
   assert.match(appSource, /recognizeClosedShapeOnHold\(stroke, SHAPE_RECOGNITION_HOLD_MS/)
   assert.match(appSource, /recognizeClosedShapeOnHold\(heldStroke, heldForMs/)
   assert.match(appSource, /recognizeClosedShapeStroke\(stroke, nextRectangleIdRef\.current\)/)
-  assert.match(appSource, /clipSegmentToBounds\(previous, point, workspaceBoundsRef\.current\)/)
+  assert.match(appSource, /clipSegmentToBounds\(previous, point, sheetBoundsRef\.current\)/)
 })
 
 // ---- Ovals and circles ----

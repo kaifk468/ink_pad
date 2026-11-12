@@ -258,12 +258,48 @@ export function getCoverScale(viewportWidth: number, viewportHeight: number, bou
   return Math.max(viewportWidth / Math.max(1, bounds.width), viewportHeight / Math.max(1, bounds.height))
 }
 
-/** Clamp a viewport so it never shows anything outside the sheet: zoom-out stops where the sheet exactly fits. */
-export function clampViewportToSheet(viewport: Viewport, viewportWidth: number, viewportHeight: number, sheetHeight = SHEET_HEIGHT): Viewport {
-  const bounds = sheetHeight === SHEET_HEIGHT ? SHEET_BOUNDS : sheetBoundsFor(sheetHeight)
-  const minScale = getCoverScale(viewportWidth, viewportHeight, bounds)
+/** Width (screen px, about a thumb) of the grey desk the view may scroll past each edge of the sheet, so the corners can be reached away from the tablet's edge. */
+export const DESK_MARGIN_PX = 72
+/** The most the view can be stretched past the desk margin (screen px) while a finger drags it; it springs back on release. */
+export const RUBBER_BAND_MAX_PX = 80
+
+/**
+ * Clamp a viewport to the sheet: zoom-out stops where the sheet exactly fits, and the view may show at most `deskMarginPx`
+ * (screen px) of desk beyond each edge. With the default margin of 0 nothing outside the sheet is ever visible.
+ */
+export function clampViewportToSheet(viewport: Viewport, viewportWidth: number, viewportHeight: number, sheetHeight = SHEET_HEIGHT, deskMarginPx = 0): Viewport {
+  const sheet = sheetHeight === SHEET_HEIGHT ? SHEET_BOUNDS : sheetBoundsFor(sheetHeight)
+  const minScale = getCoverScale(viewportWidth, viewportHeight, sheet)
   const scale = Math.max(minScale, Math.min(MAX_ZOOM, viewport.scale))
+  const margin = deskMarginPx / scale
+  const bounds = margin > 0
+    ? { x: sheet.x - margin, y: sheet.y - margin, width: sheet.width + margin * 2, height: sheet.height + margin * 2 }
+    : sheet
   return clampViewportToBounds({ ...viewport, scale }, viewportWidth, viewportHeight, bounds)
+}
+
+/** How far a drag past an edge actually moves the view: starts 1:1 and gets harder, never beyond `max`. */
+export function rubberBandOverscroll(distance: number, max = RUBBER_BAND_MAX_PX): number {
+  if (!(distance > 0) || !(max > 0)) return 0
+  return max * (1 - Math.exp(-distance / max))
+}
+
+/**
+ * The viewport to show while a finger drags: inside the limits it is exactly what the finger asks for; past a limit it
+ * stretches with growing resistance (rubber band). Zoom is still hard-clamped. Releasing should animate back to
+ * `clampViewportToSheet` with the same arguments.
+ */
+export function rubberBandViewport(viewport: Viewport, viewportWidth: number, viewportHeight: number, sheetHeight = SHEET_HEIGHT, deskMarginPx = 0): Viewport {
+  const hard = clampViewportToSheet(viewport, viewportWidth, viewportHeight, sheetHeight, deskMarginPx)
+  const stretch = (wanted: number, limit: number) => {
+    const over = wanted - limit
+    return over === 0 ? limit : limit + Math.sign(over) * rubberBandOverscroll(Math.abs(over))
+  }
+  return {
+    scale: hard.scale,
+    offsetX: stretch(viewport.offsetX, hard.offsetX),
+    offsetY: stretch(viewport.offsetY, hard.offsetY),
+  }
 }
 
 /** The view a fresh app or a freshly opened diagram starts in: INITIAL_ZOOM centered on the sheet. */

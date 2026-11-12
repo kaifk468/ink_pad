@@ -44,7 +44,7 @@ import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitCla
 import { DEFAULT_TEXT_FONT_SIZE, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
-import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
+import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
 import { MAX_PAGES, canAddPage, clampPageIndex, insertPageAfter, insertPageAt, removePageAt, writeLastPage } from './pages'
 import { PageControls, PageUndoBar } from './app/PageControls'
@@ -62,6 +62,8 @@ const ERASER_CURSOR_QUIET_MS = 350
 // so a big redraw never lands on the start of the next stroke.
 const MINIMAP_IDLE_DELAY_MS = 600
 const GESTURE_SETTLE_MS = 140
+/** How long the view takes to spring back after being stretched past its limit. */
+const SPRING_BACK_MS = 260
 const ZOOM_STEP = 1.25
 const DELETED_PAGE_UNDO_MS = 8000
 
@@ -176,6 +178,7 @@ function App() {
   // True while a pinch or three-finger pan is moving: the page is shown as a moved copy of a saved picture, then redrawn sharply once it settles.
   const viewportGestureRef = useRef(false)
   const gestureSettleTimerRef = useRef<number | null>(null)
+  const springFrameRef = useRef<number | null>(null)
   const toolbarRef = useRef<HTMLElement>(null)
   const umlToolboxRef = useRef<HTMLDivElement>(null)
   const eraserControlRef = useRef<HTMLDivElement>(null)
@@ -1084,11 +1087,6 @@ function App() {
     if (benchmarkBackground) benchmarkBackground.onBackgroundRendered(performance.now() - backgroundStartedAt)
     const drawSheetBorders = () => {
       ctx.save()
-      ctx.strokeStyle = '#d4d7de'
-      ctx.lineWidth = 1
-      ctx.strokeRect(workspaceBoundsRef.current.x + 0.5, workspaceBoundsRef.current.y + 0.5, workspaceBoundsRef.current.width - 1, workspaceBoundsRef.current.height - 1)
-      ctx.restore()
-      ctx.save()
       ctx.strokeStyle = '#d9dce2'
       ctx.lineWidth = 1
       ctx.strokeRect(sheetBoundsRef.current.x + 0.5, sheetBoundsRef.current.y + 0.5, SHEET_WIDTH - 1, sheetHeightRef.current - 1)
@@ -1368,7 +1366,7 @@ function App() {
     workspaceBoundsRef.current = workspaceBoundsFor(next)
     setSheetHeight(next)
     const rect = canvasRef.current?.getBoundingClientRect()
-    if (rect && rect.width > 0 && rect.height > 0) viewportRef.current = clampViewportToSheet(viewportRef.current, rect.width, rect.height, next)
+    if (rect && rect.width > 0 && rect.height > 0) viewportRef.current = clampViewportToSheet(viewportRef.current, rect.width, rect.height, next, DESK_MARGIN_PX)
     renderAll()
   }
 
@@ -1384,12 +1382,63 @@ function App() {
     scheduleAutosaveBase()
   }
 
+  const cancelSpringBack = () => {
+    if (springFrameRef.current === null) return
+    cancelAnimationFrame(springFrameRef.current)
+    springFrameRef.current = null
+    viewportGestureRef.current = false
+  }
+
+  /** The pen landed while the view was still springing back: jump to where it was heading so the ink goes where the pen is. */
+  const finishSpringBackNow = () => {
+    if (springFrameRef.current === null) return
+    cancelSpringBack()
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (rect && rect.width > 0 && rect.height > 0) viewportRef.current = clampViewportToSheet(viewportRef.current, rect.width, rect.height, sheetHeightRef.current, DESK_MARGIN_PX)
+    renderAll()
+  }
+
+  /** After a finger drag stretched the view past its limit (rubber band), eases it back inside, then redraws sharply. */
+  const settleViewportGesture = () => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    const from = viewportRef.current
+    const target = rect && rect.width > 0 && rect.height > 0
+      ? clampViewportToSheet(from, rect.width, rect.height, sheetHeightRef.current, DESK_MARGIN_PX)
+      : from
+    if (Math.abs(from.offsetX - target.offsetX) < 0.5 && Math.abs(from.offsetY - target.offsetY) < 0.5) {
+      viewportGestureRef.current = false
+      renderAll()
+      return
+    }
+    cancelSpringBack()
+    const startedAt = performance.now()
+    const step = (now: number) => {
+      const t = Math.min(1, (now - startedAt) / SPRING_BACK_MS)
+      const eased = 1 - Math.pow(1 - t, 3)
+      if (t < 1) {
+        viewportRef.current = { ...target, offsetX: from.offsetX + (target.offsetX - from.offsetX) * eased, offsetY: from.offsetY + (target.offsetY - from.offsetY) * eased }
+        springFrameRef.current = requestAnimationFrame(step)
+        scheduleRender()
+        return
+      }
+      springFrameRef.current = null
+      viewportRef.current = target
+      viewportGestureRef.current = false
+      renderAll()
+    }
+    springFrameRef.current = requestAnimationFrame(step)
+  }
+
   const applyViewport = (viewport: Viewport, gesture = false) => {
     if (textEditorRef.current) commitTextEditor()
+    cancelSpringBack()
     const canvas = canvasRef.current
     const rect = canvas?.getBoundingClientRect()
+    // A finger drag may stretch the view a little past its limit (it springs back on release); everything else is held inside.
     const boundedViewport = rect
-      ? clampViewportToSheet(viewport, rect.width, rect.height, sheetHeightRef.current)
+      ? (gesture
+        ? rubberBandViewport(viewport, rect.width, rect.height, sheetHeightRef.current, DESK_MARGIN_PX)
+        : clampViewportToSheet(viewport, rect.width, rect.height, sheetHeightRef.current, DESK_MARGIN_PX))
       : viewport
     viewportRef.current = boundedViewport
     setZoomPercent(Math.round(boundedViewport.scale * 100))
@@ -1399,8 +1448,7 @@ function App() {
       if (gestureSettleTimerRef.current !== null) window.clearTimeout(gestureSettleTimerRef.current)
       gestureSettleTimerRef.current = window.setTimeout(() => {
         gestureSettleTimerRef.current = null
-        viewportGestureRef.current = false
-        renderAll()
+        settleViewportGesture()
       }, GESTURE_SETTLE_MS)
       scheduleRender()
       return
@@ -1437,7 +1485,7 @@ function App() {
       initialViewDoneRef.current = true
       viewportRef.current = getInitialViewport(rect.width, rect.height, sheetHeightRef.current)
     }
-    viewportRef.current = clampViewportToSheet(viewportRef.current, rect.width, rect.height, sheetHeightRef.current)
+    viewportRef.current = clampViewportToSheet(viewportRef.current, rect.width, rect.height, sheetHeightRef.current, DESK_MARGIN_PX)
     setZoomPercent(Math.round(viewportRef.current.scale * 100))
     if (textEditorRef.current) setTextEditor({ ...textEditorRef.current })
     const ctx = canvas.getContext('2d', MAIN_CANVAS_OPTIONS) as CanvasRenderingContext2D | null
@@ -1455,6 +1503,7 @@ function App() {
       observer.disconnect()
       window.removeEventListener('orientationchange', resizeCanvas)
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+      if (springFrameRef.current !== null) cancelAnimationFrame(springFrameRef.current)
       if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current)
       if (minimapIdleTimerRef.current !== null) window.clearTimeout(minimapIdleTimerRef.current)
     }
@@ -1807,7 +1856,7 @@ function App() {
     const stroke = activeStrokeRef.current
     if (!stroke) return false
     const previous = stroke.points[stroke.points.length - 1]
-    const clippedPoint = clipSegmentToBounds(previous, point, workspaceBoundsRef.current)
+    const clippedPoint = clipSegmentToBounds(previous, point, sheetBoundsRef.current)
     if (clippedPoint && shouldAppendStrokeSample(previous, clippedPoint)) {
       stroke.points.push(clippedPoint)
     }
@@ -1863,8 +1912,10 @@ function App() {
     }
     if (event.pointerType !== 'pen' || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null) return
     event.preventDefault()
+    finishSpringBackNow()
     const rawPoint = getPoint(event)
-    if (!isPointWithinBounds(rawPoint, workspaceBoundsRef.current)) return
+    // The desk around the page is not writable: a pen landing there does nothing.
+    if (!isPointWithinBounds(rawPoint, sheetBoundsRef.current)) return
     const point = getBoundedPoint(event)
     // Holding the S Pen button turns this stroke into an erase with the eraser used last (mode and size); letting go goes back to the pen.
     const buttonErase = !eraser && isPenButtonHeld(event.nativeEvent)
@@ -2245,7 +2296,7 @@ function App() {
     predictedPointsRef.current = PEN_PREDICTION_ENABLED && liveNow?.kind === 'stroke' && !liveNow.erase
       ? getPredictedPoints(event.nativeEvent, (clientX, clientY) => {
         const point = screenToCanvasPoint({ x: clientX - rect.left, y: clientY - rect.top, pressure: 0 }, viewportRef.current)
-        return isPointWithinBounds(point, workspaceBoundsRef.current) ? point : null
+        return isPointWithinBounds(point, sheetBoundsRef.current) ? point : null
       }, liveNow.points[liveNow.points.length - 1], MAX_PREDICTION_DISTANCE_SCREEN_PX / viewportRef.current.scale)
       : []
     const latestPoint = activeStrokeRef.current.points[activeStrokeRef.current.points.length - 1]

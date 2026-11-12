@@ -41,7 +41,7 @@ test('the sheet fills the screen: zoom-out stops where the sheet exactly fits', 
       }
     }
   }
-  assert.match(app, /clampViewportToSheet\(viewport, rect\.width, rect\.height, sheetHeightRef\.current\)/)
+  assert.match(app, /clampViewportToSheet\(viewport, rect\.width, rect\.height, sheetHeightRef\.current, DESK_MARGIN_PX\)/)
   assert.match(app, /return \{ \.\.\.sheetBoundsRef\.current \}/)
 })
 
