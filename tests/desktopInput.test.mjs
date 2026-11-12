@@ -86,14 +86,14 @@ test('a mouse in desktop mode is blocked by any gesture in progress, so it canno
 
 test('App wires the gate through canStartCanvasGesture and keeps the touch block and the pen checks as they were', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /import \{ canStartCanvasGesture, loadInputMode, pointerPressure, saveInputMode, type InputMode \} from '\.\/desktopInput'/)
+  assert.match(app, /import \{ canStartCanvasGesture, loadInputMode, pointerPressure, saveInputMode, spaceIsPanKey, startsMousePan, wheelViewport, type InputMode \} from '\.\/desktopInput'/)
   // the mode is read once from storage (default tablet) and saved whenever the switch changes it
   assert.match(app, /const \[inputMode, setInputMode\] = useState<InputMode>\(\(\) => loadInputMode\(\)\)/)
   assert.match(app, /const updateInputMode = \(mode: InputMode\) => \{\s*inputModeRef\.current = mode\s*setInputMode\(mode\)\s*saveInputMode\(mode\)\s*\}/)
   // the pen's own gesture check is the original seven gesture refs, in the original order
   assert.match(app, /const penGestureActive = activePointerRef\.current !== null \|\| activeConnectorRef\.current !== null \|\| activeDragRef\.current !== null \|\| activeResizeRef\.current !== null \|\| activeDividerRef\.current !== null \|\| activeLassoRef\.current !== null \|\| lassoDragRef\.current !== null\n/)
   // the wider check adds the taps, the object eraser, and the minimap and UML toolbox drags
-  assert.match(app, /const anyGestureActive = penGestureActive \|\| textTapRef\.current !== null \|\| classTapRef\.current !== null \|\| activeObjectEraserRef\.current !== null \|\| minimapDragPointerRef\.current !== null \|\| umlToolboxDragRef\.current !== null\n/)
+  assert.match(app, /const anyGestureActive = penGestureActive \|\| textTapRef\.current !== null \|\| classTapRef\.current !== null \|\| activeObjectEraserRef\.current !== null \|\| minimapDragPointerRef\.current !== null \|\| umlToolboxDragRef\.current !== null \|\| mousePanRef\.current !== null\n/)
   assert.match(app, /if \(!canStartCanvasGesture\(event\.pointerType, event\.button, inputModeRef\.current, penGestureActive, anyGestureActive, touchNav\.touchCount\(\) > 0\)\) return/)
   // touch is still handled (and returns) before the gate, and the pen still resets the navigator first
   const touchBlock = app.indexOf("if (event.pointerType === 'touch') {\n      event.preventDefault()")
@@ -168,4 +168,86 @@ test('a diagram mixing pen strokes (real pressure) and mouse strokes (fixed pres
   // a mouse stroke is saved exactly like a pen stroke: same keys, nothing says which device made it
   assert.deepEqual(Object.keys(JSON.parse(text).items[1]).sort(), Object.keys(JSON.parse(text).items[0]).sort())
   assert.doesNotMatch(text, /mouse|pointer|inputMode|desktop/i)
+})
+
+const V = { scale: 1, offsetX: 100, offsetY: 50 }
+const wheel = (over = {}) => ({ deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, shiftKey: false, ...over })
+
+test('a plain wheel or two-finger scroll pans the view by the scroll distance', () => {
+  const next = input.wheelViewport(V, wheel({ deltaX: 10, deltaY: 40 }), { x: 300, y: 200 }, 800)
+  assert.deepEqual(next, { scale: 1, offsetX: 90, offsetY: 10 })
+  assert.equal(input.wheelViewport(V, wheel(), { x: 0, y: 0 }, 800).offsetX, 100)
+})
+
+test('wheel distances are converted from lines and pages to pixels', () => {
+  assert.equal(input.wheelDeltaPixels(3, 0, 800), 3)
+  assert.equal(input.wheelDeltaPixels(3, 1, 800), 48)
+  assert.equal(input.wheelDeltaPixels(2, 2, 800), 1600)
+  assert.equal(input.wheelViewport(V, wheel({ deltaY: 2, deltaMode: 1 }), { x: 0, y: 0 }, 800).offsetY, 18)
+})
+
+test('Shift turns a vertical wheel into a sideways pan, but leaves a real sideways scroll alone', () => {
+  assert.deepEqual(input.wheelViewport(V, wheel({ deltaY: 40, shiftKey: true }), { x: 0, y: 0 }, 800), { scale: 1, offsetX: 60, offsetY: 50 })
+  assert.deepEqual(input.wheelViewport(V, wheel({ deltaX: 15, deltaY: 40, shiftKey: true }), { x: 0, y: 0 }, 800), { scale: 1, offsetX: 85, offsetY: 10 })
+})
+
+test('Ctrl + wheel zooms toward the pointer: the canvas point under the pointer does not move', () => {
+  const point = { x: 400, y: 300 }
+  const canvasUnder = (v) => ({ x: (point.x - v.offsetX) / v.scale, y: (point.y - v.offsetY) / v.scale })
+  const before = canvasUnder(V)
+  const zoomedIn = input.wheelViewport(V, wheel({ deltaY: -20, ctrlKey: true }), point, 800)
+  const zoomedOut = input.wheelViewport(V, wheel({ deltaY: 20, ctrlKey: true }), point, 800)
+  assert.ok(zoomedIn.scale > 1 && zoomedOut.scale < 1)
+  for (const next of [zoomedIn, zoomedOut]) {
+    assert.ok(Math.abs(canvasUnder(next).x - before.x) < 1e-9)
+    assert.ok(Math.abs(canvasUnder(next).y - before.y) < 1e-9)
+  }
+})
+
+test('wheel zoom stays inside the zoom limits and one notch is capped', () => {
+  const tiny = input.wheelViewport({ scale: 0.1, offsetX: 0, offsetY: 0 }, wheel({ deltaY: 500, ctrlKey: true }), { x: 5, y: 5 }, 800)
+  const huge = input.wheelViewport({ scale: 3, offsetX: 0, offsetY: 0 }, wheel({ deltaY: -500, ctrlKey: true }), { x: 5, y: 5 }, 800)
+  assert.equal(tiny.scale, 0.1)
+  assert.equal(huge.scale, 3)
+  const notch = input.wheelViewport(V, wheel({ deltaY: -100, ctrlKey: true }), { x: 0, y: 0 }, 800)
+  assert.ok(notch.scale < 1.4, `one notch zoomed to ${notch.scale}`)
+})
+
+test('Ctrl + wheel does nothing when zoom is locked, and a plain wheel still pans', () => {
+  assert.equal(input.wheelViewport(V, wheel({ deltaY: -20, ctrlKey: true }), { x: 1, y: 1 }, 800, false), V)
+})
+
+test('a middle button, or Space + left button, starts a pan; only for a mouse in Desktop mode', () => {
+  assert.equal(input.startsMousePan('mouse', 1, 'desktop', false), true)
+  assert.equal(input.startsMousePan('mouse', 0, 'desktop', true), true)
+  assert.equal(input.startsMousePan('mouse', 0, 'desktop', false), false)
+  assert.equal(input.startsMousePan('mouse', 2, 'desktop', true), false)
+  assert.equal(input.startsMousePan('mouse', 1, 'tablet', false), false)
+  assert.equal(input.startsMousePan('mouse', 0, 'tablet', true), false)
+  for (const type of ['pen', 'touch']) for (const held of [false, true]) for (const button of [0, 1]) assert.equal(input.startsMousePan(type, button, 'desktop', held), false)
+})
+
+test('Space is a pan key only in Desktop mode and never while typing or on a button', () => {
+  assert.equal(input.spaceIsPanKey(' ', 'BODY', false, 'desktop'), true)
+  assert.equal(input.spaceIsPanKey(' ', 'CANVAS', false, 'desktop'), true)
+  assert.equal(input.spaceIsPanKey(' ', 'BODY', false, 'tablet'), false)
+  assert.equal(input.spaceIsPanKey('a', 'BODY', false, 'desktop'), false)
+  for (const tag of ['input', 'TEXTAREA', 'select', 'BUTTON', 'a']) assert.equal(input.spaceIsPanKey(' ', tag, false, 'desktop'), false, tag)
+  assert.equal(input.spaceIsPanKey(' ', 'DIV', true, 'desktop'), false)
+})
+
+test('App wires the wheel listener (not passive, Desktop mode only), the pan drag and its release', async () => {
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /canvas\.addEventListener\('wheel', onWheel, \{ passive: false \}\)/)
+  assert.match(app, /const onWheel = \(event: WheelEvent\) => \{\n      if \(inputModeRef\.current !== 'desktop'\) return\n      event\.preventDefault\(\)\n      if \(anyGestureBusy\(\) \|\| touchNav\.touchCount\(\) > 0\) return/)
+  assert.match(app, /if \(event\.ctrlKey && !zoomAllowed\) return/)
+  // the pan branch sits before the tool gate, refuses while another gesture or a finger is active, and locks touch out like a mouse stroke
+  assert.match(app, /if \(startsMousePan\(event\.pointerType, event\.button, inputModeRef\.current, spaceHeldRef\.current\)\) \{\n[^\n]*\n      if \(anyGestureActive \|\| mousePanRef\.current !== null \|\| touchNav\.touchCount\(\) > 0\) return/)
+  assert.ok(app.indexOf('startsMousePan(event.pointerType') < app.indexOf('if (!canStartCanvasGesture(event.pointerType'))
+  assert.match(app, /mousePanRef\.current = \{ pointerId: event\.pointerId, start: getScreenPoint\(event\), startViewport: viewportRef\.current \}\n      touchNav\.mouseDown\(\)/)
+  assert.match(app, /\|\| umlToolboxDragRef\.current !== null \|\| mousePanRef\.current !== null/)
+  assert.equal((app.match(/if \(mousePanRef\.current\?\.pointerId === event\.pointerId\) \{\n      mousePanRef\.current = null/g) ?? []).length, 2)
+  assert.match(app, /applyViewport\(panViewport\(mousePan\.startViewport, now\.x - mousePan\.start\.x, now\.y - mousePan\.start\.y\), true\)/)
+  // the pen never starts a pan: the pen path (touchNav.penDown, then the gate) is untouched
+  assert.match(app, /if \(event\.pointerType === 'pen'\) touchNav\.penDown\(\)/)
 })

@@ -44,14 +44,14 @@ import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitCla
 import { DEFAULT_TEXT_FONT_SIZE, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
-import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
+import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
 import { MAX_PAGES, canAddPage, clampPageIndex, insertPageAfter, insertPageAt, removePageAt, writeLastPage } from './pages'
 import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, loadInputMode, pointerPressure, saveInputMode, type InputMode } from './desktopInput'
+import { canStartCanvasGesture, loadInputMode, pointerPressure, saveInputMode, spaceIsPanKey, startsMousePan, wheelViewport, type InputMode } from './desktopInput'
 
 
 const DOUBLE_TAP_MS = 400
@@ -243,6 +243,9 @@ function App() {
   }
   // True while the current canvas gesture was started by a mouse (hold-to-snap is off for it, unless the Shapes tool is on).
   const mouseGestureRef = useRef(false)
+  // Desktop pan: a middle-button or Space + left drag moves the view (Desktop mode only).
+  const mousePanRef = useRef<{ pointerId: number; start: Point; startViewport: Viewport } | null>(null)
+  const spaceHeldRef = useRef(false)
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
   if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
   const touchNav = touchNavRef.current
@@ -1469,6 +1472,52 @@ function App() {
     renderAll()
   }
 
+  const applyViewportRef = useRef(applyViewport)
+  applyViewportRef.current = applyViewport
+
+  // Wheel pan / Ctrl + wheel zoom, Space held for pan. The wheel listener is not passive so the page does not scroll or zoom.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const anyGestureBusy = () => activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || mousePanRef.current !== null
+    const setPanCursor = () => { canvas.style.cursor = mousePanRef.current ? 'grabbing' : spaceHeldRef.current ? 'grab' : '' }
+    const onWheel = (event: WheelEvent) => {
+      if (inputModeRef.current !== 'desktop') return
+      event.preventDefault()
+      if (anyGestureBusy() || touchNav.touchCount() > 0) return
+      const rect = canvas.getBoundingClientRect()
+      const zoomAllowed = !navigationSettingsRef.current.zoomLocked
+      if (event.ctrlKey && !zoomAllowed) return
+      const next = wheelViewport(viewportRef.current, event, { x: event.clientX - rect.left, y: event.clientY - rect.top }, rect.height, zoomAllowed)
+      if (next !== viewportRef.current) applyViewportRef.current(next, true)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!spaceIsPanKey(event.key, target?.tagName ?? 'BODY', Boolean(target?.isContentEditable), inputModeRef.current)) return
+      if (textEditorRef.current) return
+      event.preventDefault()
+      spaceHeldRef.current = true
+      setPanCursor()
+    }
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== ' ') return
+      spaceHeldRef.current = false
+      setPanCursor()
+    }
+    const onBlur = () => { spaceHeldRef.current = false; setPanCursor() }
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      canvas.removeEventListener('wheel', onWheel)
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const scheduleRender = useCallback(() => {
     const diagnostics = performanceDiagnosticsRef.current
     const alreadyPending = frameRef.current !== null
@@ -1927,7 +1976,19 @@ function App() {
       return
     }
     const penGestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null
-    const anyGestureActive = penGestureActive || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null
+    const anyGestureActive = penGestureActive || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
+    if (startsMousePan(event.pointerType, event.button, inputModeRef.current, spaceHeldRef.current)) {
+      // Middle button, or Space + left button: drag the view instead of using a tool. Refused while any other gesture or finger is active.
+      if (anyGestureActive || mousePanRef.current !== null || touchNav.touchCount() > 0) return
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      finishSpringBackNow()
+      if (textEditorRef.current) commitTextEditor()
+      mousePanRef.current = { pointerId: event.pointerId, start: getScreenPoint(event), startViewport: viewportRef.current }
+      touchNav.mouseDown()
+      event.currentTarget.style.cursor = 'grabbing'
+      return
+    }
     if (!canStartCanvasGesture(event.pointerType, event.button, inputModeRef.current, penGestureActive, anyGestureActive, touchNav.touchCount() > 0)) return
     mouseGestureRef.current = event.pointerType === 'mouse'
     if (mouseGestureRef.current) touchNav.mouseDown()
@@ -2172,6 +2233,13 @@ function App() {
     if (PEN_BUTTON_DEBUG) showPenButtonState('move', event)
     if (event.pointerType === 'pen') touchNav.penSeen(performance.now())
     moveEraserCursor(event)
+    const mousePan = mousePanRef.current
+    if (mousePan && mousePan.pointerId === event.pointerId) {
+      event.preventDefault()
+      const now = getScreenPoint(event)
+      applyViewport(panViewport(mousePan.startViewport, now.x - mousePan.start.x, now.y - mousePan.start.y), true)
+      return
+    }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       event.preventDefault()
       updateTouchPoint(event)
@@ -2331,6 +2399,11 @@ function App() {
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
+    if (mousePanRef.current?.pointerId === event.pointerId) {
+      mousePanRef.current = null
+      event.currentTarget.style.cursor = spaceHeldRef.current ? 'grab' : ''
+      return
+    }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
@@ -2455,6 +2528,11 @@ function App() {
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
+    if (mousePanRef.current?.pointerId === event.pointerId) {
+      mousePanRef.current = null
+      event.currentTarget.style.cursor = spaceHeldRef.current ? 'grab' : ''
+      return
+    }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
@@ -2713,6 +2791,7 @@ function App() {
           aria-label="White drawing canvas. Use an S Pen to draw."
           onPointerDown={onPointerDown}
           onContextMenu={(event) => event.preventDefault()}
+          onMouseDown={(event) => { if (event.button === 1 && inputModeRef.current === 'desktop') event.preventDefault() }}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerEnd}

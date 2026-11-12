@@ -1,11 +1,13 @@
 /**
- * Desktop input (steps 1 and 2 of the desktop-mode plan).
+ * Desktop input (steps 1 to 3 of the desktop-mode plan).
  *
  * InkPad is pen-first. A user-chosen "Desktop" input mode (a switch in the menu, off by default)
  * lets a mouse draw and edit on the canvas with the existing tools. In Tablet mode, the default,
  * the canvas behaves exactly as before. Nothing here is saved in a diagram: the mode is a
  * per-device preference, like the navigation settings.
  */
+
+import { MAX_ZOOM, MIN_ZOOM, panViewport, zoomViewportAt, type Viewport } from './viewport'
 
 export type InputMode = 'tablet' | 'desktop'
 
@@ -76,4 +78,52 @@ export function canStartCanvasGesture(
 ): boolean {
   if (!acceptsPointer(pointerType, button, mode)) return false
   return pointerType === 'pen' ? !penGestureActive : !anyGestureActive && !touchActive
+}
+
+/**
+ * Step 3: moving around with a mouse or trackpad (Desktop mode only).
+ * - A wheel or two-finger trackpad scroll pans the view; Shift turns a vertical wheel into a sideways pan.
+ * - Ctrl + wheel (and a trackpad pinch, which browsers report as Ctrl + wheel) zooms toward the pointer.
+ * - A middle-button drag, or a left-button drag while Space is held, pans.
+ */
+
+/** Browsers report wheel distances in pixels, lines or pages (WheelEvent.deltaMode 0, 1, 2). */
+export function wheelDeltaPixels(delta: number, deltaMode: number, pageHeight: number): number {
+  if (deltaMode === 1) return delta * 16
+  if (deltaMode === 2) return delta * pageHeight
+  return delta
+}
+
+/** The most a single wheel event may zoom by: keeps one notch of a mouse wheel to about a 1.35x step. */
+export const WHEEL_ZOOM_MAX_DELTA = 30
+export const WHEEL_ZOOM_SENSITIVITY = 0.01
+
+export type WheelInput = { deltaX: number; deltaY: number; deltaMode: number; ctrlKey: boolean; shiftKey: boolean }
+
+/** The view after one wheel event. `point` is the pointer's position inside the canvas, in screen units. */
+export function wheelViewport(viewport: Viewport, wheel: WheelInput, point: { x: number; y: number }, pageHeight: number, canZoom = true): Viewport {
+  const dx = wheelDeltaPixels(wheel.deltaX, wheel.deltaMode, pageHeight)
+  const dy = wheelDeltaPixels(wheel.deltaY, wheel.deltaMode, pageHeight)
+  if (wheel.ctrlKey) {
+    if (!canZoom) return viewport
+    const clamped = Math.max(-WHEEL_ZOOM_MAX_DELTA, Math.min(WHEEL_ZOOM_MAX_DELTA, dy))
+    const scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, viewport.scale * Math.exp(-clamped * WHEEL_ZOOM_SENSITIVITY)))
+    return zoomViewportAt(viewport, scale, { x: point.x, y: point.y, pressure: 1 })
+  }
+  // Shift + a plain vertical wheel pans sideways (trackpads already send deltaX themselves).
+  if (wheel.shiftKey && dx === 0) return panViewport(viewport, -dy, 0)
+  return panViewport(viewport, -dx, -dy)
+}
+
+/** Whether a mouse press starts a pan instead of a tool gesture: middle button, or left button with Space held. */
+export function startsMousePan(pointerType: string, button: number, mode: InputMode, spaceHeld: boolean): boolean {
+  if (pointerType !== 'mouse' || mode !== 'desktop') return false
+  return button === 1 || (button === 0 && spaceHeld)
+}
+
+/** Whether a key press should be read as "Space held for panning": only when nothing that types or clicks has focus. */
+export function spaceIsPanKey(key: string, targetTag: string, isEditable: boolean, mode: InputMode): boolean {
+  if (mode !== 'desktop' || key !== ' ') return false
+  if (isEditable) return false
+  return !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(targetTag.toUpperCase())
 }
