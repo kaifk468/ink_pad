@@ -388,6 +388,8 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 .clear-selection-button { height: 34px; padding: 0 8px; border: 1px solid #e4e7ef; border-radius: 8px; background: #fff; color: #505664; font-size: 10px; font-weight: 600; cursor: pointer; }
 .clear-selection-button:hover:not(:disabled) { background: #f2f4fa; }
 .clear-selection-button:disabled { opacity: .38; cursor: default; }
+.delete-selection-button { color: #b3261e; border-color: #f0cfcc; }
+.delete-selection-button:hover:not(:disabled) { background: #fdf0ef; }
 .relationship-controls { display: flex; align-items: center; gap: 6px; padding-left: 12px; border-left: 1px solid #eceef1; }
 .relationship-label { color: #777c85; font-size: 11px; font-weight: 600; }
 .relationship-select { max-width: 142px; height: 34px; padding: 0 8px; border: 1px solid #e4e7ef; border-radius: 9px; background: #fff; color: #424751; font: inherit; font-size: 11px; }

@@ -26,13 +26,16 @@ type ContextPanelProps = {
   onTextSize: (size: number) => void
   selectedItemCount: number
   onClearSelection: () => void
+  /** True when something is selected that Delete can remove (including a single selected box). */
+  canDelete: boolean
+  onDeleteSelection: () => void
   relationship: RelationshipProps | null
 }
 
 /** Settings that only appear when the active tool or selection needs them. */
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.showTextSizes && props.selectedItemCount === 0 && !relationship) return null
+  if (!props.showStyle && !props.showTextSizes && props.selectedItemCount === 0 && !props.canDelete && !relationship) return null
   return (
     <aside className="context-panel" aria-label="Tool options">
       {props.showStyle && <>
@@ -91,6 +94,7 @@ export function ContextPanel(props: ContextPanelProps) {
         ))}
       </div>}
       {props.selectedItemCount > 0 && <button className="clear-selection-button" type="button" onClick={props.onClearSelection}>Clear selection</button>}
+      {props.canDelete && <button className="clear-selection-button delete-selection-button" type="button" aria-label="Delete selection" title="Delete the selected items" onClick={props.onDeleteSelection}>Delete</button>}
       {relationship && <div className="relationship-controls" role="group" aria-label="Selected connector relationship">
         <label className="relationship-label" htmlFor="connector-relationship-type">Relationship</label>
         <select

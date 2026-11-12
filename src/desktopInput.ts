@@ -1,5 +1,5 @@
 /**
- * Desktop input (steps 1 to 4 of the desktop-mode plan).
+ * Desktop input (steps 1 to 5 of the desktop-mode plan).
  *
  * InkPad is pen-first. A user-chosen "Desktop" input mode (a switch in the menu, off by default)
  * lets a mouse draw and edit on the canvas with the existing tools. In Tablet mode, the default,
@@ -133,6 +133,7 @@ export function spaceIsPanKey(key: string, targetTag: string, isEditable: boolea
  * - Ctrl/Cmd + Z undoes; Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y redoes.
  * - Ctrl/Cmd + "+" / "-" / 0 zoom in, zoom out and reset the view.
  * - Escape deselects (it never cancels a stroke or closes anything).
+ * - Delete or Backspace deletes the selection; Ctrl/Cmd + A selects everything on the page (step 5).
  * - A plain letter picks a tool, and picking the tool already active leaves it active ("set", not "toggle"):
  *   P pen, V select, E eraser, T text, L lasso, C connector, B class box.
  */
@@ -144,6 +145,8 @@ export type KeyCommand =
   | { kind: 'zoomOut' }
   | { kind: 'zoomReset' }
   | { kind: 'deselect' }
+  | { kind: 'deleteSelection' }
+  | { kind: 'selectAll' }
   | { kind: 'tool'; tool: KeyTool }
 
 export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox' }
@@ -160,11 +163,13 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if (key === '=' || key === '+') return { kind: 'zoomIn' }
     if (key === '-' || key === '_') return { kind: 'zoomOut' }
     if (key === '0') return { kind: 'zoomReset' }
+    if (key === 'a' && !event.shiftKey) return { kind: 'selectAll' }
     return null
   }
   // Everything below is a bare key: any modifier means the person meant something else (a browser shortcut, say).
   if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return null
   if (key === 'Escape') return event.repeat ? null : { kind: 'deselect' }
+  if (key === 'Delete' || key === 'Backspace') return event.repeat ? null : { kind: 'deleteSelection' }
   if (event.repeat) return null
   const tool = TOOL_KEYS[key]
   return tool ? { kind: 'tool', tool } : null

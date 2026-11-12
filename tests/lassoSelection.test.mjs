@@ -571,3 +571,51 @@ test('relationship type changes reset invisible association direction', () => {
   assert.equal(association.reversed, false)
   assert.deepEqual(model.getConnectorRenderSpec(association), { lineStyle: 'solid', symbol: 'none', endpoint: null })
 })
+
+test('delete-selection removes exactly the selected items, keeps the order of the rest, and returns the same array when nothing matches', () => {
+  const a = stroke(1, [[0, 0], [10, 10]])
+  const b = rectangle(1, 20, 40, 100, 80)
+  const c = stroke(2, [[50, 50], [60, 60]])
+  const items = [a, b, c]
+  assert.deepEqual(model.deleteCanvasItemsByKey(items, new Set(['stroke:2', 'stroke:1'])), [b])
+  assert.deepEqual(model.deleteCanvasItemsByKey(items, new Set(['rectangle:1'])), [a, c])
+  assert.equal(model.deleteCanvasItemsByKey(items, new Set()), items)
+  assert.equal(model.deleteCanvasItemsByKey(items, new Set(['stroke:99'])), items)
+  assert.equal(items.length, 3, 'the original list is not changed')
+})
+
+test('delete-selection of a box leaves its connectors loose at that end, like the object eraser; deleting a connector alone leaves the boxes', () => {
+  const left = rectangle(1, 20, 40, 100, 80)
+  const right = rectangle(3, 240, 40, 100, 80)
+  const connector = model.createConnector(2,
+    { x: 120, y: 80, pressure: 1 }, { x: 240, y: 80, pressure: 1 }, '#202124', 4,
+    { rectangleId: 1, offsetX: 100, offsetY: 40 }, { rectangleId: 3, offsetX: 0, offsetY: 40 })
+  const afterBox = model.deleteCanvasItemsByKey([left, connector, right], new Set(['rectangle:1']))
+  assert.equal(afterBox.length, 2)
+  const loose = afterBox.find((item) => item.kind === 'connector')
+  assert.equal(loose.startAttachment, undefined)
+  assert.deepEqual(loose.endAttachment, connector.endAttachment)
+  const afterConnector = model.deleteCanvasItemsByKey([left, connector, right], new Set(['connector:2']))
+  assert.deepEqual(afterConnector, [left, right])
+})
+
+test('delete-selection is one undo step that restores everything, and redo removes it again', () => {
+  const box = rectangle(1, 20, 40, 100, 80)
+  const ink = stroke(1, [[0, 0], [10, 10]])
+  const connector = model.createConnector(2, { x: 120, y: 80, pressure: 1 }, { x: 240, y: 100, pressure: 1 }, '#202124', 4, { rectangleId: 1, offsetX: 100, offsetY: 40 })
+  const history = new model.CanvasSnapshotHistory()
+  const original = [box, ink, connector]
+  history.record(original)
+  const after = model.deleteCanvasItemsByKey(original, new Set(['rectangle:1', 'stroke:1']))
+  const undone = history.undo(after)
+  assert.deepEqual(undone, original)
+  const redone = history.redo(undone)
+  assert.deepEqual(redone, after)
+})
+
+test('select-all lists every item on the page exactly once, in the key format the selection uses', () => {
+  const items = [stroke(1, [[0, 0], [1, 1]]), rectangle(1, 0, 0, 10, 10), stroke(2, [[2, 2], [3, 3]])]
+  assert.deepEqual(model.allCanvasItemKeys(items), ['stroke:1', 'rectangle:1', 'stroke:2'])
+  assert.deepEqual(model.allCanvasItemKeys([]), [])
+  assert.equal(new Set(model.allCanvasItemKeys(items)).size, 3)
+})

@@ -246,6 +246,31 @@ export function canvasItemKey(item: CanvasItem): string {
   return `${item.kind}:${item.id}`
 }
 
+/** The keys of every item on the page (select all). */
+export function allCanvasItemKeys(items: readonly CanvasItem[]): string[] {
+  return items.map(canvasItemKey)
+}
+
+/**
+ * The items left after deleting the ones whose keys are given. A connector attached to a deleted
+ * rectangle stays, loose at that end (the same as erasing the rectangle with the object eraser).
+ * Returns the same array when nothing matched.
+ */
+export function deleteCanvasItemsByKey(items: CanvasItem[], keys: ReadonlySet<string>): CanvasItem[] {
+  if (keys.size === 0) return items
+  const removedRectangles = new Set<number>()
+  const kept: CanvasItem[] = []
+  for (const item of items) {
+    if (keys.has(canvasItemKey(item))) {
+      if (item.kind === 'rectangle') removedRectangles.add(item.id)
+    } else {
+      kept.push(item)
+    }
+  }
+  if (kept.length === items.length) return items
+  return removedRectangles.size > 0 ? detachConnectorsFromRectangles(kept, removedRectangles) : kept
+}
+
 export function getRectangleResizeHandles(rectangle: RectangleBounds): Array<{ handle: RectangleResizeHandle; point: Point }> {
   const middleX = rectangle.x + rectangle.width / 2
   const middleY = rectangle.y + rectangle.height / 2

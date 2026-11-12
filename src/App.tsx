@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
-import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { tidyItems, tidyScope } from './tidyLayout'
 import { HLD_DEFAULT_SIZE, createHldShape, type HldShape } from './hldShapes'
@@ -971,8 +971,38 @@ function App() {
     ctx.restore()
   }, [drawMinimapItems, getCurrentMinimapBounds, pageBackground, pageTemplate])
 
+  // The single selected box (select tool) is kept in a ref for the gesture code; the state copy only lets the toolbar show Delete for it.
+  const [hasSelectedRectangle, setHasSelectedRectangle] = useState(false)
   const setSelectedRectangle = (id: number | null) => {
     selectedRectangleIdRef.current = id
+    setHasSelectedRectangle(id !== null)
+  }
+
+  // Delete the selected items (lasso or group selection, a selected connector, or the single selected box) as one undo step.
+  const deleteSelection = (): boolean => {
+    const keys = new Set(selectedKeysRef.current)
+    if (selectedRectangleIdRef.current !== null) keys.add(`rectangle:${selectedRectangleIdRef.current}`)
+    if (keys.size === 0) return false
+    const remaining = deleteCanvasItemsByKey(strokesRef.current, keys)
+    if (remaining === strokesRef.current) return false
+    saveHistory()
+    strokesRef.current = remaining
+    setHasInk(strokesRef.current.length > 0)
+    updateSelectedItems([])
+    setSelectedRectangle(null)
+    renderAll()
+    return true
+  }
+
+  // Select every item on the page, switching to the select tool first when no selecting tool is active so the selection can be moved.
+  const selectAllItems = (): boolean => {
+    const keys = allCanvasItemKeys(strokesRef.current)
+    if (keys.length === 0) return false
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    setSelectedRectangle(null)
+    updateSelectedItems(keys)
+    renderAll()
+    return true
   }
 
   const renderAll = useCallback((benchmarkBackground?: { template: PageTemplate; dpr?: number; viewport?: Viewport; onBackgroundRendered: (durationMs: number) => void }) => {
@@ -2796,6 +2826,8 @@ function App() {
         if (selectedKeysRef.current.size === 0 && selectedRectangleIdRef.current === null) return false
         clearLassoSelection()
         return true
+      case 'deleteSelection': return deleteSelection()
+      case 'selectAll': return selectAllItems()
       case 'tool':
         setOptionsFor(null)
         switch (command.tool) {
@@ -3020,6 +3052,8 @@ function App() {
         onTextSize={setTextSize}
         selectedItemCount={selectedItemCount}
         onClearSelection={clearLassoSelection}
+        canDelete={selectedItemCount > 0 || hasSelectedRectangle}
+        onDeleteSelection={() => { deleteSelection() }}
         relationship={selectedConnectorId !== null && selectedConnectorType !== null
           ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
           : null}

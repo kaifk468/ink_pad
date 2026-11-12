@@ -269,7 +269,7 @@ test('Ctrl/Cmd + plus, minus and 0 zoom in, out and reset; other Ctrl combinatio
   assert.deepEqual(input.keyCommand(key('+', { ctrlKey: true, shiftKey: true }), 'desktop'), { kind: 'zoomIn' })
   assert.deepEqual(input.keyCommand(key('-', { ctrlKey: true }), 'desktop'), { kind: 'zoomOut' })
   assert.deepEqual(input.keyCommand(key('0', { metaKey: true }), 'desktop'), { kind: 'zoomReset' })
-  for (const k of ['a', 's', 'c', 'v', 'p', 'r', 'w', 't', 'l']) assert.equal(input.keyCommand(key(k, { ctrlKey: true }), 'desktop'), null, `Ctrl+${k}`)
+  for (const k of ['s', 'c', 'v', 'p', 'r', 'w', 't', 'l']) assert.equal(input.keyCommand(key(k, { ctrlKey: true }), 'desktop'), null, `Ctrl+${k}`)
 })
 
 test('plain letters pick tools (any case), and only with no modifier and no auto-repeat', () => {
@@ -281,7 +281,7 @@ test('plain letters pick tools (any case), and only with no modifier and no auto
     assert.equal(input.keyCommand(key(k, { altKey: true }), 'desktop'), null)
     assert.equal(input.keyCommand(key(k, { shiftKey: true }), 'desktop') !== null, false, 'Shift+letter is not a tool key')
   }
-  for (const k of ['a', 'x', '1', ' ', 'Enter', 'Delete', 'Backspace', 'ArrowLeft']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
+  for (const k of ['a', 'x', '1', ' ', 'Enter', 'ArrowLeft']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
 })
 
 test('Escape only deselects; with a modifier or held down it does nothing', () => {
@@ -291,7 +291,7 @@ test('Escape only deselects; with a modifier or held down it does nothing', () =
 })
 
 test('in Tablet mode no key does anything', () => {
-  for (const k of [key('z', { ctrlKey: true }), key('y', { ctrlKey: true }), key('=', { ctrlKey: true }), key('0', { ctrlKey: true }), key('Escape'), ...'pvetlcb'.split('').map((c) => key(c))]) {
+  for (const k of [key('z', { ctrlKey: true }), key('y', { ctrlKey: true }), key('=', { ctrlKey: true }), key('0', { ctrlKey: true }), key('Escape'), key('Delete'), key('Backspace'), key('a', { ctrlKey: true }), ...'pvetlcb'.split('').map((c) => key(c))]) {
     assert.equal(input.keyCommand(k, 'tablet'), null)
   }
 })
@@ -324,4 +324,34 @@ test('tool keys set a tool rather than toggle it', async () => {
   assert.match(app, /case 'pen': selectPenMode\(\); break/)
   // the eraser key sets the eraser on (the toolbar's double-tap options and toggle are not used)
   assert.match(app, /clearLassoSelection\(\)\n\s*setEraser\(true\)\n\s*break/)
+})
+
+test('Delete and Backspace delete the selection; Ctrl/Cmd + A selects all; modifiers and auto-repeat do nothing', () => {
+  for (const k of ['Delete', 'Backspace']) {
+    assert.deepEqual(input.keyCommand(key(k), 'desktop'), { kind: 'deleteSelection' })
+    assert.equal(input.keyCommand(key(k, { repeat: true }), 'desktop'), null, 'holding Delete does not delete more')
+    assert.equal(input.keyCommand(key(k, { shiftKey: true }), 'desktop'), null)
+    assert.equal(input.keyCommand(key(k, { ctrlKey: true }), 'desktop'), null)
+  }
+  for (const mod of [{ ctrlKey: true }, { metaKey: true }]) {
+    assert.deepEqual(input.keyCommand(key('a', mod), 'desktop'), { kind: 'selectAll' })
+    assert.deepEqual(input.keyCommand(key('A', mod), 'desktop'), { kind: 'selectAll' })
+    assert.equal(input.keyCommand(key('a', { ...mod, shiftKey: true }), 'desktop'), null)
+    assert.equal(input.keyCommand(key('a', { ...mod, altKey: true }), 'desktop'), null)
+  }
+  assert.equal(input.keyCommand(key('a'), 'desktop'), null, 'a bare A is not a command')
+})
+
+test('App deletes the selection as one undo step (keys and the single selected box), clears the selection, and select-all moves to the select tool first', async () => {
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /const deleteSelection = \(\): boolean => \{\n    const keys = new Set\(selectedKeysRef\.current\)\n    if \(selectedRectangleIdRef\.current !== null\) keys\.add\(`rectangle:\$\{selectedRectangleIdRef\.current\}`\)\n    if \(keys\.size === 0\) return false\n    const remaining = deleteCanvasItemsByKey\(strokesRef\.current, keys\)\n    if \(remaining === strokesRef\.current\) return false\n    saveHistory\(\)\n    strokesRef\.current = remaining\n    setHasInk\(strokesRef\.current\.length > 0\)\n    updateSelectedItems\(\[\]\)\n    setSelectedRectangle\(null\)\n    renderAll\(\)\n    return true/)
+  assert.match(app, /if \(!selectionMode && !lassoMode\) toggleSelectTool\(\)\n    setSelectedRectangle\(null\)\n    updateSelectedItems\(keys\)/)
+  assert.match(app, /case 'deleteSelection': return deleteSelection\(\)\n\s*case 'selectAll': return selectAllItems\(\)/)
+  // the toolbar button calls the same function, and shows for a selection or a single selected box
+  assert.match(app, /canDelete=\{selectedItemCount > 0 \|\| hasSelectedRectangle\}\n\s*onDeleteSelection=\{\(\) => \{ deleteSelection\(\) \}\}/)
+  const panel = await readFile(new URL('../src/app/ContextPanel.tsx', import.meta.url), 'utf8')
+  assert.match(panel, /props\.canDelete && <button className="clear-selection-button delete-selection-button" type="button" aria-label="Delete selection"[^>]*onClick=\{props\.onDeleteSelection\}>Delete<\/button>/)
+  // saved format untouched: deleting only removes items, so no new field or version
+  const format = await readFile(new URL('../src/documentFormat.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(format, /deleteSelection|selectAll|canDelete/)
 })
