@@ -51,6 +51,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
+import { canStartCanvasGesture, loadInputMode, type InputMode } from './desktopInput'
 
 
 const DOUBLE_TAP_MS = 400
@@ -231,6 +232,9 @@ function App() {
   const [navigationSettings, setNavigationSettings] = useState<NavigationSettings>(() => loadNavigationSettings())
   const navigationSettingsRef = useRef(navigationSettings)
   navigationSettingsRef.current = navigationSettings
+  // Per-device input mode. Always 'tablet' until the Desktop switch exists (desktop-mode plan, step 2).
+  const inputModeRef = useRef<InputMode | null>(null)
+  if (inputModeRef.current === null) inputModeRef.current = loadInputMode()
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
   if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
   const touchNav = touchNavRef.current
@@ -1910,7 +1914,9 @@ function App() {
       touchNav.down(event.pointerId, getScreenPoint(event), performance.now())
       return
     }
-    if (event.pointerType !== 'pen' || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null) return
+    const penGestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null
+    const anyGestureActive = penGestureActive || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null
+    if (!canStartCanvasGesture(event.pointerType, event.button, inputModeRef.current ?? 'tablet', penGestureActive, anyGestureActive)) return
     event.preventDefault()
     finishSpringBackNow()
     const rawPoint = getPoint(event)
