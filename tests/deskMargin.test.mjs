@@ -77,3 +77,13 @@ test('the desk around the page is not writable', () => {
 test('the page sits on the desk with an edge shadow', () => {
   assert.match(styles, /\.sheet-layer \{[^}]*box-shadow:[^;]*0 2px 12px/)
 })
+
+test('with the screen locked the pen colours stay; only the avatar and reconnect pill hide', async () => {
+  const account = await readFile(new URL('../src/app/AccountButton.tsx', import.meta.url), 'utf8')
+  assert.match(account, /hideAccount\?: boolean/)
+  assert.match(account, /if \(props\.hideAccount && !props\.leading\) return null/)
+  assert.match(account, /\{props\.leading\}/)
+  assert.match(account, /!props\.hideAccount && props\.needsReconnect/)
+  assert.match(account, /\{!props\.hideAccount && \(\s*<button className=\{`account-button/)
+  assert.match(app, /hideAccount=\{navigationSettings\.zoomLocked\}.*leading=\{penModeActive \? <PenColors/)
+})

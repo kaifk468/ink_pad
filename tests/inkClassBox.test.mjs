@@ -167,6 +167,7 @@ test('App wires the tool, drag-to-size creation, ink capture and divider draggin
   assert.doesNotMatch(tray, /onInkClass/)
   assert.match(tray, /Typed class box/)
   assert.match(app, /!navigationSettings\.zoomLocked && \(\s*<TopLeftBar/)
-  assert.match(app, /!navigationSettings\.zoomLocked && <AccountButton/)
+  assert.match(app, /<AccountButton.*hideAccount=\{navigationSettings\.zoomLocked\}/)
+  assert.doesNotMatch(app, /!navigationSettings\.zoomLocked && <AccountButton/)
   assert.match(app, /<HistoryBar canUndo/)
 })

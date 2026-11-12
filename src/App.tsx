@@ -2825,7 +2825,7 @@ function App() {
           <div className={`navigator-status status-${saveStatus}`} role="status">{statusLabel(saveStatus, storage.kind)}</div>
         </aside>
       </section>
-      {/* With the zoom lock on the screen is in focus mode: the menu, folders, title and account hide; undo/redo, the dock and the zoom controls stay. */}
+      {/* With the zoom lock on the screen is in focus mode: the menu, folders, title and account hide; undo/redo, the dock, the pen colours and the zoom controls stay. */}
       {!navigationSettings.zoomLocked && (
         <TopLeftBar
           title={docTitle}
@@ -2857,7 +2857,7 @@ function App() {
         />
       )}
       <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
-      {!navigationSettings.zoomLocked && <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} onOpenStorage={() => setStoragePanelOpen(true)} leading={penModeActive ? <PenColors color={color} onColor={selectColor} /> : undefined} />}
+      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={navigationSettings.zoomLocked} onOpenStorage={() => setStoragePanelOpen(true)} leading={penModeActive ? <PenColors color={color} onColor={selectColor} /> : undefined} />
       <ContextPanel
         showStyle={optionsFor === 'pen' && penModeActive}
         color={color}

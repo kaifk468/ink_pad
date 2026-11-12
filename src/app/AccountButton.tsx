@@ -7,6 +7,8 @@ type AccountButtonProps = {
   /** Drive is the chosen storage but Google needs a tap before saving can continue. */
   needsReconnect: boolean
   onReconnect: () => void
+  /** Focus mode (screen locked): the avatar and reconnect pill hide, but the extra controls in `leading` stay. */
+  hideAccount?: boolean
   /** Opens the Storage panel. */
   onOpenStorage: () => void
   /** Extra controls shown to the left of the avatar (the pen colours). */
@@ -31,15 +33,18 @@ export function AccountButton(props: AccountButtonProps) {
   const { profile } = props
   const name = profile ? displayName(profile) : null
   const label = name ? `${name}, Google Drive. Open storage` : 'Storage and account'
+  if (props.hideAccount && !props.leading) return null
   return (
     <div className="account-control">
       {props.leading}
-      {props.needsReconnect && <button className="reconnect-pill" type="button" onClick={props.onReconnect}>Reconnect Drive</button>}
-      <button className={`account-button${profile ? ' has-profile' : ''}`} type="button" aria-label={label} title={name ?? 'Storage and account'} onClick={props.onOpenStorage}>
-        {profile
-          ? <Avatar profile={profile} />
-          : <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M4.5 20c1.2-3.6 4-5 7.5-5s6.3 1.4 7.5 5"/></svg>}
-      </button>
+      {!props.hideAccount && props.needsReconnect && <button className="reconnect-pill" type="button" onClick={props.onReconnect}>Reconnect Drive</button>}
+      {!props.hideAccount && (
+        <button className={`account-button${profile ? ' has-profile' : ''}`} type="button" aria-label={label} title={name ?? 'Storage and account'} onClick={props.onOpenStorage}>
+          {profile
+            ? <Avatar profile={profile} />
+            : <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M4.5 20c1.2-3.6 4-5 7.5-5s6.3 1.4 7.5 5"/></svg>}
+        </button>
+      )}
     </div>
   )
 }
