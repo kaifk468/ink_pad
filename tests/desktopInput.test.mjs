@@ -86,7 +86,7 @@ test('a mouse in desktop mode is blocked by any gesture in progress, so it canno
 
 test('App wires the gate through canStartCanvasGesture and keeps the touch block and the pen checks as they were', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /import \{ canStartCanvasGesture, loadInputMode, pointerPressure, saveInputMode, spaceIsPanKey, startsMousePan, wheelViewport, type InputMode \} from '\.\/desktopInput'/)
+  assert.match(app, /import \{ canStartCanvasGesture, isTypingTarget, keyCommand, loadInputMode, pointerPressure, saveInputMode, spaceIsPanKey, startsMousePan, wheelViewport, type InputMode, type KeyCommand \} from '\.\/desktopInput'/)
   // the mode is read once from storage (default tablet) and saved whenever the switch changes it
   assert.match(app, /const \[inputMode, setInputMode\] = useState<InputMode>\(\(\) => loadInputMode\(\)\)/)
   assert.match(app, /const updateInputMode = \(mode: InputMode\) => \{\s*inputModeRef\.current = mode\s*setInputMode\(mode\)\s*saveInputMode\(mode\)\s*\}/)
@@ -250,4 +250,78 @@ test('App wires the wheel listener (not passive, Desktop mode only), the pan dra
   assert.match(app, /applyViewport\(panViewport\(mousePan\.startViewport, now\.x - mousePan\.start\.x, now\.y - mousePan\.start\.y\), true\)/)
   // the pen never starts a pan: the pen path (touchNav.penDown, then the gate) is untouched
   assert.match(app, /if \(event\.pointerType === 'pen'\) touchNav\.penDown\(\)/)
+})
+
+const key = (k, over = {}) => ({ key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, ...over })
+
+test('Ctrl/Cmd + Z undoes, Ctrl/Cmd + Shift + Z and Ctrl/Cmd + Y redo (either letter case)', () => {
+  for (const mod of [{ ctrlKey: true }, { metaKey: true }]) {
+    assert.deepEqual(input.keyCommand(key('z', mod), 'desktop'), { kind: 'undo' })
+    assert.deepEqual(input.keyCommand(key('Z', { ...mod, shiftKey: true }), 'desktop'), { kind: 'redo' })
+    assert.deepEqual(input.keyCommand(key('y', mod), 'desktop'), { kind: 'redo' })
+  }
+  assert.deepEqual(input.keyCommand(key('z', { ctrlKey: true, repeat: true }), 'desktop'), { kind: 'undo' }, 'holding Ctrl+Z keeps undoing')
+  assert.equal(input.keyCommand(key('z', { ctrlKey: true, altKey: true }), 'desktop'), null)
+})
+
+test('Ctrl/Cmd + plus, minus and 0 zoom in, out and reset; other Ctrl combinations are left to the browser', () => {
+  assert.deepEqual(input.keyCommand(key('=', { ctrlKey: true }), 'desktop'), { kind: 'zoomIn' })
+  assert.deepEqual(input.keyCommand(key('+', { ctrlKey: true, shiftKey: true }), 'desktop'), { kind: 'zoomIn' })
+  assert.deepEqual(input.keyCommand(key('-', { ctrlKey: true }), 'desktop'), { kind: 'zoomOut' })
+  assert.deepEqual(input.keyCommand(key('0', { metaKey: true }), 'desktop'), { kind: 'zoomReset' })
+  for (const k of ['a', 's', 'c', 'v', 'p', 'r', 'w', 't', 'l']) assert.equal(input.keyCommand(key(k, { ctrlKey: true }), 'desktop'), null, `Ctrl+${k}`)
+})
+
+test('plain letters pick tools (any case), and only with no modifier and no auto-repeat', () => {
+  const tools = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox' }
+  for (const [k, tool] of Object.entries(tools)) {
+    assert.deepEqual(input.keyCommand(key(k), 'desktop'), { kind: 'tool', tool })
+    assert.deepEqual(input.keyCommand(key(k.toUpperCase()), 'desktop'), { kind: 'tool', tool })
+    assert.equal(input.keyCommand(key(k, { repeat: true }), 'desktop'), null)
+    assert.equal(input.keyCommand(key(k, { altKey: true }), 'desktop'), null)
+    assert.equal(input.keyCommand(key(k, { shiftKey: true }), 'desktop') !== null, false, 'Shift+letter is not a tool key')
+  }
+  for (const k of ['a', 'x', '1', ' ', 'Enter', 'Delete', 'Backspace', 'ArrowLeft']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
+})
+
+test('Escape only deselects; with a modifier or held down it does nothing', () => {
+  assert.deepEqual(input.keyCommand(key('Escape'), 'desktop'), { kind: 'deselect' })
+  assert.equal(input.keyCommand(key('Escape', { repeat: true }), 'desktop'), null)
+  assert.equal(input.keyCommand(key('Escape', { shiftKey: true }), 'desktop'), null)
+})
+
+test('in Tablet mode no key does anything', () => {
+  for (const k of [key('z', { ctrlKey: true }), key('y', { ctrlKey: true }), key('=', { ctrlKey: true }), key('0', { ctrlKey: true }), key('Escape'), ...'pvetlcb'.split('').map((c) => key(c))]) {
+    assert.equal(input.keyCommand(k, 'tablet'), null)
+  }
+})
+
+test('shortcuts are not taken from text fields, dropdowns or editable text; buttons and the page body are fine', () => {
+  for (const tag of ['input', 'TEXTAREA', 'Select']) assert.equal(input.isTypingTarget(tag, false), true, tag)
+  assert.equal(input.isTypingTarget('DIV', true), true)
+  for (const tag of ['BODY', 'CANVAS', 'BUTTON', 'MAIN']) assert.equal(input.isTypingTarget(tag, false), false, tag)
+})
+
+test('App runs a key only outside panels, dialogs, text editing and gestures, and only after the typing check', async () => {
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /if \(filePanelOpen \|\| storagePanelOpen \|\| libraryOpen \|\| performanceDiagnosticsOpen \|\| textEditor \|\| textEditorRef\.current \|\| classBoxEditor\) return false/)
+  const gesture = app.match(/const gestureActive = ([^\n]+)\n/)[1]
+  for (const ref of ['activePointerRef', 'activeConnectorRef', 'activeDragRef', 'activeResizeRef', 'activeDividerRef', 'activeLassoRef', 'lassoDragRef', 'textTapRef', 'classTapRef', 'activeObjectEraserRef', 'minimapDragPointerRef', 'umlToolboxDragRef', 'mousePanRef']) assert.ok(gesture.includes(ref + '.current !== null'), ref)
+  assert.match(app, /if \(gestureActive \|\| touchNav\.touchCount\(\) > 0\) return false/)
+  assert.match(app, /const command = keyCommand\(event, inputModeRef\.current\)\n      if \(!command\) return\n      const target = event\.target as HTMLElement \| null\n      if \(isTypingTarget\([^\n]*\)\) return\n      if \(keyActionsRef\.current\(command\)\) event\.preventDefault\(\)/)
+  // zoom keys respect the zoom lock; Escape only clears a selection and says "not handled" when there is none
+  assert.equal((app.match(/case 'zoom(In|Out|Reset)': if \(!navigationSettingsRef\.current\.zoomLocked\)/g) ?? []).length, 3)
+  assert.match(app, /case 'deselect':\n\s*if \(selectedKeysRef\.current\.size === 0 && selectedRectangleIdRef\.current === null\) return false\n\s*clearLassoSelection\(\)/)
+})
+
+test('tool keys set a tool rather than toggle it', async () => {
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /case 'select': if \(!selectionMode\) toggleSelectTool\(\); break/)
+  assert.match(app, /case 'text': if \(!textMode\) toggleTextTool\(\); break/)
+  assert.match(app, /case 'lasso': if \(!lassoMode\) toggleLassoTool\(\); break/)
+  assert.match(app, /case 'connector': if \(!connectorMode\) toggleConnectorTool\(\); break/)
+  assert.match(app, /case 'classBox': if \(!\(classMode && inkClassTool && hldShapeTool === null\)\) toggleInkClassTool\(\); break/)
+  assert.match(app, /case 'pen': selectPenMode\(\); break/)
+  // the eraser key sets the eraser on (the toolbar's double-tap options and toggle are not used)
+  assert.match(app, /clearLassoSelection\(\)\n\s*setEraser\(true\)\n\s*break/)
 })

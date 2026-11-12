@@ -1,5 +1,5 @@
 /**
- * Desktop input (steps 1 to 3 of the desktop-mode plan).
+ * Desktop input (steps 1 to 4 of the desktop-mode plan).
  *
  * InkPad is pen-first. A user-chosen "Desktop" input mode (a switch in the menu, off by default)
  * lets a mouse draw and edit on the canvas with the existing tools. In Tablet mode, the default,
@@ -126,4 +126,51 @@ export function spaceIsPanKey(key: string, targetTag: string, isEditable: boolea
   if (mode !== 'desktop' || key !== ' ') return false
   if (isEditable) return false
   return !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(targetTag.toUpperCase())
+}
+
+/**
+ * Step 4: keyboard shortcuts (Desktop mode only).
+ * - Ctrl/Cmd + Z undoes; Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y redoes.
+ * - Ctrl/Cmd + "+" / "-" / 0 zoom in, zoom out and reset the view.
+ * - Escape deselects (it never cancels a stroke or closes anything).
+ * - A plain letter picks a tool, and picking the tool already active leaves it active ("set", not "toggle"):
+ *   P pen, V select, E eraser, T text, L lasso, C connector, B class box.
+ */
+export type KeyTool = 'pen' | 'select' | 'eraser' | 'text' | 'lasso' | 'connector' | 'classBox'
+export type KeyCommand =
+  | { kind: 'undo' }
+  | { kind: 'redo' }
+  | { kind: 'zoomIn' }
+  | { kind: 'zoomOut' }
+  | { kind: 'zoomReset' }
+  | { kind: 'deselect' }
+  | { kind: 'tool'; tool: KeyTool }
+
+export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox' }
+
+export type KeyInput = { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; repeat: boolean }
+
+export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null {
+  if (mode !== 'desktop') return null
+  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
+  const command = event.ctrlKey || event.metaKey
+  if (command && !event.altKey) {
+    if (key === 'z') return event.shiftKey ? { kind: 'redo' } : { kind: 'undo' }
+    if (key === 'y' && !event.shiftKey) return { kind: 'redo' }
+    if (key === '=' || key === '+') return { kind: 'zoomIn' }
+    if (key === '-' || key === '_') return { kind: 'zoomOut' }
+    if (key === '0') return { kind: 'zoomReset' }
+    return null
+  }
+  // Everything below is a bare key: any modifier means the person meant something else (a browser shortcut, say).
+  if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return null
+  if (key === 'Escape') return event.repeat ? null : { kind: 'deselect' }
+  if (event.repeat) return null
+  const tool = TOOL_KEYS[key]
+  return tool ? { kind: 'tool', tool } : null
+}
+
+/** True when a key press is going into something that types (so shortcuts must not take it). */
+export function isTypingTarget(tag: string, isEditable: boolean): boolean {
+  return isEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag.toUpperCase())
 }

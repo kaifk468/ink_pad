@@ -51,7 +51,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, loadInputMode, pointerPressure, saveInputMode, spaceIsPanKey, startsMousePan, wheelViewport, type InputMode } from './desktopInput'
+import { canStartCanvasGesture, isTypingTarget, keyCommand, loadInputMode, pointerPressure, saveInputMode, spaceIsPanKey, startsMousePan, wheelViewport, type InputMode, type KeyCommand } from './desktopInput'
 
 
 const DOUBLE_TAP_MS = 400
@@ -2778,6 +2778,52 @@ function App() {
     const anchor = screenToCanvasPoint(center, viewport)
     applyViewport({ scale, offsetX: center.x - anchor.x * scale, offsetY: center.y - anchor.y * scale })
   }
+
+  // Keyboard shortcuts (Desktop mode only). The window listener below calls the latest version of this, so it always sees current state.
+  const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
+  keyActionsRef.current = (command) => {
+    // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
+    if (filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
+    const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
+    if (gestureActive || touchNav.touchCount() > 0) return false
+    switch (command.kind) {
+      case 'undo': undo(); return true
+      case 'redo': redo(); return true
+      case 'zoomIn': if (!navigationSettingsRef.current.zoomLocked) zoomBy(ZOOM_STEP); return true
+      case 'zoomOut': if (!navigationSettingsRef.current.zoomLocked) zoomBy(1 / ZOOM_STEP); return true
+      case 'zoomReset': if (!navigationSettingsRef.current.zoomLocked) resetView(); return true
+      case 'deselect':
+        if (selectedKeysRef.current.size === 0 && selectedRectangleIdRef.current === null) return false
+        clearLassoSelection()
+        return true
+      case 'tool':
+        setOptionsFor(null)
+        switch (command.tool) {
+          case 'pen': selectPenMode(); break
+          case 'select': if (!selectionMode) toggleSelectTool(); break
+          case 'eraser':
+            setTextMode(false); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); clearLassoSelection()
+            setEraser(true)
+            break
+          case 'text': if (!textMode) toggleTextTool(); break
+          case 'lasso': if (!lassoMode) toggleLassoTool(); break
+          case 'connector': if (!connectorMode) toggleConnectorTool(); break
+          case 'classBox': if (!(classMode && inkClassTool && hldShapeTool === null)) toggleInkClassTool(); break
+        }
+        return true
+    }
+  }
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const command = keyCommand(event, inputModeRef.current)
+      if (!command) return
+      const target = event.target as HTMLElement | null
+      if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) return
+      if (keyActionsRef.current(command)) event.preventDefault()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   return (
     <main className="app-shell">
