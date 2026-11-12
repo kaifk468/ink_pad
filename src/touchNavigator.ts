@@ -29,6 +29,7 @@ const centerOf = (points: Point[]): Point => ({
  *  - The choice waits GESTURE_DECIDE_MS after the first finger (3 fingers decide at once), then stays locked, so fingers landing or
  *    lifting later never turn a pan into a zoom or the other way round.
  *  - Touch is dropped while the pen touches the screen, and every touch already down is dropped when the pen lands.
+ *  - The same holds for a mouse gesture in Desktop mode (mouseDown / mouseUp), except that a mouse leaves no "pen near" window.
  *  - With the zoom lock on, a pinch does nothing; pans still work.
  */
 export function createTouchNavigator(getSettings: () => NavigationSettings) {
@@ -40,6 +41,7 @@ export function createTouchNavigator(getSettings: () => NavigationSettings) {
   let pinchActive = false
   let panStarted = false
   let penTouching = false
+  let mouseTouching = false
   let penNearUntil = 0
 
   const reset = () => {
@@ -70,6 +72,14 @@ export function createTouchNavigator(getSettings: () => NavigationSettings) {
       penTouching = false
       penNearUntil = now + PEN_NEAR_MS
     },
+    /** A mouse gesture starts: touches already down are dropped and new ones are ignored until it ends. */
+    mouseDown() {
+      mouseTouching = true
+      reset()
+    },
+    mouseUp() {
+      mouseTouching = false
+    },
     penSeen(now: number) {
       penNearUntil = now + PEN_NEAR_MS
     },
@@ -77,7 +87,7 @@ export function createTouchNavigator(getSettings: () => NavigationSettings) {
       penNearUntil = 0
     },
     down(id: number, point: Point, now: number) {
-      if (penTouching) return
+      if (penTouching || mouseTouching) return
       if (points.size === 0) {
         mode = 'undecided'
         firstDownAt = now

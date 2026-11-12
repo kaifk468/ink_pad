@@ -3,6 +3,7 @@ import type { StorageInfo } from './useDocuments'
 import { PAGE_BACKGROUND_COLORS, type PageBackground } from '../pageBackground'
 import { titleToCommit } from '../documentFormat'
 import type { PageSpacing, PageTemplate } from '../pageTemplates'
+import type { InputMode } from '../desktopInput'
 
 type TopLeftBarProps = {
   title: string
@@ -14,6 +15,8 @@ type TopLeftBarProps = {
   onPageSpacing: (value: PageSpacing) => void
   pageBackground: PageBackground
   onPageBackground: (value: PageBackground) => void
+  inputMode: InputMode
+  onInputMode: (mode: InputMode) => void
   oneFingerPan: boolean
   onOneFingerPan: (value: boolean) => void
   hasInk: boolean
@@ -142,6 +145,11 @@ export function TopLeftBar(props: TopLeftBarProps) {
 
           <div className="menu-divider" role="separator" />
           <div className="menu-section-title">Canvas</div>
+          <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.inputMode === 'desktop'} onClick={() => props.onInputMode(props.inputMode === 'desktop' ? 'tablet' : 'desktop')}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+            <span className="menu-row-label menu-row-stack"><span>Desktop mode</span><span className="menu-row-sub">A mouse draws and edits. The pen and touch stay as they are</span></span>
+            <span className={`menu-switch${props.inputMode === 'desktop' ? ' on' : ''}`} aria-hidden="true"><span /></span>
+          </button>
           <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.oneFingerPan} onClick={() => props.onOneFingerPan(!props.oneFingerPan)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V5a1.5 1.5 0 0 1 3 0v6M12 10.5a1.5 1.5 0 0 1 3 0V12M15 11.5a1.5 1.5 0 0 1 3 0V16a5 5 0 0 1-5 5h-1.5a5 5 0 0 1-4-2L5 15.5a1.5 1.5 0 0 1 2.4-1.8L9 15"/></svg>
             <span className="menu-row-label menu-row-stack"><span>One-finger pan</span><span className="menu-row-sub">Ignored while the pen is near</span></span>

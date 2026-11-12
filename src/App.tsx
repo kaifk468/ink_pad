@@ -51,7 +51,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, loadInputMode, type InputMode } from './desktopInput'
+import { canStartCanvasGesture, loadInputMode, pointerPressure, saveInputMode, type InputMode } from './desktopInput'
 
 
 const DOUBLE_TAP_MS = 400
@@ -232,9 +232,17 @@ function App() {
   const [navigationSettings, setNavigationSettings] = useState<NavigationSettings>(() => loadNavigationSettings())
   const navigationSettingsRef = useRef(navigationSettings)
   navigationSettingsRef.current = navigationSettings
-  // Per-device input mode. Always 'tablet' until the Desktop switch exists (desktop-mode plan, step 2).
-  const inputModeRef = useRef<InputMode | null>(null)
-  if (inputModeRef.current === null) inputModeRef.current = loadInputMode()
+  // Per-device input mode (menu switch). Tablet, the default, leaves the canvas exactly as it always was; Desktop lets a mouse draw and edit.
+  const [inputMode, setInputMode] = useState<InputMode>(() => loadInputMode())
+  const inputModeRef = useRef(inputMode)
+  inputModeRef.current = inputMode
+  const updateInputMode = (mode: InputMode) => {
+    inputModeRef.current = mode
+    setInputMode(mode)
+    saveInputMode(mode)
+  }
+  // True while the current canvas gesture was started by a mouse (hold-to-snap is off for it, unless the Shapes tool is on).
+  const mouseGestureRef = useRef(false)
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
   if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
   const touchNav = touchNavRef.current
@@ -620,6 +628,7 @@ function App() {
 
   const scheduleShapePreview = (point?: Point) => {
     if (eraser || penButtonEraseRef.current) return
+    if (mouseGestureRef.current && !shapeMode) return
     const anchor = holdAnchorRef.current
     if (holdTimerRef.current !== null && point && anchor && Math.hypot(point.x - anchor.x, point.y - anchor.y) < SHAPE_HOLD_JITTER_PX / viewportRef.current.scale) return
     clearShapeHoldTimer()
@@ -1641,7 +1650,7 @@ function App() {
     return {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
-      pressure: event.pressure,
+      pressure: pointerPressure(event.pointerType, event.pressure),
     }
   }
 
@@ -1817,7 +1826,10 @@ function App() {
       let stroke = shapePreviewRef.current
       const inkBoxId = activeStrokeBoxRef.current
       if (!stroke && inkBoxId !== null) stroke = activeStrokeRef.current
-      if (!stroke) {
+      if (!stroke && mouseGestureRef.current && !shapeMode) {
+        // A mouse is often held still while the user thinks: no hold-to-snap for it (the Shapes tool still recognises shapes).
+        stroke = activeStrokeRef.current
+      } else if (!stroke) {
         const heldStroke = activeStrokeRef.current
         const heldForMs = performance.now() - lastSignificantMoveAtRef.current
         const heldLongEnough = heldForMs >= SHAPE_RECOGNITION_HOLD_MS
@@ -1916,7 +1928,9 @@ function App() {
     }
     const penGestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null
     const anyGestureActive = penGestureActive || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null
-    if (!canStartCanvasGesture(event.pointerType, event.button, inputModeRef.current ?? 'tablet', penGestureActive, anyGestureActive)) return
+    if (!canStartCanvasGesture(event.pointerType, event.button, inputModeRef.current, penGestureActive, anyGestureActive, touchNav.touchCount() > 0)) return
+    mouseGestureRef.current = event.pointerType === 'mouse'
+    if (mouseGestureRef.current) touchNav.mouseDown()
     event.preventDefault()
     finishSpringBackNow()
     const rawPoint = getPoint(event)
@@ -2293,7 +2307,7 @@ function App() {
       const point = screenToCanvasPoint({
         x: sample.clientX - rect.left,
         y: sample.clientY - rect.top,
-        pressure: sample.pressure,
+        pressure: pointerPressure(sample.pointerType, sample.pressure),
       }, viewportRef.current)
       if (!appendStrokeSample(event.pointerId, point)) return
     }
@@ -2316,6 +2330,7 @@ function App() {
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
+    else if (event.pointerType === 'mouse') touchNav.mouseUp()
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
@@ -2439,6 +2454,7 @@ function App() {
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
+    else if (event.pointerType === 'mouse') touchNav.mouseUp()
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
@@ -2842,6 +2858,8 @@ function App() {
           onPageSpacing={setPageSpacing}
           pageBackground={pageBackground}
           onPageBackground={setPageBackground}
+          inputMode={inputMode}
+          onInputMode={updateInputMode}
           oneFingerPan={navigationSettings.oneFingerPan}
           onOneFingerPan={(value) => updateNavigationSettings({ oneFingerPan: value })}
           hasInk={hasInk}

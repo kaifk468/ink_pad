@@ -198,3 +198,32 @@ test('App routes touch and pen events through the navigator and honours the zoom
   const zoom = await readFile(new URL('../src/app/ZoomControls.tsx', import.meta.url), 'utf8')
   assert.match(zoom, /aria-pressed=\{locked\}/)
 })
+
+test('a mouse gesture drops the touches already down and ignores new ones until it ends, like the pen', () => {
+  const n = make()
+  n.down(1, P(100, 100), 0)
+  n.down(2, P(200, 100), 10)
+  assert.equal(n.touchCount(), 2)
+  n.mouseDown()
+  assert.equal(n.touchCount(), 0)
+  assert.equal(n.mode(), 'none')
+  n.down(3, P(300, 100), 20) // a finger landing during the mouse gesture
+  assert.equal(n.touchCount(), 0)
+  assert.equal(n.move(3, P(310, 110), 400, VIEW), null)
+  n.mouseUp()
+  n.down(4, P(300, 100), 500) // touch works again at once: a mouse leaves no "pen near" window
+  assert.equal(n.touchCount(), 1)
+  assert.equal(n.penNear(500), false)
+})
+
+test('a mouse gesture never makes the pen count as near, and the pen still wins over touch as before', () => {
+  const n = make({ oneFingerPan: true })
+  n.mouseDown()
+  n.mouseUp()
+  assert.equal(n.penNear(0), false)
+  n.penDown()
+  n.down(1, P(1, 1), 0)
+  assert.equal(n.touchCount(), 0)
+  n.penUp(0)
+  assert.equal(n.penNear(10), true)
+})
