@@ -1,4 +1,4 @@
-import { DRIVE_SCOPE, DriveAuthError, GOOGLE_CLIENT_ID } from './googleDrive'
+import { DRIVE_EXPORT_SCOPE, DRIVE_SCOPE, DriveAuthError, GOOGLE_CLIENT_ID } from './googleDrive'
 import { readStoredProfile } from './driveProfile'
 
 /**
@@ -46,6 +46,10 @@ export type GoogleAuthDeps = {
   now: () => number
   /** The Google account to ask for, so a quiet request picks it without a chooser. */
   getHint: () => string | undefined
+  /** What the token may do (the Drive app-data area by default). */
+  scope: string
+  /** Where this token is kept in session storage, so two sign-ins with different scopes do not overwrite each other. */
+  storageKey: string
 }
 
 let scriptPromise: Promise<void> | null = null
@@ -73,6 +77,8 @@ function defaultDeps(): GoogleAuthDeps {
     storage: (() => { try { return typeof window === 'undefined' ? null : window.sessionStorage } catch { return null } })(),
     now: () => Date.now(),
     getHint: () => readStoredProfile()?.email || undefined,
+    scope: DRIVE_SCOPE,
+    storageKey: TOKEN_STORAGE_KEY,
   }
 }
 
@@ -86,19 +92,19 @@ export function createGoogleAuth(overrides: Partial<GoogleAuthDeps> = {}) {
 
   const remember = () => {
     try {
-      if (token) deps.storage?.setItem(TOKEN_STORAGE_KEY, JSON.stringify({ token, expiresAt }))
-      else deps.storage?.removeItem(TOKEN_STORAGE_KEY)
+      if (token) deps.storage?.setItem(deps.storageKey, JSON.stringify({ token, expiresAt }))
+      else deps.storage?.removeItem(deps.storageKey)
     } catch { /* the token just will not survive a refresh */ }
   }
   // A token from this tab's earlier page load is reused while it is still valid.
   try {
-    const raw = deps.storage?.getItem(TOKEN_STORAGE_KEY)
+    const raw = deps.storage?.getItem(deps.storageKey)
     if (raw) {
       const saved = JSON.parse(raw) as { token?: unknown; expiresAt?: unknown }
       if (typeof saved.token === 'string' && typeof saved.expiresAt === 'number' && saved.expiresAt > deps.now() + TOKEN_SAFETY_MS) {
         token = saved.token
         expiresAt = saved.expiresAt
-      } else deps.storage?.removeItem(TOKEN_STORAGE_KEY)
+      } else deps.storage?.removeItem(deps.storageKey)
     }
   } catch { /* start without a remembered token */ }
 
@@ -109,7 +115,7 @@ export function createGoogleAuth(overrides: Partial<GoogleAuthDeps> = {}) {
     if (client) return client
     client = google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
-      scope: DRIVE_SCOPE,
+      scope: deps.scope,
       callback: (response) => {
         const pending = settle
         settle = null
@@ -179,3 +185,10 @@ export function createGoogleAuth(overrides: Partial<GoogleAuthDeps> = {}) {
 }
 
 export const driveAuth = createGoogleAuth()
+
+/**
+ * A second, separate sign-in used only by "Export to Google Drive": it may create the export files in the person's normal Drive
+ * (scope drive.file: only files InkPad itself made), which the hidden app-data storage cannot do. Keeping it apart means the
+ * saving sign-in never changes and nobody is asked for the extra permission until they use the export.
+ */
+export const driveExportAuth = createGoogleAuth({ scope: DRIVE_EXPORT_SCOPE, storageKey: 'inkpad.drive.exportToken' })

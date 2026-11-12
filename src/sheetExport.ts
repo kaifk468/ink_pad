@@ -252,7 +252,12 @@ export function cropSvg(svg: string, region: { x: number; y: number; width: numb
 }
 
 /** Browser only: rasterizes SVG text to a PNG blob at the given pixel ratio. */
-export async function svgToPngBlob(svg: string, width: number, height: number, pixelRatio = 1): Promise<Blob> {
+export function svgToPngBlob(svg: string, width: number, height: number, pixelRatio = 1): Promise<Blob> {
+  return svgToImageBlob(svg, width, height, pixelRatio, 'image/png')
+}
+
+/** Browser only: rasterizes SVG text to a PNG or JPEG blob (JPEG is painted on white first, since it has no transparency). */
+export async function svgToImageBlob(svg: string, width: number, height: number, pixelRatio: number, type: 'image/png' | 'image/jpeg', quality?: number): Promise<Blob> {
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }))
   try {
     const image = new Image()
@@ -267,8 +272,12 @@ export async function svgToPngBlob(svg: string, width: number, height: number, p
     canvas.height = Math.round(height * pixelRatio)
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas is not available.')
+    if (type === 'image/jpeg') {
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+    }
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
-    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('PNG encoding failed.'))), 'image/png'))
+    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error(type === 'image/jpeg' ? 'JPEG encoding failed.' : 'PNG encoding failed.'))), type, quality))
   } finally {
     URL.revokeObjectURL(url)
   }

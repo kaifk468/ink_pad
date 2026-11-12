@@ -16,6 +16,8 @@ import type { DriveProfile } from './driveProfile'
 
 export const GOOGLE_CLIENT_ID = '422120639138-p86fdlt7qg2fqp5sb1c6c59nevketg6e.apps.googleusercontent.com'
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
+/** Lets InkPad create and update only its own files in the normal Drive (the NotebookLM export). Not used for saving diagrams. */
+export const DRIVE_EXPORT_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 
 const FILES_URL = 'https://www.googleapis.com/drive/v3/files'
 /** A star is the app property `starred` = "1" on the diagram's Drive file. Saves only send `itemCount`, and Drive merges app properties, so a save keeps the star. */
@@ -68,6 +70,9 @@ async function call(env: DriveEnv, url: string, init: RequestInit = {}, retry = 
   if (!response.ok) throw new DriveHttpError(response.status)
   return response
 }
+
+/** An authorised Drive call with one retry on 401, for modules outside this file. */
+export const driveRequest = call
 
 function multipart(metadata: object, content: string) {
   const boundary = `inkpad${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`

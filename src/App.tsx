@@ -272,7 +272,7 @@ function App() {
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
-    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile,
+    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, exportToNotebookLm, exportBusy,
   } = useDocuments({
     getItems: () => strokesRef.current,
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
@@ -2960,6 +2960,8 @@ function App() {
         onImportFile={(file) => void importDocumentFile(file)}
         onExportSvg={exportSvgFile}
         onExportPng={(scale) => void exportPngFile(scale)}
+        onExportNotebookLm={() => void exportToNotebookLm()}
+        exportBusy={exportBusy}
       />}
       {PERFORMANCE_DIAGNOSTICS_ENABLED && performanceDiagnosticsOpen && <section id="inkpad-performance-panel" className="performance-panel" aria-label="Development performance diagnostics">
         <div className="performance-panel-header">

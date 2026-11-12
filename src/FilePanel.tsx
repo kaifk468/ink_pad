@@ -14,6 +14,9 @@ type FilePanelProps = {
   onImportFile: (file: File) => void
   onExportSvg: () => void
   onExportPng: (scale: 1 | 2) => void
+  /** Puts the diagram into Google Drive as one PDF that NotebookLM can import. */
+  onExportNotebookLm: () => void
+  exportBusy: boolean
   canExport: boolean
   storage: StorageInfo
 }
@@ -104,6 +107,12 @@ export function FilePanel(props: FilePanelProps) {
           <button type="button" disabled={!props.canExport} onClick={() => props.onExportPng(2)}>PNG @2x</button>
         </div>
         <p className="file-panel-hint">Images are cropped to your drawing and include the sheet color and page style.</p>
+
+        <h3>NotebookLM</h3>
+        <div className="file-panel-actions">
+          <button type="button" disabled={!props.canExport || props.exportBusy} onClick={props.onExportNotebookLm}>{props.exportBusy ? 'Exporting…' : 'Export to Google Drive'}</button>
+        </div>
+        <p className="file-panel-hint">Saves this diagram as one PDF (every page, pen strokes on plain white) in the “InkPad exports” folder of your Google Drive. Exporting again replaces that file, so NotebookLM keeps a single source. The first time, Google asks to let InkPad create files in your Drive.</p>
 
       </section>
     </div>

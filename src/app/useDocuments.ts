@@ -6,10 +6,12 @@ import { THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
 import { moveStarred, readStarred, starsToUpload, toggleStarred, writeStarred } from '../starred'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
 import { folderAndDescendantIds } from '../folderTree'
-import { DriveAuthError, createDriveBackend, fetchDriveProfile, type DriveEnv } from '../googleDrive'
+import { DriveAuthError, DriveHttpError, createDriveBackend, fetchDriveProfile, type DriveEnv } from '../googleDrive'
 import { createIndexedDbDriveCache, type DriveCache } from '../driveCache'
 import { readStoredProfile, writeStoredProfile, type DriveProfile } from '../driveProfile'
-import { REFRESH_WINDOW_MS, driveAuth } from '../googleAuth'
+import { REFRESH_WINDOW_MS, driveAuth, driveExportAuth } from '../googleAuth'
+import { uploadDiagramPdf } from '../driveExport'
+import { renderDiagramPdf } from '../notebookExport'
 import { copyAllBetweenBackends, createBrowserBackend, type StorageBackend } from '../storageBackend'
 import type { SaveStatus } from '../FilePanel'
 import { PAGE_BACKGROUND_COLORS } from '../pageBackground'
@@ -72,6 +74,7 @@ function readStorageMode(): StorageMode {
 const driveEnv: DriveEnv = { getToken: (force) => driveAuth.getToken(force), fetch: (url, init) => window.fetch(url, init) }
 let driveCache: DriveCache | null = null
 const getDriveCache = () => (driveCache ??= createIndexedDbDriveCache())
+const driveExportEnv: DriveEnv = { getToken: (force) => driveExportAuth.getToken(force), fetch: (url, init) => window.fetch(url, init) }
 const createAppDriveBackend = () => createDriveBackend(driveEnv, { cache: getDriveCache() })
 const withTimeout = <T,>(work: Promise<T>, ms: number): Promise<T> => new Promise<T>((resolve, reject) => {
   const timer = window.setTimeout(() => reject(new DriveAuthError()), ms)
@@ -88,6 +91,7 @@ export function useDocuments(host: DocumentHost) {
   const [docTitle, setDocTitle] = useState(DEFAULT_DOCUMENT_TITLE)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [fileNotice, setFileNotice] = useState<string | null>(null)
+  const [exportBusy, setExportBusy] = useState(false)
   const [library, setLibrary] = useState<DocumentSummary[]>([])
   /** Stars kept in this browser (all stars on browser and device storage; on Drive only ones not yet uploaded). */
   const [localStars, setLocalStars] = useState<string[]>(readStarred)
@@ -551,6 +555,45 @@ export function useDocuments(host: DocumentHost) {
     }
   }
 
+  /**
+   * Exports the open diagram as one PDF (all pages, pen strokes on white) into the "InkPad exports" folder of the person's Google
+   * Drive, replacing the file from the last export, so NotebookLM can import it and keep one source per diagram.
+   */
+  const exportToNotebookLm = async () => {
+    if (exportBusy) return
+    setExportBusy(true)
+    setFileNotice('Exporting to Google Drive…')
+    try {
+      // Sign in first: Google's window only opens while the tap still counts, and drawing the pages can take a few seconds.
+      await driveExportAuth.getToken(false, true)
+      await persistNow()
+      const docId = docIdRef.current
+      if (!docId) {
+        setFileNotice('Save the diagram first, then export it.')
+        return
+      }
+      const rendered = await renderDiagramPdf(hostRef.current.getPageItems(), hostRef.current.getPage().sheetHeight ?? SHEET_HEIGHT)
+      if (!rendered) {
+        setFileNotice('Nothing to export yet.')
+        return
+      }
+      const baseName = documentFileName(docMetaRef.current.title).replace(/\.inkpad$/, '')
+      const result = await uploadDiagramPdf(driveExportEnv, { docId, name: `${baseName}.pdf`, pdf: rendered.pdf })
+      const pages = `${rendered.pageCount} page${rendered.pageCount === 1 ? '' : 's'}`
+      setFileNotice(result.updated
+        ? `Updated “${baseName}” (${pages}) in Google Drive › InkPad exports. NotebookLM refreshes it from Drive; if not, tap “Click to sync with Google Drive” on the source.`
+        : `Exported “${baseName}” (${pages}) to Google Drive › InkPad exports. In NotebookLM choose Add source › Google Drive and pick it.`)
+    } catch (error) {
+      setFileNotice(error instanceof DriveAuthError
+        ? 'Google sign-in was not completed, so nothing was exported. Tap the button to try again.'
+        : error instanceof DriveHttpError && error.status === 403
+          ? 'Google Drive refused the export. InkPad needs permission to create files in your Drive.'
+          : errorText(error, 'Could not export to Google Drive.'))
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
   useEffect(() => {
     if (filePanelOpen) void refreshLibrary()
   }, [filePanelOpen])
@@ -721,6 +764,7 @@ export function useDocuments(host: DocumentHost) {
     await persistNow()
     if (backendRef.current.kind === 'drive') {
       driveAuth.signOut()
+      driveExportAuth.signOut()
       writeStoredProfile(null)
       setDriveProfile(null)
       await getDriveCache().clear().catch(() => undefined)
@@ -779,6 +823,6 @@ export function useDocuments(host: DocumentHost) {
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
-    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile,
+    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, exportToNotebookLm, exportBusy,
   }
 }
