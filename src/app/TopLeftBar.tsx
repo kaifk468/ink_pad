@@ -17,6 +17,9 @@ type TopLeftBarProps = {
   onPageBackground: (value: PageBackground) => void
   inputMode: InputMode
   onInputMode: (mode: InputMode) => void
+  /** Boxes snap to nearby boxes while dragged, with guide lines (a per-device setting, in both input modes). */
+  snapping: boolean
+  onSnapping: (on: boolean) => void
   oneFingerPan: boolean
   onOneFingerPan: (value: boolean) => void
   hasInk: boolean
@@ -149,6 +152,11 @@ export function TopLeftBar(props: TopLeftBarProps) {
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
             <span className="menu-row-label menu-row-stack"><span>Desktop mode</span><span className="menu-row-sub">A mouse draws and edits. The pen and touch stay as they are</span></span>
             <span className={`menu-switch${props.inputMode === 'desktop' ? ' on' : ''}`} aria-hidden="true"><span /></span>
+          </button>
+          <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.snapping} onClick={() => props.onSnapping(!props.snapping)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><path d="M12 3v18M3 12h18" strokeDasharray="2 2"/></svg>
+            <span className="menu-row-label menu-row-stack"><span>Snap and guides</span><span className="menu-row-sub">Boxes snap to the edges and centres of nearby boxes while you drag</span></span>
+            <span className={`menu-switch${props.snapping ? ' on' : ''}`} aria-hidden="true"><span /></span>
           </button>
           <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.oneFingerPan} onClick={() => props.onOneFingerPan(!props.oneFingerPan)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V5a1.5 1.5 0 0 1 3 0v6M12 10.5a1.5 1.5 0 0 1 3 0V12M15 11.5a1.5 1.5 0 0 1 3 0V16a5 5 0 0 1-5 5h-1.5a5 5 0 0 1-4-2L5 15.5a1.5 1.5 0 0 1 2.4-1.8L9 15"/></svg>

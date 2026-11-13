@@ -5,6 +5,7 @@ import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from '
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { PASTE_OFFSET, copyItems, pasteItems } from './clipboard'
+import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
 import { HLD_DEFAULT_SIZE, createHldShape, type HldShape } from './hldShapes'
 import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
@@ -266,6 +267,18 @@ function App() {
   contextMenuRef.current = contextMenu
   const contextMenuElementRef = useRef<HTMLDivElement>(null)
   const edgeHoldRef = useRef<{ pointerId: number; boxId: number; start: Point; startedAt: number; timer: number } | null>(null)
+  // Step 12: snap and alignment guides while dragging boxes and labels. The setting is per device (default on) and works in both input modes.
+  const [snapping, setSnapping] = useState(() => loadSnapping())
+  const snappingRef = useRef(snapping)
+  snappingRef.current = snapping
+  const updateSnapping = (on: boolean) => {
+    snappingRef.current = on
+    setSnapping(on)
+    saveSnapping(on)
+  }
+  // What a drag snaps to (read once when it starts) and the guide lines to draw. Guides live only here: never items, history or saved data.
+  const snapStateRef = useRef<{ pointerId: number; moving: Bounds | null; targets: Bounds[] } | null>(null)
+  const guidesRef = useRef<Guide[]>([])
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
   if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
   const touchNav = touchNavRef.current
@@ -356,6 +369,8 @@ function App() {
     activeLassoRef.current = null
     lassoDragRef.current = null
     activeMarqueeRef.current = null
+    guidesRef.current = []
+    snapStateRef.current = null
     pasteCountRef.current = 0
     activePointerRef.current = null
     activeObjectEraserRef.current = null
@@ -1077,6 +1092,37 @@ function App() {
     lassoDragRef.current = { pointerId: event.pointerId, start: point, keys: new Set(selectedKeysRef.current), originalItems: strokesRef.current.slice(), moved: false }
   }
 
+  // The guides and snap state end with the drag, however it ends; the canvas is repainted only when a guide was showing.
+  const clearSnapGuides = (repaint = true) => {
+    const hadGuides = guidesRef.current.length > 0
+    guidesRef.current = []
+    snapStateRef.current = null
+    if (hadGuides && repaint) renderAll()
+  }
+  // One drag move: the pointer's delta, nudged so the moving bounds line up with nearby boxes and labels. Off when the setting is off,
+  // while Alt is held with a mouse in Desktop mode, and for selections without a box or label (ink and connectors alone never snap).
+  const snapDragDelta = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], keys: ReadonlySet<string>, dx: number, dy: number): { dx: number; dy: number } => {
+    const altWithMouse = event.altKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop'
+    if (!snappingRef.current || altWithMouse) {
+      guidesRef.current = []
+      return { dx, dy }
+    }
+    let state = snapStateRef.current
+    if (!state || state.pointerId !== event.pointerId) {
+      state = { pointerId: event.pointerId, moving: null, targets: [] }
+      const rect = canvasRef.current?.getBoundingClientRect()
+      if (rect && selectionCanSnap(originalItems, keys)) {
+        state.moving = getCanvasSelectionBounds(routeConnectors(originalItems), keys)
+        state.targets = cullTargets(snapTargetsFor(originalItems, keys), viewRectOf(viewportRef.current, rect.width, rect.height))
+      }
+      snapStateRef.current = state
+    }
+    if (!state.moving) return { dx, dy }
+    const result = snapForDrag(true, false, { ...state.moving, x: state.moving.x + dx, y: state.moving.y + dy }, state.targets, event.pointerType, viewportRef.current.scale)
+    guidesRef.current = result?.guides ?? []
+    return result ? { dx: dx + result.dx, dy: dy + result.dy } : { dx, dy }
+  }
+
   // The canvas cursor for the tool, the hover and the pan state (Desktop mode; Tablet mode keeps the default).
   const applyCanvasCursor = () => {
     const canvas = canvasRef.current
@@ -1511,6 +1557,20 @@ function App() {
       ctx.strokeStyle = '#536fe0'
       ctx.lineWidth = 2
       ctx.setLineDash([7, 5])
+      ctx.stroke()
+      ctx.restore()
+    }
+    const guides = guidesRef.current
+    if (guides.length > 0) {
+      ctx.save()
+      ctx.strokeStyle = '#e0245e'
+      ctx.lineWidth = 1 / viewport.scale
+      ctx.setLineDash([5 / viewport.scale, 3 / viewport.scale])
+      ctx.beginPath()
+      for (const guide of guides) {
+        if (guide.axis === 'x') { ctx.moveTo(guide.position, guide.start); ctx.lineTo(guide.position, guide.end) }
+        else { ctx.moveTo(guide.start, guide.position); ctx.lineTo(guide.end, guide.position) }
+      }
       ctx.stroke()
       ctx.restore()
     }
@@ -2577,7 +2637,8 @@ function App() {
       const deltaX = point.x - lassoDrag.start.x
       const deltaY = point.y - lassoDrag.start.y
       if (!lassoDrag.moved && Math.hypot(deltaX, deltaY) < 2) return
-      const nextItems = translateWithinWorkspace(lassoDrag.originalItems, lassoDrag.keys, deltaX, deltaY)
+      const lassoSnap = snapDragDelta(event, lassoDrag.originalItems, lassoDrag.keys, deltaX, deltaY)
+      const nextItems = translateWithinWorkspace(lassoDrag.originalItems, lassoDrag.keys, lassoSnap.dx, lassoSnap.dy)
       if (!lassoDrag.moved && nextItems.every((item, index) => item === lassoDrag.originalItems[index])) return
       if (!lassoDrag.moved) {
         saveHistory()
@@ -2614,7 +2675,9 @@ function App() {
       const deltaX = point.x - drag.start.x
       const deltaY = point.y - drag.start.y
       if (!drag.moved && Math.hypot(deltaX, deltaY) < 2) return
-      const nextItems = translateWithinWorkspace(drag.originalItems, new Set([drag.itemKey]), deltaX, deltaY)
+      const dragKeys = new Set([drag.itemKey])
+      const dragSnap = snapDragDelta(event, drag.originalItems, dragKeys, deltaX, deltaY)
+      const nextItems = translateWithinWorkspace(drag.originalItems, dragKeys, dragSnap.dx, dragSnap.dy)
       if (!drag.moved && nextItems.every((item, index) => item === drag.originalItems[index])) return
       if (!drag.moved) {
         saveHistory()
@@ -2659,6 +2722,7 @@ function App() {
   }
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (snapStateRef.current?.pointerId === event.pointerId) clearSnapGuides()
     if (edgeHoldRef.current?.pointerId === event.pointerId) cancelEdgeHold()
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
@@ -2799,6 +2863,7 @@ function App() {
   }
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (snapStateRef.current?.pointerId === event.pointerId) clearSnapGuides()
     if (edgeHoldRef.current?.pointerId === event.pointerId) cancelEdgeHold()
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
@@ -3090,6 +3155,7 @@ function App() {
       applySelectionState(before)
     }
     if (!handled) return false
+    clearSnapGuides(false)
     if (restored) strokesRef.current = restored
     if (discardStep) {
       historyRef.current.discardLast()
@@ -3450,6 +3516,8 @@ function App() {
           onPageBackground={setPageBackground}
           inputMode={inputMode}
           onInputMode={updateInputMode}
+          snapping={snapping}
+          onSnapping={updateSnapping}
           oneFingerPan={navigationSettings.oneFingerPan}
           onOneFingerPan={(value) => updateNavigationSettings({ oneFingerPan: value })}
           hasInk={hasInk}
