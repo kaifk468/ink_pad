@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
-import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { PASTE_OFFSET, copyItems, pasteItems } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
@@ -1063,6 +1063,8 @@ function App() {
       setSelectedRectangle(item.id)
       updateSelectedItems([])
     } else {
+      // A text label has resize handles, which work in the select and lasso tools.
+      if (item.kind === 'text' && !selectionMode && !lassoMode) toggleSelectTool()
       setSelectedRectangle(null)
       updateSelectedItems([target.key])
     }
@@ -1492,7 +1494,9 @@ function App() {
     const groupBounds = !soleSelectedRectangle && selectedKeysRef.current.size > 1
       ? getCanvasSelectionBounds(routeConnectors(strokesRef.current), selectedKeysRef.current)
       : null
-    const resizeBounds = soleSelectedRectangle ?? groupBounds ?? undefined
+    const soleTextKey = !soleSelectedRectangle && selectedKeysRef.current.size === 1 ? [...selectedKeysRef.current][0] : null
+    const textBounds = soleTextKey?.startsWith('text:') ? getCanvasSelectionBounds(strokesRef.current, selectedKeysRef.current) : null
+    const resizeBounds = soleSelectedRectangle ?? groupBounds ?? textBounds ?? undefined
     if (groupBounds) {
       ctx.save()
       ctx.strokeStyle = '#5269df'
@@ -2341,7 +2345,7 @@ function App() {
       const singleSelectedRectangle = selectedItems.length === 1 && selectedItems[0].kind === 'rectangle' ? selectedItems[0] : null
       const selectedBounds = singleSelectedRectangle
         ? { x: singleSelectedRectangle.x, y: singleSelectedRectangle.y, width: singleSelectedRectangle.width, height: singleSelectedRectangle.height }
-        : selectedItems.length > 1 ? getCanvasSelectionBounds(routeConnectors(strokesRef.current), selectedKeysRef.current) : null
+        : (selectedItems.length > 1 || (selectedItems.length === 1 && selectedItems[0].kind === 'text')) ? getCanvasSelectionBounds(routeConnectors(strokesRef.current), selectedKeysRef.current) : null
       const resizeHandle = selectedBounds ? hitTestRectangleResizeHandle(selectedBounds, point, 14 / viewportRef.current.scale) : null
       if (selectedBounds && resizeHandle) {
         event.currentTarget.setPointerCapture(event.pointerId)
@@ -2387,7 +2391,8 @@ function App() {
       return
     }
     if (selectionMode) {
-      if (selectedKeysRef.current.size > 1) {
+      const soleTextKey = selectedKeysRef.current.size === 1 ? [...selectedKeysRef.current][0] : null
+      if (selectedKeysRef.current.size > 1 || soleTextKey?.startsWith('text:')) {
         // A group selection (Shift + click, marquee, Select all): its handles resize it and pressing a member moves it, as with the lasso.
         const routed = routeConnectors(strokesRef.current)
         const groupBounds = getCanvasSelectionBounds(routed, selectedKeysRef.current)
@@ -2397,7 +2402,7 @@ function App() {
           activeResizeRef.current = { pointerId: event.pointerId, rectangleId: null, selectedKeys: new Set(selectedKeysRef.current), handle: groupHandle, start: point, originalBounds: { ...groupBounds }, originalItems: strokesRef.current.slice(), moved: false }
           return
         }
-        if (routed.some((item) => selectedKeysRef.current.has(canvasItemKey(item)) && itemHitTest(item, point, 12 / viewportRef.current.scale))) {
+        if (selectedKeysRef.current.size > 1 && routed.some((item) => selectedKeysRef.current.has(canvasItemKey(item)) && itemHitTest(item, point, 12 / viewportRef.current.scale))) {
           startGroupDrag(event, point)
           return
         }
@@ -2629,7 +2634,9 @@ function App() {
       if (!activeResize.moved && unchanged) return
       const nextItems = activeResize.rectangleId !== null
         ? resizeRectangleItems(activeResize.originalItems, activeResize.rectangleId, bounds)
-        : resizeSelectedItems(activeResize.originalItems, activeResize.selectedKeys ?? new Set(), bounds)
+        : activeResize.selectedKeys?.size === 1 && [...activeResize.selectedKeys][0].startsWith('text:')
+          ? resizeTextItem(activeResize.originalItems, Number([...activeResize.selectedKeys][0].slice('text:'.length)), original, bounds, activeResize.handle)
+          : resizeSelectedItems(activeResize.originalItems, activeResize.selectedKeys ?? new Set(), bounds)
       if (!activeResize.moved) {
         if (!activeResize.created) saveHistory()
         activeResize.moved = true

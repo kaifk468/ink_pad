@@ -416,6 +416,35 @@ export function getCanvasSelectionBounds(items: CanvasItem[], selectedKeys: Read
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
 }
 
+export const MIN_TEXT_FONT_SIZE = 8
+export const MAX_TEXT_FONT_SIZE = 300
+
+/**
+ * Resizes one text label by dragging a handle: the label scales evenly (font size, width and height together, so the box still fits
+ * its text) from the opposite side or corner, which stays put. Corner handles follow the average of the two drags, side handles
+ * their own axis. Only existing fields change: no new data is saved. The font size stays between 8 and 300.
+ */
+export function resizeTextItem(items: CanvasItem[], textId: number, originalBounds: RectangleBounds, bounds: RectangleBounds, handle: RectangleResizeHandle): CanvasItem[] {
+  const scaleX = bounds.width / originalBounds.width
+  const scaleY = bounds.height / originalBounds.height
+  const wanted = handle.length === 2 ? (scaleX + scaleY) / 2 : handle === 'e' || handle === 'w' ? scaleX : scaleY
+  return items.map((item) => {
+    if (item.kind !== 'text' || item.id !== textId) return item
+    const fontSize = Math.round(Math.max(MIN_TEXT_FONT_SIZE, Math.min(MAX_TEXT_FONT_SIZE, item.fontSize * wanted)) * 10) / 10
+    const scale = fontSize / item.fontSize
+    const width = item.width * scale
+    const height = item.height * scale
+    return {
+      ...item,
+      fontSize,
+      width,
+      height,
+      x: handle.includes('w') ? item.x + item.width - width : item.x,
+      y: handle.includes('n') ? item.y + item.height - height : item.y,
+    }
+  })
+}
+
 export function resizeSelectedItems(items: CanvasItem[], selectedKeys: ReadonlySet<string>, bounds: RectangleBounds): CanvasItem[] {
   const originalBounds = getCanvasSelectionBounds(items, selectedKeys)
   if (!originalBounds) return items
