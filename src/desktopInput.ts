@@ -258,7 +258,8 @@ export function clickSelectTarget(
 function edgeOnlyForInkBoxes(routedItems: readonly CanvasItem[], target: HitTarget | null, point: Point, scale: number, selectedId: number | null): HitTarget | null {
   if (!target || target.kind !== 'rectangle') return target
   const box = routedItems.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === target.id)
-  if (!box?.inkBox) return target
+  // Boxes you write in (ink class boxes, HLD shapes) and plain drawn rectangles: only the edge selects. A typed class box selects anywhere.
+  if (!box || box.classBox) return target
   if (box.id === selectedId) return null
   return pointInEdgeBand(box, point, EDGE_BAND_PX / scale) ? target : null
 }

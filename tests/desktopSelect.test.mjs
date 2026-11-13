@@ -34,7 +34,7 @@ test('hitTarget never returns strokes', () => {
 
 test('click-select applies to every tool except the eraser, connector and select tools', () => {
   const items = [rect(1, 0, 0, 100, 100)]
-  for (const tool of ['pen', 'shape', 'text', 'classBox', 'lasso']) assert.equal(input.clickSelectTarget(items, pt(50, 50), 1, tool, false)?.key, 'rectangle:1', tool)
+  for (const tool of ['pen', 'shape', 'text', 'classBox', 'lasso']) assert.equal(input.clickSelectTarget(items, pt(2, 50), 1, tool, false)?.key, 'rectangle:1', tool)
   // the connector tool never grabs a box: a press on it (inside or on the edge) starts a connector
   for (const point of [pt(50, 50), pt(2, 50), pt(100, 100)]) assert.equal(input.clickSelectTarget(items, point, 1, 'connector', false), null)
   assert.equal(input.clickSelectTarget(items, pt(50, 50), 1, 'eraser', false), null)
@@ -330,4 +330,16 @@ test('hardening: every listener added by the new code is removed, and timers are
     assert.ok(app.includes(`window.removeEventListener('${name}'`), `removes ${name}`)
   }
   assert.match(app, /useEffect\(\(\) => \(\) => \{ cancelEdgeHold\(\); if \(hoverFrameRef\.current !== null\) cancelAnimationFrame\(hoverFrameRef\.current\) \}, \[\]\)/)
+})
+
+test('a plain drawn rectangle is written in: the inside is left to the tool, the edge selects; a typed class box selects anywhere', () => {
+  const plain = [rect(1, 0, 0, 200, 200)]
+  for (const tool of ['pen', 'shape', 'text', 'lasso', 'classBox']) {
+    assert.equal(input.clickSelectTarget(plain, pt(100, 100), 1, tool, false), null, tool)
+    assert.equal(input.clickSelectTarget(plain, pt(100, 4), 1, tool, false)?.key, 'rectangle:1', tool)
+  }
+  assert.equal(input.hoverTarget(plain, pt(100, 100), 1), null)
+  assert.equal(input.hoverTarget(plain, pt(100, 200), 1)?.key, 'rectangle:1')
+  const typed = [rect(2, 0, 0, 200, 200, { classBox: { name: 'A', attributes: '', methods: '' } })]
+  assert.equal(input.clickSelectTarget(typed, pt(100, 100), 1, 'pen', false)?.key, 'rectangle:2')
 })
