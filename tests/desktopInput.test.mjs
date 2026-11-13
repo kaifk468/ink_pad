@@ -140,8 +140,8 @@ test('App stores mouse pressure through pointerPressure at the stroke start and 
 
 test('hold-to-snap is off for a mouse unless the Shapes tool is on, and the pen timer is untouched', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /const scheduleShapePreview = \(point\?: Point\) => \{\n    if \(eraser \|\| penButtonEraseRef\.current\) return\n    if \(mouseGestureRef\.current && !shapeMode\) return\n/)
-  assert.match(app, /if \(!stroke && mouseGestureRef\.current && !shapeMode\) \{[^}]*stroke = activeStrokeRef\.current\n      \} else if \(!stroke\) \{/)
+  assert.match(app, /const scheduleShapePreview = \(point\?: Point\) => \{\n    if \(eraser \|\| penButtonEraseRef\.current\) return\n    if \(\(mouseGestureRef\.current && !shapeMode\) \|\| shapeToolRef\.current !== null\) return\n/)
+  assert.match(app, /\} else if \(!stroke && mouseGestureRef\.current && !shapeMode\) \{[^}]*stroke = activeStrokeRef\.current\n      \} else if \(!stroke\) \{/)
   // the pen and touch gestures reset the flag at every gesture start
   assert.match(app, /mouseGestureRef\.current = event\.pointerType === 'mouse'\n    if \(mouseGestureRef\.current\) touchNav\.mouseDown\(\)/)
 })
@@ -274,7 +274,7 @@ test('Ctrl/Cmd + plus, minus and 0 zoom in, out and reset; other Ctrl combinatio
 })
 
 test('plain letters pick tools (any case), and only with no modifier and no auto-repeat', () => {
-  const tools = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox' }
+  const tools = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
   for (const [k, tool] of Object.entries(tools)) {
     assert.deepEqual(input.keyCommand(key(k), 'desktop'), { kind: 'tool', tool })
     assert.deepEqual(input.keyCommand(key(k.toUpperCase()), 'desktop'), { kind: 'tool', tool })
@@ -282,7 +282,7 @@ test('plain letters pick tools (any case), and only with no modifier and no auto
     assert.equal(input.keyCommand(key(k, { altKey: true }), 'desktop'), null)
     assert.equal(input.keyCommand(key(k, { shiftKey: true }), 'desktop') !== null, false, 'Shift+letter is not a tool key')
   }
-  for (const k of ['a', 'x', '1', ' ']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
+  for (const k of ['x', '1', ' ']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
 })
 
 test('Escape only deselects; with a modifier or held down it does nothing', () => {
@@ -340,7 +340,7 @@ test('Delete and Backspace delete the selection; Ctrl/Cmd + A selects all; modif
     assert.equal(input.keyCommand(key('a', { ...mod, shiftKey: true }), 'desktop'), null)
     assert.equal(input.keyCommand(key('a', { ...mod, altKey: true }), 'desktop'), null)
   }
-  assert.equal(input.keyCommand(key('a'), 'desktop'), null, 'a bare A is not a command')
+  assert.deepEqual(input.keyCommand(key('a'), 'desktop'), { kind: 'tool', tool: 'arrow' }, 'a bare A is the arrow tool; with Ctrl/Cmd it is select all')
 })
 
 test('App deletes the selection as one undo step (keys and the single selected box), clears the selection, and select-all moves to the select tool first', async () => {

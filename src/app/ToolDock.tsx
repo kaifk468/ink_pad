@@ -18,6 +18,9 @@ type ToolDockProps = {
   inkClassActive: boolean
   hldShapeActive: HldShape | null
   shapeActive: boolean
+  /** Desktop direct shape tool in use (rectangle, diamond, ellipse, arrow, line) or null. */
+  shapeTool?: 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line' | null
+  onShapeTool?: (kind: 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line') => void
   onPen: () => void
   onEraser: () => void
   onSelect: () => void
@@ -34,6 +37,14 @@ type ToolDockProps = {
   tidyLabel: string
   onTidy: () => void
 }
+
+const DESKTOP_SHAPES: Array<{ kind: 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'; label: string; key: string; icon: JSX.Element }> = [
+  { kind: 'rectangle', label: 'Rectangle', key: 'R', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1.5"/></svg> },
+  { kind: 'diamond', label: 'Diamond', key: 'D', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 20.5 12 12 20.5 3.5 12Z"/></svg> },
+  { kind: 'ellipse', label: 'Ellipse', key: 'O', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="8.5" ry="7"/></svg> },
+  { kind: 'arrow', label: 'Arrow', key: 'A', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16m0 0-5-5m5 5-5 5"/></svg> },
+  { kind: 'line', label: 'Line', key: 'I', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5"/></svg> },
+]
 
 /** Bottom-center tool dock: Pen, Eraser | Select, Lasso | Connectors, Insert. */
 export function ToolDock(props: ToolDockProps) {
@@ -76,11 +87,14 @@ export function ToolDock(props: ToolDockProps) {
         {divider}
         {penEraser}
         {divider}
+        {DESKTOP_SHAPES.map(({ kind, label, key, icon }) => (
+          <button className={`tool-button shape-draw-button shape-${kind}${props.shapeTool === kind ? ' selected' : ''}`} type="button" key={kind} aria-label={label} aria-pressed={props.shapeTool === kind} title={`${label} (${key}): drag on the sheet${kind === 'rectangle' || kind === 'diamond' || kind === 'ellipse' ? '; hold Shift for a square or circle' : ''}`} onClick={() => props.onShapeTool?.(kind)}>
+            {icon}<span>{label}</span>
+          </button>
+        ))}
+        {divider}
         <button className={`tool-button text-tool-button${props.textActive ? ' selected' : ''}`} type="button" aria-label="Text" aria-pressed={props.textActive} title="Click the sheet to type a label; click a label to edit it (T)" onClick={props.textActive ? props.onText : props.onTextOptions}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7V4.5h14V7M12 4.5V19.5M8.5 19.5h7"/></svg><span>Text</span>
-        </button>
-        <button className={`tool-button shapes-tool-button${props.shapeActive ? ' selected' : ''}`} type="button" aria-label="Shapes" aria-pressed={props.shapeActive} title="Draw rectangles, lines and arrows" onClick={props.onShapes}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="10" height="10" rx="1"/><path d="M10 19h9m0 0-4-4m4 4-4 4"/></svg><span>Shapes</span>
         </button>
         {connector}
         {divider}
@@ -91,11 +105,8 @@ export function ToolDock(props: ToolDockProps) {
         ))}
         {divider}
         {inkClass}
-        <button className={`tool-button typed-class-button${props.classActive ? ' selected' : ''}`} type="button" aria-label="Typed class box" aria-pressed={props.classActive} title="Click the sheet to add a typed UML class box; click a box to edit it" onClick={props.onClass}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9.5h16M4 14.5h16"/></svg><span>Typed class</span>
-        </button>
         {divider}
-        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} />
+        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} />
       </nav>
     )
   }

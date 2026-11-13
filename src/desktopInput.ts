@@ -137,9 +137,9 @@ export function spaceIsPanKey(key: string, targetTag: string, isEditable: boolea
  * - Escape deselects (it never cancels a stroke or closes anything).
  * - Delete or Backspace deletes the selection; Ctrl/Cmd + A selects everything on the page (step 5).
  * - A plain letter picks a tool, and picking the tool already active leaves it active ("set", not "toggle"):
- *   P pen, V select, E eraser, T text, L lasso, C connector, B class box.
+ *   P pen, V select, E eraser, T text, L lasso, C connector, B class box, and the shapes R rectangle, D diamond, O ellipse, A arrow, I line.
  */
-export type KeyTool = 'pen' | 'select' | 'eraser' | 'text' | 'lasso' | 'connector' | 'classBox'
+export type KeyTool = 'pen' | 'select' | 'eraser' | 'text' | 'lasso' | 'connector' | 'classBox' | 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'
 export type KeyCommand =
   | { kind: 'undo' }
   | { kind: 'redo' }
@@ -157,7 +157,7 @@ export type KeyCommand =
   | { kind: 'edit' }
   | { kind: 'tool'; tool: KeyTool }
 
-export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox' }
+export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
 
 const ARROW_KEYS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
 
@@ -228,7 +228,7 @@ export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scal
     ?? pick('connector', (item) => item.kind === 'connector' && itemHitTest(item, point, Math.max(12 / scale, item.strokeWidth * 2)))
 }
 
-export type ClickTool = 'pen' | 'shape' | 'text' | 'connector' | 'lasso' | 'classBox' | 'select' | 'eraser'
+export type ClickTool = 'pen' | 'shape' | 'shapeDraw' | 'text' | 'connector' | 'lasso' | 'classBox' | 'select' | 'eraser'
 
 /**
  * What a mouse press selects and drags, before the active tool sees it. Any tool except the eraser; the select tool
@@ -246,7 +246,7 @@ export function clickSelectTarget(
 ): HitTarget | null {
   if (tool === 'eraser' || tool === 'select') return null
   // The connector tool's press starts a connector (from the box edge or inside it); it must never grab the box instead.
-  if (tool === 'connector') return null
+  if (tool === 'connector' || tool === 'shapeDraw') return null
   if (tool === 'lasso' && hasSelection) return null
   return edgeOnlyForInkBoxes(routedItems, hitTarget(routedItems, point, scale), point, scale, tool === 'pen' ? selectedRectangleId : null)
 }
@@ -395,7 +395,7 @@ export function doubleClickTarget(routedItems: readonly CanvasItem[], point: Poi
   if (target.kind === 'text') return { kind: 'text', id: target.id }
   if (target.kind !== 'rectangle') return null
   const box = routedItems.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === target.id)
-  return box?.classBox && !box.inkBox && !box.ellipse ? { kind: 'classBox', id: box.id } : null
+  return box?.classBox && !box.inkBox && !box.ellipse && !box.diamond ? { kind: 'classBox', id: box.id } : null
 }
 
 /** Enter edits the one selected label or class box; any other selection (none, several, a connector, an ink box) does nothing. */
@@ -407,7 +407,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
   const item = items.find((candidate) => canvasItemKey(candidate) === key)
   if (!item) return null
   if (item.kind === 'text') return { kind: 'text', id: item.id }
-  return item.kind === 'rectangle' && item.classBox && !item.inkBox && !item.ellipse ? { kind: 'classBox', id: item.id } : null
+  return item.kind === 'rectangle' && item.classBox && !item.inkBox && !item.ellipse && !item.diamond ? { kind: 'classBox', id: item.id } : null
 }
 
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll'

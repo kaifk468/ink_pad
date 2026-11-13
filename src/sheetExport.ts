@@ -105,6 +105,11 @@ function rectangleElement(rectangle: RectangleObject): string {
   if (rectangle.hldShape) {
     return inkBoxInkElement(rectangle) + `<path d="${hldOutlinePath(rectangle, rectangle.hldShape)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"/>`
   }
+  if (rectangle.diamond) {
+    const cx = rectangle.x + rectangle.width / 2
+    const cy = rectangle.y + rectangle.height / 2
+    return `<polygon points="${n(cx)},${n(rectangle.y)} ${n(rectangle.x + rectangle.width)},${n(cy)} ${n(cx)},${n(rectangle.y + rectangle.height)} ${n(rectangle.x)},${n(cy)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"/>`
+  }
   if (rectangle.ellipse) {
     return `<ellipse cx="${n(rectangle.x + rectangle.width / 2)}" cy="${n(rectangle.y + rectangle.height / 2)}" rx="${n(rectangle.width / 2)}" ry="${n(rectangle.height / 2)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}"/>`
   }

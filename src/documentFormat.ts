@@ -296,7 +296,7 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     if (!isNum(value.x) || !isNum(value.y) || !isNum(value.width) || !isNum(value.height) || !isColor(value.strokeColor) || !isNum(value.strokeWidth) || value.strokeWidth <= 0) return null
     const classBox = sanitizeClassBox(value.classBox)
     const inkBox = sanitizeInkBox(value.inkBox, value.y, value.height)
-    const rectangle: RectangleObject = { kind: 'rectangle', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth, ...(classBox ? { classBox } : {}), ...(inkBox ? { inkBox } : {}), ...(inkBox && HLD_SHAPE_KINDS.includes(value.hldShape as string) ? { hldShape: value.hldShape as HldShape } : {}), ...(value.ellipse === true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { ellipse: true as const } : {}) }
+    const rectangle: RectangleObject = { kind: 'rectangle', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth, ...(classBox ? { classBox } : {}), ...(inkBox ? { inkBox } : {}), ...(inkBox && HLD_SHAPE_KINDS.includes(value.hldShape as string) ? { hldShape: value.hldShape as HldShape } : {}), ...(value.ellipse === true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { ellipse: true as const } : {}), ...(value.diamond === true && value.ellipse !== true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { diamond: true as const } : {}) }
     return rectangle
   }
   if (value.kind === 'text') {

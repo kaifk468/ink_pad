@@ -38,19 +38,22 @@ test('HLD shapes (service, database) shrink to 32x32; class boxes keep 64x72', (
 import { readFile } from 'node:fs/promises'
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
 
-test('desktop dock: same bottom bar, with Text, Shapes, HLD shapes and Typed class as one-click buttons and no Insert tray', async () => {
+test('desktop dock: bottom bar with direct shape tools, Text, Connector, HLD shapes and Class box, no Insert tray', async () => {
   const dock = await read('src/app/ToolDock.tsx')
   assert.match(dock, /className=\{`tool-dock\$\{props\.desktop \? ' desktop-dock' : ''\}`\}/)
   for (const key of ['P', 'E', 'V', 'L', 'C', 'B']) assert.match(dock, new RegExp(`', '${key}'\\)\\}`), key)
+  for (const kind of ['rectangle', 'diamond', 'ellipse', 'arrow', 'line']) assert.match(dock, new RegExp(`kind: '${kind}'`), kind)
   const desktop = dock.slice(dock.indexOf('if (props.desktop) {'), dock.lastIndexOf('  return ('))
   const tablet = dock.slice(dock.lastIndexOf('  return ('))
-  for (const name of ['text-tool-button', 'shapes-tool-button', 'hld-tool-button', 'typed-class-button', '{connector}', '{inkClass}', '{penEraser}', '<MoreTray']) assert.ok(desktop.includes(name), name)
+  for (const name of ['text-tool-button', 'DESKTOP_SHAPES.map', 'hld-tool-button', '{connector}', '{inkClass}', '{penEraser}', '<MoreTray']) assert.ok(desktop.includes(name), name)
   assert.equal(desktop.includes('<InsertTray'), false)
-  assert.ok(desktop.indexOf('{selectLasso}') < desktop.indexOf('{penEraser}') && desktop.indexOf('{penEraser}') < desktop.indexOf('text-tool-button'))
+  assert.equal(desktop.includes('shapes-tool-button'), false, 'the shape-recognition toggle is gone from the desktop dock')
+  assert.ok(desktop.indexOf('{selectLasso}') < desktop.indexOf('{penEraser}') && desktop.indexOf('{penEraser}') < desktop.indexOf('DESKTOP_SHAPES.map') && desktop.indexOf('DESKTOP_SHAPES.map') < desktop.indexOf('text-tool-button') && desktop.indexOf('text-tool-button') < desktop.indexOf('{connector}'))
   assert.match(desktop, /onClick=\{props\.textActive \? props\.onText : props\.onTextOptions\}/)
   assert.match(desktop, /HLD_ENTRIES\.map/)
+  assert.match(desktop, /<MoreTray[^>]*onTypedClass=\{props\.onClass\}/)
   // tablet: unchanged order with the Insert tray
-  assert.ok(tablet.includes('<InsertTray') && !tablet.includes('text-tool-button'))
+  assert.ok(tablet.includes('<InsertTray') && !tablet.includes('text-tool-button') && !tablet.includes('DESKTOP_SHAPES'))
   assert.ok(tablet.indexOf('{penEraser}') < tablet.indexOf('{selectLasso}') && tablet.indexOf('{selectLasso}') < tablet.indexOf('{connector}'))
   const app = await read('src/App.tsx')
   assert.match(app, /<ToolDock\s+desktop=\{inputMode === 'desktop'\}/)

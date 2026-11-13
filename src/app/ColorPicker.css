@@ -1,0 +1,15 @@
+.color-picker { box-sizing: border-box; width: 248px; padding: 14px; background: #fff; border: 1px solid #e3e6ec; border-radius: 16px; font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; color: #1c1f26; display: flex; flex-direction: column; gap: 12px; }
+.color-picker__label { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #5d636f; }
+.color-picker__sv { position: relative; width: 100%; height: 150px; border-radius: 10px; touch-action: none; cursor: crosshair; outline: none; border: 1px solid rgba(0,0,0,.12); box-sizing: border-box; background-image: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent); }
+.color-picker__hue { position: relative; width: 100%; height: 14px; border-radius: 7px; touch-action: none; cursor: pointer; outline: none; border: 1px solid rgba(0,0,0,.12); box-sizing: border-box; background: linear-gradient(to right, #f00, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00); }
+.color-picker__thumb { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; }
+.color-picker__sv:focus-visible, .color-picker__hue:focus-visible { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #3443b8; }
+.color-picker__row { display: flex; align-items: center; gap: 8px; }
+.color-picker__swatch { width: 30px; height: 30px; flex: none; padding: 0; border-radius: 8px; border: 1px solid rgba(0,0,0,.12); cursor: pointer; }
+.color-picker__swatch--current { cursor: default; }
+.color-picker__swatch[aria-pressed='true'] { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #3443b8; }
+.color-picker__hex { flex: 1; min-width: 0; height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid #e3e6ec; border-radius: 8px; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: lowercase; }
+.color-picker__hex:focus-visible { outline: none; border-color: #3443b8; box-shadow: 0 0 0 2px rgba(52,67,184,.2); }
+.color-picker__hex[aria-invalid='true'] { border-color: #c0392b; background: #fdf1ef; }
+.color-picker__recent { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; }
+.color-picker__empty { font-size: 12px; color: #8a8f9a; align-self: center; }

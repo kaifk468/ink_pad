@@ -103,7 +103,7 @@ test('App wiring: mouse click-select is Desktop only and before the tool branche
   assert.match(app, /clickSelectTarget\(routeConnectors\(strokesRef\.current\), point, viewportRef\.current\.scale, clickToolName\(\)/)
   assert.match(app, /const changed = key !== hoverKeyRef\.current\n\s*hoverKeyRef\.current = key\n\s*applyCanvasCursor\(\)\n\s*if \(changed\) renderAll\(\)/)
   assert.match(app, /event\.pointerType === 'mouse' && event\.buttons === 0 && inputModeRef\.current === 'desktop'\) setMouseHover\(/)
-  assert.match(app, /if \(event\.pointerType === 'pen' && !eraser && !buttonErase && !shapeMode\) \{\n\s*const edgeBox = edgeBandBox\(/)
+  assert.match(app, /if \(event\.pointerType === 'pen' && !eraser && !buttonErase && !shapeMode && shapeTool === null\) \{\n\s*const edgeBox = edgeBandBox\(/)
   assert.match(app, /window\.setTimeout\(\(\) => fireEdgeHold\(pointerId\), EDGE_HOLD_MS\)/)
   // every end path clears the hold timer
   assert.equal((app.match(/if \(edgeHoldRef\.current\?\.pointerId === event\.pointerId\) cancelEdgeHold\(\)/g) ?? []).length, 2)
@@ -314,7 +314,7 @@ test('hardening: every new mouse branch is Desktop-only, double-click needs a mo
   assert.match(app, /if \(event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop' && !hitTarget\(/)
   assert.match(app, /event\.pointerType === 'mouse' && event\.buttons === 0 && inputModeRef\.current === 'desktop'\) setMouseHover\(/)
   // the edge hold is pen-only and runs in both modes by design (no mode check)
-  assert.match(app, /if \(event\.pointerType === 'pen' && !eraser && !buttonErase && !shapeMode\) \{\n\s*const edgeBox/)
+  assert.match(app, /if \(event\.pointerType === 'pen' && !eraser && !buttonErase && !shapeMode && shapeTool === null\) \{\n\s*const edgeBox/)
   assert.match(app, /lastPointerTypeRef\.current !== 'mouse'/)
   assert.match(app, /if \(event\.pointerType === 'pen' && activeMarqueeRef\.current\) \{ activeMarqueeRef\.current = null; renderAll\(\) \}/)
   assert.match(app, /if \(inputMode !== 'desktop'\) setMouseHover\(null\)/)

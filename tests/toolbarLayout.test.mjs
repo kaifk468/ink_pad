@@ -84,8 +84,9 @@ test('tray entries and dock buttons reuse the existing tool handlers instead of 
 })
 
 test('the contextual panel shows colors, widths and stroke display only for drawing tools, and text sizes in Text mode', () => {
-  assert.match(app, /showStyle=\{optionsFor === 'pen' && penModeActive\}/)
-  assert.match(app, /showTextSizes=\{optionsFor === 'text' && textMode\}/)
+  // tablet: after a double tap on the tool; desktop: after one click, with the tool (and nothing selected)
+  assert.match(app, /: optionsFor === 'pen' && penModeActive\}/)
+  assert.match(app, /showTextSizes=\{\(optionsFor === 'text' \|\| inputMode === 'desktop'\) && textMode\}/)
   assert.match(context, /aria-label="Pen color"/)
   assert.match(context, /aria-label="Stroke thickness"/)
   assert.match(context, /aria-label="Raw stroke display"[\s\S]*?aria-pressed=\{props\.strokeDisplayMode === 'raw'\}/)

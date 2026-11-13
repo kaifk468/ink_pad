@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
-import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { PASTE_OFFSET, copyItems, pasteItems } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
@@ -495,6 +495,12 @@ function App() {
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [hasInk, setHasInk] = useState(false)
   const [shapeMode, setShapeMode] = useState(false)
+  /** Desktop direct shape tools: drag a rectangle, diamond or ellipse, or a straight line or arrow. Null when none is active. */
+  const [shapeTool, setShapeTool] = useState<ShapeKind | 'arrow' | 'line' | null>(null)
+  const shapeToolRef = useRef<ShapeKind | 'arrow' | 'line' | null>(null)
+  shapeToolRef.current = shapeTool
+  const recolorSessionRef = useRef(false)
+  const [, bumpSelectionColor] = useState(0)
   const [selectionMode, setSelectionMode] = useState(false)
   const [textMode, setTextMode] = useState(false)
   const [classMode, setClassMode] = useState(false)
@@ -540,7 +546,7 @@ function App() {
   const [benchmarkRunning, setBenchmarkRunning] = useState(false)
   const [benchmarkResult, setBenchmarkResult] = useState<Record<string, unknown> | null>(null)
   const [navigatorMinimized, setNavigatorMinimized] = useState(true)
-  const penModeActive = !eraser && !shapeMode && !selectionMode && !lassoMode && !connectorMode && !textMode && !classMode && umlConnectorType === null
+  const penModeActive = !eraser && !shapeMode && shapeTool === null && !selectionMode && !lassoMode && !connectorMode && !textMode && !classMode && umlConnectorType === null
 
   const getCurrentMinimapBounds = useCallback((): ViewBounds => {
     return { ...sheetBoundsRef.current }
@@ -584,6 +590,9 @@ function App() {
 
   useEffect(() => {
     if (connectorMode || eraser || shapeMode || selectionMode || lassoMode || textMode || classMode) setUmlConnectorType(null)
+  }, [connectorMode, eraser, shapeMode, selectionMode, lassoMode, textMode, classMode])
+  useEffect(() => {
+    if (connectorMode || eraser || shapeMode || selectionMode || lassoMode || textMode || classMode) setShapeTool(null)
   }, [connectorMode, eraser, shapeMode, selectionMode, lassoMode, textMode, classMode])
 
   useEffect(() => {
@@ -637,7 +646,7 @@ function App() {
     setTextMode(false); setClassMode(false)
     setEraser(false)
     setEraserMenuOpen(false)
-    setShapeMode(false)
+    setShapeMode(false); setShapeTool(null)
     setSelectionMode(false)
     setLassoMode(false)
     setConnectorMode(false)
@@ -678,7 +687,7 @@ function App() {
 
   const scheduleShapePreview = (point?: Point) => {
     if (eraser || penButtonEraseRef.current) return
-    if (mouseGestureRef.current && !shapeMode) return
+    if ((mouseGestureRef.current && !shapeMode) || shapeToolRef.current !== null) return
     const anchor = holdAnchorRef.current
     if (holdTimerRef.current !== null && point && anchor && Math.hypot(point.x - anchor.x, point.y - anchor.y) < SHAPE_HOLD_JITTER_PX / viewportRef.current.scale) return
     clearShapeHoldTimer()
@@ -1055,7 +1064,7 @@ function App() {
   // Step 7. The tool the mouse is using, as the click-to-select rule names it.
   const clickToolName = (): ClickTool => eraser ? 'eraser'
     : selectionMode ? 'select' : lassoMode ? 'lasso' : textMode ? 'text' : classMode ? 'classBox'
-    : (connectorMode || umlConnectorType !== null) ? 'connector' : shapeMode ? 'shape' : 'pen'
+    : (connectorMode || umlConnectorType !== null) ? 'connector' : shapeTool !== null ? 'shapeDraw' : shapeMode ? 'shape' : 'pen'
 
   // Selects the hit box, connector or text exactly as the select tool does, and returns the item. A plain box needs the select
   // tool for its handles to work, so from the pen, shapes, text, connector and class tools that tool is switched on; ink boxes
@@ -1206,6 +1215,23 @@ function App() {
   // Font picker: the choice is the font for new labels, and also changes the single selected label (one undo step, re-measured once the font is ready).
   const selectedTextFont: TextFontId | null = selectedTextId === null ? null
     : (() => { const item = strokesRef.current.find((candidate) => candidate.kind === 'text' && candidate.id === selectedTextId); return item?.kind === 'text' ? item.fontFamily ?? LEGACY_TEXT_FONT : null })()
+  const currentSelectionKeys = () => {
+    const keys = new Set(selectedKeysRef.current)
+    if (selectedRectangleIdRef.current !== null) keys.add(`rectangle:${selectedRectangleIdRef.current}`)
+    return keys
+  }
+  /** Recolours the whole selection (ink, shape, box, connector or text); one undo step per picker drag or swatch click. */
+  const recolorSelection = (hex: string, commit: boolean) => {
+    const next = recolorItems(strokesRef.current, currentSelectionKeys(), hex)
+    if (next !== strokesRef.current) {
+      if (!recolorSessionRef.current) { saveHistory(); recolorSessionRef.current = true }
+      strokesRef.current = next
+      renderAll()
+      bumpSelectionColor((n) => n + 1)
+    }
+    if (commit) recolorSessionRef.current = false
+  }
+
   const changeTextFontChoice = (fontId: TextFontId) => {
     setTextFontId(fontId)
     const targetId = selectedTextId
@@ -2049,7 +2075,7 @@ function App() {
     setTextMode(false); setClassMode(false)
     setUmlConnectorType(relationshipType)
     setConnectorMode(false)
-    setShapeMode(false)
+    setShapeMode(false); setShapeTool(null)
     setSelectionMode(false)
     setLassoMode(false)
     setEraser(false)
@@ -2171,7 +2197,9 @@ function App() {
       let stroke = shapePreviewRef.current
       const inkBoxId = activeStrokeBoxRef.current
       if (!stroke && inkBoxId !== null) stroke = activeStrokeRef.current
-      if (!stroke && mouseGestureRef.current && !shapeMode) {
+      if (!stroke && shapeToolRef.current !== null) {
+        stroke = activeStrokeRef.current
+      } else if (!stroke && mouseGestureRef.current && !shapeMode) {
         // A mouse is often held still while the user thinks: no hold-to-snap for it (the Shapes tool still recognises shapes).
         stroke = activeStrokeRef.current
       } else if (!stroke) {
@@ -2186,7 +2214,13 @@ function App() {
           ? recognizedShape
           : heldLongEnough ? recognizeLine(heldStroke) : heldStroke
       }
-      if (stroke.kind === 'stroke' && STROKE_THINNING_ENABLED) stroke = thinStroke(stroke)
+      const lineTool = shapeToolRef.current === 'line' || shapeToolRef.current === 'arrow' ? shapeToolRef.current : null
+      if (lineTool && stroke.kind === 'stroke' && !stroke.erase) {
+        // Straight line or arrow from the press point to the release point; a click without a drag adds nothing.
+        const first = stroke.points[0]
+        const last = stroke.points[stroke.points.length - 1]
+        stroke = Math.hypot(last.x - first.x, last.y - first.y) < 4 ? { ...stroke, points: [first] } : { ...stroke, shape: lineTool, points: [first, last] }
+      } else if (stroke.kind === 'stroke' && STROKE_THINNING_ENABLED) stroke = thinStroke(stroke)
       const targetBox = inkBoxId !== null && stroke.kind === 'stroke'
         ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === inkBoxId && item.inkBox !== undefined)
         : undefined
@@ -2220,6 +2254,8 @@ function App() {
     const clippedPoint = clipSegmentToBounds(previous, point, sheetBoundsRef.current)
     if (clippedPoint && shouldAppendStrokeSample(previous, clippedPoint)) {
       stroke.points.push(clippedPoint)
+      // The line and arrow tools show a straight segment from the press point while dragging.
+      if (shapeToolRef.current === 'line' || shapeToolRef.current === 'arrow') stroke.points = [stroke.points[0], clippedPoint]
     }
     if (!isPointWithinBounds(point, workspaceBoundsRef.current)) {
       finishStroke(pointerId)
@@ -2326,6 +2362,28 @@ function App() {
         activeDragRef.current = { pointerId: event.pointerId, itemKey: clicked.key, start: point, originalItems: strokesRef.current.slice(), moved: false, editTextId: null, editClassBoxId: null }
         return
       }
+    }
+    const boxShape = shapeTool === 'rectangle' || shapeTool === 'diamond' || shapeTool === 'ellipse' ? shapeTool : null
+    if (boxShape) {
+      // Press where the shape starts and drag to size it (Shift keeps it square); a plain click makes a default-sized shape.
+      event.currentTarget.setPointerCapture(event.pointerId)
+      saveHistory()
+      const box = createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)
+      strokesRef.current.push(box)
+      setHasInk(true)
+      activeResizeRef.current = {
+        pointerId: event.pointerId,
+        rectangleId: box.id,
+        selectedKeys: null,
+        handle: 'se',
+        start: { x: box.x + box.width, y: box.y + box.height, pressure: 1 },
+        originalBounds: { x: box.x, y: box.y, width: box.width, height: box.height },
+        originalItems: strokesRef.current.slice(),
+        moved: false,
+        created: true,
+      }
+      renderAll()
+      return
     }
     if (textMode) {
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -2502,7 +2560,7 @@ function App() {
       }
       return
     }
-    if (!eraser && !buttonErase && !shapeMode && selectedRectangleIdRef.current !== null) {
+    if (!eraser && !buttonErase && !shapeMode && shapeTool === null && selectedRectangleIdRef.current !== null) {
       // A selected ink class box: its handles, dividers and border come first, so resizing or moving never draws ink. Only presses inside write.
       const selectedBox = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === selectedRectangleIdRef.current && item.inkBox !== undefined)
       if (selectedBox) {
@@ -2559,7 +2617,7 @@ function App() {
     event.currentTarget.setPointerCapture(event.pointerId)
     activePointerRef.current = event.pointerId
     lastSignificantMoveAtRef.current = performance.now()
-    activeStrokeBoxRef.current = shapeMode ? null : findInkBoxAt(strokesRef.current, point)?.id ?? null
+    activeStrokeBoxRef.current = shapeMode || shapeTool !== null ? null : findInkBoxAt(strokesRef.current, point)?.id ?? null
     activeStrokeRef.current = eraser || buttonErase
       ? createEraserStroke(nextStrokeIdRef.current++, point, color, eraserSize)
       : { kind: 'stroke', id: nextStrokeIdRef.current++, points: [point], color, width, erase: false }
@@ -2576,7 +2634,7 @@ function App() {
     predictedPointsRef.current = []
     holdAnchorRef.current = point
     cancelEdgeHold()
-    if (event.pointerType === 'pen' && !eraser && !buttonErase && !shapeMode) {
+    if (event.pointerType === 'pen' && !eraser && !buttonErase && !shapeMode && shapeTool === null) {
       const edgeBox = edgeBandBox(strokesRef.current, point, viewportRef.current.scale)
       if (edgeBox && edgeBox.id !== selectedRectangleIdRef.current && !selectedKeysRef.current.has(canvasItemKey(edgeBox))) {
         const pointerId = event.pointerId
@@ -2661,6 +2719,11 @@ function App() {
         point.x - activeResize.start.x,
         point.y - activeResize.start.y,
       )
+      if (activeResize.created && event.shiftKey && activeResize.rectangleId !== null && shapeToolRef.current !== null) {
+        const side = Math.max(bounds.width, bounds.height)
+        bounds.width = side
+        bounds.height = side
+      }
       const original = activeResize.originalBounds
       const unchanged = bounds.x === original.x && bounds.y === original.y
         && bounds.width === original.width && bounds.height === original.height
@@ -2850,6 +2913,22 @@ function App() {
       const finished = activeResizeRef.current
       activeResizeRef.current = null
       if (finished.created && finished.rectangleId !== null) {
+        const createdBox = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === finished.rectangleId)
+        if (createdBox && !createdBox.inkBox && !createdBox.classBox) {
+          // A direct shape (rectangle, diamond, ellipse): a click makes a default size; then Select takes over with the shape selected.
+          if (!finished.moved) {
+            const size = createdBox.ellipse ? { width: 160, height: 110 } : createdBox.diamond ? { width: 140, height: 140 } : { width: 160, height: 100 }
+            const x = Math.min(finished.originalBounds.x, workspaceBoundsRef.current.x + workspaceBoundsRef.current.width - size.width)
+            const y = Math.min(finished.originalBounds.y, workspaceBoundsRef.current.y + workspaceBoundsRef.current.height - size.height)
+            strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: size.width, height: size.height })
+          }
+          setShapeTool(null)
+          setSelectionMode(true)
+          setSelectedRectangle(finished.rectangleId)
+          updateSelectedItems([])
+          renderAll()
+          return
+        }
         if (!finished.moved) {
           const createdShape = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === finished.rectangleId)?.hldShape
           const size = createdShape ? HLD_DEFAULT_SIZE[createdShape] : { width: INK_BOX_DEFAULT_WIDTH, height: INK_BOX_DEFAULT_HEIGHT }
@@ -3129,14 +3208,20 @@ function App() {
   }
 
   const toggleShapeTool = () => { setOptionsFor(null); setShapeMode((value) => !value); setTextMode(false); setClassMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection(); setEraser(false) }
-  const toggleSelectTool = () => { const next = !selectionMode; setSelectionMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
-  const openTextOptions = () => { setTextMode(true); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); clearLassoSelection(); setOptionsFor('text') }
-  const toggleTextTool = () => { const next = !textMode; setTextMode(next); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
-  const toggleHldShapeTool = (shape: HldShape) => { const next = !(classMode && inkClassTool && hldShapeTool === shape); setHldShapeTool(next ? shape : null); setInkClassTool(next); setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
-  const toggleInkClassTool = () => { const next = !(classMode && inkClassTool && hldShapeTool === null); setHldShapeTool(null); setInkClassTool(next); setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
-  const toggleClassTool = () => { const next = !(classMode && !inkClassTool); setHldShapeTool(null); setInkClassTool(false); setClassMode(next); setTextMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
-  const toggleLassoTool = () => { const next = !lassoMode; setLassoMode(next); setTextMode(false); setClassMode(false); setSelectionMode(false); setConnectorMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); setSelectedRectangle(null); clearLassoSelection() }
-  const toggleConnectorTool = () => { const next = !connectorMode; setConnectorMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setSelectionMode(false); setShapeMode(false); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleShapeDrawTool = (kind: ShapeKind | 'arrow' | 'line') => {
+    const next = shapeTool !== kind
+    setShapeTool(next ? kind : null)
+    setOptionsFor(null); setShapeMode(false); setTextMode(false); setClassMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false)
+    if (next) { clearLassoSelection(); setSelectedRectangle(null) }
+  }
+  const toggleSelectTool = () => { const next = !selectionMode; setSelectionMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setShapeTool(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const openTextOptions = () => { setTextMode(true); setClassMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); clearLassoSelection(); setOptionsFor('text') }
+  const toggleTextTool = () => { const next = !textMode; setTextMode(next); setClassMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleHldShapeTool = (shape: HldShape) => { const next = !(classMode && inkClassTool && hldShapeTool === shape); setHldShapeTool(next ? shape : null); setInkClassTool(next); setClassMode(next); setTextMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleInkClassTool = () => { const next = !(classMode && inkClassTool && hldShapeTool === null); setHldShapeTool(null); setInkClassTool(next); setClassMode(next); setTextMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleClassTool = () => { const next = !(classMode && !inkClassTool); setHldShapeTool(null); setInkClassTool(false); setClassMode(next); setTextMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
+  const toggleLassoTool = () => { const next = !lassoMode; setLassoMode(next); setTextMode(false); setClassMode(false); setSelectionMode(false); setConnectorMode(false); setShapeMode(false); setShapeTool(null); setEraser(false); setEraserMenuOpen(false); setSelectedRectangle(null); clearLassoSelection() }
+  const toggleConnectorTool = () => { const next = !connectorMode; setConnectorMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setSelectionMode(false); setShapeMode(false); setShapeTool(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
   const isDoubleTap = (tool: string) => {
     const now = Date.now()
     const last = lastToolTapRef.current
@@ -3150,12 +3235,12 @@ function App() {
   }
   const tapEraserTool = () => {
     if (isDoubleTap('eraser')) {
-      setTextMode(false); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); clearLassoSelection()
+      setTextMode(false); setClassMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); clearLassoSelection()
       setEraser(true)
       setOptionsFor('eraser')
       return
     }
-    setTextMode(false); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection()
+    setTextMode(false); setClassMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); clearLassoSelection()
     setEraser((value) => !value)
     setOptionsFor(null)
   }
@@ -3368,13 +3453,14 @@ function App() {
           case 'pen': selectPenMode(); break
           case 'select': if (!selectionMode) toggleSelectTool(); break
           case 'eraser':
-            setTextMode(false); setClassMode(false); setShapeMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); clearLassoSelection()
+            setTextMode(false); setClassMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); clearLassoSelection()
             setEraser(true)
             break
           case 'text': if (!textMode) toggleTextTool(); break
           case 'lasso': if (!lassoMode) toggleLassoTool(); break
           case 'connector': if (!connectorMode) toggleConnectorTool(); break
           case 'classBox': if (!(classMode && inkClassTool && hldShapeTool === null)) toggleInkClassTool(); break
+          case 'rectangle': case 'diamond': case 'ellipse': case 'arrow': case 'line': if (shapeTool !== command.tool) toggleShapeDrawTool(command.tool); break
         }
         return true
     }
@@ -3587,19 +3673,29 @@ function App() {
         />
       )}
       <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
-      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={navigationSettings.zoomLocked} onOpenStorage={() => setStoragePanelOpen(true)} leading={penModeActive ? <PenColors color={color} onColor={selectColor} /> : undefined} />
+      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={navigationSettings.zoomLocked} onOpenStorage={() => setStoragePanelOpen(true)} leading={penModeActive && inputMode !== 'desktop' ? <PenColors color={color} onColor={selectColor} /> : undefined} />
       <ContextPanel
-        showStyle={optionsFor === 'pen' && penModeActive}
+        desktop={inputMode === 'desktop'}
+        showDisplayMode={shapeTool === null}
+        showSelectionColor={inputMode === 'desktop' && (selectedItemCount > 0 || hasSelectedRectangle)}
+        selectionColor={selectionColor(strokesRef.current, currentSelectionKeys())}
+        onSelectionColor={recolorSelection}
+        showEraser={inputMode === 'desktop' && eraser}
+        objectEraser={objectEraser}
+        eraserSize={eraserSize}
+        onEraserMode={(whole) => { setObjectEraser(whole); setEraser(true) }}
+        onEraserSize={(size) => { setEraserSize(size); setObjectEraser(false); setEraser(true) }}
+        showStyle={inputMode === 'desktop' ? ((penModeActive || shapeTool !== null) && selectedItemCount === 0 && !hasSelectedRectangle) : optionsFor === 'pen' && penModeActive}
         color={color}
         onColor={selectColor}
         width={width}
         onWidth={setWidth}
         strokeDisplayMode={strokeDisplayMode}
         onStrokeDisplayMode={setStrokeDisplayMode}
-        showTextSizes={optionsFor === 'text' && textMode}
+        showTextSizes={(optionsFor === 'text' || inputMode === 'desktop') && textMode}
         textSize={textSize}
         onTextSize={setTextSize}
-        showTextFonts={(optionsFor === 'text' && textMode) || (selectedTextId !== null && selectedItemCount === 1)}
+        showTextFonts={((optionsFor === 'text' || inputMode === 'desktop') && textMode) || (selectedTextId !== null && selectedItemCount === 1)}
         textFontId={selectedTextFont ?? textFontId}
         onTextFont={changeTextFontChoice}
         selectedItemCount={selectedItemCount}
@@ -3633,6 +3729,8 @@ function App() {
         hldShapeActive={classMode && inkClassTool ? hldShapeTool : null}
         onHldShape={toggleHldShapeTool}
         shapeActive={shapeMode}
+        shapeTool={shapeTool}
+        onShapeTool={toggleShapeDrawTool}
         onPen={tapPenTool}
         onEraser={tapEraserTool}
         onSelect={toggleSelectTool}
@@ -3811,7 +3909,7 @@ function App() {
         </table></div>
         <p>Short ≤120 retained points; long &gt;120. Times are milliseconds. P95 uses up to 512 observations per stroke; maxima and total counts cover every observation. RAF gap is between requested drawing callbacks, not display refresh. Scene complexity is sampled at pen-down. Sample→render ends before browser compositing/display scanout and is not digitizer-to-photon latency. Browser stall APIs are feature-detected.</p>
       </section>}
-      {eraserMenuOpen && eraserPopoverPosition && createPortal(
+      {eraserMenuOpen && inputMode !== 'desktop' && eraserPopoverPosition && createPortal(
         <div
           className="eraser-popover"
           role="group"

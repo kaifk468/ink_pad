@@ -6,7 +6,7 @@ export type ClassBoxContent = { name: string; attributes: string; methods: strin
 /** HLD shape kinds: Database (cylinder), Queue, Service. A rectangle with one of these is an ink box drawn as that shape. */
 export const HLD_SHAPES = ['database', 'queue', 'service'] as const
 export type HldShape = (typeof HLD_SHAPES)[number]
-export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true }
+export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true }
 /** The fixed list of label fonts. A saved label without `fontFamily` is the original clean sans. */
 export const TEXT_FONT_IDS = ['excalifont', 'sans', 'serif', 'mono'] as const
 export type TextFontId = (typeof TEXT_FONT_IDS)[number]
@@ -253,6 +253,66 @@ export function snapConnectorEndpoint(
     }
   }
   return closest
+}
+
+export type ShapeKind = 'rectangle' | 'diamond' | 'ellipse'
+
+/** A plain box of the given shape: no class box or ink, with the optional `diamond`/`ellipse` flag. */
+export function createShapeBox(id: number, x: number, y: number, width: number, height: number, strokeColor: string, strokeWidth: number, shape: ShapeKind): RectangleObject {
+  return { kind: 'rectangle', id, x, y, width, height, strokeColor, strokeWidth, ...(shape === 'diamond' ? { diamond: true as const } : {}), ...(shape === 'ellipse' ? { ellipse: true as const } : {}) }
+}
+
+const HEX_COLOR = /^#[0-9a-f]{6}$/i
+
+const sameColor = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+
+/** The colour of one item: stroke colour, shape/connector stroke colour, or text colour. */
+export function itemColor(item: CanvasItem): string {
+  return item.kind === 'stroke' ? item.color : item.kind === 'text' ? item.color : item.strokeColor
+}
+
+/** The one colour shared by every selected item, or null when they differ or nothing is selected. */
+export function selectionColor(items: readonly CanvasItem[], keys: ReadonlySet<string>): string | null {
+  let found: string | null = null
+  for (const item of items) {
+    if (!keys.has(canvasItemKey(item))) continue
+    const color = itemColor(item)
+    if (found === null) found = color
+    else if (found !== color) return null
+  }
+  return found
+}
+
+/**
+ * Items with the selected ones recoloured. An ink box also recolours its writing; eraser strokes are left alone.
+ * Unselected items keep their reference; returns the same array when nothing changes or the colour is not #rrggbb.
+ */
+export function recolorItems(items: CanvasItem[], keys: ReadonlySet<string>, color: string): CanvasItem[] {
+  if (keys.size === 0 || !HEX_COLOR.test(color)) return items
+  let changed = false
+  const next = items.map((item): CanvasItem => {
+    if (!keys.has(canvasItemKey(item))) return item
+    let result: CanvasItem = item
+    if (item.kind === 'stroke') {
+      if (!item.erase && !sameColor(item.color, color)) result = { ...item, color }
+    } else if (item.kind === 'text') {
+      if (!sameColor(item.color, color)) result = { ...item, color }
+    } else if (item.kind === 'connector') {
+      if (!sameColor(item.strokeColor, color)) result = { ...item, strokeColor: color }
+    } else {
+      const inkChanged = !!item.inkBox && item.inkBox.ink.some((s) => !s.erase && !sameColor(s.color, color))
+      if (!sameColor(item.strokeColor, color) || inkChanged) {
+        result = {
+          ...item,
+          strokeColor: color,
+          ...(item.inkBox ? { inkBox: { ...item.inkBox, ink: item.inkBox.ink.map((s) => (s.erase || sameColor(s.color, color) ? s : { ...s, color })) } } : {}),
+        }
+      }
+    }
+    if (result !== item) changed = true
+    return result
+  })
+  return changed ? next : items
 }
 
 export function canvasItemKey(item: CanvasItem): string {

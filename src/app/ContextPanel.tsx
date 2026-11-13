@@ -1,4 +1,6 @@
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
+import { ColorPicker } from './ColorPicker'
+import { ERASER_SIZES } from './appConfig'
 import type { ConnectorRelationshipType } from '../canvasModel'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import type { TextFontId } from '../canvasModel'
@@ -41,16 +43,63 @@ type ContextPanelProps = {
   onPaste: () => void
   onDuplicate: () => void
   relationship: RelationshipProps | null
+  /** Desktop only: the panel sits on the left, opens with one click, and offers the full colour spectrum, recolouring and the eraser options. */
+  desktop?: boolean
+  /** Hide the Smooth/Raw switch (shape tools). */
+  showDisplayMode?: boolean
+  /** Recolour the selection: the one colour it shares (null when mixed) and the change handler (commit = false while dragging in the picker). */
+  selectionColor?: string | null
+  showSelectionColor?: boolean
+  onSelectionColor?: (hex: string, commit: boolean) => void
+  showEraser?: boolean
+  objectEraser?: boolean
+  eraserSize?: number
+  onEraserMode?: (whole: boolean) => void
+  onEraserSize?: (size: number) => void
+}
+
+/** The five quick colours, a rainbow button that opens the full picker, and the picker itself. */
+function ColorChoices({ value, label, onChange }: { value: string; label: string; onChange: (hex: string, commit: boolean) => void }) {
+  const [open, setOpen] = useState(false)
+  const quick = COLORS.some((item) => item.value.toLowerCase() === value.toLowerCase())
+  return (
+    <div className="color-choices" role="group" aria-label={label}>
+      <div className="tool-group color-group">
+        {COLORS.map((item) => (
+          <button
+            className={`color-swatch${value.toLowerCase() === item.value.toLowerCase() ? ' selected' : ''}`}
+            key={item.value}
+            type="button"
+            title={item.name}
+            aria-label={item.name}
+            aria-pressed={value.toLowerCase() === item.value.toLowerCase()}
+            style={{ '--swatch': item.value } as CSSProperties}
+            onClick={() => onChange(item.value, true)}
+          />
+        ))}
+        <button
+          className={`color-swatch spectrum-swatch${open || !quick ? ' selected' : ''}`}
+          type="button"
+          title="More colours"
+          aria-label="More colours"
+          aria-expanded={open}
+          style={!quick ? { '--custom': value } as CSSProperties : undefined}
+          onClick={() => setOpen((v) => !v)}
+        />
+      </div>
+      {open && <div className="color-picker-popover"><ColorPicker value={value} onChange={(hex) => onChange(hex, false)} onCommit={(hex) => onChange(hex, true)} /></div>}
+    </div>
+  )
 }
 
 /** Settings that only appear when the active tool or selection needs them. */
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.showTextSizes && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
+  if (!props.showStyle && !props.showEraser && !props.showSelectionColor && !props.showTextSizes && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
   return (
-    <aside className="context-panel" aria-label="Tool options">
+    <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
-        <div className="tool-group color-group" role="group" aria-label="Pen color">
+        {props.desktop ? <ColorChoices value={props.color} label="Stroke colour" onChange={(hex) => props.onColor(hex)} /> : <div className="tool-group color-group" role="group" aria-label="Pen color">
           {COLORS.map((item) => (
             <button
               className={`color-swatch${props.color === item.value ? ' selected' : ''}`}
@@ -63,7 +112,7 @@ export function ContextPanel(props: ContextPanelProps) {
               onClick={() => props.onColor(item.value)}
             />
           ))}
-        </div>
+        </div>}
         <div className="tool-group thickness-group" role="group" aria-label="Stroke thickness">
           {WIDTHS.map((size) => (
             <button
@@ -82,15 +131,29 @@ export function ContextPanel(props: ContextPanelProps) {
           <input id="stroke-width-range" className="stroke-width-range" aria-label="Stroke width" type="range" min={MIN_STROKE_WIDTH} max={MAX_STROKE_WIDTH} step="1" value={props.width} onChange={(event) => props.onWidth(Number(event.target.value))} />
           <output htmlFor="stroke-width-range">{props.width} px</output>
         </div>
-        <div className="stroke-display-control" role="group" aria-label="Stroke display mode">
+        {props.showDisplayMode !== false && <div className="stroke-display-control" role="group" aria-label="Stroke display mode">
           <button className={`stroke-mode-button${props.strokeDisplayMode === 'smooth' ? ' selected' : ''}`} type="button" aria-label="Smooth stroke display" aria-pressed={props.strokeDisplayMode === 'smooth'} title="Display smoothed curved strokes" onClick={() => props.onStrokeDisplayMode('smooth')}>
             <svg viewBox="0 0 24 16" aria-hidden="true"><path d="M1 12c4 0 4-8 8-8s4 8 8 8 4-4 6-4"/></svg><span>Smooth</span>
           </button>
           <button className={`stroke-mode-button${props.strokeDisplayMode === 'raw' ? ' selected' : ''}`} type="button" aria-label="Raw stroke display" aria-pressed={props.strokeDisplayMode === 'raw'} title="Display raw straight stroke segments" onClick={() => props.onStrokeDisplayMode('raw')}>
             <svg viewBox="0 0 24 16" aria-hidden="true"><path d="m1 12 7-8 7 8 8-7"/></svg><span>Raw</span>
           </button>
-        </div>
+        </div>}
       </>}
+      {props.showSelectionColor && props.onSelectionColor && <div className="selection-color">
+        <span className="panel-label">Colour of this object</span>
+        <ColorChoices value={props.selectionColor ?? '#202124'} label="Object colour" onChange={props.onSelectionColor} />
+      </div>}
+      {props.showEraser && <div className="eraser-panel" role="group" aria-label="Eraser options">
+        <span className="panel-label">Mode</span>
+        <div className="eraser-mode-options">
+          <button className={`eraser-mode-card${!props.objectEraser ? ' selected' : ''}`} type="button" aria-pressed={!props.objectEraser} onClick={() => props.onEraserMode?.(false)}><span>Stroke eraser</span></button>
+          <button className={`eraser-mode-card${props.objectEraser ? ' selected' : ''}`} type="button" aria-pressed={props.objectEraser} onClick={() => props.onEraserMode?.(true)}><span>Whole eraser</span></button>
+        </div>
+        <span className="panel-label">Size: {props.eraserSize} px</span>
+        <input className="eraser-size-range" aria-label="Eraser size" type="range" min="8" max="96" step="1" value={props.eraserSize} onChange={(event) => props.onEraserSize?.(Number(event.target.value))} />
+        <div className="eraser-sizes" aria-label="Eraser size presets">{ERASER_SIZES.map((size) => <button className={`eraser-size${props.eraserSize === size && !props.objectEraser ? ' selected' : ''}`} type="button" key={size} aria-label={`${size} pixel eraser preset`} onClick={() => props.onEraserSize?.(size)}><span style={{ width: Math.max(7, Math.min(20, size / 3)), height: Math.max(7, Math.min(20, size / 3)) }} /></button>)}</div>
+      </div>}
       {props.showTextFonts && <div className="tool-group text-font-group" role="group" aria-label="Text font">
         {TEXT_FONTS.map((font) => (
           <button

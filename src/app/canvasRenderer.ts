@@ -269,6 +269,16 @@ export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
     ctx.beginPath()
     ctx.roundRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, INK_BOX_CORNER_RADIUS)
     ctx.stroke()
+  } else if (rectangle.diamond) {
+    const cx = rectangle.x + rectangle.width / 2
+    const cy = rectangle.y + rectangle.height / 2
+    ctx.beginPath()
+    ctx.moveTo(cx, rectangle.y)
+    ctx.lineTo(rectangle.x + rectangle.width, cy)
+    ctx.lineTo(cx, rectangle.y + rectangle.height)
+    ctx.lineTo(rectangle.x, cy)
+    ctx.closePath()
+    ctx.stroke()
   } else if (rectangle.ellipse) {
     ctx.beginPath()
     ctx.ellipse(rectangle.x + rectangle.width / 2, rectangle.y + rectangle.height / 2, rectangle.width / 2, rectangle.height / 2, 0, 0, Math.PI * 2)
@@ -387,7 +397,15 @@ export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasIte
       ctx.globalCompositeOperation = 'source-over'
       ctx.strokeStyle = item.strokeColor
       ctx.lineWidth = Math.max(1, item.strokeWidth * geometry.scale)
-      if (item.ellipse) {
+      if (item.diamond) {
+        ctx.beginPath()
+        ctx.moveTo(toMiniX(item.x + item.width / 2), toMiniY(item.y))
+        ctx.lineTo(toMiniX(item.x + item.width), toMiniY(item.y + item.height / 2))
+        ctx.lineTo(toMiniX(item.x + item.width / 2), toMiniY(item.y + item.height))
+        ctx.lineTo(toMiniX(item.x), toMiniY(item.y + item.height / 2))
+        ctx.closePath()
+        ctx.stroke()
+      } else if (item.ellipse) {
         ctx.beginPath()
         ctx.ellipse(toMiniX(item.x + item.width / 2), toMiniY(item.y + item.height / 2), (item.width / 2) * geometry.scale, (item.height / 2) * geometry.scale, 0, 0, Math.PI * 2)
         ctx.stroke()

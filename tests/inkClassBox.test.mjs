@@ -150,7 +150,7 @@ test('App wires the tool, drag-to-size creation, ink capture and divider draggin
   assert.match(app, /classMode && inkClassTool/)
   assert.match(app, /createInkClassBox\(/)
   assert.match(app, /created: true/)
-  assert.match(app, /activeStrokeBoxRef\.current = shapeMode \? null : findInkBoxAt\(/)
+  assert.match(app, /activeStrokeBoxRef\.current = shapeMode \|\| shapeTool !== null \? null : findInkBoxAt\(/)
   assert.match(app, /addStrokeToInkBox\(targetBox, stroke\)/)
   assert.match(app, /hitInkBoxDivider\(/)
   assert.match(app, /moveInkBoxDivider\(/)
