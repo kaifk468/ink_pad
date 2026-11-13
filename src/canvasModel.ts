@@ -633,6 +633,11 @@ export class CanvasSnapshotHistory {
     return previous
   }
 
+  /** Forgets the newest undo step without applying it (a cancelled drag: its step was recorded when the drag began). */
+  discardLast() {
+    this.undoStack.pop()
+  }
+
   redo(current: CanvasItem[]): CanvasItem[] | null {
     const next = this.redoStack.pop()
     if (!next) return null

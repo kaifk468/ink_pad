@@ -164,3 +164,63 @@ test('App wiring for multi-select: shift-click and marquee are Desktop mouse onl
   // a group member press moves the whole group via the lasso drag
   assert.match(app, /startGroupDrag\(event, point\)/)
 })
+
+// ---- Step 9: nudge and cancel ----
+const key = (k, extra = {}) => ({ key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, ...extra })
+const model = await loadModule('canvasModel.ts')
+
+test('arrow keys nudge by 1, Shift by 10, in Desktop mode only, and other modifiers are left to the browser', () => {
+  assert.deepEqual(input.keyCommand(key('ArrowLeft'), 'desktop'), { kind: 'nudge', dx: -1, dy: 0 })
+  assert.deepEqual(input.keyCommand(key('ArrowRight'), 'desktop'), { kind: 'nudge', dx: 1, dy: 0 })
+  assert.deepEqual(input.keyCommand(key('ArrowUp'), 'desktop'), { kind: 'nudge', dx: 0, dy: -1 })
+  assert.deepEqual(input.keyCommand(key('ArrowDown', { shiftKey: true }), 'desktop'), { kind: 'nudge', dx: 0, dy: 10 })
+  assert.deepEqual(input.keyCommand(key('ArrowDown', { repeat: true }), 'desktop'), { kind: 'nudge', dx: 0, dy: 1 })
+  assert.equal(input.keyCommand(key('ArrowLeft'), 'tablet'), null)
+  for (const extra of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) assert.equal(input.keyCommand(key('ArrowLeft', extra), 'desktop'), null)
+})
+
+test('a burst of nudges is one undo step: only the first press after a 500 ms pause starts a step', () => {
+  assert.equal(input.nudgeStartsNewStep(null, 1000), true)
+  assert.equal(input.nudgeStartsNewStep(1000, 1100), false)
+  assert.equal(input.nudgeStartsNewStep(1000, 1499), false)
+  assert.equal(input.nudgeStartsNewStep(1000, 1500), true)
+})
+
+test('Escape: cancels a drag/resize/marquee/lasso, deselects when idle, and does nothing during other gestures', () => {
+  assert.equal(input.escapeAction({ cancelableGesture: true, anyGesture: true, hasSelection: true }), 'cancelGesture')
+  assert.equal(input.escapeAction({ cancelableGesture: false, anyGesture: true, hasSelection: true }), 'none')
+  assert.equal(input.escapeAction({ cancelableGesture: false, anyGesture: false, hasSelection: true }), 'deselect')
+  assert.equal(input.escapeAction({ cancelableGesture: false, anyGesture: false, hasSelection: false }), 'none')
+})
+
+test('nudging moves boxes with their attached connectors and a cancelled drag restores the original items with no history left over', () => {
+  const a = rect(1, 100, 100, 50, 50)
+  const b = rect(2, 300, 100, 50, 50)
+  const link = { ...connector(3, 150, 125, 300, 125), startAttachment: { rectangleId: 1, offsetX: 50, offsetY: 25 }, endAttachment: { rectangleId: 2, offsetX: 0, offsetY: 25 } }
+  const items = [a, b, link]
+  const moved = model.translateSelectedItems(items, new Set(['rectangle:1', 'rectangle:2', 'connector:3']), 10, 0)
+  assert.equal(moved[0].x, 110)
+  assert.equal(moved[2].startAttachment.rectangleId, 1)
+  const history = new model.CanvasSnapshotHistory()
+  history.record(items)
+  assert.equal(history.canUndo, true)
+  history.discardLast()
+  assert.equal(history.canUndo, false)
+  assert.equal(history.canRedo, false)
+})
+
+test('App wiring: nudge and cancel run only through the guarded key handler; Escape cancels before the gesture guard; burst records once', () => {
+  assert.match(app, /const cancelActiveGesture = \(\): boolean => \{/)
+  assert.match(app, /if \(action === 'cancelGesture'\) return cancelActiveGesture\(\)/)
+  const cancelGuard = app.indexOf("if (action === 'cancelGesture')")
+  const gestureGuard = app.indexOf('if (gestureActive || activeMarqueeRef.current !== null || touchNav.touchCount() > 0) return false')
+  const panelGuard = app.indexOf('if (filePanelOpen || storagePanelOpen')
+  assert.ok(panelGuard < cancelGuard && cancelGuard < gestureGuard)
+  assert.match(app, /case 'nudge': return nudgeSelection\(command\.dx, command\.dy\)/)
+  assert.match(app, /if \(nudgeStartsNewStep\(lastNudgeAtRef\.current, now\)\) saveHistory\(\)\n\s*else scheduleAutosave\(\)/)
+  assert.match(app, /translateWithinWorkspace\(strokesRef\.current, keys, dx, dy\)/)
+  // a cancelled drag restores the originals and drops the step it recorded
+  assert.match(app, /historyRef\.current\.discardLast\(\)/)
+  // a press or any other command ends the burst
+  assert.match(app, /if \(command\.kind !== 'nudge'\) lastNudgeAtRef\.current = null/)
+})

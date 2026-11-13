@@ -282,7 +282,7 @@ test('plain letters pick tools (any case), and only with no modifier and no auto
     assert.equal(input.keyCommand(key(k, { altKey: true }), 'desktop'), null)
     assert.equal(input.keyCommand(key(k, { shiftKey: true }), 'desktop') !== null, false, 'Shift+letter is not a tool key')
   }
-  for (const k of ['a', 'x', '1', ' ', 'Enter', 'ArrowLeft']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
+  for (const k of ['a', 'x', '1', ' ', 'Enter']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
 })
 
 test('Escape only deselects; with a modifier or held down it does nothing', () => {

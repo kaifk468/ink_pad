@@ -149,9 +149,12 @@ export type KeyCommand =
   | { kind: 'deselect' }
   | { kind: 'deleteSelection' }
   | { kind: 'selectAll' }
+  | { kind: 'nudge'; dx: number; dy: number }
   | { kind: 'tool'; tool: KeyTool }
 
 export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox' }
+
+const ARROW_KEYS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
 
 export type KeyInput = { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; repeat: boolean }
 
@@ -167,6 +170,12 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if (key === '0') return { kind: 'zoomReset' }
     if (key === 'a' && !event.shiftKey) return { kind: 'selectAll' }
     return null
+  }
+  // Arrow keys nudge the selection (Shift = 10 units); holding the key repeats on purpose. Other modifiers belong to the browser.
+  const arrow = ARROW_KEYS[key]
+  if (arrow && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    const step = event.shiftKey ? NUDGE_BIG : NUDGE_SMALL
+    return { kind: 'nudge', dx: arrow[0] * step, dy: arrow[1] * step }
   }
   // Everything below is a bare key: any modifier means the person meant something else (a browser shortcut, say).
   if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return null
@@ -322,4 +331,28 @@ export function marqueeKeys(routedItems: readonly CanvasItem[], rect: RectangleB
 export function marqueeSelection(routedItems: readonly CanvasItem[], rect: RectangleBounds, base: ReadonlySet<string>, shift: boolean): SelectionState {
   const picked = marqueeKeys(routedItems, rect)
   return normalizeSelection(shift ? [...base, ...picked] : picked)
+}
+
+/**
+ * Step 9: nudging and cancelling (Desktop mode).
+ * - Arrow keys move the selection 1 canvas unit, Shift + arrow 10. A burst of presses is one undo step: the first press
+ *   after a 500 ms pause records history, the rest of the burst does not.
+ * - Escape during a drag, resize, marquee or lasso cancels it and puts the original items back; with nothing in progress it
+ *   keeps deselecting, and during any other gesture (ink, text tap, eraser) it does nothing, as before.
+ */
+export const NUDGE_SMALL = 1
+export const NUDGE_BIG = 10
+export const NUDGE_PAUSE_MS = 500
+
+/** Whether a nudge starts a new undo step: the first one, or the first after a pause of NUDGE_PAUSE_MS or more. */
+export function nudgeStartsNewStep(lastNudgeAt: number | null, now: number): boolean {
+  return lastNudgeAt === null || now - lastNudgeAt >= NUDGE_PAUSE_MS
+}
+
+export type EscapeAction = 'cancelGesture' | 'deselect' | 'none'
+
+export function escapeAction(state: { cancelableGesture: boolean; anyGesture: boolean; hasSelection: boolean }): EscapeAction {
+  if (state.cancelableGesture) return 'cancelGesture'
+  if (state.anyGesture) return 'none'
+  return state.hasSelection ? 'deselect' : 'none'
 }

@@ -51,7 +51,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, clickSelectTarget, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, hitTarget, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, clickSelectTarget, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 const DOUBLE_TAP_MS = 400
@@ -251,7 +251,9 @@ function App() {
   const hoverPointRef = useRef<Point | null>(null)
   const hoverFrameRef = useRef<number | null>(null)
   // Step 8: the marquee being dragged with the select tool (Desktop mouse). `base` is what Shift keeps.
-  const activeMarqueeRef = useRef<{ pointerId: number; start: Point; current: Point; shift: boolean; base: Set<string> } | null>(null)
+  const activeMarqueeRef = useRef<{ pointerId: number; start: Point; current: Point; shift: boolean; base: Set<string>; before: Set<string> } | null>(null)
+  // Step 9: when the last arrow-key nudge happened (a burst is one undo step).
+  const lastNudgeAtRef = useRef<number | null>(null)
   const edgeHoldRef = useRef<{ pointerId: number; boxId: number; start: Point; startedAt: number; timer: number } | null>(null)
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
   if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
@@ -2160,6 +2162,7 @@ function App() {
     if (!canStartCanvasGesture(event.pointerType, event.button, inputModeRef.current, penGestureActive, anyGestureActive, touchNav.touchCount() > 0)) return
     mouseGestureRef.current = event.pointerType === 'mouse'
     if (mouseGestureRef.current) touchNav.mouseDown()
+    lastNudgeAtRef.current = null
     event.preventDefault()
     finishSpringBackNow()
     const rawPoint = getPoint(event)
@@ -2308,10 +2311,11 @@ function App() {
       }
       if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop' && !hitTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)) {
         // Empty space with the mouse: a marquee (Shift keeps the old selection); released, it selects what is fully inside.
-        const base = event.shiftKey ? selectionKeysWithBox() : new Set<string>()
+        const before = selectionKeysWithBox()
+        const base = event.shiftKey ? before : new Set<string>()
         if (!event.shiftKey) applySelectionState({ keys: [], rectangleId: null })
         event.currentTarget.setPointerCapture(event.pointerId)
-        activeMarqueeRef.current = { pointerId: event.pointerId, start: point, current: point, shift: event.shiftKey, base }
+        activeMarqueeRef.current = { pointerId: event.pointerId, start: point, current: point, shift: event.shiftKey, base, before }
         return
       }
       const currentlySelectedRectangle = selectedRectangleIdRef.current === null
@@ -3031,12 +3035,79 @@ function App() {
   }
 
   // Keyboard shortcuts (Desktop mode only). The window listener below calls the latest version of this, so it always sees current state.
+  // Escape during a drag, resize, divider drag, marquee or lasso: put the original items (and selection) back and forget the step the drag recorded.
+  const cancelActiveGesture = (): boolean => {
+    let restored: CanvasItem[] | null = null
+    let discardStep = false
+    let handled = false
+    const drag = activeDragRef.current
+    if (drag) { activeDragRef.current = null; handled = true; if (drag.moved) { restored = drag.originalItems; discardStep = true } }
+    const lassoDrag = lassoDragRef.current
+    if (lassoDrag) { lassoDragRef.current = null; handled = true; if (lassoDrag.moved) { restored = lassoDrag.originalItems; discardStep = true } }
+    const divider = activeDividerRef.current
+    if (divider) { activeDividerRef.current = null; handled = true; if (divider.moved) { restored = divider.originalItems; discardStep = true } }
+    const resize = activeResizeRef.current
+    if (resize) {
+      activeResizeRef.current = null
+      handled = true
+      if (resize.created && resize.rectangleId !== null) {
+        // A box being sized out is not made at all; its history step was recorded when the press began.
+        restored = resize.originalItems.filter((item) => !(item.kind === 'rectangle' && item.id === resize.rectangleId))
+        discardStep = true
+      } else if (resize.moved) { restored = resize.originalItems; discardStep = true }
+    }
+    if (activeLassoRef.current) { activeLassoRef.current = null; handled = true }
+    const marquee = activeMarqueeRef.current
+    if (marquee) {
+      activeMarqueeRef.current = null
+      handled = true
+      const before = normalizeSelection(marquee.before)
+      applySelectionState(before)
+    }
+    if (!handled) return false
+    if (restored) strokesRef.current = restored
+    if (discardStep) {
+      historyRef.current.discardLast()
+      setCanUndo(historyRef.current.canUndo)
+      setCanRedo(historyRef.current.canRedo)
+    }
+    if (restored) {
+      setHasInk(strokesRef.current.length > 0)
+      reconcileSelectedItems()
+      scheduleAutosave()
+    }
+    renderAll()
+    return true
+  }
+
+  // Arrow keys: move the selection 1 unit (Shift 10) inside the workspace; connectors follow their boxes. A burst of presses is one undo step.
+  const nudgeSelection = (dx: number, dy: number): boolean => {
+    const keys = selectionKeysWithBox()
+    if (keys.size === 0) return false
+    const next = translateWithinWorkspace(strokesRef.current, keys, dx, dy)
+    if (next.every((item, index) => item === strokesRef.current[index])) return true
+    const now = performance.now()
+    if (nudgeStartsNewStep(lastNudgeAtRef.current, now)) saveHistory()
+    else scheduleAutosave()
+    lastNudgeAtRef.current = now
+    strokesRef.current = next
+    renderAll()
+    return true
+  }
+
   const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
   keyActionsRef.current = (command) => {
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
     const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
+    const cancelableGesture = activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null
+    if (command.kind === 'deselect') {
+      const action = escapeAction({ cancelableGesture, anyGesture: gestureActive || touchNav.touchCount() > 0, hasSelection: selectedKeysRef.current.size > 0 || selectedRectangleIdRef.current !== null })
+      if (action === 'cancelGesture') return cancelActiveGesture()
+      if (action === 'none') return false
+    }
     if (gestureActive || activeMarqueeRef.current !== null || touchNav.touchCount() > 0) return false
+    if (command.kind !== 'nudge') lastNudgeAtRef.current = null
     switch (command.kind) {
       case 'undo': undo(); return true
       case 'redo': redo(); return true
@@ -3047,6 +3118,7 @@ function App() {
         if (selectedKeysRef.current.size === 0 && selectedRectangleIdRef.current === null) return false
         clearLassoSelection()
         return true
+      case 'nudge': return nudgeSelection(command.dx, command.dy)
       case 'deleteSelection': return deleteSelection()
       case 'selectAll': return selectAllItems()
       case 'tool':
