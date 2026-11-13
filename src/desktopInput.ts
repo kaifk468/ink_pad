@@ -154,6 +154,7 @@ export type KeyCommand =
   | { kind: 'cut' }
   | { kind: 'paste' }
   | { kind: 'duplicate' }
+  | { kind: 'edit' }
   | { kind: 'tool'; tool: KeyTool }
 
 export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox' }
@@ -191,6 +192,7 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
   if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return null
   if (key === 'Escape') return event.repeat ? null : { kind: 'deselect' }
   if (key === 'Delete' || key === 'Backspace') return event.repeat ? null : { kind: 'deleteSelection' }
+  if (key === 'Enter') return event.repeat ? null : { kind: 'edit' }
   if (event.repeat) return null
   const tool = TOOL_KEYS[key]
   return tool ? { kind: 'tool', tool } : null
@@ -365,4 +367,70 @@ export function escapeAction(state: { cancelableGesture: boolean; anyGesture: bo
   if (state.cancelableGesture) return 'cancelGesture'
   if (state.anyGesture) return 'none'
   return state.hasSelection ? 'deselect' : 'none'
+}
+
+/**
+ * Step 11: right-click menu, double-click and Enter to edit, and the cursor per tool (Desktop mode only).
+ */
+export type EditTarget = { kind: 'text' | 'classBox'; id: number }
+
+/** What a double-click on the target edits: a text label, or a class box (not an ink box, which is written in, nor an oval). */
+export function doubleClickTarget(routedItems: readonly CanvasItem[], point: Point, scale: number): EditTarget | null {
+  const target = hitTarget(routedItems, point, scale)
+  if (!target) return null
+  if (target.kind === 'text') return { kind: 'text', id: target.id }
+  if (target.kind !== 'rectangle') return null
+  const box = routedItems.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === target.id)
+  return box?.classBox && !box.inkBox && !box.ellipse ? { kind: 'classBox', id: box.id } : null
+}
+
+/** Enter edits the one selected label or class box; any other selection (none, several, a connector, an ink box) does nothing. */
+export function editTargetForSelection(items: readonly CanvasItem[], keys: ReadonlySet<string>, rectangleId: number | null): EditTarget | null {
+  const all = new Set(keys)
+  if (rectangleId !== null) all.add(`rectangle:${rectangleId}`)
+  if (all.size !== 1) return null
+  const [key] = [...all]
+  const item = items.find((candidate) => canvasItemKey(candidate) === key)
+  if (!item) return null
+  if (item.kind === 'text') return { kind: 'text', id: item.id }
+  return item.kind === 'rectangle' && item.classBox && !item.inkBox && !item.ellipse ? { kind: 'classBox', id: item.id } : null
+}
+
+export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll'
+export type ContextMenuEntry = { action: ContextMenuAction; label: string; enabled: boolean }
+
+/** The right-click menu: entries that do not apply are disabled, never hidden. */
+export function contextMenuEntries(hasSelection: boolean, clipboardHasItems: boolean, pageHasItems: boolean): ContextMenuEntry[] {
+  return [
+    { action: 'cut', label: 'Cut', enabled: hasSelection },
+    { action: 'copy', label: 'Copy', enabled: hasSelection },
+    { action: 'paste', label: 'Paste', enabled: clipboardHasItems },
+    { action: 'duplicate', label: 'Duplicate', enabled: hasSelection },
+    { action: 'delete', label: 'Delete', enabled: hasSelection },
+    { action: 'selectAll', label: 'Select all', enabled: pageHasItems },
+  ]
+}
+
+/** Keeps the menu fully on screen: opens at the pointer, shifted back when it would run past the right or bottom edge. */
+export function clampMenuPosition(x: number, y: number, width: number, height: number, viewWidth: number, viewHeight: number): { x: number; y: number } {
+  return { x: Math.max(0, Math.min(x, viewWidth - width)), y: Math.max(0, Math.min(y, viewHeight - height)) }
+}
+
+export type CursorState = { mode: InputMode; tool: ClickTool; hover: 'none' | 'item' | 'selected'; panning: boolean; spaceHeld: boolean }
+
+/**
+ * The canvas cursor. Tablet mode keeps the default. In Desktop mode panning wins (grabbing, then grab while Space is held), then a
+ * hovered item (move when it is already selected, pointer otherwise; never with the eraser), then the tool: crosshair for the pen,
+ * shapes, connector, lasso and class box, a text cursor for text, the default arrow for select, and none for the eraser (its ring is drawn instead).
+ */
+export function canvasCursor(state: CursorState): string {
+  if (state.mode !== 'desktop') return ''
+  if (state.panning) return 'grabbing'
+  if (state.spaceHeld) return 'grab'
+  if (state.tool === 'eraser') return 'none'
+  if (state.hover === 'selected') return 'move'
+  if (state.hover === 'item') return 'pointer'
+  if (state.tool === 'text') return 'text'
+  if (state.tool === 'select') return 'default'
+  return 'crosshair'
 }

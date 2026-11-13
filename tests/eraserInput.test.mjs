@@ -23,7 +23,7 @@ test('erasing needs pen contact: hover no longer erases, and a circle at the pen
   assert.equal(eraserInput.eraserCursorDiameter(28, 2.5, false), 70)
   assert.equal(eraserInput.eraserCursorDiameter(8, 0.1, false), 6)
   assert.equal(eraserInput.eraserCursorDiameter(96, 3, true), eraserInput.WHOLE_ERASER_HIT_RADIUS_PX * 2)
-  assert.match(appSource, /const moveEraserCursor = \(event: React\.PointerEvent<HTMLCanvasElement>\) => \{[\s\S]*?if \(\(!eraser && !isPenButtonHeld\(event\)\) \|\| event\.pointerType !== 'pen'\) \{\s*cursor\.style\.display = 'none'/)
+  assert.match(appSource, /const moveEraserCursor = \(event: React\.PointerEvent<HTMLCanvasElement>\) => \{[\s\S]*?const ringPointer = event\.pointerType === 'pen' \|\| \(event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop'\)\s*if \(\(!eraser && !isPenButtonHeld\(event\)\) \|\| !ringPointer\) \{\s*cursor\.style\.display = 'none'/)
   assert.match(appSource, /if \(event\.pointerType === 'pen'\) touchNav\.penSeen\(performance\.now\(\)\)\s*moveEraserCursor\(event\)/)
   assert.match(appSource, /className="eraser-cursor"/)
 })

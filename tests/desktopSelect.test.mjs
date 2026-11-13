@@ -93,7 +93,7 @@ test('App wiring: mouse click-select is Desktop only and before the tool branche
   const textBranch = app.indexOf('    if (textMode) {\n      event.currentTarget.setPointerCapture', down)
   assert.ok(clickBranch > down && clickBranch < textBranch)
   assert.match(app, /clickSelectTarget\(routeConnectors\(strokesRef\.current\), point, viewportRef\.current\.scale, clickToolName\(\)/)
-  assert.match(app, /if \(key === hoverKeyRef\.current\) return\n\s*hoverKeyRef\.current = key\n\s*renderAll\(\)/)
+  assert.match(app, /const changed = key !== hoverKeyRef\.current\n\s*hoverKeyRef\.current = key\n\s*applyCanvasCursor\(\)\n\s*if \(changed\) renderAll\(\)/)
   assert.match(app, /event\.pointerType === 'mouse' && event\.buttons === 0 && inputModeRef\.current === 'desktop'\) setMouseHover\(/)
   assert.match(app, /if \(event\.pointerType === 'pen' && !eraser && !buttonErase && !shapeMode\) \{\n\s*const edgeBox = edgeBandBox\(/)
   assert.match(app, /window\.setTimeout\(\(\) => fireEdgeHold\(pointerId\), EDGE_HOLD_MS\)/)
@@ -223,4 +223,78 @@ test('App wiring: nudge and cancel run only through the guarded key handler; Esc
   assert.match(app, /historyRef\.current\.discardLast\(\)/)
   // a press or any other command ends the burst
   assert.match(app, /if \(command\.kind !== 'nudge'\) lastNudgeAtRef\.current = null/)
+})
+
+// ---- Step 11: right-click menu, double-click edit, cursors ----
+const cls = (id, x, y, extra = {}) => rect(id, x, y, 100, 60, { classBox: { name: 'A', attributes: '', methods: '' }, ...extra })
+
+test('double-click edits a text label or a class box, and nothing else', () => {
+  const items = [cls(1, 0, 0), rect(2, 300, 0, 100, 60, { inkBox: inkBox(), classBox: { name: 'x', attributes: '', methods: '' } }), rect(3, 500, 0, 100, 60), rect(4, 700, 0, 100, 60, { classBox: { name: 'o', attributes: '', methods: '' }, ellipse: true }), text(5, 0, 200), connector(6, 0, 400, 100, 400)]
+  assert.deepEqual(input.doubleClickTarget(items, pt(50, 30), 1), { kind: 'classBox', id: 1 })
+  assert.equal(input.doubleClickTarget(items, pt(350, 30), 1), null)
+  assert.equal(input.doubleClickTarget(items, pt(550, 30), 1), null)
+  assert.equal(input.doubleClickTarget(items, pt(750, 30), 1), null)
+  assert.deepEqual(input.doubleClickTarget(items, pt(30, 210), 1), { kind: 'text', id: 5 })
+  assert.equal(input.doubleClickTarget(items, pt(50, 401), 1), null)
+  assert.equal(input.doubleClickTarget(items, pt(900, 900), 1), null)
+})
+
+test('Enter edits only a single selected label or class box', () => {
+  const items = [cls(1, 0, 0), text(2, 200, 0), rect(3, 400, 0, 100, 60)]
+  assert.deepEqual(input.editTargetForSelection(items, new Set(), 1), { kind: 'classBox', id: 1 })
+  assert.deepEqual(input.editTargetForSelection(items, new Set(['text:2']), null), { kind: 'text', id: 2 })
+  assert.equal(input.editTargetForSelection(items, new Set(['text:2', 'rectangle:1']), null), null)
+  assert.equal(input.editTargetForSelection(items, new Set(), 3), null)
+  assert.equal(input.editTargetForSelection(items, new Set(), null), null)
+  const keyEvent = (k, extra = {}) => ({ key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, ...extra })
+  assert.deepEqual(input.keyCommand(keyEvent('Enter'), 'desktop'), { kind: 'edit' })
+  assert.equal(input.keyCommand(keyEvent('Enter'), 'tablet'), null)
+  assert.equal(input.keyCommand(keyEvent('Enter', { repeat: true }), 'desktop'), null)
+  assert.equal(input.keyCommand(keyEvent('Enter', { shiftKey: true }), 'desktop'), null)
+  assert.equal(input.keyCommand(keyEvent('Enter', { ctrlKey: true }), 'desktop'), null)
+})
+
+test('the menu lists Cut, Copy, Paste, Duplicate, Delete, Select all and disables what does not apply', () => {
+  const entries = (...args) => Object.fromEntries(input.contextMenuEntries(...args).map((e) => [e.action, e.enabled]))
+  assert.deepEqual(input.contextMenuEntries(false, false, false).map((e) => e.label), ['Cut', 'Copy', 'Paste', 'Duplicate', 'Delete', 'Select all'])
+  assert.deepEqual(entries(false, false, false), { cut: false, copy: false, paste: false, duplicate: false, delete: false, selectAll: false })
+  assert.deepEqual(entries(true, false, true), { cut: true, copy: true, paste: false, duplicate: true, delete: true, selectAll: true })
+  assert.deepEqual(entries(false, true, true), { cut: false, copy: false, paste: true, duplicate: false, delete: false, selectAll: true })
+})
+
+test('the menu stays on screen', () => {
+  assert.deepEqual(input.clampMenuPosition(100, 100, 184, 236, 1000, 800), { x: 100, y: 100 })
+  assert.deepEqual(input.clampMenuPosition(950, 700, 184, 236, 1000, 800), { x: 816, y: 564 })
+  assert.deepEqual(input.clampMenuPosition(-5, -5, 184, 236, 1000, 800), { x: 0, y: 0 })
+})
+
+test('cursors: tablet keeps the default; desktop sets one per tool and pan states win', () => {
+  const base = { mode: 'desktop', tool: 'pen', hover: 'none', panning: false, spaceHeld: false }
+  for (const tool of ['pen', 'shape', 'connector', 'lasso', 'classBox']) assert.equal(input.canvasCursor({ ...base, tool }), 'crosshair', tool)
+  assert.equal(input.canvasCursor({ ...base, tool: 'text' }), 'text')
+  assert.equal(input.canvasCursor({ ...base, tool: 'select' }), 'default')
+  assert.equal(input.canvasCursor({ ...base, tool: 'eraser' }), 'none')
+  assert.equal(input.canvasCursor({ ...base, hover: 'item' }), 'pointer')
+  assert.equal(input.canvasCursor({ ...base, hover: 'selected' }), 'move')
+  assert.equal(input.canvasCursor({ ...base, tool: 'eraser', hover: 'item' }), 'none')
+  assert.equal(input.canvasCursor({ ...base, spaceHeld: true, hover: 'item' }), 'grab')
+  assert.equal(input.canvasCursor({ ...base, spaceHeld: true, panning: true }), 'grabbing')
+  for (const tool of ['pen', 'text', 'eraser', 'select']) assert.equal(input.canvasCursor({ ...base, mode: 'tablet', tool, hover: 'item', spaceHeld: true }), '')
+})
+
+test('App wiring: the menu and double-click are Desktop only, touch and pen right-click stay suppressed, Escape closes, tablet keeps preventDefault', () => {
+  assert.match(app, /const onCanvasContextMenu = \(event: React\.MouseEvent<HTMLCanvasElement>\) => \{\n\s*event\.preventDefault\(\)\n\s*const native/)
+  assert.match(app, /if \(inputModeRef\.current !== 'desktop' \|\| native\.pointerType === 'touch' \|\| native\.pointerType === 'pen'\) return/)
+  assert.match(app, /if \(!contextMenuElementRef\.current\?\.contains\(event\.target as Node\)\) setContextMenu\(null\)/)
+  assert.match(app, /window\.addEventListener\('wheel', close, true\)/)
+  assert.match(app, /window\.removeEventListener\('wheel', close, true\)/)
+  assert.match(app, /if \(command\.kind === 'deselect'\) \{ closeContextMenu\(\); return true \}/)
+  assert.match(app, /if \(inputMode !== 'desktop'\) setContextMenu\(null\)/)
+  assert.match(app, /if \(inputModeRef\.current !== 'desktop' \|\| event\.button !== 0 \|\| textEditorRef\.current \|\| classBoxEditor\) return/)
+  assert.match(app, /onContextMenu=\{onCanvasContextMenu\}\n\s*onDoubleClick=\{onCanvasDoubleClick\}/)
+  assert.match(app, /\['BUTTON', 'A'\]\.includes\(\(target\?\.tagName \?\? ''\)\.toUpperCase\(\)\)\) return/)
+  // the cursor comes from one place and the eraser ring is shown for the mouse in Desktop mode
+  assert.match(app, /canvas\.style\.cursor = canvasCursor\(\{ mode: inputModeRef\.current/)
+  assert.match(app, /event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop'\)\n\s*if \(\(!eraser && !isPenButtonHeld\(event\)\) \|\| !ringPointer\)/)
+  assert.doesNotMatch(app, /style\.cursor = spaceHeldRef/)
 })

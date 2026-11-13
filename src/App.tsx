@@ -52,7 +52,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, clickSelectTarget, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, canvasCursor, clampMenuPosition, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 const DOUBLE_TAP_MS = 400
@@ -260,6 +260,11 @@ function App() {
   const clipboardRef = useRef<CanvasItem[]>([])
   const pasteCountRef = useRef(0)
   const [clipboardCount, setClipboardCount] = useState(0)
+  // Step 11: the right-click menu (Desktop only), at the pointer in screen coordinates.
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const contextMenuRef = useRef(contextMenu)
+  contextMenuRef.current = contextMenu
+  const contextMenuElementRef = useRef<HTMLDivElement>(null)
   const edgeHoldRef = useRef<{ pointerId: number; boxId: number; start: Point; startedAt: number; timer: number } | null>(null)
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
   if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
@@ -1072,28 +1077,38 @@ function App() {
     lassoDragRef.current = { pointerId: event.pointerId, start: point, keys: new Set(selectedKeysRef.current), originalItems: strokesRef.current.slice(), moved: false }
   }
 
+  // The canvas cursor for the tool, the hover and the pan state (Desktop mode; Tablet mode keeps the default).
+  const applyCanvasCursor = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const key = hoverKeyRef.current
+    const selected = key !== null && (selectedKeysRef.current.has(key) || key === `rectangle:${selectedRectangleIdRef.current}`)
+    canvas.style.cursor = canvasCursor({ mode: inputModeRef.current, tool: clickToolName(), hover: key === null ? 'none' : selected ? 'selected' : 'item', panning: mousePanRef.current !== null, spaceHeld: spaceHeldRef.current })
+  }
+  const applyCursorRef = useRef(applyCanvasCursor)
+  applyCursorRef.current = applyCanvasCursor
+  const cursorTool = clickToolName()
+  useEffect(() => { applyCursorRef.current() }, [inputMode, cursorTool])
+
   // Desktop hover: the item under the mouse gets a light outline and a pointer cursor. The pick runs at most once a frame and
   // the canvas is redrawn only when the hovered item changes.
   const refreshHover = () => {
     hoverFrameRef.current = null
     const point = hoverPointRef.current
-    const canvas = canvasRef.current
     const ready = point !== null && inputModeRef.current === 'desktop' && !eraser
     const target = ready ? hitTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale) : null
     const key = target?.key ?? null
-    if (canvas && !spaceHeldRef.current && mousePanRef.current === null) {
-      canvas.style.cursor = key === null ? '' : (selectedKeysRef.current.has(key) || key === `rectangle:${selectedRectangleIdRef.current}`) ? 'move' : 'pointer'
-    }
-    if (key === hoverKeyRef.current) return
+    const changed = key !== hoverKeyRef.current
     hoverKeyRef.current = key
-    renderAll()
+    applyCanvasCursor()
+    if (changed) renderAll()
   }
   const setMouseHover = (point: Point | null) => {
     hoverPointRef.current = point
     if (point === null) {
       if (hoverFrameRef.current !== null) { cancelAnimationFrame(hoverFrameRef.current); hoverFrameRef.current = null }
       if (hoverKeyRef.current !== null) { hoverKeyRef.current = null; renderAll() }
-      if (canvasRef.current && !spaceHeldRef.current && mousePanRef.current === null) canvasRef.current.style.cursor = ''
+      applyCanvasCursor()
       return
     }
     if (hoverFrameRef.current === null) hoverFrameRef.current = requestAnimationFrame(refreshHover)
@@ -1659,7 +1674,7 @@ function App() {
     const canvas = canvasRef.current
     if (!canvas) return
     const anyGestureBusy = () => activeMarqueeRef.current !== null || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || mousePanRef.current !== null
-    const setPanCursor = () => { canvas.style.cursor = mousePanRef.current ? 'grabbing' : spaceHeldRef.current ? 'grab' : '' }
+    const setPanCursor = () => applyCursorRef.current()
     const onWheel = (event: WheelEvent) => {
       if (inputModeRef.current !== 'desktop') return
       event.preventDefault()
@@ -2119,7 +2134,8 @@ function App() {
   const moveEraserCursor = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const cursor = eraserCursorRef.current
     if (!cursor) return
-    if ((!eraser && !isPenButtonHeld(event)) || event.pointerType !== 'pen') {
+    const ringPointer = event.pointerType === 'pen' || (event.pointerType === 'mouse' && inputModeRef.current === 'desktop')
+    if ((!eraser && !isPenButtonHeld(event)) || !ringPointer) {
       cursor.style.display = 'none'
       return
     }
@@ -2648,7 +2664,7 @@ function App() {
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
     if (mousePanRef.current?.pointerId === event.pointerId) {
       mousePanRef.current = null
-      event.currentTarget.style.cursor = spaceHeldRef.current ? 'grab' : ''
+      applyCanvasCursor()
       return
     }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
@@ -2788,7 +2804,7 @@ function App() {
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
     if (mousePanRef.current?.pointerId === event.pointerId) {
       mousePanRef.current = null
-      event.currentTarget.style.cursor = spaceHeldRef.current ? 'grab' : ''
+      applyCanvasCursor()
       return
     }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
@@ -3136,11 +3152,76 @@ function App() {
     return true
   }
 
+  // Opens the editor of a text label or class box: the same editors and commit rules as a tap in the select tool.
+  const openEditTarget = (target: { kind: 'text' | 'classBox'; id: number }): boolean => {
+    const item = strokesRef.current.find((candidate) => candidate.kind === (target.kind === 'text' ? 'text' : 'rectangle') && candidate.id === target.id)
+    if (item?.kind === 'text') { editTextItem(item); return true }
+    if (item?.kind === 'rectangle' && item.classBox) { openClassBoxEditor({ rectangleId: item.id, x: item.x, y: item.y, content: item.classBox }); return true }
+    return false
+  }
+  const onCanvasDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (inputModeRef.current !== 'desktop' || event.button !== 0 || textEditorRef.current || classBoxEditor) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const point = screenToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, viewportRef.current)
+    const target = doubleClickTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
+    if (target) openEditTarget(target)
+  }
+  const closeContextMenu = () => setContextMenu(null)
+  // Right-click (Desktop mouse): selects the item under the pointer when it is not already selected, then opens the menu there.
+  const onCanvasContextMenu = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    event.preventDefault()
+    const native = event.nativeEvent as MouseEvent & { pointerType?: string }
+    if (inputModeRef.current !== 'desktop' || native.pointerType === 'touch' || native.pointerType === 'pen') return
+    if (textEditorRef.current || classBoxEditor) return
+    if (activePointerRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const point = screenToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, viewportRef.current)
+    const target = hitTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
+    if (target && !selectionKeysWithBox().has(target.key)) selectHitTarget(target)
+    setMouseHover(null)
+    setContextMenu({ x: event.clientX, y: event.clientY })
+  }
+  const runContextMenuAction = (action: ContextMenuAction) => {
+    setContextMenu(null)
+    switch (action) {
+      case 'cut': cutSelection(); break
+      case 'copy': copySelection(); break
+      case 'paste': pasteClipboard(); break
+      case 'duplicate': duplicateSelection(); break
+      case 'delete': deleteSelection(); break
+      case 'selectAll': selectAllItems(); break
+    }
+  }
+  // The menu closes on an outside press, scrolling, losing focus, or leaving Desktop mode (Escape is handled with the other keys).
+  useEffect(() => {
+    if (!contextMenu) return
+    const onPointerDown = (event: PointerEvent) => { if (!contextMenuElementRef.current?.contains(event.target as Node)) setContextMenu(null) }
+    const close = () => setContextMenu(null)
+    window.addEventListener('pointerdown', onPointerDown, true)
+    window.addEventListener('wheel', close, true)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('blur', close)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true)
+      window.removeEventListener('wheel', close, true)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('blur', close)
+      window.removeEventListener('resize', close)
+    }
+  }, [contextMenu])
+  useEffect(() => { if (inputMode !== 'desktop') setContextMenu(null) }, [inputMode])
+
   const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
   keyActionsRef.current = (command) => {
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
     const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
+    if (contextMenuRef.current) {
+      // While the menu is open Escape closes it and no other shortcut runs.
+      if (command.kind === 'deselect') { closeContextMenu(); return true }
+      return false
+    }
     const cancelableGesture = activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null
     if (command.kind === 'deselect') {
       const action = escapeAction({ cancelableGesture, anyGesture: gestureActive || touchNav.touchCount() > 0, hasSelection: selectedKeysRef.current.size > 0 || selectedRectangleIdRef.current !== null })
@@ -3160,6 +3241,7 @@ function App() {
         clearLassoSelection()
         return true
       case 'nudge': return nudgeSelection(command.dx, command.dy)
+      case 'edit': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); return target ? openEditTarget(target) : false }
       case 'copy': return copySelection()
       case 'cut': return cutSelection()
       case 'paste': return pasteClipboard()
@@ -3189,6 +3271,8 @@ function App() {
       if (!command) return
       const target = event.target as HTMLElement | null
       if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) return
+      // Enter on a focused button or link activates it: only a canvas-level Enter edits.
+      if (command.kind === 'edit' && ['BUTTON', 'A'].includes((target?.tagName ?? '').toUpperCase())) return
       if (keyActionsRef.current(command)) event.preventDefault()
     }
     window.addEventListener('keydown', onKeyDown)
@@ -3206,7 +3290,8 @@ function App() {
           className={`drawing-canvas${selectionMode ? ' selecting' : ''}${connectorMode || umlConnectorType !== null ? ' connecting' : ''}`}
           aria-label="White drawing canvas. Use an S Pen to draw."
           onPointerDown={onPointerDown}
-          onContextMenu={(event) => event.preventDefault()}
+          onContextMenu={onCanvasContextMenu}
+          onDoubleClick={onCanvasDoubleClick}
           onMouseDown={(event) => { if (event.button === 1 && inputModeRef.current === 'desktop') event.preventDefault() }}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -3214,6 +3299,16 @@ function App() {
           onLostPointerCapture={onPointerEnd}
           onPointerLeave={onPointerLeave}
         />
+        {contextMenu && inputMode === 'desktop' && (() => {
+          const position = clampMenuPosition(contextMenu.x, contextMenu.y, 184, 236, window.innerWidth, window.innerHeight)
+          return (
+            <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y }} onContextMenu={(event) => event.preventDefault()}>
+              {contextMenuEntries(selectedItemCount > 0 || hasSelectedRectangle, clipboardCount > 0, hasInk).map((entry) => (
+                <button key={entry.action} type="button" role="menuitem" disabled={!entry.enabled} onClick={() => runContextMenuAction(entry.action)}>{entry.label}</button>
+              ))}
+            </div>
+          )
+        })()}
         {DRAW_READOUT_ENABLED && (
           <div className="draw-readouts" aria-hidden="true">
             <div className="draw-readout">{DRAW_FLAGS_TEXT}</div>
