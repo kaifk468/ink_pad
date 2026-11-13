@@ -14,7 +14,7 @@ type InsertTrayProps = {
   onShapes: () => void
 }
 
-const HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint: string }> = [
+export const HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint: string }> = [
   { shape: 'database', hint: 'a cylinder', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6"/></svg> },
   { shape: 'queue', hint: 'a box with arrow ends', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M8 7v10M16 7v10"/></svg> },
   { shape: 'service', hint: 'a rounded box', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="5"/></svg> },

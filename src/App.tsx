@@ -1957,12 +1957,6 @@ function App() {
       if (!anchor) return
       const width = Math.min(258, Math.max(0, window.innerWidth - 24))
       const estimatedHeight = 250
-      if (inputMode === 'desktop') {
-        // The desktop tool rail is on the left edge, so the popup opens to its right, level with the eraser.
-        const side = Math.min(window.innerWidth - width - 12, anchor.right + 12)
-        setEraserPopoverPosition({ left: Math.max(12, side), top: Math.max(12, Math.min(window.innerHeight - estimatedHeight - 12, anchor.top)), width })
-        return
-      }
       const left = Math.max(12, Math.min(window.innerWidth - width - 12, anchor.right - width))
       const belowTop = anchor.bottom + 12
       const top = belowTop + estimatedHeight <= window.innerHeight - 12
@@ -1978,7 +1972,7 @@ function App() {
       toolbar?.removeEventListener('scroll', updateEraserPopoverPosition)
       window.removeEventListener('resize', updateEraserPopoverPosition)
     }
-  }, [eraserMenuOpen, inputMode])
+  }, [eraserMenuOpen])
 
   useEffect(() => {
     if (optionsFor === null) return

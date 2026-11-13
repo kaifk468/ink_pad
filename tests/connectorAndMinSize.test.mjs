@@ -38,17 +38,26 @@ test('HLD shapes (service, database) shrink to 32x32; class boxes keep 64x72', (
 import { readFile } from 'node:fs/promises'
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
 
-test('desktop mode puts the tool dock in a left rail with shortcut tooltips; tablet keeps the bottom dock', async () => {
+test('desktop dock: same bottom bar, with Text, Shapes, HLD shapes and Typed class as one-click buttons and no Insert tray', async () => {
   const dock = await read('src/app/ToolDock.tsx')
-  assert.match(dock, /className=\{`tool-dock\$\{props\.desktop \? ' desktop-rail' : ''\}`\}/)
+  assert.match(dock, /className=\{`tool-dock\$\{props\.desktop \? ' desktop-dock' : ''\}`\}/)
   for (const key of ['P', 'E', 'V', 'L', 'C', 'B']) assert.match(dock, new RegExp(`', '${key}'\\)\\}`), key)
+  const desktop = dock.slice(dock.indexOf('if (props.desktop) {'), dock.lastIndexOf('  return ('))
+  const tablet = dock.slice(dock.lastIndexOf('  return ('))
+  for (const name of ['text-tool-button', 'shapes-tool-button', 'hld-tool-button', 'typed-class-button', '{connector}', '{inkClass}', '{penEraser}', '<MoreTray']) assert.ok(desktop.includes(name), name)
+  assert.equal(desktop.includes('<InsertTray'), false)
+  assert.ok(desktop.indexOf('{selectLasso}') < desktop.indexOf('{penEraser}') && desktop.indexOf('{penEraser}') < desktop.indexOf('text-tool-button'))
+  assert.match(desktop, /onClick=\{props\.textActive \? props\.onText : props\.onTextOptions\}/)
+  assert.match(desktop, /HLD_ENTRIES\.map/)
+  // tablet: unchanged order with the Insert tray
+  assert.ok(tablet.includes('<InsertTray') && !tablet.includes('text-tool-button'))
+  assert.ok(tablet.indexOf('{penEraser}') < tablet.indexOf('{selectLasso}') && tablet.indexOf('{selectLasso}') < tablet.indexOf('{connector}'))
   const app = await read('src/App.tsx')
   assert.match(app, /<ToolDock\s+desktop=\{inputMode === 'desktop'\}/)
   assert.match(app, /inputMode === 'desktop' \? 'Draw here with your mouse'/)
-  assert.match(app, /\}, \[eraserMenuOpen, inputMode\]\)/)
   const css = await read('src/styles.css')
-  assert.match(css, /\.tool-dock\.desktop-rail \{[^}]*flex-direction: column/)
-  assert.match(css, /\.tool-dock \{\s*position: absolute;[^}]*bottom: max\(16px/) // tablet dock unchanged
+  assert.equal(css.includes('desktop-rail'), false)
+  assert.match(css, /\.tool-dock \{\s*position: absolute;[^}]*bottom: max\(16px/)
 })
 
 test('the connector tool starts a connector on a box and snaps inside presses only in desktop mode', async () => {

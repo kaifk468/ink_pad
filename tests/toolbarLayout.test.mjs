@@ -45,7 +45,10 @@ test('dock order is Pen, Eraser | Select, Lasso | Connector, Insert', () => {
   const positions = order.map((marker) => dock.indexOf(marker))
   assert.ok(positions.every((position) => position >= 0), `missing marker in ${positions}`)
   assert.deepEqual([...positions].sort((a, b) => a - b), positions)
-  assert.equal((dock.match(/dock-divider/g) ?? []).length, 2)
+  // the tablet dock (the last return; the desktop dock is tested in connectorAndMinSize.test.mjs) has two dividers
+  const tablet = dock.slice(dock.lastIndexOf('  return ('))
+  assert.equal((tablet.match(/\{divider\}/g) ?? []).length, 2)
+  assert.match(dock, /const divider = <span className="dock-divider"/)
 })
 
 test('every dock tool keeps its label, pressed state and selected styling', () => {
