@@ -1956,8 +1956,14 @@ function App() {
       const anchor = eraserControlRef.current?.getBoundingClientRect()
       if (!anchor) return
       const width = Math.min(258, Math.max(0, window.innerWidth - 24))
-      const left = Math.max(12, Math.min(window.innerWidth - width - 12, anchor.right - width))
       const estimatedHeight = 250
+      if (inputMode === 'desktop') {
+        // The desktop tool rail is on the left edge, so the popup opens to its right, level with the eraser.
+        const side = Math.min(window.innerWidth - width - 12, anchor.right + 12)
+        setEraserPopoverPosition({ left: Math.max(12, side), top: Math.max(12, Math.min(window.innerHeight - estimatedHeight - 12, anchor.top)), width })
+        return
+      }
+      const left = Math.max(12, Math.min(window.innerWidth - width - 12, anchor.right - width))
       const belowTop = anchor.bottom + 12
       const top = belowTop + estimatedHeight <= window.innerHeight - 12
         ? belowTop
@@ -1972,7 +1978,7 @@ function App() {
       toolbar?.removeEventListener('scroll', updateEraserPopoverPosition)
       window.removeEventListener('resize', updateEraserPopoverPosition)
     }
-  }, [eraserMenuOpen])
+  }, [eraserMenuOpen, inputMode])
 
   useEffect(() => {
     if (optionsFor === null) return
@@ -2065,7 +2071,7 @@ function App() {
   }
 
   const snapConnectorEndpointWithinWorkspace = (point: Point) => {
-    const snapped = snapConnectorEndpoint(point, strokesRef.current, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale)
+    const snapped = snapConnectorEndpoint(point, strokesRef.current, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale, inputModeRef.current === 'desktop')
     return snapped && isPointWithinBounds(snapped.point, workspaceBoundsRef.current) ? snapped : null
   }
 
@@ -3440,7 +3446,7 @@ function App() {
           onCommit={commitTextEditor}
           onCancel={cancelTextEditor}
         />}
-        {!hasInk && <div className="canvas-hint" aria-hidden="true">Draw here with your S Pen</div>}
+        {!hasInk && <div className="canvas-hint" aria-hidden="true">{inputMode === 'desktop' ? 'Draw here with your mouse' : 'Draw here with your S Pen'}</div>}
         <aside
           ref={umlToolboxRef}
           className={`uml-toolbox${umlToolboxMinimized ? ' minimized' : ''}`}
@@ -3618,6 +3624,7 @@ function App() {
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
       <ZoomControls zoomPercent={zoomPercent} locked={navigationSettings.zoomLocked} onToggleLock={() => updateNavigationSettings({ zoomLocked: !navigationSettings.zoomLocked })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
+        desktop={inputMode === 'desktop'}
         dockRef={toolbarRef}
         eraserControlRef={eraserControlRef}
         penActive={penModeActive}

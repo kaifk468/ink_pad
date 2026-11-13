@@ -465,6 +465,18 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
   .performance-table-scroll { max-height: min(43vh, 290px); }
 }
 
+/* Desktop mode: the tools sit in a vertical rail on the left edge (there is room, and the bottom stays free for the page). */
+.tool-dock.desktop-rail { bottom: auto; top: 50%; left: max(16px, env(safe-area-inset-left)); transform: translateY(-50%); flex-direction: column; min-height: 0; max-width: none; padding: 8px 6px; gap: 3px; }
+.desktop-rail .dock-divider { width: 30px; height: 1px; margin: 4px 0; }
+.desktop-rail .tool-button { min-width: 56px; height: 54px; }
+.desktop-rail .insert-control { flex-direction: column; }
+.desktop-rail .insert-tray { right: auto; left: calc(100% + 14px); top: auto; bottom: 0; max-height: calc(100vh - 32px); overflow-y: auto; }
+@media (max-height: 760px) {
+  .desktop-rail .tool-button { min-width: 44px; height: 42px; }
+  .desktop-rail .tool-button span { display: none; }
+  .desktop-rail .tool-button svg { width: 22px; height: 22px; }
+}
+
 @media (max-width: 720px) {
   .tool-dock { gap: 2px; padding: 4px 6px; min-height: 60px; }
   .tool-button { min-width: 44px; height: 52px; padding: 3px 3px; }

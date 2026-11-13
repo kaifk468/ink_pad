@@ -245,6 +245,8 @@ export function clickSelectTarget(
   selectedRectangleId: number | null = null,
 ): HitTarget | null {
   if (tool === 'eraser' || tool === 'select') return null
+  // The connector tool's press starts a connector (from the box edge or inside it); it must never grab the box instead.
+  if (tool === 'connector') return null
   if (tool === 'lasso' && hasSelection) return null
   return edgeOnlyForInkBoxes(routedItems, hitTarget(routedItems, point, scale), point, scale, tool === 'pen' ? selectedRectangleId : null)
 }

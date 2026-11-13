@@ -1,7 +1,7 @@
 import { INK_BOX_MIN_BAND, INK_BOX_MIN_HEIGHT, clampInkBoxDividers, coverInkBounds } from './canvasModel'
 import type { InkBoxContent, Point, RectangleBounds, RectangleObject, Stroke } from './canvasModel'
 
-export { INK_BOX_INK_PADDING, INK_BOX_MIN_BAND, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, clampInkBoxDividers, constrainInkBoxBounds, coverInkBounds, inkBoxInkBounds, transformInkBox, translateInkBox } from './canvasModel'
+export { INK_BOX_INK_PADDING, INK_BOX_MIN_BAND, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, HLD_SHAPE_MIN_SIZE, inkBoxMinSize, clampInkBoxDividers, constrainInkBoxBounds, coverInkBounds, inkBoxInkBounds, transformInkBox, translateInkBox } from './canvasModel'
 export const INK_BOX_DEFAULT_WIDTH = 560
 export const INK_BOX_DEFAULT_HEIGHT = 420
 /** Name, variables and methods start at 12%, 80% and 8% of the box height. */

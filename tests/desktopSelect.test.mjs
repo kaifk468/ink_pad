@@ -32,9 +32,11 @@ test('hitTarget never returns strokes', () => {
   assert.equal(input.hitTarget([stroke], pt(50, 0), 1), null)
 })
 
-test('click-select applies to every tool except the eraser, and not to the select tool (which selects itself)', () => {
+test('click-select applies to every tool except the eraser, connector and select tools', () => {
   const items = [rect(1, 0, 0, 100, 100)]
-  for (const tool of ['pen', 'shape', 'text', 'connector', 'classBox', 'lasso']) assert.equal(input.clickSelectTarget(items, pt(50, 50), 1, tool, false)?.key, 'rectangle:1', tool)
+  for (const tool of ['pen', 'shape', 'text', 'classBox', 'lasso']) assert.equal(input.clickSelectTarget(items, pt(50, 50), 1, tool, false)?.key, 'rectangle:1', tool)
+  // the connector tool never grabs a box: a press on it (inside or on the edge) starts a connector
+  for (const point of [pt(50, 50), pt(2, 50), pt(100, 100)]) assert.equal(input.clickSelectTarget(items, point, 1, 'connector', false), null)
   assert.equal(input.clickSelectTarget(items, pt(50, 50), 1, 'eraser', false), null)
   assert.equal(input.clickSelectTarget(items, pt(50, 50), 1, 'select', false), null)
   assert.equal(input.clickSelectTarget(items, pt(500, 500), 1, 'pen', false), null)
@@ -51,7 +53,7 @@ test('in the pen tool the inside of an ink class box stays writable, its edge ba
   assert.equal(input.clickSelectTarget(items, pt(100, 5), 1, 'pen', false)?.key, 'rectangle:1')
   assert.equal(input.clickSelectTarget(items, pt(100, 5), 1, 'pen', false, 1), null)
   // every other tool leaves the inside alone too (text goes into the box) and selects near the edge
-  for (const tool of ['text', 'shape', 'connector', 'lasso', 'classBox']) {
+  for (const tool of ['text', 'shape', 'lasso', 'classBox']) {
     assert.equal(input.clickSelectTarget(items, pt(100, 100), 1, tool, false), null, tool)
     assert.equal(input.clickSelectTarget(items, pt(100, 5), 1, tool, false)?.key, 'rectangle:1', tool)
   }

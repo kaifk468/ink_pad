@@ -227,7 +227,17 @@ export function snapConnectorEndpoint(
   point: Point,
   items: CanvasItem[],
   tolerance = CONNECTOR_SNAP_TOLERANCE,
+  snapInside = false,
 ): SnappedConnectorEndpoint | null {
+  if (snapInside) {
+    // A point inside a box means "connect to this box": it goes to the nearest point of the outline, however deep inside it is.
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index]
+      if (item.kind !== 'rectangle' || point.x < item.x || point.x > item.x + item.width || point.y < item.y || point.y > item.y + item.height) continue
+      const candidate = nearestRectangleBoundaryPoint(item, point)
+      return { point: candidate, attachment: { rectangleId: item.id, offsetX: candidate.x - item.x, offsetY: candidate.y - item.y } }
+    }
+  }
   let closest: SnappedConnectorEndpoint | null = null
   let closestDistance = tolerance
   for (const item of items) {
@@ -328,7 +338,8 @@ export function resizeRectangleItems(items: CanvasItem[], rectangleId: number, b
   let resized: RectangleObject
   if (original.inkBox) {
     // An ink class box scales as one picture: writing, dividers and pen width follow the box in proportion.
-    const next = { x: bounds.x, y: bounds.y, width: Math.max(bounds.width, INK_BOX_MIN_WIDTH), height: Math.max(bounds.height, INK_BOX_MIN_HEIGHT) }
+    const min = inkBoxMinSize(original)
+    const next = { x: bounds.x, y: bounds.y, width: Math.max(bounds.width, min.width), height: Math.max(bounds.height, min.height) }
     const sx = next.width / original.width
     const sy = next.height / original.height
     resized = clampInkBoxDividers({
@@ -683,6 +694,12 @@ export class CanvasSnapshotHistory {
 export const INK_BOX_MIN_BAND = 24
 export const INK_BOX_MIN_HEIGHT = INK_BOX_MIN_BAND * 3
 export const INK_BOX_MIN_WIDTH = 64
+/** HLD shapes (service, database, ...) have no bands, so they may shrink further than a three-band class box. */
+export const HLD_SHAPE_MIN_SIZE = 32
+/** The smallest width and height a resize may give this ink box. */
+export function inkBoxMinSize(rectangle: RectangleObject): { width: number; height: number } {
+  return rectangle.hldShape ? { width: HLD_SHAPE_MIN_SIZE, height: HLD_SHAPE_MIN_SIZE } : { width: INK_BOX_MIN_WIDTH, height: INK_BOX_MIN_HEIGHT }
+}
 /** Space kept between written ink and the box edge when the box grows to cover the ink. */
 export const INK_BOX_INK_PADDING = 8
 
@@ -761,7 +778,8 @@ export function constrainInkBoxBounds(rectangle: RectangleObject, bounds: Rectan
   const box = rectangle.inkBox
   if (!box) return bounds
   let { x, y, width, height } = bounds
-  if (width < INK_BOX_MIN_WIDTH) width = INK_BOX_MIN_WIDTH
-  if (height < INK_BOX_MIN_HEIGHT) height = INK_BOX_MIN_HEIGHT
+  const min = inkBoxMinSize(rectangle)
+  if (width < min.width) width = min.width
+  if (height < min.height) height = min.height
   return coverInkBounds({ x, y, width, height }, box)
 }
