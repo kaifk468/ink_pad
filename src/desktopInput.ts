@@ -150,6 +150,10 @@ export type KeyCommand =
   | { kind: 'deleteSelection' }
   | { kind: 'selectAll' }
   | { kind: 'nudge'; dx: number; dy: number }
+  | { kind: 'copy' }
+  | { kind: 'cut' }
+  | { kind: 'paste' }
+  | { kind: 'duplicate' }
   | { kind: 'tool'; tool: KeyTool }
 
 export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox' }
@@ -169,6 +173,12 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if (key === '-' || key === '_') return { kind: 'zoomOut' }
     if (key === '0') return { kind: 'zoomReset' }
     if (key === 'a' && !event.shiftKey) return { kind: 'selectAll' }
+    if (!event.shiftKey && !event.repeat) {
+      if (key === 'c') return { kind: 'copy' }
+      if (key === 'x') return { kind: 'cut' }
+      if (key === 'v') return { kind: 'paste' }
+      if (key === 'd') return { kind: 'duplicate' }
+    }
     return null
   }
   // Arrow keys nudge the selection (Shift = 10 units); holding the key repeats on purpose. Other modifiers belong to the browser.

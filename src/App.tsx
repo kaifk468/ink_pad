@@ -4,6 +4,7 @@ import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
+import { PASTE_OFFSET, copyItems, pasteItems } from './clipboard'
 import { tidyItems, tidyScope } from './tidyLayout'
 import { HLD_DEFAULT_SIZE, createHldShape, type HldShape } from './hldShapes'
 import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
@@ -254,6 +255,11 @@ function App() {
   const activeMarqueeRef = useRef<{ pointerId: number; start: Point; current: Point; shift: boolean; base: Set<string>; before: Set<string> } | null>(null)
   // Step 9: when the last arrow-key nudge happened (a burst is one undo step).
   const lastNudgeAtRef = useRef<number | null>(null)
+  // Step 10: the in-app clipboard (a deep copy of the copied items; never the system clipboard, never saved). It outlives page changes,
+  // so a paste works on any page, and in another diagram opened later; every paste takes fresh ids from the shared counters.
+  const clipboardRef = useRef<CanvasItem[]>([])
+  const pasteCountRef = useRef(0)
+  const [clipboardCount, setClipboardCount] = useState(0)
   const edgeHoldRef = useRef<{ pointerId: number; boxId: number; start: Point; startedAt: number; timer: number } | null>(null)
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
   if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
@@ -345,6 +351,7 @@ function App() {
     activeLassoRef.current = null
     lassoDragRef.current = null
     activeMarqueeRef.current = null
+    pasteCountRef.current = 0
     activePointerRef.current = null
     activeObjectEraserRef.current = null
     holdAnchorRef.current = null
@@ -526,6 +533,8 @@ function App() {
   const reconcileSelectedItems = () => {
     const available = new Set(strokesRef.current.map(canvasItemKey))
     updateSelectedItems([...selectedKeysRef.current].filter((key) => available.has(key)))
+    // A single selected box lives in its own ref: it must go too when undo or delete removed the box.
+    if (selectedRectangleIdRef.current !== null && !available.has(`rectangle:${selectedRectangleIdRef.current}`)) setSelectedRectangle(null)
   }
 
   const saveHistory = () => {
@@ -3080,6 +3089,38 @@ function App() {
     return true
   }
 
+  const copySelection = (): boolean => {
+    const copied = copyItems(strokesRef.current, selectionKeysWithBox())
+    if (copied.length === 0) return false
+    clipboardRef.current = copied
+    pasteCountRef.current = 0
+    setClipboardCount(copied.length)
+    return true
+  }
+  // Cut = copy + delete: one undo step (deleteSelection records it).
+  const cutSelection = (): boolean => copySelection() && deleteSelection()
+  // Adds fresh clones (new ids, +24 units per consecutive paste, kept inside the workspace) as one undo step and selects them.
+  const pasteClipboard = (): boolean => {
+    const clip = clipboardRef.current
+    if (clip.length === 0) return false
+    const result = pasteItems(clip, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET * (pasteCountRef.current + 1), workspaceBoundsRef.current)
+    if (!result) return false
+    pasteCountRef.current += 1
+    saveHistory()
+    nextStrokeIdRef.current = result.counters.stroke
+    nextRectangleIdRef.current = result.counters.rectangle
+    nextConnectorIdRef.current = result.counters.connector
+    nextTextIdRef.current = result.counters.text
+    strokesRef.current = [...strokesRef.current, ...result.items]
+    setHasInk(true)
+    // A group is moved and resized with the select or lasso tool, so one of them is switched on first (as Select all does).
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    applySelectionState(normalizeSelection(result.keys))
+    return true
+  }
+  // Duplicate = copy + paste at +24 in one step.
+  const duplicateSelection = (): boolean => copySelection() && pasteClipboard()
+
   // Arrow keys: move the selection 1 unit (Shift 10) inside the workspace; connectors follow their boxes. A burst of presses is one undo step.
   const nudgeSelection = (dx: number, dy: number): boolean => {
     const keys = selectionKeysWithBox()
@@ -3119,6 +3160,10 @@ function App() {
         clearLassoSelection()
         return true
       case 'nudge': return nudgeSelection(command.dx, command.dy)
+      case 'copy': return copySelection()
+      case 'cut': return cutSelection()
+      case 'paste': return pasteClipboard()
+      case 'duplicate': return duplicateSelection()
       case 'deleteSelection': return deleteSelection()
       case 'selectAll': return selectAllItems()
       case 'tool':
@@ -3347,6 +3392,11 @@ function App() {
         onClearSelection={clearLassoSelection}
         canDelete={selectedItemCount > 0 || hasSelectedRectangle}
         onDeleteSelection={() => { deleteSelection() }}
+        canCopy={selectedItemCount > 0 || hasSelectedRectangle}
+        canPaste={clipboardCount > 0}
+        onCopy={() => { copySelection() }}
+        onPaste={() => { pasteClipboard() }}
+        onDuplicate={() => { duplicateSelection() }}
         relationship={selectedConnectorId !== null && selectedConnectorType !== null
           ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
           : null}

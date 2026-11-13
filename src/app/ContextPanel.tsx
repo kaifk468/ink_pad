@@ -29,13 +29,19 @@ type ContextPanelProps = {
   /** True when something is selected that Delete can remove (including a single selected box). */
   canDelete: boolean
   onDeleteSelection: () => void
+  /** Copy and Duplicate need a selection; Paste needs something on the in-app clipboard. */
+  canCopy: boolean
+  canPaste: boolean
+  onCopy: () => void
+  onPaste: () => void
+  onDuplicate: () => void
   relationship: RelationshipProps | null
 }
 
 /** Settings that only appear when the active tool or selection needs them. */
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.showTextSizes && props.selectedItemCount === 0 && !props.canDelete && !relationship) return null
+  if (!props.showStyle && !props.showTextSizes && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
   return (
     <aside className="context-panel" aria-label="Tool options">
       {props.showStyle && <>
@@ -94,6 +100,11 @@ export function ContextPanel(props: ContextPanelProps) {
         ))}
       </div>}
       {props.selectedItemCount > 0 && <button className="clear-selection-button" type="button" onClick={props.onClearSelection}>Clear selection</button>}
+      {(props.canCopy || props.canPaste) && <div className="selection-actions" role="group" aria-label="Copy and paste">
+        {props.canCopy && <button className="clear-selection-button" type="button" aria-label="Copy selection" title="Copy the selected items" onClick={props.onCopy}>Copy</button>}
+        {props.canPaste && <button className="clear-selection-button" type="button" aria-label="Paste" title="Paste the copied items" onClick={props.onPaste}>Paste</button>}
+        {props.canCopy && <button className="clear-selection-button" type="button" aria-label="Duplicate selection" title="Duplicate the selected items" onClick={props.onDuplicate}>Duplicate</button>}
+      </div>}
       {props.canDelete && <button className="clear-selection-button delete-selection-button" type="button" aria-label="Delete selection" title="Delete the selected items" onClick={props.onDeleteSelection}>Delete</button>}
       {relationship && <div className="relationship-controls" role="group" aria-label="Selected connector relationship">
         <label className="relationship-label" htmlFor="connector-relationship-type">Relationship</label>
