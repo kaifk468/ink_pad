@@ -290,11 +290,36 @@ test('App wiring: the menu and double-click are Desktop only, touch and pen righ
   assert.match(app, /window\.removeEventListener\('wheel', close, true\)/)
   assert.match(app, /if \(command\.kind === 'deselect'\) \{ closeContextMenu\(\); return true \}/)
   assert.match(app, /if \(inputMode !== 'desktop'\) setContextMenu\(null\)/)
-  assert.match(app, /if \(inputModeRef\.current !== 'desktop' \|\| event\.button !== 0 \|\| textEditorRef\.current \|\| classBoxEditor\) return/)
+  assert.match(app, /if \(inputModeRef\.current !== 'desktop' \|\| lastPointerTypeRef\.current !== 'mouse' \|\| event\.button !== 0 \|\| textEditorRef\.current \|\| classBoxEditor\) return/)
   assert.match(app, /onContextMenu=\{onCanvasContextMenu\}\n\s*onDoubleClick=\{onCanvasDoubleClick\}/)
   assert.match(app, /\['BUTTON', 'A'\]\.includes\(\(target\?\.tagName \?\? ''\)\.toUpperCase\(\)\)\) return/)
   // the cursor comes from one place and the eraser ring is shown for the mouse in Desktop mode
   assert.match(app, /canvas\.style\.cursor = canvasCursor\(\{ mode: inputModeRef\.current/)
   assert.match(app, /event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop'\)\n\s*if \(\(!eraser && !isPenButtonHeld\(event\)\) \|\| !ringPointer\)/)
   assert.doesNotMatch(app, /style\.cursor = spaceHeldRef/)
+})
+
+// ---- Step 13: hardening ----
+test('hardening: every new mouse branch is Desktop-only, double-click needs a mouse, a pen ends a mouse marquee, mode change clears hover', () => {
+  // every new mouse pointer-down branch checks Desktop mode
+  assert.match(app, /if \(event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop'\) \{\n\s*if \(event\.shiftKey && !eraser\)/)
+  assert.match(app, /if \(event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop' && !hitTarget\(/)
+  assert.match(app, /event\.pointerType === 'mouse' && event\.buttons === 0 && inputModeRef\.current === 'desktop'\) setMouseHover\(/)
+  // the edge hold is pen-only and runs in both modes by design (no mode check)
+  assert.match(app, /if \(event\.pointerType === 'pen' && !eraser && !buttonErase && !shapeMode\) \{\n\s*const edgeBox/)
+  assert.match(app, /lastPointerTypeRef\.current !== 'mouse'/)
+  assert.match(app, /if \(event\.pointerType === 'pen' && activeMarqueeRef\.current\) \{ activeMarqueeRef\.current = null; renderAll\(\) \}/)
+  assert.match(app, /if \(inputMode !== 'desktop'\) setMouseHover\(null\)/)
+  // the touch block still returns before any of the new branches
+  const touch = app.indexOf("if (event.pointerType === 'touch') {\n      event.preventDefault()")
+  const shift = app.indexOf('if (event.shiftKey && !eraser) {')
+  assert.ok(touch > 0 && touch < shift)
+})
+
+test('hardening: every listener added by the new code is removed, and timers are cleared on unmount', () => {
+  for (const name of ['pointerdown', 'wheel', 'scroll', 'blur', 'resize']) {
+    assert.ok(app.includes(`window.addEventListener('${name}'`), `adds ${name}`)
+    assert.ok(app.includes(`window.removeEventListener('${name}'`), `removes ${name}`)
+  }
+  assert.match(app, /useEffect\(\(\) => \(\) => \{ cancelEdgeHold\(\); if \(hoverFrameRef\.current !== null\) cancelAnimationFrame\(hoverFrameRef\.current\) \}, \[\]\)/)
 })

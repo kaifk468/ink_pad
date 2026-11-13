@@ -262,6 +262,8 @@ function App() {
   const pasteCountRef = useRef(0)
   const [clipboardCount, setClipboardCount] = useState(0)
   // Step 11: the right-click menu (Desktop only), at the pointer in screen coordinates.
+  // The pointer type of the latest canvas press: a double-tap by a finger or pen is not a mouse double-click.
+  const lastPointerTypeRef = useRef('')
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const contextMenuRef = useRef(contextMenu)
   contextMenuRef.current = contextMenu
@@ -1134,7 +1136,10 @@ function App() {
   const applyCursorRef = useRef(applyCanvasCursor)
   applyCursorRef.current = applyCanvasCursor
   const cursorTool = clickToolName()
-  useEffect(() => { applyCursorRef.current() }, [inputMode, cursorTool])
+  useEffect(() => {
+    if (inputMode !== 'desktop') setMouseHover(null)
+    applyCursorRef.current()
+  }, [inputMode, cursorTool])
 
   // Desktop hover: the item under the mouse gets a light outline and a pointer cursor. The pick runs at most once a frame and
   // the canvas is redrawn only when the hovered item changes.
@@ -2222,6 +2227,9 @@ function App() {
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     showPenButtonState('down', event)
+    lastPointerTypeRef.current = event.pointerType
+    // A pen landing ends a mouse marquee still being dragged (the pen always wins over the mouse).
+    if (event.pointerType === 'pen' && activeMarqueeRef.current) { activeMarqueeRef.current = null; renderAll() }
     moveEraserCursor(event)
     if (event.pointerType === 'pen') touchNav.penDown()
     if (event.pointerType === 'touch') {
@@ -3226,7 +3234,7 @@ function App() {
     return false
   }
   const onCanvasDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (inputModeRef.current !== 'desktop' || event.button !== 0 || textEditorRef.current || classBoxEditor) return
+    if (inputModeRef.current !== 'desktop' || lastPointerTypeRef.current !== 'mouse' || event.button !== 0 || textEditorRef.current || classBoxEditor) return
     const rect = event.currentTarget.getBoundingClientRect()
     const point = screenToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, viewportRef.current)
     const target = doubleClickTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
