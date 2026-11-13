@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { TEXT_FONT_FAMILY, TEXT_LINE_HEIGHT, measureTextSize, type TextMeasure } from './textLayout'
+import type { TextFontId } from './canvasModel'
+import { TEXT_LINE_HEIGHT, measureTextSize, textFontFamily, type TextMeasure } from './textLayout'
 
 export type TextEditorState = {
   /** Existing text item being edited, or null when creating a new label. */
@@ -8,6 +9,8 @@ export type TextEditorState = {
   x: number
   y: number
   fontSize: number
+  /** The label's font; none means the original clean sans. */
+  fontFamily?: TextFontId
   color: string
   initialText: string
 }
@@ -15,7 +18,7 @@ export type TextEditorState = {
 type TextEditorOverlayProps = {
   editor: TextEditorState
   viewport: { scale: number; offsetX: number; offsetY: number }
-  measure: (fontSize: number) => TextMeasure | undefined
+  measure: (fontSize: number, fontId?: TextFontId) => TextMeasure | undefined
   onChange: (value: string) => void
   onCommit: () => void
   onCancel: () => void
@@ -26,7 +29,7 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const [value, setValue] = useState(editor.initialText)
   const scale = viewport.scale
-  const size = measureTextSize(value, editor.fontSize, measure(editor.fontSize))
+  const size = measureTextSize(value, editor.fontSize, measure(editor.fontSize, editor.fontFamily))
   const padding = 6
 
   useLayoutEffect(() => {
@@ -53,7 +56,7 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
         width: Math.max(size.width * scale + padding * 2 + 8, editor.fontSize * scale * 4),
         height: size.height * scale + padding * 2,
         padding,
-        fontFamily: TEXT_FONT_FAMILY,
+        fontFamily: textFontFamily(editor.fontFamily),
         fontSize: editor.fontSize * scale,
         lineHeight: TEXT_LINE_HEIGHT,
         color: editor.color,

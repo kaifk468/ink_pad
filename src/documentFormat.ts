@@ -1,4 +1,4 @@
-import type { HldShape, CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
+import type { TextFontId, HldShape, CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 
 /**
  * Versioned InkPad document (.inkpad file / stored diagram).
@@ -61,6 +61,8 @@ const grownSheetHeight = (value: unknown): { sheetHeight: number } | Record<stri
 const TEMPLATES: DocumentPageTemplate[] = ['blank', 'lined', 'dotted']
 const BACKGROUNDS: DocumentPageBackground[] = ['white', 'warm', 'blue', 'yellow', 'green']
 /** Same kinds as HLD_SHAPES in canvasModel.ts (not imported: this file only takes types from there). */
+/** Kept in step with TEXT_FONT_IDS in canvasModel.ts (a test checks it); this module stays free of value imports. */
+const TEXT_FONT_KINDS: string[] = ['excalifont', 'sans', 'serif', 'mono']
 const HLD_SHAPE_KINDS: string[] = ['database', 'queue', 'service']
 const RELATIONSHIPS: ConnectorRelationshipType[] = ['association', 'directed-association', 'inheritance', 'realization', 'dependency', 'aggregation', 'composition']
 const MAX_TITLE_LENGTH = 120
@@ -300,7 +302,7 @@ function sanitizeItem(value: unknown): CanvasItem | null {
   if (value.kind === 'text') {
     if (!isNum(value.x) || !isNum(value.y) || !isNum(value.width) || !isNum(value.height) || value.width < 0 || value.height < 0) return null
     if (typeof value.text !== 'string' || !isColor(value.color) || !isNum(value.fontSize) || value.fontSize < MIN_FONT_SIZE || value.fontSize > MAX_FONT_SIZE) return null
-    const text: TextObject = { kind: 'text', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, text: value.text.replace(/\u0000/g, '').slice(0, MAX_TEXT_LENGTH), fontSize: value.fontSize, color: value.color }
+    const text: TextObject = { kind: 'text', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, text: value.text.replace(/\u0000/g, '').slice(0, MAX_TEXT_LENGTH), fontSize: value.fontSize, color: value.color, ...(TEXT_FONT_KINDS.includes(value.fontFamily as string) ? { fontFamily: value.fontFamily as TextFontId } : {}) }
     return text
   }
   if (value.kind === 'connector') {

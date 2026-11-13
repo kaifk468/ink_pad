@@ -7,7 +7,10 @@ export type ClassBoxContent = { name: string; attributes: string; methods: strin
 export const HLD_SHAPES = ['database', 'queue', 'service'] as const
 export type HldShape = (typeof HLD_SHAPES)[number]
 export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true }
-export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string }
+/** The fixed list of label fonts. A saved label without `fontFamily` is the original clean sans. */
+export const TEXT_FONT_IDS = ['excalifont', 'sans', 'serif', 'mono'] as const
+export type TextFontId = (typeof TEXT_FONT_IDS)[number]
+export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId }
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
 export type ConnectorRouting = 'straight' | 'elbow'

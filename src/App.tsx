@@ -43,7 +43,9 @@ import { ZoomControls } from './app/ZoomControls'
 import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
-import { DEFAULT_TEXT_FONT_SIZE, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
+import { DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
+import { loadTextFont } from './textFonts'
+import type { TextFontId } from './canvasModel'
 import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
@@ -502,6 +504,9 @@ function App() {
   const [hldShapeTool, setHldShapeTool] = useState<HldShape | null>(null)
   const [classBoxEditor, setClassBoxEditor] = useState<{ rectangleId: number | null; x: number; y: number; content: ClassBoxContent } | null>(null)
   const [textSize, setTextSize] = useState(DEFAULT_TEXT_FONT_SIZE)
+  // The font for new labels (Excalifont to start with) and the single label that is selected, if any (its font is shown and can be changed).
+  const [textFontId, setTextFontId] = useState<TextFontId>(DEFAULT_TEXT_FONT)
+  const [selectedTextId, setSelectedTextId] = useState<number | null>(null)
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null)
   const [lassoMode, setLassoMode] = useState(false)
   const [connectorMode, setConnectorMode] = useState(false)
@@ -547,6 +552,7 @@ function App() {
     const connectorId = keys.length === 1 && keys[0].startsWith('connector:') ? Number(keys[0].slice('connector:'.length)) : null
     const connector = connectorId === null ? null : strokesRef.current.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
     setSelectedConnectorId(connector?.id ?? null)
+    setSelectedTextId(keys.length === 1 && keys[0].startsWith('text:') ? Number(keys[0].slice('text:'.length)) : null)
     setSelectedConnectorType(connector?.relationshipType ?? null)
     setSelectedConnectorReversed(connector?.reversed ?? false)
     setSelectedConnectorElbow(connector?.routing === 'elbow')
@@ -800,7 +806,7 @@ function App() {
     if (editor.itemId === null) {
       if (!isBlankText(value)) {
         saveHistory()
-        strokesRef.current.push(createTextObject(nextTextIdRef.current++, editor.x, editor.y, value, editor.color, editor.fontSize, createTextMeasure(editor.fontSize)))
+        strokesRef.current.push(createTextObject(nextTextIdRef.current++, editor.x, editor.y, value, editor.color, editor.fontSize, createTextMeasure(editor.fontSize, editor.fontFamily), editor.fontFamily))
         setHasInk(true)
       }
     } else {
@@ -814,7 +820,7 @@ function App() {
           reconcileSelectedItems()
         } else if (value !== existing.text) {
           saveHistory()
-          const updated = updateTextObject(existing, value, existing.fontSize, createTextMeasure(existing.fontSize))
+          const updated = updateTextObject(existing, value, existing.fontSize, createTextMeasure(existing.fontSize, existing.fontFamily))
           strokesRef.current = strokesRef.current.map((item, itemIndex) => (itemIndex === index ? updated : item))
         }
       }
@@ -829,7 +835,7 @@ function App() {
     renderAll()
   }
 
-  const editTextItem = (item: TextObject) => openTextEditor({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, color: item.color, initialText: item.text })
+  const editTextItem = (item: TextObject) => openTextEditor({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text })
 
   const openClassBoxEditor = (editor: { rectangleId: number | null; x: number; y: number; content: ClassBoxContent }) => {
     if (textEditorRef.current) commitTextEditor()
@@ -1196,6 +1202,23 @@ function App() {
     selectHitTarget({ key: canvasItemKey(box), kind: 'rectangle', id: box.id })
   }
   useEffect(() => () => { cancelEdgeHold(); if (hoverFrameRef.current !== null) cancelAnimationFrame(hoverFrameRef.current) }, [])
+
+  // Font picker: the choice is the font for new labels, and also changes the single selected label (one undo step, re-measured once the font is ready).
+  const selectedTextFont: TextFontId | null = selectedTextId === null ? null
+    : (() => { const item = strokesRef.current.find((candidate) => candidate.kind === 'text' && candidate.id === selectedTextId); return item?.kind === 'text' ? item.fontFamily ?? LEGACY_TEXT_FONT : null })()
+  const changeTextFontChoice = (fontId: TextFontId) => {
+    setTextFontId(fontId)
+    const targetId = selectedTextId
+    if (targetId === null) return
+    void loadTextFont(fontId).then(() => {
+      const index = strokesRef.current.findIndex((item) => item.kind === 'text' && item.id === targetId)
+      const item = index === -1 ? null : strokesRef.current[index]
+      if (!item || item.kind !== 'text' || (item.fontFamily ?? LEGACY_TEXT_FONT) === fontId) return
+      saveHistory()
+      strokesRef.current = strokesRef.current.map((candidate, candidateIndex) => (candidateIndex === index ? changeTextFont(item, fontId, createTextMeasure(item.fontSize, fontId)) : candidate))
+      renderAll()
+    })
+  }
 
   const renderAll = useCallback((benchmarkBackground?: { template: PageTemplate; dpr?: number; viewport?: Viewport; onBackgroundRendered: (durationMs: number) => void }) => {
     const diagnostics = performanceDiagnosticsRef.current
@@ -1636,6 +1659,16 @@ function App() {
     if (measureFrame) diagnostics?.recordMinimapRender(performance.now() - minimapStartedAt)
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
   }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageSpacing, pageTemplate, renderNavigator, strokeDisplayMode, width])
+  const renderAllRef = useRef(renderAll)
+  renderAllRef.current = renderAll
+  // Excalifont is a web font: load it at start and repaint (dropping the cached ink layer, which may hold fallback letters) when fonts finish loading.
+  useEffect(() => {
+    const refresh = () => { historyCacheRef.current = null; renderAllRef.current() }
+    void loadTextFont(DEFAULT_TEXT_FONT).then(refresh)
+    const fonts = typeof document === 'undefined' ? undefined : document.fonts
+    fonts?.addEventListener?.('loadingdone', refresh)
+    return () => fonts?.removeEventListener?.('loadingdone', refresh)
+  }, [])
 
   /** Sets the page height (ref first, so the very next draw uses it) and keeps the view inside the new page. */
   const applySheetHeight = (next: number) => {
@@ -2756,7 +2789,7 @@ function App() {
       textTapRef.current = null
       const existing = hitTestText(tap.point)
       if (existing) editTextItem(existing)
-      else openTextEditor({ itemId: null, x: tap.point.x, y: tap.point.y - textSize * 0.65, fontSize: textSize, color, initialText: '' })
+      else openTextEditor({ itemId: null, x: tap.point.x, y: tap.point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
       return
     }
     if (classTapRef.current?.pointerId === event.pointerId) {
@@ -3566,6 +3599,9 @@ function App() {
         showTextSizes={optionsFor === 'text' && textMode}
         textSize={textSize}
         onTextSize={setTextSize}
+        showTextFonts={(optionsFor === 'text' && textMode) || (selectedTextId !== null && selectedItemCount === 1)}
+        textFontId={selectedTextFont ?? textFontId}
+        onTextFont={changeTextFontChoice}
         selectedItemCount={selectedItemCount}
         onClearSelection={clearLassoSelection}
         canDelete={selectedItemCount > 0 || hasSelectedRectangle}

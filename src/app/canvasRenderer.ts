@@ -1,6 +1,6 @@
 import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry } from '../canvasModel'
 import { hldOutlinePath } from '../hldShapes'
-import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from '../canvasModel'
+import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextFontId, TextObject } from '../canvasModel'
 import { filterDisplayPoints } from '../oneEuroFilter'
 import { buildInterpolatingCurve, buildMidpointCurve, type InterpolatingStrokeSegment } from '../strokeCurves'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
@@ -343,19 +343,19 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
 let measureContext: CanvasRenderingContext2D | null = null
 
 /** Measures a line of label text with the same font the renderer uses. Falls back to an estimate off-DOM. */
-export function createTextMeasure(fontSize: number): TextMeasure | undefined {
+export function createTextMeasure(fontSize: number, fontId?: TextFontId): TextMeasure | undefined {
   if (!measureContext && typeof document !== 'undefined') measureContext = document.createElement('canvas').getContext('2d')
   const ctx = measureContext
   if (!ctx) return undefined
   return (line) => {
-    ctx.font = textFont(fontSize)
+    ctx.font = textFont(fontSize, fontId)
     return ctx.measureText(line).width
   }
 }
 
 export function drawText(ctx: CanvasRenderingContext2D, text: TextObject): void {
   ctx.save()
-  ctx.font = textFont(text.fontSize)
+  ctx.font = textFont(text.fontSize, text.fontFamily)
   ctx.fillStyle = text.color
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'

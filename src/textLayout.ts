@@ -1,7 +1,22 @@
-import type { TextObject } from './canvasModel'
+import type { TextFontId, TextObject } from './canvasModel'
 
 /** Shared text geometry: used by the canvas renderer, SVG export, hit-testing and the editor. */
 export const TEXT_FONT_FAMILY = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+/** A label saved before fonts existed has no font and keeps drawing in this one, so old diagrams look and fit exactly as before. */
+export const LEGACY_TEXT_FONT: TextFontId = 'sans'
+/** New labels start in the hand-drawn Excalifont (bundled with the app, SIL Open Font License). */
+export const DEFAULT_TEXT_FONT: TextFontId = 'excalifont'
+export const TEXT_FONTS: ReadonlyArray<{ id: TextFontId; label: string; family: string }> = [
+  { id: 'excalifont', label: 'Hand-drawn', family: "'Excalifont', 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive" },
+  { id: 'sans', label: 'Clean', family: TEXT_FONT_FAMILY },
+  { id: 'serif', label: 'Serif', family: "Georgia, 'Times New Roman', serif" },
+  { id: 'mono', label: 'Code', family: "ui-monospace, 'Cascadia Code', Consolas, Menlo, monospace" },
+]
+
+export function textFontFamily(id?: TextFontId): string {
+  return (TEXT_FONTS.find((font) => font.id === (id ?? LEGACY_TEXT_FONT)) ?? TEXT_FONTS[1]).family
+}
+
 export const TEXT_FONT_SIZES = [18, 24, 32, 48]
 export const DEFAULT_TEXT_FONT_SIZE = 24
 export const MAX_TEXT_LENGTH = 2000
@@ -17,8 +32,8 @@ export function splitTextLines(text: string): string[] {
   return text.replace(/\r\n?/g, '\n').split('\n')
 }
 
-export function textFont(fontSize: number): string {
-  return `${fontSize}px ${TEXT_FONT_FAMILY}`
+export function textFont(fontSize: number, fontId?: TextFontId): string {
+  return `${fontSize}px ${textFontFamily(fontId)}`
 }
 
 export function getTextLineHeight(fontSize: number): number {
@@ -60,10 +75,17 @@ export function createTextObject(
   color: string,
   fontSize = DEFAULT_TEXT_FONT_SIZE,
   measure?: TextMeasure,
+  fontFamily?: TextFontId,
 ): TextObject {
   const clean = normalizeText(text)
   const size = measureTextSize(clean, fontSize, measure)
-  return { kind: 'text', id, x, y, width: size.width, height: size.height, text: clean, fontSize, color }
+  return { kind: 'text', id, x, y, width: size.width, height: size.height, text: clean, fontSize, color, ...(fontFamily ? { fontFamily } : {}) }
+}
+
+/** The same label in another font, re-measured. Position, id, text, size and color are kept. */
+export function changeTextFont(item: TextObject, fontFamily: TextFontId, measure?: TextMeasure): TextObject {
+  const size = measureTextSize(item.text, item.fontSize, measure)
+  return { ...item, fontFamily, width: size.width, height: size.height }
 }
 
 /** Same object with new text/size, re-measured. Position, id and color are kept. */

@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react'
 import type { ConnectorRelationshipType } from '../canvasModel'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
-import { TEXT_FONT_SIZES } from '../textLayout'
+import type { TextFontId } from '../canvasModel'
+import { TEXT_FONTS, TEXT_FONT_SIZES } from '../textLayout'
 import { COLORS, MAX_STROKE_WIDTH, MIN_STROKE_WIDTH, WIDTHS } from './appConfig'
 
 type RelationshipProps = {
@@ -22,6 +23,10 @@ type ContextPanelProps = {
   strokeDisplayMode: StrokeDisplayMode
   onStrokeDisplayMode: (mode: StrokeDisplayMode) => void
   showTextSizes: boolean
+  /** The font list: for new labels with the text tool, or for the one selected label. */
+  showTextFonts: boolean
+  textFontId: TextFontId
+  onTextFont: (id: TextFontId) => void
   textSize: number
   onTextSize: (size: number) => void
   selectedItemCount: number
@@ -41,7 +46,7 @@ type ContextPanelProps = {
 /** Settings that only appear when the active tool or selection needs them. */
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.showTextSizes && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
+  if (!props.showStyle && !props.showTextSizes && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
   return (
     <aside className="context-panel" aria-label="Tool options">
       {props.showStyle && <>
@@ -86,6 +91,20 @@ export function ContextPanel(props: ContextPanelProps) {
           </button>
         </div>
       </>}
+      {props.showTextFonts && <div className="tool-group text-font-group" role="group" aria-label="Text font">
+        {TEXT_FONTS.map((font) => (
+          <button
+            className={`text-font-button${props.textFontId === font.id ? ' selected' : ''}`}
+            key={font.id}
+            type="button"
+            aria-label={`${font.label} font`}
+            aria-pressed={props.textFontId === font.id}
+            title={`${font.label} font`}
+            style={{ fontFamily: font.family }}
+            onClick={() => props.onTextFont(font.id)}
+          >Aa<span>{font.label}</span></button>
+        ))}
+      </div>}
       {props.showTextSizes && <div className="tool-group text-size-group" role="group" aria-label="Text size">
         {TEXT_FONT_SIZES.map((size) => (
           <button

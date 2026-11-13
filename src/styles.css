@@ -1,4 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
+/* Excalifont (Excalidraw's hand-drawn font), SIL Open Font License 1.1: see src/assets/fonts/OFL.txt. Loaded when a label uses it. */
+@font-face { font-family: 'Excalifont'; src: url('./assets/fonts/Excalifont-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
 
 :root {
   font-family: 'DM Sans', sans-serif;
@@ -647,3 +649,8 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .canvas-context-menu button { min-height: 34px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #202124; font: inherit; text-align: left; cursor: pointer; }
 .canvas-context-menu button:hover:not(:disabled), .canvas-context-menu button:focus-visible { background: #eef1fc; outline: none; }
 .canvas-context-menu button:disabled { color: #a0a6b2; cursor: default; }
+
+.text-font-group { gap: 4px; }
+.context-panel .text-font-button { flex: 1 1 calc(50% - 4px); min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 2px 6px; border: 1px solid #e0e4ec; border-radius: 10px; background: #fff; color: #202124; font-size: 20px; line-height: 1.1; cursor: pointer; }
+.context-panel .text-font-button span { font: 500 11px 'DM Sans', sans-serif; color: #5b6270; }
+.context-panel .text-font-button.selected { border-color: #5269df; background: #eef1fc; }
