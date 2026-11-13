@@ -233,8 +233,8 @@ export type ClickTool = 'pen' | 'shape' | 'text' | 'connector' | 'lasso' | 'clas
 /**
  * What a mouse press selects and drags, before the active tool sees it. Any tool except the eraser; the select tool
  * already selects by itself, and the lasso tool keeps its own move and resize while something is selected.
- * In the pen tool the inside of an ink class box stays writable: only its edge band is taken, and never the already
- * selected box, whose handles and border have their own rules.
+ * The inside of an ink class box stays writable with every tool (ink, text, ...): only its edge band is taken, and in the
+ * pen tool never the already selected box, whose handles and border have their own rules.
  */
 export function clickSelectTarget(
   routedItems: readonly CanvasItem[],
@@ -246,13 +246,24 @@ export function clickSelectTarget(
 ): HitTarget | null {
   if (tool === 'eraser' || tool === 'select') return null
   if (tool === 'lasso' && hasSelection) return null
-  const target = hitTarget(routedItems, point, scale)
-  if (!target || target.kind !== 'rectangle' || tool !== 'pen') return target
+  return edgeOnlyForInkBoxes(routedItems, hitTarget(routedItems, point, scale), point, scale, tool === 'pen' ? selectedRectangleId : null)
+}
+
+/**
+ * An ink class box is written in, so only its edge band (or near it) selects it, with every tool and for hover; the inside
+ * is left to the active tool (ink, text, ...). `selectedId` is a box that keeps its own handle and border rules (pen tool).
+ */
+function edgeOnlyForInkBoxes(routedItems: readonly CanvasItem[], target: HitTarget | null, point: Point, scale: number, selectedId: number | null): HitTarget | null {
+  if (!target || target.kind !== 'rectangle') return target
   const box = routedItems.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === target.id)
   if (!box?.inkBox) return target
-  // The selected ink box keeps its own handles, grip, dividers and border rules in the pen tool.
-  if (box.id === selectedRectangleId) return null
+  if (box.id === selectedId) return null
   return pointInEdgeBand(box, point, EDGE_BAND_PX / scale) ? target : null
+}
+
+/** The item the mouse hovers over: like a click target, so the inside of an ink class box is not highlighted. */
+export function hoverTarget(routedItems: readonly CanvasItem[], point: Point, scale: number): HitTarget | null {
+  return edgeOnlyForInkBoxes(routedItems, hitTarget(routedItems, point, scale), point, scale, null)
 }
 
 /** How close to a box's outline (screen px, divided by the zoom scale) counts as its edge: the same idea as the resize handles. */

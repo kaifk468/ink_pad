@@ -50,8 +50,14 @@ test('in the pen tool the inside of an ink class box stays writable, its edge ba
   assert.equal(input.clickSelectTarget(items, pt(100, 100), 1, 'pen', false), null)
   assert.equal(input.clickSelectTarget(items, pt(100, 5), 1, 'pen', false)?.key, 'rectangle:1')
   assert.equal(input.clickSelectTarget(items, pt(100, 5), 1, 'pen', false, 1), null)
-  // other tools select an ink box anywhere
-  assert.equal(input.clickSelectTarget(items, pt(100, 100), 1, 'text', false)?.key, 'rectangle:1')
+  // every other tool leaves the inside alone too (text goes into the box) and selects near the edge
+  for (const tool of ['text', 'shape', 'connector', 'lasso', 'classBox']) {
+    assert.equal(input.clickSelectTarget(items, pt(100, 100), 1, tool, false), null, tool)
+    assert.equal(input.clickSelectTarget(items, pt(100, 5), 1, tool, false)?.key, 'rectangle:1', tool)
+  }
+  // hover follows the same rule
+  assert.equal(input.hoverTarget(items, pt(100, 100), 1), null)
+  assert.equal(input.hoverTarget(items, pt(100, 5), 1)?.key, 'rectangle:1')
 })
 
 test('edge band: within 14 screen px of the outline, scaled by zoom', () => {
