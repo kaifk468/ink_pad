@@ -7,7 +7,7 @@
  * per-device preference, like the navigation settings.
  */
 
-import { canvasItemKey, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
+import { canvasItemKey, getCanvasSelectionBounds, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
 import { itemHitTest } from './lassoSelection'
 import { MAX_ZOOM, MIN_ZOOM, panViewport, zoomViewportAt, type Viewport } from './viewport'
 
@@ -188,10 +188,10 @@ export function isTypingTarget(tag: string, isEditable: boolean): boolean {
  * order (text, then box, then connector; the topmost of each) and the same tolerances as the select tool.
  * Pass the connector-routed items so elbow connectors are hit where they are drawn.
  */
-export type HitTarget = { key: string; kind: 'rectangle' | 'connector' | 'text'; id: number }
+export type HitTarget = { key: string; kind: 'rectangle' | 'connector' | 'text' | 'stroke'; id: number }
 
 export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scale: number): HitTarget | null {
-  const pick = (kind: HitTarget['kind'], test: (item: CanvasItem) => boolean): HitTarget | null => {
+  const pick = (kind: 'rectangle' | 'connector' | 'text', test: (item: CanvasItem) => boolean): HitTarget | null => {
     for (let index = routedItems.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
       if (item.kind === kind && test(item)) return { key: canvasItemKey(item), kind, id: item.id }
@@ -263,4 +263,63 @@ export function edgeBandBox(items: readonly CanvasItem[], point: Point, scale: n
 export function edgeHoldDecision(start: Point, current: Point, elapsedMs: number, scale: number): 'wait' | 'select' | 'draw' {
   if (Math.hypot(current.x - start.x, current.y - start.y) > EDGE_HOLD_JITTER_PX / scale) return 'draw'
   return elapsedMs >= EDGE_HOLD_MS ? 'select' : 'wait'
+}
+
+/**
+ * Step 8: multi-select (Desktop mode).
+ * - Shift + click adds or removes one item (box, connector, text or stroke).
+ * - With the select tool, dragging from empty space draws a marquee; on release every item fully inside is selected,
+ *   and Shift keeps the old selection.
+ * The selection lives in two places that must agree: `keys` (the group selection) and `rectangleId` (the single-box
+ * logic with handles). `normalizeSelection` is the one place that decides which: exactly one box and nothing else
+ * is the single-box case; every other selection is keys.
+ */
+export type SelectionState = { keys: string[]; rectangleId: number | null }
+
+export function normalizeSelection(keys: Iterable<string>): SelectionState {
+  const list = [...new Set(keys)]
+  if (list.length === 1 && list[0].startsWith('rectangle:')) return { keys: [], rectangleId: Number(list[0].slice('rectangle:'.length)) }
+  return { keys: list, rectangleId: null }
+}
+
+/** The selection after Shift + click on `key`: removed when it was selected, added otherwise. */
+export function toggleSelectionKey(keys: ReadonlySet<string>, rectangleId: number | null, key: string): SelectionState {
+  const next = new Set(keys)
+  if (rectangleId !== null) next.add(`rectangle:${rectangleId}`)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  return normalizeSelection(next)
+}
+
+/** Shift + click may also pick a freehand stroke (plain clicks never do); boxes, text and connectors come first. */
+export function shiftClickTarget(routedItems: readonly CanvasItem[], point: Point, scale: number): HitTarget | null {
+  const target = hitTarget(routedItems, point, scale)
+  if (target) return target
+  for (let index = routedItems.length - 1; index >= 0; index -= 1) {
+    const item = routedItems[index]
+    if (item.kind === 'stroke' && !item.erase && itemHitTest(item, point, 12 / scale)) return { key: canvasItemKey(item), kind: 'stroke', id: item.id }
+  }
+  return null
+}
+
+export function rectFromPoints(a: Point, b: Point): RectangleBounds {
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) }
+}
+
+/** Keys of every item whose whole extent lies inside the marquee. Eraser marks have no extent of their own and are never picked. */
+export function marqueeKeys(routedItems: readonly CanvasItem[], rect: RectangleBounds): string[] {
+  const keys: string[] = []
+  for (const item of routedItems) {
+    const key = canvasItemKey(item)
+    const bounds = getCanvasSelectionBounds([item], new Set([key]))
+    if (!bounds) continue
+    if (bounds.x >= rect.x && bounds.y >= rect.y && bounds.x + bounds.width <= rect.x + rect.width && bounds.y + bounds.height <= rect.y + rect.height) keys.push(key)
+  }
+  return keys
+}
+
+/** The selection after releasing a marquee. Shift keeps what was selected before (`base`, which includes a single selected box). */
+export function marqueeSelection(routedItems: readonly CanvasItem[], rect: RectangleBounds, base: ReadonlySet<string>, shift: boolean): SelectionState {
+  const picked = marqueeKeys(routedItems, rect)
+  return normalizeSelection(shift ? [...base, ...picked] : picked)
 }

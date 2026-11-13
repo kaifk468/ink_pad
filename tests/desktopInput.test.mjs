@@ -94,7 +94,7 @@ test('App wires the gate through canStartCanvasGesture and keeps the touch block
   // the pen's own gesture check is the original seven gesture refs, in the original order
   assert.match(app, /const penGestureActive = activePointerRef\.current !== null \|\| activeConnectorRef\.current !== null \|\| activeDragRef\.current !== null \|\| activeResizeRef\.current !== null \|\| activeDividerRef\.current !== null \|\| activeLassoRef\.current !== null \|\| lassoDragRef\.current !== null\n/)
   // the wider check adds the taps, the object eraser, and the minimap and UML toolbox drags
-  assert.match(app, /const anyGestureActive = penGestureActive \|\| textTapRef\.current !== null \|\| classTapRef\.current !== null \|\| activeObjectEraserRef\.current !== null \|\| minimapDragPointerRef\.current !== null \|\| umlToolboxDragRef\.current !== null \|\| mousePanRef\.current !== null\n/)
+  assert.match(app, /const anyGestureActive = penGestureActive \|\| textTapRef\.current !== null \|\| classTapRef\.current !== null \|\| activeObjectEraserRef\.current !== null \|\| minimapDragPointerRef\.current !== null \|\| umlToolboxDragRef\.current !== null \|\| mousePanRef\.current !== null \|\| activeMarqueeRef\.current !== null\n/)
   assert.match(app, /if \(!canStartCanvasGesture\(event\.pointerType, event\.button, inputModeRef\.current, penGestureActive, anyGestureActive, touchNav\.touchCount\(\) > 0\)\) return/)
   // touch is still handled (and returns) before the gate, and the pen still resets the navigator first
   const touchBlock = app.indexOf("if (event.pointerType === 'touch') {\n      event.preventDefault()")
@@ -308,7 +308,7 @@ test('App runs a key only outside panels, dialogs, text editing and gestures, an
   assert.match(app, /if \(filePanelOpen \|\| storagePanelOpen \|\| libraryOpen \|\| performanceDiagnosticsOpen \|\| textEditor \|\| textEditorRef\.current \|\| classBoxEditor\) return false/)
   const gesture = app.match(/const gestureActive = ([^\n]+)\n/)[1]
   for (const ref of ['activePointerRef', 'activeConnectorRef', 'activeDragRef', 'activeResizeRef', 'activeDividerRef', 'activeLassoRef', 'lassoDragRef', 'textTapRef', 'classTapRef', 'activeObjectEraserRef', 'minimapDragPointerRef', 'umlToolboxDragRef', 'mousePanRef']) assert.ok(gesture.includes(ref + '.current !== null'), ref)
-  assert.match(app, /if \(gestureActive \|\| touchNav\.touchCount\(\) > 0\) return false/)
+  assert.match(app, /if \(gestureActive \|\| activeMarqueeRef\.current !== null \|\| touchNav\.touchCount\(\) > 0\) return false/)
   assert.match(app, /const command = keyCommand\(event, inputModeRef\.current\)\n      if \(!command\) return\n      const target = event\.target as HTMLElement \| null\n      if \(isTypingTarget\([^\n]*\)\) return\n      if \(keyActionsRef\.current\(command\)\) event\.preventDefault\(\)/)
   // zoom keys respect the zoom lock; Escape only clears a selection and says "not handled" when there is none
   assert.equal((app.match(/case 'zoom(In|Out|Reset)': if \(!navigationSettingsRef\.current\.zoomLocked\)/g) ?? []).length, 3)

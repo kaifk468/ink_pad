@@ -89,7 +89,7 @@ test('edge hold: waits, selects after 500 ms of stillness, draws when the pen mo
 
 test('App wiring: mouse click-select is Desktop only and before the tool branches; hover redraws only on change; edge hold is pen only', () => {
   const down = app.indexOf('const onPointerDown = (event')
-  const clickBranch = app.indexOf("if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') {\n      // Desktop: a left click selects", down)
+  const clickBranch = app.indexOf('const clicked = clickSelectTarget(', down)
   const textBranch = app.indexOf('    if (textMode) {\n      event.currentTarget.setPointerCapture', down)
   assert.ok(clickBranch > down && clickBranch < textBranch)
   assert.match(app, /clickSelectTarget\(routeConnectors\(strokesRef\.current\), point, viewportRef\.current\.scale, clickToolName\(\)/)
@@ -101,4 +101,66 @@ test('App wiring: mouse click-select is Desktop only and before the tool branche
   assert.equal((app.match(/if \(edgeHoldRef\.current\?\.pointerId === event\.pointerId\) cancelEdgeHold\(\)/g) ?? []).length, 2)
   // the hover outline is only drawn for an item that is not already selected
   assert.match(app, /hoverKey !== null && !selectedKeysRef\.current\.has\(hoverKey\)/)
+})
+
+// ---- Step 8: multi-select ----
+const stroke = (id, pts) => ({ kind: 'stroke', id, points: pts.map(([x, y]) => pt(x, y)), color: '#000', width: 4, erase: false })
+
+test('normalizeSelection: exactly one box is the single-box case, everything else is keys', () => {
+  assert.deepEqual(input.normalizeSelection(['rectangle:3']), { keys: [], rectangleId: 3 })
+  assert.deepEqual(input.normalizeSelection(['text:1']), { keys: ['text:1'], rectangleId: null })
+  assert.deepEqual(input.normalizeSelection(['rectangle:3', 'text:1']), { keys: ['rectangle:3', 'text:1'], rectangleId: null })
+  assert.deepEqual(input.normalizeSelection([]), { keys: [], rectangleId: null })
+  assert.deepEqual(input.normalizeSelection(['text:1', 'text:1']), { keys: ['text:1'], rectangleId: null })
+})
+
+test('shift+click adds then removes an item, keeping the single-box id consistent', () => {
+  let state = input.toggleSelectionKey(new Set(), null, 'rectangle:1')
+  assert.deepEqual(state, { keys: [], rectangleId: 1 })
+  state = input.toggleSelectionKey(new Set(state.keys), state.rectangleId, 'text:2')
+  assert.deepEqual(state, { keys: ['rectangle:1', 'text:2'], rectangleId: null })
+  state = input.toggleSelectionKey(new Set(state.keys), state.rectangleId, 'connector:3')
+  assert.deepEqual(new Set(state.keys), new Set(['rectangle:1', 'text:2', 'connector:3']))
+  state = input.toggleSelectionKey(new Set(state.keys), state.rectangleId, 'text:2')
+  state = input.toggleSelectionKey(new Set(state.keys), state.rectangleId, 'connector:3')
+  assert.deepEqual(state, { keys: [], rectangleId: 1 })
+  state = input.toggleSelectionKey(new Set(state.keys), state.rectangleId, 'rectangle:1')
+  assert.deepEqual(state, { keys: [], rectangleId: null })
+})
+
+test('shift+click can pick a freehand stroke, but a plain hit still prefers boxes and text', () => {
+  const items = [stroke(5, [[0, 0], [100, 0]]), rect(1, 300, 300, 50, 50)]
+  assert.equal(input.shiftClickTarget(items, pt(50, 2), 1)?.key, 'stroke:5')
+  assert.equal(input.shiftClickTarget(items, pt(310, 310), 1)?.key, 'rectangle:1')
+  assert.equal(input.shiftClickTarget(items, pt(500, 500), 1), null)
+  const erase = { ...stroke(6, [[0, 100], [100, 100]]), erase: true }
+  assert.equal(input.shiftClickTarget([erase], pt(50, 100), 1), null)
+})
+
+test('marquee selects only items fully inside, and never eraser marks', () => {
+  const items = [rect(1, 10, 10, 50, 50), rect(2, 80, 10, 100, 50), text(3, 20, 100), stroke(4, [[15, 150], [40, 160]]), { ...stroke(5, [[15, 150], [40, 160]]), erase: true }, connector(6, 20, 200, 60, 200)]
+  const rectArea = input.rectFromPoints(pt(0, 0), pt(100, 210))
+  assert.deepEqual(input.marqueeKeys(items, rectArea).sort(), ['connector:6', 'rectangle:1', 'stroke:4', 'text:3'])
+  assert.deepEqual(input.rectFromPoints(pt(50, 60), pt(10, 20)), { x: 10, y: 20, width: 40, height: 40 })
+})
+
+test('marquee: Shift keeps the old selection, no Shift replaces it, a single box becomes the single-box selection', () => {
+  const items = [rect(1, 10, 10, 50, 50), text(2, 200, 10)]
+  const area = input.rectFromPoints(pt(0, 0), pt(100, 100))
+  assert.deepEqual(input.marqueeSelection(items, area, new Set(['text:2']), true), { keys: ['text:2', 'rectangle:1'], rectangleId: null })
+  assert.deepEqual(input.marqueeSelection(items, area, new Set(['text:2']), false), { keys: [], rectangleId: 1 })
+  assert.deepEqual(input.marqueeSelection(items, input.rectFromPoints(pt(500, 500), pt(600, 600)), new Set(), false), { keys: [], rectangleId: null })
+})
+
+test('App wiring for multi-select: shift-click and marquee are Desktop mouse only, the marquee ref blocks other gestures and clears everywhere', () => {
+  assert.match(app, /if \(event\.shiftKey && !eraser\) \{\n\s*\/\/ Shift \+ click adds or removes/)
+  assert.match(app, /if \(event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop' && !hitTarget\(routeConnectors\(strokesRef\.current\)/)
+  assert.match(app, /const anyGestureActive = penGestureActive[^\n]*activeMarqueeRef\.current !== null/)
+  assert.match(app, /if \(gestureActive \|\| activeMarqueeRef\.current !== null \|\| touchNav\.touchCount\(\) > 0\) return false/)
+  assert.match(app, /const resetInteractionState = \(\) => \{[\s\S]*?activeMarqueeRef\.current = null/)
+  // pointer up and cancel both end it; a click without a real drag selects nothing new
+  assert.equal((app.match(/activeMarqueeRef\.current = null/g) ?? []).length >= 3, true)
+  assert.match(app, /marqueeSelection\(routeConnectors\(strokesRef\.current\), box, marquee\.base, marquee\.shift\)/)
+  // a group member press moves the whole group via the lasso drag
+  assert.match(app, /startGroupDrag\(event, point\)/)
 })

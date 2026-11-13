@@ -51,7 +51,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, clickSelectTarget, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, hitTarget, isTypingTarget, keyCommand, loadInputMode, pointerPressure, saveInputMode, spaceIsPanKey, startsMousePan, wheelViewport, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, clickSelectTarget, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, hitTarget, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 const DOUBLE_TAP_MS = 400
@@ -250,6 +250,8 @@ function App() {
   const hoverKeyRef = useRef<string | null>(null)
   const hoverPointRef = useRef<Point | null>(null)
   const hoverFrameRef = useRef<number | null>(null)
+  // Step 8: the marquee being dragged with the select tool (Desktop mouse). `base` is what Shift keeps.
+  const activeMarqueeRef = useRef<{ pointerId: number; start: Point; current: Point; shift: boolean; base: Set<string> } | null>(null)
   const edgeHoldRef = useRef<{ pointerId: number; boxId: number; start: Point; startedAt: number; timer: number } | null>(null)
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
   if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
@@ -340,6 +342,7 @@ function App() {
     shapePreviewRef.current = null
     activeLassoRef.current = null
     lassoDragRef.current = null
+    activeMarqueeRef.current = null
     activePointerRef.current = null
     activeObjectEraserRef.current = null
     holdAnchorRef.current = null
@@ -1034,6 +1037,30 @@ function App() {
     return item
   }
 
+  // Applies a multi-select result: one box is the single-box selection (so its handles work); anything else is the key set.
+  const applySelectionState = (state: SelectionState) => {
+    hoverKeyRef.current = null
+    if (lassoMode && state.rectangleId !== null) {
+      setSelectedRectangle(null)
+      updateSelectedItems([`rectangle:${state.rectangleId}`])
+    } else {
+      setSelectedRectangle(state.rectangleId)
+      updateSelectedItems(state.keys)
+    }
+    renderAll()
+  }
+  // The selection as keys, with a single selected box included.
+  const selectionKeysWithBox = (): Set<string> => {
+    const keys = new Set(selectedKeysRef.current)
+    if (selectedRectangleIdRef.current !== null) keys.add(`rectangle:${selectedRectangleIdRef.current}`)
+    return keys
+  }
+  // Starts dragging the whole group selection (the lasso's move, reused).
+  const startGroupDrag = (event: React.PointerEvent<HTMLCanvasElement>, point: Point) => {
+    event.currentTarget.setPointerCapture(event.pointerId)
+    lassoDragRef.current = { pointerId: event.pointerId, start: point, keys: new Set(selectedKeysRef.current), originalItems: strokesRef.current.slice(), moved: false }
+  }
+
   // Desktop hover: the item under the mouse gets a light outline and a pointer cursor. The pick runs at most once a frame and
   // the canvas is redrawn only when the hovered item changes.
   const refreshHover = () => {
@@ -1461,6 +1488,18 @@ function App() {
       ctx.stroke()
       ctx.restore()
     }
+    const marqueeNow = activeMarqueeRef.current
+    if (marqueeNow) {
+      const box = rectFromPoints(marqueeNow.start, marqueeNow.current)
+      ctx.save()
+      ctx.fillStyle = 'rgba(83, 111, 224, 0.08)'
+      ctx.fillRect(box.x, box.y, box.width, box.height)
+      ctx.strokeStyle = '#536fe0'
+      ctx.lineWidth = 1.5 / viewport.scale
+      ctx.setLineDash([6 / viewport.scale, 4 / viewport.scale])
+      ctx.strokeRect(box.x, box.y, box.width, box.height)
+      ctx.restore()
+    }
     ctx.restore()
     if (dirty) ctx.restore()
     if (startLive && liveStroke) {
@@ -1608,7 +1647,7 @@ function App() {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const anyGestureBusy = () => activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || mousePanRef.current !== null
+    const anyGestureBusy = () => activeMarqueeRef.current !== null || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || mousePanRef.current !== null
     const setPanCursor = () => { canvas.style.cursor = mousePanRef.current ? 'grabbing' : spaceHeldRef.current ? 'grab' : '' }
     const onWheel = (event: WheelEvent) => {
       if (inputModeRef.current !== 'desktop') return
@@ -2105,7 +2144,7 @@ function App() {
       return
     }
     const penGestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null
-    const anyGestureActive = penGestureActive || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
+    const anyGestureActive = penGestureActive || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null
     if (startsMousePan(event.pointerType, event.button, inputModeRef.current, spaceHeldRef.current)) {
       // Middle button, or Space + left button: drag the view instead of using a tool. Refused while any other gesture or finger is active.
       if (anyGestureActive || mousePanRef.current !== null || touchNav.touchCount() > 0) return
@@ -2133,8 +2172,21 @@ function App() {
     if (textEditorRef.current) commitTextEditor()
     if (event.pointerType === 'mouse') setMouseHover(null)
     if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') {
+      if (event.shiftKey && !eraser) {
+        // Shift + click adds or removes one item (a stroke too) without starting anything else.
+        const shiftHit = shiftClickTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
+        if (shiftHit) {
+          applySelectionState(toggleSelectionKey(selectedKeysRef.current, selectedRectangleIdRef.current, shiftHit.key))
+          return
+        }
+      }
       // Desktop: a left click selects the box, connector or text under it with any tool but the eraser, and dragging moves it.
       const clicked = clickSelectTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale, clickToolName(), selectedKeysRef.current.size > 0, selectedRectangleIdRef.current)
+      if (clicked && selectedKeysRef.current.size > 1 && selectedKeysRef.current.has(clicked.key)) {
+        // Pressing on a member of a group selection moves the whole group.
+        startGroupDrag(event, point)
+        return
+      }
       const clickedItem = clicked ? selectHitTarget(clicked) : null
       if (clicked && clickedItem) {
         event.currentTarget.setPointerCapture(event.pointerId)
@@ -2239,6 +2291,29 @@ function App() {
       return
     }
     if (selectionMode) {
+      if (selectedKeysRef.current.size > 1) {
+        // A group selection (Shift + click, marquee, Select all): its handles resize it and pressing a member moves it, as with the lasso.
+        const routed = routeConnectors(strokesRef.current)
+        const groupBounds = getCanvasSelectionBounds(routed, selectedKeysRef.current)
+        const groupHandle = groupBounds ? hitTestRectangleResizeHandle(groupBounds, point, 14 / viewportRef.current.scale) : null
+        if (groupBounds && groupHandle) {
+          event.currentTarget.setPointerCapture(event.pointerId)
+          activeResizeRef.current = { pointerId: event.pointerId, rectangleId: null, selectedKeys: new Set(selectedKeysRef.current), handle: groupHandle, start: point, originalBounds: { ...groupBounds }, originalItems: strokesRef.current.slice(), moved: false }
+          return
+        }
+        if (routed.some((item) => selectedKeysRef.current.has(canvasItemKey(item)) && itemHitTest(item, point, 12 / viewportRef.current.scale))) {
+          startGroupDrag(event, point)
+          return
+        }
+      }
+      if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop' && !hitTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)) {
+        // Empty space with the mouse: a marquee (Shift keeps the old selection); released, it selects what is fully inside.
+        const base = event.shiftKey ? selectionKeysWithBox() : new Set<string>()
+        if (!event.shiftKey) applySelectionState({ keys: [], rectangleId: null })
+        event.currentTarget.setPointerCapture(event.pointerId)
+        activeMarqueeRef.current = { pointerId: event.pointerId, start: point, current: point, shift: event.shiftKey, base }
+        return
+      }
       const currentlySelectedRectangle = selectedRectangleIdRef.current === null
         ? null
         : strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === selectedRectangleIdRef.current) ?? null
@@ -2496,6 +2571,13 @@ function App() {
       scheduleRender()
       return
     }
+    const marquee = activeMarqueeRef.current
+    if (marquee?.pointerId === event.pointerId) {
+      event.preventDefault()
+      marquee.current = getBoundedPoint(event)
+      scheduleRender()
+      return
+    }
     const drag = activeDragRef.current
     if (drag?.pointerId === event.pointerId) {
       event.preventDefault()
@@ -2578,6 +2660,16 @@ function App() {
       const existing = hitRectangle?.inkBox || hitRectangle?.ellipse ? null : hitRectangle
       if (existing) openClassBoxEditor({ rectangleId: existing.id, x: existing.x, y: existing.y, content: existing.classBox ?? EMPTY_CLASS_BOX })
       else openClassBoxEditor({ rectangleId: null, x: tap.point.x, y: tap.point.y, content: EMPTY_CLASS_BOX })
+      return
+    }
+    if (activeMarqueeRef.current?.pointerId === event.pointerId) {
+      const marquee = activeMarqueeRef.current
+      activeMarqueeRef.current = null
+      marquee.current = getBoundedPoint(event)
+      const box = rectFromPoints(marquee.start, marquee.current)
+      // A bare click (no real drag) just leaves the selection as the press set it.
+      if (Math.max(box.width, box.height) * viewportRef.current.scale >= 4) applySelectionState(marqueeSelection(routeConnectors(strokesRef.current), box, marquee.base, marquee.shift))
+      else renderAll()
       return
     }
     if (activeObjectEraserRef.current?.pointerId === event.pointerId) {
@@ -2696,6 +2788,11 @@ function App() {
     }
     if (classTapRef.current?.pointerId === event.pointerId) {
       classTapRef.current = null
+      return
+    }
+    if (activeMarqueeRef.current?.pointerId === event.pointerId) {
+      activeMarqueeRef.current = null
+      renderAll()
       return
     }
     if (activeObjectEraserRef.current?.pointerId === event.pointerId) {
@@ -2939,7 +3036,7 @@ function App() {
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
     const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
-    if (gestureActive || touchNav.touchCount() > 0) return false
+    if (gestureActive || activeMarqueeRef.current !== null || touchNav.touchCount() > 0) return false
     switch (command.kind) {
       case 'undo': undo(); return true
       case 'redo': redo(); return true
