@@ -1,4 +1,4 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry } from './canvasModel'
+import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, toItemFrame } from './canvasModel'
 import type { CanvasItem, Point, Stroke } from './canvasModel'
 
 const SAMPLE_SPACING = 4
@@ -96,8 +96,9 @@ export function itemHitTest(item: CanvasItem, point: Point, tolerance = 12): boo
       || connectorSymbolHitTest(item, point, tolerance)
   }
   if (item.kind === 'rectangle' || item.kind === 'text') {
-    return point.x >= item.x - tolerance && point.x <= item.x + item.width + tolerance
-      && point.y >= item.y - tolerance && point.y <= item.y + item.height + tolerance
+    const local = toItemFrame(item, point)
+    return local.x >= item.x - tolerance && local.x <= item.x + item.width + tolerance
+      && local.y >= item.y - tolerance && local.y <= item.y + item.height + tolerance
   }
   if (item.erase || item.points.length === 0) return false
   const segments = strokeSegments(item)

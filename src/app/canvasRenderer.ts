@@ -1,4 +1,4 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry } from '../canvasModel'
+import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, itemAngle, rotatedItemBounds } from '../canvasModel'
 import { hldOutlinePath } from '../hldShapes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextFontId, TextObject } from '../canvasModel'
 import { filterDisplayPoints } from '../oneEuroFilter'
@@ -263,6 +263,14 @@ export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
   ctx.lineWidth = rectangle.strokeWidth
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
+  const angle = itemAngle(rectangle)
+  if (angle !== 0) {
+    const cx = rectangle.x + rectangle.width / 2
+    const cy = rectangle.y + rectangle.height / 2
+    ctx.translate(cx, cy)
+    ctx.rotate(angle)
+    ctx.translate(-cx, -cy)
+  }
   if (rectangle.hldShape) {
     ctx.stroke(new Path2D(hldOutlinePath(rectangle, rectangle.hldShape)))
   } else if (rectangle.inkBox) {
@@ -365,6 +373,14 @@ export function createTextMeasure(fontSize: number, fontId?: TextFontId): TextMe
 
 export function drawText(ctx: CanvasRenderingContext2D, text: TextObject): void {
   ctx.save()
+  const angle = itemAngle(text)
+  if (angle !== 0) {
+    const cx = text.x + text.width / 2
+    const cy = text.y + text.height / 2
+    ctx.translate(cx, cy)
+    ctx.rotate(angle)
+    ctx.translate(-cx, -cy)
+  }
   ctx.font = textFont(text.fontSize, text.fontFamily)
   ctx.fillStyle = text.color
   ctx.textAlign = 'left'
@@ -391,13 +407,18 @@ export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasIte
       ctx.globalCompositeOperation = 'source-over'
       ctx.globalAlpha = 0.4
       ctx.fillStyle = item.color
-      ctx.fillRect(toMiniX(item.x), toMiniY(item.y), Math.max(1, item.width * geometry.scale), Math.max(1, item.height * geometry.scale))
+      const box = rotatedItemBounds(item)
+      ctx.fillRect(toMiniX(box.x), toMiniY(box.y), Math.max(1, box.width * geometry.scale), Math.max(1, box.height * geometry.scale))
       ctx.globalAlpha = 1
     } else if (item.kind === 'rectangle') {
       ctx.globalCompositeOperation = 'source-over'
       ctx.strokeStyle = item.strokeColor
       ctx.lineWidth = Math.max(1, item.strokeWidth * geometry.scale)
-      if (item.diamond) {
+      if (itemAngle(item) !== 0) {
+        // A rotated shape is shown by the box that encloses it, never by its unrotated box.
+        const box = rotatedItemBounds(item)
+        ctx.strokeRect(toMiniX(box.x), toMiniY(box.y), box.width * geometry.scale, box.height * geometry.scale)
+      } else if (item.diamond) {
         ctx.beginPath()
         ctx.moveTo(toMiniX(item.x + item.width / 2), toMiniY(item.y))
         ctx.lineTo(toMiniX(item.x + item.width), toMiniY(item.y + item.height / 2))

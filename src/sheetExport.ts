@@ -1,4 +1,4 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry } from './canvasModel'
+import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, itemAngle, itemCenter, rotatedItemBounds } from './canvasModel'
 import { routeConnectors } from './connectorRoute'
 import { hldOutlinePath } from './hldShapes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
@@ -161,9 +161,17 @@ function textElement(text: TextObject): string {
     .join('')
 }
 
+/** Wraps a rotated text or plain shape in a group turned (clockwise, degrees) about its box centre; unrotated items are untouched. */
+function rotated(item: CanvasItem, markup: string): string {
+  const angle = itemAngle(item)
+  if (angle === 0) return markup
+  const c = itemCenter(item)
+  return `<g transform="rotate(${n((angle * 180) / Math.PI)} ${n(c.x)} ${n(c.y)})">${markup}</g>`
+}
+
 function itemElement(item: CanvasItem): string {
-  if (item.kind === 'text') return textElement(item)
-  if (item.kind === 'rectangle') return rectangleElement(item)
+  if (item.kind === 'text') return rotated(item, textElement(item))
+  if (item.kind === 'rectangle') return rotated(item, rectangleElement(item))
   if (item.kind === 'connector') return connectorElement(item)
   return strokeElement(item)
 }
@@ -236,11 +244,13 @@ export function getContentBounds(rawItems: CanvasItem[], sheet: { width: number;
       if (item.erase) continue
       for (const p of item.points) include(p.x, p.y, item.width)
     } else if (item.kind === 'text') {
-      include(item.x, item.y, 0)
-      include(item.x + item.width, item.y + item.height, 0)
+      const box = rotatedItemBounds(item)
+      include(box.x, box.y, 0)
+      include(box.x + box.width, box.y + box.height, 0)
     } else if (item.kind === 'rectangle') {
-      include(item.x, item.y, item.strokeWidth)
-      include(item.x + item.width, item.y + item.height, item.strokeWidth)
+      const box = rotatedItemBounds(item)
+      include(box.x, box.y, item.strokeWidth)
+      include(box.x + box.width, box.y + box.height, item.strokeWidth)
     } else {
       for (const p of connectorPoints(item)) include(p.x, p.y, item.strokeWidth + 16)
     }

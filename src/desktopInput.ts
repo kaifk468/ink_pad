@@ -7,7 +7,7 @@
  * per-device preference, like the navigation settings.
  */
 
-import { canvasItemKey, getCanvasSelectionBounds, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
+import { canvasItemKey, getCanvasSelectionBounds, toItemFrame, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
 import { itemHitTest } from './lassoSelection'
 import { MAX_ZOOM, MIN_ZOOM, panViewport, zoomViewportAt, type Viewport } from './viewport'
 
@@ -223,7 +223,8 @@ export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scal
     ?? pick('rectangle', (item) => {
       if (item.kind !== 'rectangle') return false
       const pad = Math.max(8 / scale, item.strokeWidth * 2)
-      return point.x >= item.x - pad && point.x <= item.x + item.width + pad && point.y >= item.y - pad && point.y <= item.y + item.height + pad
+      const local = toItemFrame(item, point)
+      return local.x >= item.x - pad && local.x <= item.x + item.width + pad && local.y >= item.y - pad && local.y <= item.y + item.height + pad
     })
     ?? pick('connector', (item) => item.kind === 'connector' && itemHitTest(item, point, Math.max(12 / scale, item.strokeWidth * 2)))
 }
@@ -261,7 +262,7 @@ function edgeOnlyForInkBoxes(routedItems: readonly CanvasItem[], target: HitTarg
   // Boxes you write in (ink class boxes, HLD shapes) and plain drawn rectangles: only the edge selects. A typed class box selects anywhere.
   if (!box || box.classBox) return target
   if (box.id === selectedId) return null
-  return pointInEdgeBand(box, point, EDGE_BAND_PX / scale) ? target : null
+  return pointInEdgeBand(box, toItemFrame(box, point), EDGE_BAND_PX / scale) ? target : null
 }
 
 /** The item the mouse hovers over: like a click target, so the inside of an ink class box is not highlighted. */

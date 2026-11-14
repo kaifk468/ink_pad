@@ -246,6 +246,20 @@ function sanitizePoint(value: unknown): Point | null {
   return { x: value.x, y: value.y, pressure }
 }
 
+/** A rotation angle is kept only when finite and not ~0; it is stored normalised to (-PI, PI]. */
+function sanitizeAngle(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  let angle = value % (Math.PI * 2) // same normalisation as normalizeAngle in canvasModel.ts (this module takes no value imports)
+  if (angle > Math.PI) angle -= Math.PI * 2
+  else if (angle <= -Math.PI) angle += Math.PI * 2
+  return Math.abs(angle) < 1e-6 ? undefined : angle
+}
+
+/** Only an ink box can carry an HLD shape, and ink boxes never rotate; kept as a guard so a stray hldShape never rotates a box. */
+function hldShapeKept(value: Record<string, unknown>): boolean {
+  return HLD_SHAPE_KINDS.includes(value.hldShape as string)
+}
+
 /** Class box content is optional on a rectangle; if it is malformed the plain rectangle is kept without it. */
 function sanitizeClassBox(value: unknown): ClassBoxContent | undefined {
   if (!isRecord(value) || typeof value.name !== 'string' || typeof value.attributes !== 'string' || typeof value.methods !== 'string') return undefined
@@ -297,12 +311,16 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     const classBox = sanitizeClassBox(value.classBox)
     const inkBox = sanitizeInkBox(value.inkBox, value.y, value.height)
     const rectangle: RectangleObject = { kind: 'rectangle', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth, ...(classBox ? { classBox } : {}), ...(inkBox ? { inkBox } : {}), ...(inkBox && HLD_SHAPE_KINDS.includes(value.hldShape as string) ? { hldShape: value.hldShape as HldShape } : {}), ...(value.ellipse === true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { ellipse: true as const } : {}), ...(value.diamond === true && value.ellipse !== true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { diamond: true as const } : {}) }
+    const rectAngle = !classBox && !inkBox && !hldShapeKept(value) ? sanitizeAngle(value.angle) : undefined
+    if (rectAngle !== undefined) rectangle.angle = rectAngle
     return rectangle
   }
   if (value.kind === 'text') {
     if (!isNum(value.x) || !isNum(value.y) || !isNum(value.width) || !isNum(value.height) || value.width < 0 || value.height < 0) return null
     if (typeof value.text !== 'string' || !isColor(value.color) || !isNum(value.fontSize) || value.fontSize < MIN_FONT_SIZE || value.fontSize > MAX_FONT_SIZE) return null
     const text: TextObject = { kind: 'text', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, text: value.text.replace(/\u0000/g, '').slice(0, MAX_TEXT_LENGTH), fontSize: value.fontSize, color: value.color, ...(TEXT_FONT_KINDS.includes(value.fontFamily as string) ? { fontFamily: value.fontFamily as TextFontId } : {}) }
+    const textAngle = sanitizeAngle(value.angle)
+    if (textAngle !== undefined) text.angle = textAngle
     return text
   }
   if (value.kind === 'connector') {

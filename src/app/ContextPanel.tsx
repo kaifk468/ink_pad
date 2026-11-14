@@ -52,6 +52,8 @@ type ContextPanelProps = {
   showSelectionColor?: boolean
   onSelectionColor?: (hex: string, commit: boolean) => void
   showEraser?: boolean
+  /** The selected label or plain shape that can be rotated: its angle in degrees, and the buttons that set it. */
+  rotation?: { degrees: number; onAlign: () => void; onReset: () => void } | null
   objectEraser?: boolean
   eraserSize?: number
   onEraserMode?: (whole: boolean) => void
@@ -95,7 +97,7 @@ function ColorChoices({ value, label, onChange }: { value: string; label: string
 /** Settings that only appear when the active tool or selection needs them. */
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.showEraser && !props.showSelectionColor && !props.showTextSizes && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
+  if (!props.showStyle && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.showTextSizes && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -143,6 +145,14 @@ export function ContextPanel(props: ContextPanelProps) {
       {props.showSelectionColor && props.onSelectionColor && <div className="selection-color">
         <span className="panel-label">Colour of this object</span>
         <ColorChoices value={props.selectionColor ?? '#202124'} label="Object colour" onChange={props.onSelectionColor} />
+      </div>}
+      {props.rotation && <div className="rotation-controls" role="group" aria-label="Rotation">
+        <span className="panel-label">Rotation: {props.rotation.degrees}°</span>
+        <div className="selection-actions">
+          <button className="clear-selection-button" type="button" aria-label="Align to line" title="Turn it to the slope of the nearest connector" onClick={props.rotation.onAlign}>Align to line</button>
+          <button className="clear-selection-button" type="button" aria-label="Reset rotation" title="Back to upright" disabled={props.rotation.degrees === 0} onClick={props.rotation.onReset}>Reset</button>
+        </div>
+        <span className="panel-hint">Drag the round handle above it to rotate; hold Shift to snap to 15°.</span>
       </div>}
       {props.showEraser && <div className="eraser-panel" role="group" aria-label="Eraser options">
         <span className="panel-label">Mode</span>

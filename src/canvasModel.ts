@@ -6,11 +6,11 @@ export type ClassBoxContent = { name: string; attributes: string; methods: strin
 /** HLD shape kinds: Database (cylinder), Queue, Service. A rectangle with one of these is an ink box drawn as that shape. */
 export const HLD_SHAPES = ['database', 'queue', 'service'] as const
 export type HldShape = (typeof HLD_SHAPES)[number]
-export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true }
+export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; angle?: number }
 /** The fixed list of label fonts. A saved label without `fontFamily` is the original clean sans. */
 export const TEXT_FONT_IDS = ['excalifont', 'sans', 'serif', 'mono'] as const
 export type TextFontId = (typeof TEXT_FONT_IDS)[number]
-export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId }
+export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId; angle?: number }
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
 export type ConnectorRouting = 'straight' | 'elbow'
@@ -233,7 +233,7 @@ export function snapConnectorEndpoint(
     // A point inside a box means "connect to this box": it goes to the nearest point of the outline, however deep inside it is.
     for (let index = items.length - 1; index >= 0; index -= 1) {
       const item = items[index]
-      if (item.kind !== 'rectangle' || point.x < item.x || point.x > item.x + item.width || point.y < item.y || point.y > item.y + item.height) continue
+      if (item.kind !== 'rectangle' || itemAngle(item) !== 0 || point.x < item.x || point.x > item.x + item.width || point.y < item.y || point.y > item.y + item.height) continue
       const candidate = nearestRectangleBoundaryPoint(item, point)
       return { point: candidate, attachment: { rectangleId: item.id, offsetX: candidate.x - item.x, offsetY: candidate.y - item.y } }
     }
@@ -241,7 +241,7 @@ export function snapConnectorEndpoint(
   let closest: SnappedConnectorEndpoint | null = null
   let closestDistance = tolerance
   for (const item of items) {
-    if (item.kind !== 'rectangle') continue
+    if (item.kind !== 'rectangle' || itemAngle(item) !== 0) continue
     const candidate = nearestRectangleBoundaryPoint(item, point)
     const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y)
     if (distance <= closestDistance) {
@@ -451,8 +451,9 @@ export function getCanvasSelectionBounds(items: CanvasItem[], selectedKeys: Read
   for (const item of items) {
     if (!selectedKeys.has(canvasItemKey(item))) continue
     if (item.kind === 'rectangle') {
-      include(item.x, item.y, item.strokeWidth / 2)
-      include(item.x + item.width, item.y + item.height, item.strokeWidth / 2)
+      const box = rotatedItemBounds(item)
+      include(box.x, box.y, item.strokeWidth / 2)
+      include(box.x + box.width, box.y + box.height, item.strokeWidth / 2)
     } else if (item.kind === 'connector') {
       for (const p of connectorPoints(item)) include(p.x, p.y, item.strokeWidth / 2)
       const geometry = getConnectorSymbolGeometry(item)
@@ -462,8 +463,9 @@ export function getCanvasSelectionBounds(items: CanvasItem[], selectedKeys: Read
         include(geometry.far.x, geometry.far.y, item.strokeWidth / 2)
       }
     } else if (item.kind === 'text') {
-      include(item.x, item.y)
-      include(item.x + item.width, item.y + item.height)
+      const box = rotatedItemBounds(item)
+      include(box.x, box.y)
+      include(box.x + box.width, box.y + box.height)
     } else if (!item.erase) {
       for (const point of item.points) include(point.x, point.y, item.width / 2)
       if (item.shape === 'arrow' && item.points.length >= 2) {
@@ -707,6 +709,149 @@ export function detachConnectorsFromRectangles(items: CanvasItem[], rectangleIds
       ...(endAttachment ? { endAttachment } : { endAttachment: undefined }),
     }
   })
+}
+
+// ---- Rotation of text labels and plain shapes. The box (x, y, width, height) stays unrotated; `angle` turns it about its centre. ----
+
+const ANGLE_EPSILON = 1e-6
+
+/** Radians, normalised to (-PI, PI]. */
+export function normalizeAngle(a: number): number {
+  if (!Number.isFinite(a)) return 0
+  let r = a % (Math.PI * 2)
+  if (r > Math.PI) r -= Math.PI * 2
+  else if (r <= -Math.PI) r += Math.PI * 2
+  return r
+}
+
+/** Rotates `p` clockwise (canvas orientation) by `angle` about (cx, cy). */
+export function rotatePoint(p: Point, cx: number, cy: number, angle: number): Point {
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  const dx = p.x - cx
+  const dy = p.y - cy
+  return { ...p, x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos }
+}
+
+/** Text labels and plain boxes (rectangle, ellipse, diamond) rotate; class boxes, ink boxes, HLD shapes, ink and connectors do not. */
+export function isRotatable(item: CanvasItem): boolean {
+  if (item.kind === 'text') return true
+  return item.kind === 'rectangle' && !item.inkBox && !item.classBox && !item.hldShape
+}
+
+export function itemAngle(item: CanvasItem): number {
+  if (!isRotatable(item)) return 0
+  const angle = (item as TextObject | RectangleObject).angle
+  return typeof angle === 'number' && Number.isFinite(angle) && Math.abs(angle) >= ANGLE_EPSILON ? angle : 0
+}
+
+export function itemCenter(item: CanvasItem): Point {
+  const box = item as RectangleBounds
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2, pressure: 1 }
+}
+
+/** A world point expressed in the item's unrotated frame (identity when the item is not rotated). */
+export function toItemFrame(item: CanvasItem, point: Point): Point {
+  const angle = itemAngle(item)
+  if (angle === 0) return point
+  const c = itemCenter(item)
+  return rotatePoint(point, c.x, c.y, -angle)
+}
+
+/** The axis-aligned box that contains the rotated box (the plain box when there is no rotation). */
+export function rotatedItemBounds(item: CanvasItem): RectangleBounds {
+  const box = item as RectangleBounds
+  const angle = itemAngle(item)
+  if (angle === 0) return { x: box.x, y: box.y, width: box.width, height: box.height }
+  const c = itemCenter(item)
+  const corners = [
+    { x: box.x, y: box.y }, { x: box.x + box.width, y: box.y },
+    { x: box.x + box.width, y: box.y + box.height }, { x: box.x, y: box.y + box.height },
+  ].map((corner) => rotatePoint({ ...corner, pressure: 1 }, c.x, c.y, angle))
+  const xs = corners.map((corner) => corner.x)
+  const ys = corners.map((corner) => corner.y)
+  const x = Math.min(...xs)
+  const y = Math.min(...ys)
+  return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }
+}
+
+/** Sets the item's rotation (removing the field at ~0). Rotating a plain shape away from 0 detaches connectors attached to it. */
+export function setItemAngle(items: CanvasItem[], key: string, angle: number): CanvasItem[] {
+  const index = items.findIndex((item) => canvasItemKey(item) === key)
+  if (index < 0) return items
+  const item = items[index]
+  if (!isRotatable(item) || (item.kind !== 'text' && item.kind !== 'rectangle')) return items
+  const normalized = normalizeAngle(angle)
+  const next = Math.abs(normalized) < ANGLE_EPSILON ? 0 : normalized
+  if (next === itemAngle(item)) return items
+  const { angle: _old, ...rest } = item
+  void _old
+  const updated = (next === 0 ? rest : { ...rest, angle: next }) as CanvasItem
+  let result = items.map((candidate, i) => (i === index ? updated : candidate))
+  if (item.kind === 'rectangle' && next !== 0) result = detachConnectorsFromRectangles(result, new Set([item.id]))
+  return result
+}
+
+/** Rounds to the nearest `stepDegrees`, normalised. */
+export function snapAngle(angle: number, stepDegrees = 15): number {
+  const step = (stepDegrees * Math.PI) / 180
+  return normalizeAngle(Math.round(angle / step) * step)
+}
+
+const ROTATE_HANDLE_OFFSET_PX = 24
+
+/** The rotate handle (24 screen px above the top-middle of the box, turned with the item) and the stem start on the box edge. */
+export function rotateHandle(item: CanvasItem, scale: number): { point: Point; anchor: Point } | null {
+  if (!isRotatable(item)) return null
+  const box = item as RectangleBounds
+  const c = itemCenter(item)
+  const angle = itemAngle(item)
+  const top = { x: c.x, y: box.y, pressure: 1 }
+  const handle = { x: c.x, y: box.y - ROTATE_HANDLE_OFFSET_PX / scale, pressure: 1 }
+  return { point: rotatePoint(handle, c.x, c.y, angle), anchor: rotatePoint(top, c.x, c.y, angle) }
+}
+
+export function hitRotateHandle(item: CanvasItem, point: Point, scale: number, radiusPx = 12): boolean {
+  const handle = rotateHandle(item, scale)
+  if (!handle) return false
+  return Math.hypot(point.x - handle.point.x, point.y - handle.point.y) <= radiusPx / scale
+}
+
+/** Angle of `point` around the item's centre, clockwise from straight up (straight up is 0, right of centre is positive). */
+export function angleFromCenter(item: CanvasItem, point: Point): number {
+  const c = itemCenter(item)
+  return normalizeAngle(Math.atan2(point.x - c.x, -(point.y - c.y)))
+}
+
+/** The slope of the connector segment nearest `point`, folded into (-PI/2, PI/2] so text along it never reads upside down. */
+export function nearestConnectorAngle(routedItems: CanvasItem[], point: Point, maxDistance = 250): number | null {
+  let bestDistance = Infinity
+  let bestAngle: number | null = null
+  for (const item of routedItems) {
+    // Connectors and straight line / arrow strokes both count.
+    const straightStroke = item.kind === 'stroke' && !item.erase && (item.shape === 'line' || item.shape === 'arrow') && item.points.length >= 2
+    if (item.kind !== 'connector' && !straightStroke) continue
+    const path = item.kind === 'connector'
+      ? (item.routedPath && item.routedPath.length >= 2 ? item.routedPath : [item.start, item.end])
+      : item.kind === 'stroke' ? [item.points[0], item.points[item.points.length - 1]] : []
+    for (let i = 1; i < path.length; i += 1) {
+      const a = path[i - 1]
+      const b = path[i]
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      if (dx * dx + dy * dy < 1e-9) continue
+      const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)))
+      const distance = Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy))
+      if (distance < bestDistance) {
+        bestDistance = distance
+        bestAngle = Math.atan2(dy, dx)
+      }
+    }
+  }
+  if (bestAngle === null || bestDistance > maxDistance) return null
+  if (bestAngle > Math.PI / 2 + 1e-9) bestAngle -= Math.PI
+  else if (bestAngle <= -Math.PI / 2 + 1e-9) bestAngle += Math.PI
+  return bestAngle
 }
 
 /**
