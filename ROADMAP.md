@@ -27,10 +27,10 @@ Built status is taken from `project-context.md`. Items marked "verify" are built
 
 ## 4. Editing features
 
-6. **Duplicate and delete.** Duplicate a selection, and delete a selection from the keyboard or the toolbar.
-7. **Copy and paste.** Copy a selection and paste it at a point.
+6. **Duplicate and delete.** Done on desktop (keys, right-click menu) and as Copy/Paste/Duplicate/Delete buttons (2026-11-13). Needs checking on the tablet.
+7. **Copy and paste.** Done (2026-11-13), in-app clipboard only (not the system clipboard). Needs checking on the tablet.
 8. **Box fill colour.** Fill rectangles and class boxes.
-9. **Resize an existing text label's font.** Today the size is fixed when the label is created; resizing a lasso selection is the only way to change it.
+9. **Resize an existing text label's font.** Done (2026-11-13): a selected label has resize handles that scale the font; a fixed list of four fonts (Hand-drawn Excalifont default, Clean, Serif, Code) is chosen in the options panel (optional `fontFamily` field). SVG export falls back to a cursive font (not embedded yet).
 10. **Hold-to-straighten for circles and ellipses.** Done (2026-11-11): a closed round stroke held at the end snaps to a perfect circle or an upright oval; tilt is not kept yet. Needs checking with the S Pen.
 
 ## 5. Organising diagrams
@@ -60,10 +60,11 @@ Built status is taken from `project-context.md`. Items marked "verify" are built
 21. **Real refresh token.** Only needed if the quiet sign-in does not hold up on the tablet. It requires a small backend (for example a Cloudflare Worker) that keeps the token safely.
 22. **Drive sync beyond app data, and GitHub storage.** Planned after local storage and Drive are stable.
 
-## 10. Desktop mode (later, separate plan)
+## 10. Desktop mode (in progress, 2026-11-14)
 
-23. **Mode switch: tablet or desktop.** The user chooses a mode, and each mode gets its own tools and controls.
-24. **Mouse and trackpad input** in desktop mode, including drawing, placing text and class boxes, and selection.
-25. **Keyboard shortcuts** and a toolbar similar to Excalidraw's.
+23. **Mode switch: tablet or desktop.** Done: per-device setting in the menu, default Tablet. Tablet behaviour is unchanged.
+24. **Mouse and trackpad input** in desktop mode. Done: mouse drives every tool, wheel/trackpad pan and Ctrl+wheel zoom, Space and middle-button pan, hover, click-select, edge-only select for boxes you write in, Shift+click, marquee, group drag, nudge, snapping and guides, right-click menu, double-click and Enter to edit.
+25. **Keyboard shortcuts and an Excalidraw-like toolbar.** Done: tool keys (P V E T L C B and R D O A I for shapes), Delete, Ctrl+A/Z/Y/C/X/V/D; desktop dock with one-click Text, Rectangle, Diamond, Ellipse, Arrow, Line, Database, Queue, Service; left options panel for the active tool (pen, shapes, text, eraser, selection); full colour picker and recolouring of a selected object.
+26. **Still open for desktop:** change the stroke width of an existing selection; hide tablet-only controls (zoom lock); embed Excalifont in SVG export; Alt-drag duplicate; everything above is untested on a real mouse and on the tablet (see the checklists in project-context.md).
 
-Desktop input is not supported yet: the app only reacts to the S Pen, so a mouse does nothing (class boxes and text labels included). This stays as it is until desktop mode is planned.
+Mouse and keyboard behaviour was verified in code, unit tests and scripted Chromium runs only, never with real hardware.
