@@ -202,11 +202,11 @@ test('keys: Ctrl/Cmd + C, X, V, D in Desktop mode only; Shift, Alt and auto-repe
 test('App wiring: one history step for paste, cut deletes through deleteSelection, the system clipboard is never used, tablet gets buttons', () => {
   assert.match(app, /const cutSelection = \(\): boolean => copySelection\(\) && deleteSelection\(\)/)
   assert.match(app, /const duplicateSelection = \(\): boolean => copySelection\(\) && pasteClipboard\(\)/)
-  assert.match(app, /pasteItems\(clip, \{ stroke: nextStrokeIdRef\.current, rectangle: nextRectangleIdRef\.current, connector: nextConnectorIdRef\.current, text: nextTextIdRef\.current \}, PASTE_OFFSET \* \(pasteCountRef\.current \+ 1\), workspaceBoundsRef\.current\)/)
+  assert.match(app, /pasteItems\(clip, \{ stroke: nextStrokeIdRef\.current, rectangle: nextRectangleIdRef\.current, connector: nextConnectorIdRef\.current, text: nextTextIdRef\.current \}, PASTE_OFFSET \* \(pasteCountRef\.current \+ 1\), workspaceBoundsRef\.current, at\)/)
   const pasteFn = app.slice(app.indexOf('const pasteClipboard = ('), app.indexOf('// Duplicate = copy + paste'))
   assert.equal((pasteFn.match(/saveHistory\(\)/g) ?? []).length, 1)
   assert.doesNotMatch(app, /navigator\.clipboard|execCommand\(['"](copy|paste|cut)/)
-  assert.match(app, /case 'copy': return copySelection\(\)\n\s*case 'cut': return cutSelection\(\)\n\s*case 'paste': return pasteClipboard\(\)\n\s*case 'duplicate': return duplicateSelection\(\)/)
+  assert.match(app, /case 'copy': return copySelection\(\)\n\s*case 'cut': return cutSelection\(\)\n\s*case 'paste': return pasteClipboard\(inputModeRef[^\n]*\n\s*case 'duplicate': return duplicateSelection\(\)/)
   assert.match(app, /canCopy=\{selectedItemCount > 0 \|\| hasSelectedRectangle\}\n\s*canPaste=\{clipboardCount > 0\}/)
   // the panel shows Copy and Duplicate with a selection and Paste with a non-empty clipboard, next to Delete
   assert.match(panel, /props\.canCopy && <button[^>]*aria-label="Copy selection"/)
@@ -218,4 +218,57 @@ test('App wiring: one history step for paste, cut deletes through deleteSelectio
 test('review fixes: undo drops a stale single-box selection, and page or document changes restart the +24 offset', () => {
   assert.match(app, /if \(selectedRectangleIdRef\.current !== null && !available\.has\(`rectangle:\$\{selectedRectangleIdRef\.current\}`\)\) setSelectedRectangle\(null\)/)
   assert.match(app, /const resetInteractionState = \(\) => \{[\s\S]*?pasteCountRef\.current = 0/)
+})
+
+// ---- paste at the cursor (Desktop) ----
+const centreOf = (items) => { const b = model.getCanvasSelectionBounds(items, keysOf(items)); return { x: b.x + b.width / 2, y: b.y + b.height / 2 } }
+
+test('paste at a cursor centres a single rectangle, text, stroke and connector on the point', () => {
+  const at = { x: 500, y: 400 }
+  for (const item of [rect(1, 0, 0), text(1, 10, 10), stroke(1, 5, 5), link(1, 0, 0)]) {
+    const result = clip.pasteItems([item], counters([item]), 24, WORKSPACE, at)
+    const c = centreOf(result.items)
+    assert.ok(Math.abs(c.x - 500) < 1e-9 && Math.abs(c.y - 400) < 1e-9, item.kind)
+  }
+})
+
+test('paste at a cursor keeps a multi-selection layout, re-points connectors and moves ink with its box', () => {
+  const box = rect(1, 0, 0, { inkBox: { top: 20, mid: 40, ink: [stroke(7, 10, 10)] } })
+  const other = rect(2, 300, 200)
+  const edge = link(1, 0, 0, { startAttachment: { rectangleId: 1, side: 'right', offset: 0.5 }, endAttachment: { rectangleId: 2, side: 'left', offset: 0.5 } })
+  const clipItems = [box, other, edge]
+  const result = clip.pasteItems(clipItems, counters(clipItems), 24, WORKSPACE, { x: 1000, y: 1000 })
+  const [b, o, e] = result.items
+  assert.equal(o.x - b.x, 300)
+  assert.equal(o.y - b.y, 200)
+  assert.equal(b.inkBox.ink[0].points[0].x - b.x, 10)
+  assert.equal(e.startAttachment.rectangleId, b.id)
+  assert.equal(e.endAttachment.rectangleId, o.id)
+  assert.equal(result.dx, result.items[0].x - 0)
+})
+
+test('paste at a cursor near the edge is clamped inside the workspace', () => {
+  const result = clip.pasteItems([rect(1, 0, 0)], { stroke: 1, rectangle: 2, connector: 1, text: 1 }, 24, WORKSPACE, { x: -5000, y: 99999 })
+  const b = model.getCanvasSelectionBounds(result.items, keysOf(result.items))
+  assert.ok(b.x >= WORKSPACE.x - 1e-9)
+  assert.ok(b.y + b.height <= WORKSPACE.y + WORKSPACE.height + 1e-9)
+})
+
+test('paste without a cursor point (toolbar, tablet) keeps the offset behaviour', () => {
+  const items = [rect(1, 0, 0)]
+  for (const at of [undefined, null]) {
+    const result = clip.pasteItems(items, counters(items), 48, WORKSPACE, at)
+    assert.equal(result.dx, 48)
+    assert.equal(result.dy, 48)
+  }
+  assert.deepEqual(clip.pasteTranslation({ x: 0, y: 0, width: 10, height: 10 }, 24, WORKSPACE), { dx: 24, dy: 24 })
+})
+
+test('App wiring: keyboard paste uses the mouse point, duplicate and toolbar do not', () => {
+  assert.match(app, /pasteClipboard = \(at\?: Point \| null\)/)
+  assert.match(app, /case 'paste': return pasteClipboard\(inputModeRef\.current === 'desktop' && cursorPointRef\.current/)
+  assert.match(app, /const duplicateSelection = \(\): boolean => copySelection\(\) && pasteClipboard\(\)/)
+  assert.match(app, /onPaste=\{\(\) => \{ pasteClipboard\(\) \}\}/)
+  assert.match(app, /cursorPointRef\.current = null/)
+  assert.match(app, /if \(!at\) pasteCountRef\.current \+= 1/)
 })

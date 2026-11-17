@@ -24,18 +24,29 @@ export function copyItems(items: readonly CanvasItem[], keys: ReadonlySet<string
   })
 }
 
+/**
+ * Translation for a paste. With a cursor point the centre of the group's bounding box lands on it (then the group is clamped
+ * inside the workspace, keeping its layout); without one the group moves by `offset` in x and y (also clamped).
+ */
+export function pasteTranslation(bounds: ViewBounds, offset: number, workspace: ViewBounds, at?: { x: number; y: number } | null): { dx: number; dy: number } {
+  if (at && Number.isFinite(at.x) && Number.isFinite(at.y)) {
+    return clampTranslationToBounds(bounds, at.x - (bounds.x + bounds.width / 2), at.y - (bounds.y + bounds.height / 2), workspace)
+  }
+  return clampTranslationToBounds(bounds, offset, offset, workspace)
+}
+
 export type PasteResult = { items: CanvasItem[]; keys: string[]; counters: IdCounters; dx: number; dy: number }
 
 /**
- * Fresh clones of the copied items, moved by `offset` in x and y (less when that would leave the workspace; the group moves
+ * Fresh clones of the copied items, moved by `offset` in x and y, or centred on `at` when a cursor point is given (less when that would leave the workspace; the group moves
  * as one so its layout is kept). Connectors: an end attached to a copied box is re-pointed at the new box; an end attached to a
  * box that was not copied is detached (it stays where it was drawn, offset with the rest). Returns null for an empty clipboard.
  */
-export function pasteItems(clip: readonly CanvasItem[], counters: IdCounters, offset: number, workspace: ViewBounds): PasteResult | null {
+export function pasteItems(clip: readonly CanvasItem[], counters: IdCounters, offset: number, workspace: ViewBounds, at?: { x: number; y: number } | null): PasteResult | null {
   if (clip.length === 0) return null
   const source = cloneCanvasItems([...clip])
   const bounds = getCanvasSelectionBounds(source, new Set(source.map(canvasItemKey)))
-  const { dx, dy } = bounds ? clampTranslationToBounds(bounds, offset, offset, workspace) : { dx: offset, dy: offset }
+  const { dx, dy } = bounds ? pasteTranslation(bounds, offset, workspace, at) : { dx: offset, dy: offset }
   const next = { ...counters }
   const newRectangleIds = new Map<number, number>()
   for (const item of source) if (item.kind === 'rectangle') newRectangleIds.set(item.id, next.rectangle++)

@@ -255,6 +255,9 @@ function App() {
   // Step 7: the item the mouse is over (Desktop mode; only a change redraws), and the pen's edge hold (select a box by holding on its edge).
   const hoverKeyRef = useRef<string | null>(null)
   const hoverPointRef = useRef<Point | null>(null)
+  // Desktop paste target: the last mouse position over the canvas (screen coordinates, converted at paste time so a pan or zoom keeps it right); null while the mouse is off the canvas.
+  const cursorPointRef = useRef<Point | null>(null)
+  const contextMenuPointRef = useRef<Point | null>(null)
   const hoverFrameRef = useRef<number | null>(null)
   // Step 8: the marquee being dragged with the select tool (Desktop mouse). `base` is what Shift keeps.
   const activeMarqueeRef = useRef<{ pointerId: number; start: Point; current: Point; shift: boolean; base: Set<string>; before: Set<string> } | null>(null)
@@ -2717,6 +2720,7 @@ function App() {
     if (PEN_BUTTON_DEBUG) showPenButtonState('move', event)
     if (event.pointerType === 'pen') touchNav.penSeen(performance.now())
     moveEraserCursor(event)
+    if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') cursorPointRef.current = getScreenPoint(event)
     const mousePan = mousePanRef.current
     if (mousePan && mousePan.pointerId === event.pointerId) {
       event.preventDefault()
@@ -3295,7 +3299,7 @@ function App() {
 
   const onPointerLeave = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (event.pointerType === 'pen') touchNav.penGone()
-    if (event.pointerType === 'mouse') setMouseHover(null)
+    if (event.pointerType === 'mouse') { setMouseHover(null); cursorPointRef.current = null }
     hideEraserCursor()
   }
 
@@ -3409,12 +3413,12 @@ function App() {
   // Cut = copy + delete: one undo step (deleteSelection records it).
   const cutSelection = (): boolean => copySelection() && deleteSelection()
   // Adds fresh clones (new ids, +24 units per consecutive paste, kept inside the workspace) as one undo step and selects them.
-  const pasteClipboard = (): boolean => {
+  const pasteClipboard = (at?: Point | null): boolean => {
     const clip = clipboardRef.current
     if (clip.length === 0) return false
-    const result = pasteItems(clip, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET * (pasteCountRef.current + 1), workspaceBoundsRef.current)
+    const result = pasteItems(clip, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET * (pasteCountRef.current + 1), workspaceBoundsRef.current, at)
     if (!result) return false
-    pasteCountRef.current += 1
+    if (!at) pasteCountRef.current += 1
     saveHistory()
     nextStrokeIdRef.current = result.counters.stroke
     nextRectangleIdRef.current = result.counters.rectangle
@@ -3472,6 +3476,7 @@ function App() {
     const target = hitTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
     if (target && !selectionKeysWithBox().has(target.key)) selectHitTarget(target)
     setMouseHover(null)
+    contextMenuPointRef.current = point
     setContextMenu({ x: event.clientX, y: event.clientY })
   }
   const runContextMenuAction = (action: ContextMenuAction) => {
@@ -3479,7 +3484,7 @@ function App() {
     switch (action) {
       case 'cut': cutSelection(); break
       case 'copy': copySelection(); break
-      case 'paste': pasteClipboard(); break
+      case 'paste': pasteClipboard(inputModeRef.current === 'desktop' ? contextMenuPointRef.current : null); break
       case 'duplicate': duplicateSelection(); break
       case 'delete': deleteSelection(); break
       case 'selectAll': selectAllItems(); break
@@ -3537,7 +3542,7 @@ function App() {
       case 'edit': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); return target ? openEditTarget(target) : false }
       case 'copy': return copySelection()
       case 'cut': return cutSelection()
-      case 'paste': return pasteClipboard()
+      case 'paste': return pasteClipboard(inputModeRef.current === 'desktop' && cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null)
       case 'duplicate': return duplicateSelection()
       case 'deleteSelection': return deleteSelection()
       case 'selectAll': return selectAllItems()
