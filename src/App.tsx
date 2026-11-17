@@ -32,6 +32,7 @@ import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosti
 import { UmlConnectorIcon } from './app/UmlConnectorIcon'
 import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
 import { CodeEditorOverlay } from './CodeEditorOverlay'
+import { codeEditorIsLive } from './codeEditing'
 import { DEFAULT_CODE_HEIGHT, DEFAULT_CODE_WIDTH, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, codeFontSize, createCodeObject, setCodeFontSize, setCodeLanguage, setCodeText, setCodeTheme, stepCodeFontSize } from './codeBlock'
 import { onCodeHighlighterReady } from './codeHighlight'
 import { ClassBoxDialog } from './ClassBoxDialog'
@@ -347,7 +348,7 @@ function App() {
     getItems: () => strokesRef.current,
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
     getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current }),
-    isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null || codeEditorRef.current !== null,
+    isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null || liveCodeEditor(),
     loadDocument: (loaded, startPage) => {
       resetInteractionState()
       dismissDeletedPage()
@@ -3579,6 +3580,12 @@ function App() {
     const item = key.startsWith('code:') ? strokesRef.current.find((candidate) => canvasItemKey(candidate) === key) : undefined
     return item?.kind === 'code' ? item : null
   }
+  /** True while the code editor is open on a block that still exists; an editor whose block was deleted or undone away is closed here, so shortcuts and autosave never stay blocked. */
+  function liveCodeEditor(): boolean {
+    if (codeEditorIsLive(strokesRef.current, codeEditorRef.current)) return true
+    if (codeEditorRef.current) { codeEditorRef.current = null; setCodeEditor(null) }
+    return false
+  }
   const commitCodeEditor = () => {
     const editor = codeEditorRef.current
     if (!editor) return
@@ -3750,7 +3757,7 @@ function App() {
   keyActionsRef.current = (command) => {
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
-    if (codeEditor) return false
+    if (codeEditor && liveCodeEditor()) return false
     const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
     if (contextMenuRef.current) {
       // While the menu is open Escape closes it and no other shortcut runs.

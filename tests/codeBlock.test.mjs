@@ -251,7 +251,7 @@ test('review fixes: unknown items are capped and cached, marquee skips them, hig
   assert.match(await readFile(new URL('../src/app/codeRenderer.ts', import.meta.url), 'utf8'), /ensureCodeHighlighter\(\)/)
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
   assert.match(app, /redrawWhenIdle/)
-  assert.match(app, /activePointerRef\.current !== null \|\| codeEditorRef\.current !== null/)
+  assert.match(app, /activePointerRef\.current !== null \|\| liveCodeEditor\(\)/)
   assert.match(app, /codeEditorRef\.current = null\n    setCodeEditor\(null\)\n  }/)
 })
 
@@ -260,4 +260,15 @@ test('review fixes: zero-size code and unknown boxes draw and export without neg
   const svg = exporter.buildSheetSvg([tiny, ...parse([unknownItem]).document.items], { width: 400, height: 300, template: 'blank', backgroundColor: '#ffffff' })
   assert.doesNotMatch(svg, /(width|height)="-/)
   assert.match(svg, /fill-opacity="0.18"/)
+})
+
+test('code editor counts as open only while its block exists; App closes an orphaned editor', async () => {
+  assert.equal(editing.codeEditorIsLive([{ kind: 'code', id: 3 }], { id: 3 }), true)
+  assert.equal(editing.codeEditorIsLive([{ kind: 'text', id: 3 }], { id: 3 }), false)
+  assert.equal(editing.codeEditorIsLive([], { id: 3 }), false)
+  assert.equal(editing.codeEditorIsLive([{ kind: 'code', id: 3 }], null), false)
+  const { readFile } = await import('node:fs/promises')
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /isInputActive: \(\) => [^\n]*liveCodeEditor\(\)/)
+  assert.match(app, /if \(codeEditor && liveCodeEditor\(\)\) return false/)
 })

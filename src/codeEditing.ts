@@ -35,3 +35,8 @@ export function indentSelection(text: string, start: number, end: number, outden
   })
   return { text: text.slice(0, lineStart) + changed.join('\n') + text.slice(blockEnd), start: Math.max(lineStart, start + firstDelta), end: Math.max(lineStart, end + totalDelta) }
 }
+
+/** The code editor is only open while its block still exists; a block deleted or undone away under the editor closes it. */
+export function codeEditorIsLive(items: readonly { kind: string; id: number }[], editor: { id: number } | null): boolean {
+  return editor !== null && items.some((item) => item.kind === 'code' && item.id === editor.id)
+}
