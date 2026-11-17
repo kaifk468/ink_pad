@@ -25,7 +25,7 @@ export type InkPadDocument = {
   createdAt: string
   updatedAt: string
   /** `spacing` is written only when it is not the standard one; `sheetHeight` only when the page has grown past its first height. */
-  page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number }
+  page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: true }
   /** `items` is page 1. Pages 2 and on, only when the diagram has more than one page. */
   items: CanvasItem[]
   pages?: Array<{ items: CanvasItem[] }>
@@ -40,6 +40,8 @@ export type DocumentInput = {
   spacing?: DocumentPageSpacing
   /** Page height after it grew (2000, 2500 or 3000); left out for the first height. */
   sheetHeight?: number
+  /** Hand-drawn style for the whole diagram; written only when true. */
+  sketchy?: boolean
   /** Page 1. */
   items: CanvasItem[]
   /** Pages 2 and on. */
@@ -80,7 +82,7 @@ export function createDocument(input: DocumentInput, now = new Date().toISOStrin
     title: cleanTitle(input.title),
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
-    page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}), ...grownSheetHeight(input.sheetHeight) },
+    page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}), ...grownSheetHeight(input.sheetHeight), ...(input.sketchy === true ? { sketchy: true as const } : {}) },
     items: input.items.map(copy),
     ...(extraPages.length > 0 ? { pages: extraPages.map((items) => ({ items: items.map(copy) })) } : {}),
   }
@@ -120,11 +122,11 @@ export function documentPageCount(document: InkPadDocument): number {
 }
 
 /** An open diagram's content for "did anything change since the last save" checks. */
-export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; items: CanvasItem[]; extraPages?: CanvasItem[][] }
+export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; items: CanvasItem[]; extraPages?: CanvasItem[][] }
 
 export function sameSignature(a: DocumentSignature | null, b: DocumentSignature | null): boolean {
   if (!a || !b) return false
-  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || (a.sheetHeight ?? 1500) !== (b.sheetHeight ?? 1500) || a.items.length !== b.items.length) return false
+  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || (a.sheetHeight ?? 1500) !== (b.sheetHeight ?? 1500) || (a.sketchy === true) !== (b.sketchy === true) || a.items.length !== b.items.length) return false
   for (let index = 0; index < a.items.length; index += 1) if (a.items[index] !== b.items[index]) return false
   const aPages = a.extraPages ?? []
   const bPages = b.extraPages ?? []
@@ -213,6 +215,7 @@ export function parseDocument(text: string): ParseResult {
         background: BACKGROUNDS.includes(page.background as DocumentPageBackground) ? (page.background as DocumentPageBackground) : 'white',
         ...(page.spacing === 'narrow' || page.spacing === 'wide' ? { spacing: page.spacing } : {}),
         ...grownSheetHeight(page.sheetHeight),
+        ...(page.sketchy === true ? { sketchy: true as const } : {}),
       },
       items: finalItems,
       ...(extraPages.length > 0 ? { pages: extraPages } : {}),
@@ -313,6 +316,10 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     const rectangle: RectangleObject = { kind: 'rectangle', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth, ...(classBox ? { classBox } : {}), ...(inkBox ? { inkBox } : {}), ...(inkBox && HLD_SHAPE_KINDS.includes(value.hldShape as string) ? { hldShape: value.hldShape as HldShape } : {}), ...(value.ellipse === true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { ellipse: true as const } : {}), ...(value.diamond === true && value.ellipse !== true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { diamond: true as const } : {}) }
     const rectAngle = !classBox && !inkBox && !hldShapeKept(value) ? sanitizeAngle(value.angle) : undefined
     if (rectAngle !== undefined) rectangle.angle = rectAngle
+    // Hand-drawn style seed and fill colour: only on shapes that can carry them (not service, class boxes or ink class boxes).
+    const sketchable = !classBox && (!inkBox || value.hldShape === 'database' || value.hldShape === 'queue')
+    if (sketchable && typeof value.seed === 'number' && Number.isInteger(value.seed) && value.seed >= 0 && value.seed <= 4294967295) rectangle.seed = value.seed
+    if (sketchable && isColor(value.fillColor)) rectangle.fillColor = value.fillColor
     return rectangle
   }
   if (value.kind === 'text') {

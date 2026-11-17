@@ -6,7 +6,7 @@ export type ClassBoxContent = { name: string; attributes: string; methods: strin
 /** HLD shape kinds: Database (cylinder), Queue, Service. A rectangle with one of these is an ink box drawn as that shape. */
 export const HLD_SHAPES = ['database', 'queue', 'service'] as const
 export type HldShape = (typeof HLD_SHAPES)[number]
-export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; angle?: number }
+export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; angle?: number; /** Hand-drawn style random seed (integer), written only by diagrams that use the sketchy style. */ seed?: number; /** Optional fill colour under the outline (not on service, typed or ink class boxes). */ fillColor?: string }
 /** The fixed list of label fonts. A saved label without `fontFamily` is the original clean sans. */
 export const TEXT_FONT_IDS = ['excalifont', 'sans', 'serif', 'mono'] as const
 export type TextFontId = (typeof TEXT_FONT_IDS)[number]

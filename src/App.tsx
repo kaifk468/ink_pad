@@ -34,6 +34,8 @@ import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
 import { ClassBoxDialog } from './ClassBoxDialog'
 import { AccountButton } from './app/AccountButton'
 import { ContextPanel } from './app/ContextPanel'
+import { selectionFillColor, selectionHasFillable, setFillColor, matchingOutline } from './shapeFill'
+import { withSketchSeed, withSketchSeeds } from './sketchy'
 import { HistoryBar } from './app/HistoryBar'
 import { ToolDock } from './app/ToolDock'
 import { TopLeftBar } from './app/TopLeftBar'
@@ -308,6 +310,10 @@ function App() {
   const [pageBackground, setPageBackground] = useState<PageBackground>(() => loadPageBackground())
   const [pageSpacing, setPageSpacing] = useState<PageSpacing>(() => loadPageSpacing())
   const pageSpacingRef = useRef(pageSpacing)
+  /** Hand-drawn style of the open diagram (saved in the file; off by default). */
+  const [sketchy, setSketchy] = useState(false)
+  const sketchyRef = useRef(false)
+  sketchyRef.current = sketchy
   pageSpacingRef.current = pageSpacing
   const pageTemplateRef = useRef(pageTemplate)
   const pageBackgroundRef = useRef(pageBackground)
@@ -334,7 +340,7 @@ function App() {
   } = useDocuments({
     getItems: () => strokesRef.current,
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
-    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current }),
+    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current }),
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null,
     loadDocument: (loaded, startPage) => {
       resetInteractionState()
@@ -359,6 +365,8 @@ function App() {
       pageBackgroundRef.current = loaded.page.background
       pageSpacingRef.current = loaded.page.spacing ?? 'standard'
       setPageSpacing(loaded.page.spacing ?? 'standard')
+      sketchyRef.current = loaded.page.sketchy === true
+      setSketchy(loaded.page.sketchy === true)
       setPageTemplate(loaded.page.template)
       setPageBackground(loaded.page.background)
       // A saved height, grown if the content reaches past it (never shrunk).
@@ -952,8 +960,8 @@ function App() {
   const drawStroke = useCallback((ctx: CanvasRenderingContext2D, stroke: Stroke) => drawStrokeToCanvas(ctx, stroke, strokeDisplayMode), [strokeDisplayMode])
 
   const drawItem = useCallback((ctx: CanvasRenderingContext2D, item: CanvasItem) => {
-    drawItemToCanvas(ctx, item, strokeDisplayMode)
-  }, [strokeDisplayMode])
+    drawItemToCanvas(ctx, item, strokeDisplayMode, sketchy)
+  }, [strokeDisplayMode, sketchy])
 
   const drawMinimapItems = useCallback((ctx: CanvasRenderingContext2D, geometry: MinimapGeometry) => {
     drawMinimapItemsToCanvas(ctx, canvasItemsForRendering(routeConnectors(strokesRef.current)), geometry)
@@ -1271,6 +1279,32 @@ function App() {
       bumpSelectionColor((n) => n + 1)
     }
     if (commit) recolorSessionRef.current = false
+  }
+
+  /** Fills the selected shapes (null = no fill); one undo step per picker drag or swatch click, like recolouring the outline. */
+  const fillSelection = (hex: string | null, commit: boolean) => {
+    const next = setFillColor(strokesRef.current, currentSelectionKeys(), hex)
+    if (next !== strokesRef.current) {
+      if (!recolorSessionRef.current) { saveHistory(); recolorSessionRef.current = true }
+      strokesRef.current = next
+      renderAll()
+      bumpSelectionColor((n) => n + 1)
+    }
+    if (commit) recolorSessionRef.current = false
+  }
+  /** Turns the hand-drawn style on or off for the whole diagram. Turning it on gives every shape that lacks one a stored seed, in the same undo step. */
+  const toggleSketchy = () => {
+    const turningOn = !sketchyRef.current
+    if (turningOn) {
+      const stamped = withSketchSeeds(strokesRef.current)
+      if (stamped !== strokesRef.current) {
+        saveHistory()
+        strokesRef.current = stamped
+      }
+      pagesRef.current.forEach((slot, index) => { if (index !== pageIndexRef.current) slot.items = withSketchSeeds(slot.items) })
+    }
+    sketchyRef.current = turningOn
+    setSketchy(turningOn)
   }
 
   const rotatableForPanel = soleRotatable()
@@ -2030,6 +2064,12 @@ function App() {
   }, [pageTemplate, renderAll])
 
   useEffect(() => {
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+  }, [sketchy, renderAll])
+
+  useEffect(() => {
     savePageSpacing(pageSpacing)
     renderAll()
     scheduleAutosave()
@@ -2484,7 +2524,7 @@ function App() {
       // Press where the shape starts and drag to size it (Shift keeps it square); a plain click makes a default-sized shape.
       event.currentTarget.setPointerCapture(event.pointerId)
       saveHistory()
-      const box = createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)
+      const box = sketchyRef.current ? withSketchSeed(createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)) : createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)
       strokesRef.current.push(box)
       setHasInk(true)
       activeResizeRef.current = {
@@ -2510,9 +2550,10 @@ function App() {
       // Press where the box's top-left corner goes, then drag to size it; a plain tap makes a default-sized box.
       event.currentTarget.setPointerCapture(event.pointerId)
       saveHistory()
-      const box = hldShapeTool
+      const newBox = hldShapeTool
         ? createHldShape(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, hldShapeTool)
         : createInkClassBox(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH)
+      const box = sketchyRef.current ? withSketchSeed(newBox) : newBox
       strokesRef.current.push(box)
       setHasInk(true)
       activeResizeRef.current = {
@@ -3798,6 +3839,8 @@ function App() {
           onPageTemplate={setPageTemplate}
           pageSpacing={pageSpacing}
           onPageSpacing={setPageSpacing}
+          sketchy={sketchy}
+          onSketchy={toggleSketchy}
           pageBackground={pageBackground}
           onPageBackground={setPageBackground}
           inputMode={inputMode}
@@ -3832,6 +3875,9 @@ function App() {
         showSelectionColor={inputMode === 'desktop' && (selectedItemCount > 0 || hasSelectedRectangle)}
         selectionColor={selectionColor(strokesRef.current, currentSelectionKeys())}
         onSelectionColor={recolorSelection}
+        fill={inputMode === 'desktop' && selectionHasFillable(strokesRef.current, currentSelectionKeys())
+          ? { color: selectionFillColor(strokesRef.current, currentSelectionKeys()), onFill: fillSelection, onMatchOutline: (hex) => recolorSelection(hex, true), outlineFor: matchingOutline }
+          : null}
         showEraser={inputMode === 'desktop' && eraser}
         rotation={rotationPanel}
         objectEraser={objectEraser}

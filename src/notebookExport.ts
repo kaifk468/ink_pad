@@ -19,12 +19,12 @@ export function exportPixelRatio(width: number, height: number): number {
  * plain white (no page colour or lines), so a reader such as NotebookLM sees the strokes clearly. Null when every page is empty.
  * Browser only (it draws on a canvas).
  */
-export async function renderDiagramPdf(pageItems: CanvasItem[][], sheetHeight: number): Promise<{ pdf: Uint8Array; pageCount: number } | null> {
+export async function renderDiagramPdf(pageItems: CanvasItem[][], sheetHeight: number, sketchy = false): Promise<{ pdf: Uint8Array; pageCount: number } | null> {
   const pages: PdfPageImage[] = []
   for (const items of pageItems) {
     const bounds = getContentBounds(items, { width: SHEET_WIDTH, height: sheetHeight })
     if (!bounds) continue
-    const svg = cropSvg(buildSheetSvg(items, { width: SHEET_WIDTH, height: sheetHeight, template: 'blank', backgroundColor: '#ffffff' }), bounds)
+    const svg = cropSvg(buildSheetSvg(items, { width: SHEET_WIDTH, height: sheetHeight, template: 'blank', backgroundColor: '#ffffff', ...(sketchy ? { sketchy: true } : {}) }), bounds)
     const ratio = exportPixelRatio(bounds.width, bounds.height)
     const blob = await svgToImageBlob(svg, bounds.width, bounds.height, ratio, 'image/jpeg', EXPORT_JPEG_QUALITY)
     pages.push({

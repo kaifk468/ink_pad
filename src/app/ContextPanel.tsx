@@ -5,6 +5,7 @@ import type { ConnectorRelationshipType } from '../canvasModel'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import type { TextFontId } from '../canvasModel'
 import { TEXT_FONTS, TEXT_FONT_SIZES } from '../textLayout'
+import { FILL_PRESETS } from '../shapeFill'
 import { COLORS, MAX_STROKE_WIDTH, MIN_STROKE_WIDTH, WIDTHS } from './appConfig'
 
 type RelationshipProps = {
@@ -55,6 +56,8 @@ type ContextPanelProps = {
   showSelectionColor?: boolean
   onSelectionColor?: (hex: string, commit: boolean) => void
   showEraser?: boolean
+  /** Desktop only: fill colour of the selected shapes ('none' = no fill, null = mixed) and its handlers. */
+  fill?: { color: string | 'none' | null; onFill: (hex: string | null, commit: boolean) => void; onMatchOutline: (hex: string) => void; outlineFor: (fill: string | null) => string | null } | null
   /** The selected label or plain shape that can be rotated: its angle in degrees, and the buttons that set it. */
   rotation?: { degrees: number; onAlign: () => void; onReset: () => void } | null
   objectEraser?: boolean
@@ -100,7 +103,7 @@ function ColorChoices({ value, label, onChange }: { value: string; label: string
 /** Settings that only appear when the active tool or selection needs them. */
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.showTextSizes && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.showTextSizes && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -148,6 +151,17 @@ export function ContextPanel(props: ContextPanelProps) {
       {props.showSelectionColor && props.onSelectionColor && <div className="selection-color">
         <span className="panel-label">Colour of this object</span>
         <ColorChoices value={props.selectionColor ?? '#202124'} label="Object colour" onChange={props.onSelectionColor} />
+      </div>}
+      {props.fill && <div className="selection-color fill-color" role="group" aria-label="Fill colour">
+        <span className="panel-label">Fill</span>
+        <div className="tool-group color-group">
+          <button className={`color-swatch fill-none${props.fill.color === 'none' ? ' selected' : ''}`} type="button" title="No fill" aria-label="No fill" aria-pressed={props.fill.color === 'none'} onClick={() => props.fill?.onFill(null, true)} />
+          {FILL_PRESETS.map((preset) => (
+            <button key={preset.fill} className={`color-swatch${props.fill?.color?.toLowerCase() === preset.fill ? ' selected' : ''}`} type="button" title={`${preset.name} fill`} aria-label={`${preset.name} fill`} aria-pressed={props.fill?.color?.toLowerCase() === preset.fill} style={{ '--swatch': preset.fill } as CSSProperties} onClick={() => props.fill?.onFill(preset.fill, true)} />
+          ))}
+        </div>
+        <ColorChoices value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" onChange={(hex, commit) => props.fill?.onFill(hex, commit)} />
+        {props.fill.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null) && <button className="clear-selection-button" type="button" title="Use the darker outline that goes with this fill" onClick={() => { const hex = props.fill?.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null); if (hex) props.fill?.onMatchOutline(hex) }}>Matching outline</button>}
       </div>}
       {props.rotation && <div className="rotation-controls" role="group" aria-label="Rotation">
         <span className="panel-label">Rotation: {props.rotation.degrees}°</span>

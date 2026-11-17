@@ -29,7 +29,7 @@ export type DocumentHost = {
   getItems: () => CanvasItem[]
   /** The items of every page in order (page 1 first), including the live items of the page on screen. */
   getPageItems: () => CanvasItem[][]
-  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number }
+  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean }
   /** True while a pen/touch stroke or gesture is in progress; autosave waits for it to end. */
   isInputActive: () => boolean
   /** Replace the sheet contents and page settings, reset undo history, id counters and selection, and redraw. */
@@ -152,6 +152,7 @@ export function useDocuments(host: DocumentHost) {
       background: page.background,
       spacing: page.spacing,
       sheetHeight: page.sheetHeight,
+      sketchy: page.sketchy,
       items: hostRef.current.getPageItems()[0] ?? [],
       extraPages: hostRef.current.getPageItems().slice(1),
       shareStrokes: true,
@@ -166,7 +167,7 @@ export function useDocuments(host: DocumentHost) {
    */
   const currentSignature = (): DocumentSignature => {
     const page = hostRef.current.getPage()
-    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()) }
+    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, sketchy: page.sketchy, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()) }
   }
 
   /**
@@ -575,6 +576,7 @@ export function useDocuments(host: DocumentHost) {
       template: page.template,
       spacing: page.spacing,
       backgroundColor: PAGE_BACKGROUND_COLORS[page.background],
+      ...(page.sketchy ? { sketchy: true } : {}),
     }), bounds)
     return { svg, bounds, baseName: documentFileName(docMetaRef.current.title).replace(/\.inkpad$/, '') }
   }
@@ -649,7 +651,7 @@ export function useDocuments(host: DocumentHost) {
         setFileNotice('Save the diagram first, then export it.')
         return
       }
-      const rendered = await renderDiagramPdf(hostRef.current.getPageItems(), hostRef.current.getPage().sheetHeight ?? SHEET_HEIGHT)
+      const rendered = await renderDiagramPdf(hostRef.current.getPageItems(), hostRef.current.getPage().sheetHeight ?? SHEET_HEIGHT, hostRef.current.getPage().sketchy === true)
       if (!rendered) {
         setFileNotice('Nothing to export yet.')
         return

@@ -7,6 +7,8 @@ import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import { classBoxFont, getClassBoxGeometry, type ClassBoxCompartment, type FontMeasure } from '../classBoxLayout'
 import { getCachedTextMeasure, getTextBaselines, labelLines, textFont, type TextMeasure } from '../textLayout'
 import type { MinimapGeometry } from '../viewport'
+import { isSketchyRectangle } from '../sketchy'
+import { drawSketchyConnector, fillRectangle, strokeSketchyRectangle, strokeSketchyStroke } from './sketchyRender'
 
 /** Canvas drawing for every item kind. Pure functions of (context, item, settings): no React state. */
 
@@ -114,7 +116,7 @@ export function drawRawSegments(ctx: CanvasRenderingContext2D, segments: Interpo
   }
 }
 
-export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, strokeDisplayMode: StrokeDisplayMode): void {
+export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, strokeDisplayMode: StrokeDisplayMode, sketchy = false): void {
   const points = stroke.erase || stroke.shape || strokeDisplayMode === 'raw' ? stroke.points : filterDisplayPoints(stroke.points)
   if (!points.length) return
   ctx.save()
@@ -123,6 +125,10 @@ export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, stroke
   ctx.fillStyle = stroke.color
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
+  if (sketchy && (stroke.shape === 'arrow' || stroke.shape === 'line') && points.length >= 2 && strokeSketchyStroke(ctx, stroke)) {
+    ctx.restore()
+    return
+  }
   if (stroke.shape === 'arrow' && points.length >= 2) {
     const [start, end] = points
     const angle = Math.atan2(end.y - start.y, end.x - start.x)
@@ -254,7 +260,21 @@ function drawInkBoxDividers(ctx: CanvasRenderingContext2D, rectangle: RectangleO
   ctx.restore()
 }
 
-export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: RectangleObject, strokeDisplayMode: StrokeDisplayMode = 'raw'): void {
+export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: RectangleObject, strokeDisplayMode: StrokeDisplayMode = 'raw', sketchy = false): void {
+  if (rectangle.fillColor) {
+    // The fill sits under everything else of the shape (its ink, writing and outline).
+    ctx.save()
+    const fillAngle = itemAngle(rectangle)
+    if (fillAngle !== 0) {
+      const fx = rectangle.x + rectangle.width / 2
+      const fy = rectangle.y + rectangle.height / 2
+      ctx.translate(fx, fy)
+      ctx.rotate(fillAngle)
+      ctx.translate(-fx, -fy)
+    }
+    fillRectangle(ctx, rectangle, sketchy, isSketchyRectangle(rectangle))
+    ctx.restore()
+  }
   if (rectangle.classBox) drawClassBox(ctx, rectangle)
   if (rectangle.inkBox) drawInkBoxInk(ctx, rectangle, strokeDisplayMode)
   if (rectangle.inkBox && !rectangle.hldShape) drawInkBoxDividers(ctx, rectangle)
@@ -271,7 +291,9 @@ export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
     ctx.rotate(angle)
     ctx.translate(-cx, -cy)
   }
-  if (rectangle.hldShape) {
+  if (sketchy && isSketchyRectangle(rectangle)) {
+    strokeSketchyRectangle(ctx, rectangle)
+  } else if (rectangle.hldShape) {
     ctx.stroke(new Path2D(hldOutlinePath(rectangle, rectangle.hldShape)))
   } else if (rectangle.inkBox) {
     ctx.beginPath()
@@ -303,7 +325,7 @@ function tracePath(ctx: CanvasRenderingContext2D, path: Point[], atStart: boolea
   for (let index = 1; index < points.length; index += 1) ctx.lineTo(points[index].x, points[index].y)
 }
 
-export function drawConnector(ctx: CanvasRenderingContext2D, connector: ConnectorObject, color = connector.strokeColor, width = connector.strokeWidth): void {
+export function drawConnector(ctx: CanvasRenderingContext2D, connector: ConnectorObject, color = connector.strokeColor, width = connector.strokeWidth, sketchy = false): void {
   const spec = getConnectorRenderSpec(connector)
   const geometry = getConnectorSymbolGeometry(connector, width)
   const tip = geometry?.tip
@@ -317,7 +339,9 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
   ctx.lineJoin = 'round'
   ctx.setLineDash(spec.lineStyle === 'dashed' ? [Math.max(6, width * 2.5), Math.max(4, width * 1.8)] : [])
 
-  if (spec.symbol === 'hollow-triangle' && geometry && tip) {
+  if (sketchy) {
+    drawSketchyConnector(ctx, connector, color, width)
+  } else if (spec.symbol === 'hollow-triangle' && geometry && tip) {
     tracePath(ctx, path, atStart, geometry.base)
     ctx.stroke()
     ctx.setLineDash([])
@@ -383,11 +407,11 @@ export function drawText(ctx: CanvasRenderingContext2D, text: TextObject): void 
   ctx.restore()
 }
 
-export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, strokeDisplayMode: StrokeDisplayMode): void {
-  if (item.kind === 'rectangle') drawRectangle(ctx, item, strokeDisplayMode)
+export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, strokeDisplayMode: StrokeDisplayMode, sketchy = false): void {
+  if (item.kind === 'rectangle') drawRectangle(ctx, item, strokeDisplayMode, sketchy)
   else if (item.kind === 'text') drawText(ctx, item)
-  else if (item.kind === 'connector') drawConnector(ctx, item)
-  else drawStroke(ctx, item, strokeDisplayMode)
+  else if (item.kind === 'connector') drawConnector(ctx, item, item.strokeColor, item.strokeWidth, sketchy)
+  else drawStroke(ctx, item, strokeDisplayMode, sketchy)
 }
 
 export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasItem[], geometry: MinimapGeometry): void {

@@ -1,6 +1,7 @@
 import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, itemAngle, itemCenter, rotatedItemBounds } from './canvasModel'
 import { routeConnectors } from './connectorRoute'
 import { hldOutlinePath } from './hldShapes'
+import { isSketchyRectangle, plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokePath } from './sketchy'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 import { getClassBoxGeometry, type ClassBoxCompartment } from './classBoxLayout'
 import { getTextBaselines, labelLines, TEXT_FONT_FAMILY, textFontFamily } from './textLayout'
@@ -15,7 +16,12 @@ export type SheetExportOptions = {
   backgroundColor: string
   /** Transparent background (no sheet fill, no template) for pasting into other documents. */
   transparent?: boolean
+  /** Hand-drawn style (the diagram's own setting). */
+  sketchy?: boolean
 }
+
+/** Set by buildSheetSvg for the duration of one build. */
+let sketchyExport = false
 
 const SPACING = 32
 const LINE_COLOR = '#aebfd8'
@@ -33,6 +39,8 @@ function strokeElement(stroke: Stroke): string {
   if (!points.length) return ''
   if ((stroke.shape === 'line' || stroke.shape === 'arrow') && points.length >= 2) {
     const [start, end] = points
+    const rough = sketchyExport ? sketchyStrokePath(stroke) : null
+    if (rough) return `<path d="${rough}" ${common} stroke-width="${n(stroke.width)}"/>`
     let d = `M${n(start.x)} ${n(start.y)}L${n(end.x)} ${n(end.y)}`
     if (stroke.shape === 'arrow') {
       const angle = Math.atan2(end.y - start.y, end.x - start.x)
@@ -102,6 +110,17 @@ function inkBoxLinesElement(rectangle: RectangleObject): string {
 }
 
 function rectangleElement(rectangle: RectangleObject): string {
+  const color = rectangleFill(rectangle)
+  const sketchy = sketchyExport && isSketchyRectangle(rectangle)
+  const fill = color ? `<path d="${sketchy ? sketchyRectangleShape(rectangle).fill : plainFillPath(rectangle)}" fill="${esc(color)}" stroke="none"/>` : ''
+  if (sketchy) {
+    const outline = `<path d="${sketchyRectangleShape(rectangle).outline}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"/>`
+    return fill + (rectangle.inkBox ? inkBoxInkElement(rectangle) : '') + outline
+  }
+  return fill + plainRectangleElement(rectangle)
+}
+
+function plainRectangleElement(rectangle: RectangleObject): string {
   if (rectangle.hldShape) {
     return inkBoxInkElement(rectangle) + `<path d="${hldOutlinePath(rectangle, rectangle.hldShape)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"/>`
   }
@@ -126,7 +145,18 @@ function connectorPathData(connector: ConnectorObject, atStart: boolean, replace
   return points.map((p, index) => `${index === 0 ? 'M' : 'L'}${pt(p)}`).join('')
 }
 
+function sketchyConnectorElement(connector: ConnectorObject): string {
+  const spec = getConnectorRenderSpec(connector)
+  const shape = sketchyConnectorShape(connector)
+  const color = esc(connector.strokeColor)
+  const dash = spec.lineStyle === 'dashed' ? ` stroke-dasharray="${n(Math.max(6, connector.strokeWidth * 2.5))} ${n(Math.max(4, connector.strokeWidth * 1.8))}"` : ''
+  const base = `stroke="${color}" stroke-width="${n(connector.strokeWidth)}" stroke-linecap="round" stroke-linejoin="round"`
+  const head = shape.head ? `<path d="${shape.head}" fill="${shape.headClosed && shape.headFill ? (shape.headFill === 'color' ? color : '#ffffff') : 'none'}" ${base}/>` : ''
+  return `<path d="${shape.line}" fill="none" ${base}${dash}/>${head}`
+}
+
 function connectorElement(connector: ConnectorObject): string {
+  if (sketchyExport) return sketchyConnectorElement(connector)
   const spec = getConnectorRenderSpec(connector)
   const geometry = getConnectorSymbolGeometry(connector)
   const color = esc(connector.strokeColor)
@@ -182,6 +212,15 @@ function itemElement(item: CanvasItem): string {
  * (SVG mask per eraser group), matching the canvas "destination-out" behavior.
  */
 export function buildSheetSvg(rawItems: CanvasItem[], options: SheetExportOptions): string {
+  sketchyExport = options.sketchy === true
+  try {
+    return buildSheetSvgInner(rawItems, options)
+  } finally {
+    sketchyExport = false
+  }
+}
+
+function buildSheetSvgInner(rawItems: CanvasItem[], options: SheetExportOptions): string {
   const items = routeConnectors(rawItems)
   inkBoxCount = 0
   const { width, height } = options

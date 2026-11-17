@@ -13,6 +13,9 @@ type TopLeftBarProps = {
   onPageTemplate: (value: PageTemplate) => void
   pageSpacing: PageSpacing
   onPageSpacing: (value: PageSpacing) => void
+  /** Hand-drawn style of this diagram (the menu row shows in Desktop mode only). */
+  sketchy: boolean
+  onSketchy: () => void
   pageBackground: PageBackground
   onPageBackground: (value: PageBackground) => void
   inputMode: InputMode
@@ -153,6 +156,11 @@ export function TopLeftBar(props: TopLeftBarProps) {
             <span className="menu-row-label menu-row-stack"><span>Desktop mode</span><span className="menu-row-sub">A mouse draws and edits. The pen and touch stay as they are</span></span>
             <span className={`menu-switch${props.inputMode === 'desktop' ? ' on' : ''}`} aria-hidden="true"><span /></span>
           </button>
+          {props.inputMode === 'desktop' && <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.sketchy} onClick={props.onSketchy}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18c3-1 4-9 8-12 3 3 5 8 8 11M5 20c5 1 9 1 14 0"/></svg>
+            <span className="menu-row-label menu-row-stack"><span>Hand-drawn style</span><span className="menu-row-sub">Shapes, lines and arrows look sketched. Saved with this diagram</span></span>
+            <span className={`menu-switch${props.sketchy ? ' on' : ''}`} aria-hidden="true"><span /></span>
+          </button>}
           <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.snapping} onClick={() => props.onSnapping(!props.snapping)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><path d="M12 3v18M3 12h18" strokeDasharray="2 2"/></svg>
             <span className="menu-row-label menu-row-stack"><span>Snap and guides</span><span className="menu-row-sub">Boxes snap to the edges and centres of nearby boxes while you drag</span></span>
