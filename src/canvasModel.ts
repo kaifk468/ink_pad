@@ -882,6 +882,16 @@ export class CanvasSnapshotHistory {
     return previous
   }
 
+  /** The whole history as it is now (the stacks are copied; the snapshots in them are never edited), to put back with `restore`. */
+  capture(): { undo: CanvasItem[][]; redo: CanvasItem[][] } {
+    return { undo: this.undoStack.slice(), redo: this.redoStack.slice() }
+  }
+
+  restore(state: { undo: CanvasItem[][]; redo: CanvasItem[][] }) {
+    this.undoStack = state.undo.slice()
+    this.redoStack = state.redo.slice()
+  }
+
   /** Forgets the newest undo step without applying it (a cancelled drag: its step was recorded when the drag began). */
   discardLast() {
     this.undoStack.pop()

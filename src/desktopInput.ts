@@ -8,6 +8,7 @@
  */
 
 import { canvasItemKey, getCanvasSelectionBounds, toItemFrame, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
+import { hitInkBoxDivider, hitInkBoxMoveGrip } from './inkClassBox'
 import { itemHitTest } from './lassoSelection'
 import { MAX_ZOOM, MIN_ZOOM, panViewport, zoomViewportAt, type Viewport } from './viewport'
 
@@ -448,4 +449,98 @@ export function canvasCursor(state: CursorState): string {
   if (state.tool === 'text') return 'text'
   if (state.tool === 'select') return 'default'
   return 'crosshair'
+}
+
+/**
+ * Double-click on empty canvas makes a text label (Desktop mouse, any tool).
+ * The two single clicks run through the active tool first (a pen click leaves a dot, a shape tool a tiny shape, ...), so the
+ * app remembers the items and history from before the first click and puts them back when the pair turns out to be a label
+ * double-click. The pair only counts when both clicks were plain: left button, no modifier, no movement beyond the click
+ * tolerance, same tool, view and page, and nothing else (key, wheel, pan, other pointer) in between.
+ */
+export const CLICK_TOLERANCE_PX = 4
+export const DOUBLE_CLICK_WINDOW_MS = 1000
+
+export type ClickPair = { phase: 'down1' | 'up1' | 'down2' | 'up2'; x: number; y: number; upAt: number; moved: boolean; context: string }
+
+export function clickPairOnDown(prev: ClickPair | null, down: { x: number; y: number; at: number; context: string }): { pair: ClickPair; continued: boolean } {
+  if (prev && prev.phase === 'up1' && !prev.moved && prev.context === down.context && down.at - prev.upAt <= DOUBLE_CLICK_WINDOW_MS
+    && Math.hypot(down.x - prev.x, down.y - prev.y) <= CLICK_TOLERANCE_PX) {
+    return { pair: { ...prev, phase: 'down2' }, continued: true }
+  }
+  return { pair: { phase: 'down1', x: down.x, y: down.y, upAt: 0, moved: false, context: down.context }, continued: false }
+}
+
+/** Marks the pair as moved once the pointer, with a button down, leaves the click tolerance; returns the same object otherwise. */
+export function clickPairOnMove(pair: ClickPair, x: number, y: number): ClickPair {
+  if (pair.moved || (pair.phase !== 'down1' && pair.phase !== 'down2')) return pair
+  return Math.hypot(x - pair.x, y - pair.y) > CLICK_TOLERANCE_PX ? { ...pair, moved: true } : pair
+}
+
+export function clickPairOnUp(pair: ClickPair, at: number): ClickPair {
+  if (pair.phase === 'down1') return { ...pair, phase: 'up1', upAt: at }
+  if (pair.phase === 'down2') return { ...pair, phase: 'up2', upAt: at }
+  return pair
+}
+
+/** True when both items lists hold exactly the same items (same objects, same order). */
+export function clickItemsUnchanged(a: readonly CanvasItem[], b: readonly CanvasItem[]): boolean {
+  return a.length === b.length && a.every((item, index) => item === b[index])
+}
+
+/**
+ * Whether the point is empty canvas for a new label: nothing a click would select or grab there. The inside of a plain
+ * box, ink box or HLD shape is left to the active tool by the click rules, so it counts as empty (but not with the select
+ * tool, which selects the box); their edge band does not. Typed class boxes, text and connectors are never empty. A selected
+ * box keeps its handles, dividers and border band, and a selection kept by the select or lasso tool its bounds.
+ */
+export function emptyForLabel(
+  routedItems: readonly CanvasItem[],
+  point: Point,
+  scale: number,
+  tool: ClickTool,
+  selectedKeys: ReadonlySet<string>,
+  selectedRectangleId: number | null,
+): boolean {
+  const hit = hitTarget(routedItems, point, scale)
+  if (hit) {
+    if (tool === 'select' || hit.kind !== 'rectangle') return false
+    const box = routedItems.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === hit.id)
+    if (!box || box.classBox || pointInEdgeBand(box, toItemFrame(box, point), EDGE_BAND_PX / scale)) return false
+  }
+  const selectedBox = selectedRectangleId === null ? null : routedItems.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === selectedRectangleId) ?? null
+  if (selectedBox) {
+    if (pointInEdgeBand(selectedBox, toItemFrame(selectedBox, point), 26 / scale)) return false
+    if (selectedBox.inkBox && (hitInkBoxMoveGrip(selectedBox, point, scale) || hitInkBoxDivider(selectedBox, point, 14 / scale))) return false
+  }
+  if ((tool === 'select' || tool === 'lasso') && selectedKeys.size > 0) {
+    const bounds = getCanvasSelectionBounds(routedItems as CanvasItem[], selectedKeys)
+    const pad = 14 / scale
+    if (bounds && point.x >= bounds.x - pad && point.x <= bounds.x + bounds.width + pad && point.y >= bounds.y - pad && point.y <= bounds.y + bounds.height + pad) return false
+  }
+  return true
+}
+
+/** What a finished click pair does: nothing, or make a label (`revert`: put the items from before the first click back first). */
+export type LabelDecision = { create: false } | { create: true; revert: boolean }
+
+export function labelDoubleClickDecision(input: {
+  pair: ClickPair | null
+  routedItems: readonly CanvasItem[]
+  point: Point
+  scale: number
+  tool: ClickTool
+  /** The tool's own click already opens an editor (Text, class box dialog). */
+  toolOpensEditor: boolean
+  selectedKeys: ReadonlySet<string>
+  selectedRectangleId: number | null
+  /** Whether the two clicks changed the items. */
+  itemsChanged: boolean
+}): LabelDecision {
+  const { pair } = input
+  if (!pair || pair.phase !== 'up2' || pair.moved || input.toolOpensEditor) return { create: false }
+  if (!emptyForLabel(input.routedItems, input.point, input.scale, input.tool, input.selectedKeys, input.selectedRectangleId)) return { create: false }
+  // The eraser really erased something: the user was erasing, not asking for a label.
+  if (input.tool === 'eraser' && input.itemsChanged) return { create: false }
+  return { create: true, revert: input.itemsChanged }
 }

@@ -58,7 +58,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, canvasCursor, clampMenuPosition, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, canvasCursor, clampMenuPosition, clickPairOnDown, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 const DOUBLE_TAP_MS = 400
@@ -211,6 +211,9 @@ function App() {
   const selectedRectangleIdRef = useRef<number | null>(null)
   const activeDragRef = useRef<{ pointerId: number; itemKey: string; start: Point; originalItems: CanvasItem[]; moved: boolean; editTextId?: number | null; editClassBoxId?: number | null } | null>(null)
   const textTapRef = useRef<{ pointerId: number; point: Point } | null>(null)
+  // Desktop double-click on empty canvas: the two clicks so far, and the items and history from before the first one.
+  const clickPairRef = useRef<ClickPair | null>(null)
+  const clickBeforeRef = useRef<{ items: CanvasItem[]; history: ReturnType<CanvasSnapshotHistory['capture']>; owner: CanvasSnapshotHistory } | null>(null)
   const classTapRef = useRef<{ pointerId: number; point: Point } | null>(null)
   /** The ink class box the current pen/eraser stroke started inside: the stroke is stored in the box. */
   const activeStrokeBoxRef = useRef<number | null>(null)
@@ -865,6 +868,9 @@ function App() {
     setTextEditor(null)
     renderAll()
   }
+
+  // A new empty label at the point (the Text tool's tap and the Desktop double-click on empty canvas): nothing is made until text is typed.
+  const openNewTextEditorAt = (point: Point) => openTextEditor({ itemId: null, x: point.x, y: point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
 
   const editTextItem = (item: TextObject) => openTextEditor({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text })
 
@@ -1957,6 +1963,7 @@ function App() {
       if (inputModeRef.current !== 'desktop') return
       event.preventDefault()
       if (anyGestureBusy() || touchNav.touchCount() > 0) return
+      clickPairRef.current = null
       const rect = canvas.getBoundingClientRect()
       const zoomAllowed = !navigationSettingsRef.current.zoomLocked
       if (event.ctrlKey && !zoomAllowed) return
@@ -2456,6 +2463,9 @@ function App() {
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     showPenButtonState('down', event)
+    // Any press ends a pending click pair unless it is the second plain click of one (decided below, once the press is known to start a gesture).
+    const priorClickPair = clickPairRef.current
+    clickPairRef.current = null
     lastPointerTypeRef.current = event.pointerType
     // A pen landing ends a mouse marquee still being dragged (the pen always wins over the mouse).
     if (event.pointerType === 'pen' && activeMarqueeRef.current) { activeMarqueeRef.current = null; renderAll() }
@@ -2495,6 +2505,11 @@ function App() {
     const buttonErase = !eraser && isPenButtonHeld(event.nativeEvent)
     penButtonEraseRef.current = buttonErase
     if (textEditorRef.current) commitTextEditor()
+    if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop' && event.button === 0 && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      const { pair, continued } = clickPairOnDown(priorClickPair, { x: event.clientX, y: event.clientY, at: performance.now(), context: `${pageIndexRef.current}:${clickToolName()}:${viewportRef.current.scale}:${viewportRef.current.offsetX}:${viewportRef.current.offsetY}` })
+      clickPairRef.current = pair
+      if (!continued) clickBeforeRef.current = { items: strokesRef.current.slice(), history: historyRef.current.capture(), owner: historyRef.current }
+    }
     if (event.pointerType === 'mouse') setMouseHover(null)
     if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') {
       if (event.shiftKey && !eraser) {
@@ -2815,6 +2830,7 @@ function App() {
     if (event.pointerType === 'pen') touchNav.penSeen(performance.now())
     moveEraserCursor(event)
     if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') cursorPointRef.current = getScreenPoint(event)
+    if (clickPairRef.current && event.pointerType === 'mouse') clickPairRef.current = clickPairOnMove(clickPairRef.current, event.clientX, event.clientY)
     const mousePan = mousePanRef.current
     if (mousePan && mousePan.pointerId === event.pointerId) {
       event.preventDefault()
@@ -3013,6 +3029,7 @@ function App() {
   }
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (clickPairRef.current && event.pointerType === 'mouse') clickPairRef.current = clickPairOnUp(clickPairRef.current, performance.now())
     if (snapStateRef.current?.pointerId === event.pointerId) clearSnapGuides()
     if (edgeHoldRef.current?.pointerId === event.pointerId) cancelEdgeHold()
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
@@ -3032,7 +3049,7 @@ function App() {
       textTapRef.current = null
       const existing = hitTestText(tap.point)
       if (existing) editTextItem(existing)
-      else openTextEditor({ itemId: null, x: tap.point.x, y: tap.point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
+      else openNewTextEditorAt(tap.point)
       return
     }
     if (classTapRef.current?.pointerId === event.pointerId) {
@@ -3175,6 +3192,7 @@ function App() {
   }
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    clickPairRef.current = null
     if (snapStateRef.current?.pointerId === event.pointerId) clearSnapGuides()
     if (edgeHoldRef.current?.pointerId === event.pointerId) cancelEdgeHold()
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
@@ -3554,8 +3572,34 @@ function App() {
     if (inputModeRef.current !== 'desktop' || lastPointerTypeRef.current !== 'mouse' || event.button !== 0 || textEditorRef.current || classBoxEditor) return
     const rect = event.currentTarget.getBoundingClientRect()
     const point = screenToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, viewportRef.current)
-    const target = doubleClickTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
-    if (target) openEditTarget(target)
+    const routed = routeConnectors(strokesRef.current)
+    const target = doubleClickTarget(routed, point, viewportRef.current.scale)
+    const pair = clickPairRef.current
+    const before = clickBeforeRef.current
+    clickPairRef.current = null
+    clickBeforeRef.current = null
+    if (target) { openEditTarget(target); return }
+    const anyGesture = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0
+    if (anyGesture || !before || before.owner !== historyRef.current || !isPointWithinBounds(point, sheetBoundsRef.current)) return
+    // Empty canvas, any tool: a new label, as one undo step (the label) or nothing. The two single clicks already ran through the tool.
+    const itemsChanged = !clickItemsUnchanged(before.items, strokesRef.current)
+    const decision = labelDoubleClickDecision({
+      pair, routedItems: routed, point, scale: viewportRef.current.scale, tool: clickToolName(),
+      toolOpensEditor: textMode || (classMode && !inkClassTool), selectedKeys: selectedKeysRef.current, selectedRectangleId: selectedRectangleIdRef.current, itemsChanged,
+    })
+    if (!decision.create) return
+    // Put back what the two clicks did (dot stroke, tiny shape, ...) and their history steps.
+    historyRef.current.restore(before.history)
+    setCanUndo(historyRef.current.canUndo)
+    setCanRedo(historyRef.current.canRedo)
+    if (decision.revert) {
+      strokesRef.current = before.items
+      setHasInk(strokesRef.current.length > 0)
+      reconcileSelectedItems()
+      scheduleAutosave()
+      renderAll()
+    }
+    openNewTextEditorAt(point)
   }
   const closeContextMenu = () => setContextMenu(null)
   // Right-click (Desktop mouse): selects the item under the pointer when it is not already selected, then opens the menu there.
@@ -3660,6 +3704,7 @@ function App() {
   }
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      clickPairRef.current = null
       const command = keyCommand(event, inputModeRef.current)
       if (!command) return
       const target = event.target as HTMLElement | null
