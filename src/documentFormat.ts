@@ -1,4 +1,5 @@
-import type { TextFontId, HldShape, CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
+import { clampCodeFontSize, cleanCodeLanguage, DEFAULT_CODE_FONT_SIZE, MAX_CODE_LENGTH, normalizeCodeText } from './codeBlock'
+import type { CodeObject, OpaqueObject, TextFontId, HldShape, CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 
 /**
  * Versioned InkPad document (.inkpad file / stored diagram).
@@ -67,6 +68,7 @@ const BACKGROUNDS: DocumentPageBackground[] = ['white', 'warm', 'blue', 'yellow'
 const TEXT_FONT_KINDS: string[] = ['excalifont', 'sans', 'serif', 'mono']
 const HLD_SHAPE_KINDS: string[] = ['database', 'queue', 'service']
 const RELATIONSHIPS: ConnectorRelationshipType[] = ['association', 'directed-association', 'inheritance', 'realization', 'dependency', 'aggregation', 'composition']
+const KNOWN_KINDS = ['stroke', 'rectangle', 'text', 'connector', 'code']
 const MAX_TITLE_LENGTH = 120
 const MAX_TEXT_LENGTH = 2000
 const MIN_FONT_SIZE = 4
@@ -141,7 +143,8 @@ export function sameSignature(a: DocumentSignature | null, b: DocumentSignature 
 /** Largest used id per kind + 1, so new items never collide with loaded ones. */
 export function getNextIds(items: CanvasItem[]): NextIds {
   const next: NextIds = { stroke: 1, rectangle: 1, connector: 1, text: 1 }
-  for (const item of items) next[item.kind] = Math.max(next[item.kind], item.id + 1)
+  // Code blocks share the text counter (their keys differ by kind, so ids never clash). Unknown items take no id from us.
+  for (const item of items) if (item.kind !== 'opaque') { const kind = item.kind === 'code' ? 'text' : item.kind; next[kind] = Math.max(next[kind], item.id + 1) }
   return next
 }
 
@@ -331,6 +334,13 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     if (value.fit === 'off' || (value.fit === 'wrap' && value.width > 0)) text.fit = value.fit
     return text
   }
+  if (value.kind === 'code') {
+    if (!isNum(value.x) || !isNum(value.y) || !isNum(value.width) || !isNum(value.height) || value.width < 0 || value.height < 0) return null
+    if (typeof value.text !== 'string') return null
+    const fontSize = isNum(value.fontSize) && clampCodeFontSize(value.fontSize) !== DEFAULT_CODE_FONT_SIZE ? clampCodeFontSize(value.fontSize) : undefined
+    const code: CodeObject = { kind: 'code', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, text: normalizeCodeText(value.text.slice(0, MAX_CODE_LENGTH * 2)), language: cleanCodeLanguage(value.language), ...(value.theme === 'dark' ? { theme: 'dark' as const } : {}), ...(fontSize !== undefined ? { fontSize } : {}) }
+    return code
+  }
   if (value.kind === 'connector') {
     const start = sanitizePoint(value.start)
     const end = sanitizePoint(value.end)
@@ -347,13 +357,23 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     }
     return connector
   }
-  return null
+  return opaqueItem(value)
+}
+
+/** An item of a kind this version does not know (it needs a string kind and the numeric id checked above): kept as it was read, with its box when it has a finite one. */
+function opaqueItem(value: Record<string, unknown>): OpaqueObject | null {
+  if (typeof value.kind !== 'string' || KNOWN_KINDS.includes(value.kind)) return null
+  const hasBox = isNum(value.x) && isNum(value.y) && isNum(value.width) && isNum(value.height) && value.width >= 0 && value.height >= 0
+  const item: OpaqueObject = { kind: 'opaque', id: value.id as number, box: hasBox ? { x: value.x as number, y: value.y as number, width: value.width as number, height: value.height as number } : null, raw: value }
+  // Written back as it was read (JSON.stringify and the saved copies call this); a plain property so clones keep it.
+  Object.defineProperty(item, 'toJSON', { value: () => value, enumerable: false })
+  return item
 }
 
 function dropDuplicateIds(items: CanvasItem[]): CanvasItem[] {
   const seen = new Set<string>()
   return items.filter((item) => {
-    const key = `${item.kind}:${item.id}`
+    const key = item.kind === 'opaque' ? `opaque:${String(item.raw.kind)}:${item.id}` : `${item.kind}:${item.id}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
@@ -374,6 +394,7 @@ function repairAttachments(items: CanvasItem[]): CanvasItem[] {
 }
 
 function cloneItem(item: CanvasItem): CanvasItem {
+  if (item.kind === 'opaque') return item // never edited, so shared as it is
   if (item.kind === 'stroke') return { ...item, points: item.points.map((point) => ({ ...point })) }
   if (item.kind === 'rectangle' && (item.classBox || item.inkBox)) {
     return {

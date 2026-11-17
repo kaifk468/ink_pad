@@ -4,6 +4,9 @@ import { hldOutlinePath } from './hldShapes'
 import { isSketchyRectangle, plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokePath } from './sketchy'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 import { getClassBoxGeometry, type ClassBoxCompartment } from './classBoxLayout'
+import { CODE_FONT_FAMILY, codeColors, codeGeometry } from './codeBlock'
+import { getCodeLines } from './codeHighlight'
+import type { CodeObject, OpaqueObject } from './canvasModel'
 import { getTextBaselines, labelLines, TEXT_FONT_FAMILY, textFontFamily } from './textLayout'
 
 export type ExportTemplate = 'blank' | 'lined' | 'dotted'
@@ -200,10 +203,42 @@ function rotated(item: CanvasItem, markup: string): string {
   return `<g transform="rotate(${n((angle * 180) / Math.PI)} ${n(c.x)} ${n(c.y)})">${markup}</g>`
 }
 
+let codeCount = 0
+
+/** A code block as plain SVG: background, line numbers and the coloured text (coloured only if the highlighter had loaded). */
+function codeElement(item: CodeObject): string {
+  const colors = codeColors(item)
+  const lines = getCodeLines(item)
+  const fontSize = codeGeometry(item, lines.length, 1).fontSize
+  const geometry = codeGeometry(item, lines.length, fontSize * 0.6)
+  const clipId = `code-clip-${(codeCount += 1)}`
+  const family = esc(CODE_FONT_FAMILY)
+  const body = lines.slice(0, geometry.visibleLines).map((tokens, index) => {
+    const y = n(item.y + geometry.firstBaseline + index * geometry.lineHeight)
+    const number = `<text x="${n(item.x + geometry.gutterRight)}" y="${y}" text-anchor="end" fill="${colors.gutter}">${index + 1}</text>`
+    const code = tokens.length === 0 ? '' : `<text x="${n(item.x + geometry.textX)}" y="${y}" fill="${colors.plain}" xml:space="preserve">${tokens.map((token) => (token.kind === 'plain' ? esc(token.text) : `<tspan fill="${colors[token.kind]}">${esc(token.text)}</tspan>`)).join('')}</text>`
+    return number + code
+  }).join('')
+  return `<g><clipPath id="${clipId}"><rect x="${n(item.x)}" y="${n(item.y)}" width="${n(item.width)}" height="${n(item.height)}"/></clipPath>`
+    + `<rect x="${n(item.x + 0.5)}" y="${n(item.y + 0.5)}" width="${n(item.width - 1)}" height="${n(item.height - 1)}" fill="${colors.background}" stroke="${colors.border}" stroke-width="1"/>`
+    + `<g clip-path="url(#${clipId})" font-family="${family}" font-size="${fontSize}">${body}</g></g>`
+}
+
+/** A kind this InkPad does not know: a plain grey box with a short label (nothing at all when it had no usable box). */
+function opaqueElement(item: OpaqueObject): string {
+  if (!item.box) return ''
+  const { x, y, width, height } = item.box
+  const kind = typeof item.raw.kind === 'string' ? item.raw.kind.slice(0, 24) : 'item'
+  return `<rect x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}" fill="#e5e7eb" stroke="#9ca3af" stroke-width="1"/>`
+    + `<text x="${n(x + 8)}" y="${n(y + 18)}" font-family="${esc(TEXT_FONT_FAMILY)}" font-size="12" fill="#6b7280">${esc(`Unsupported: ${kind}`)}</text>`
+}
+
 function itemElement(item: CanvasItem): string {
   if (item.kind === 'text') return rotated(item, textElement(item))
   if (item.kind === 'rectangle') return rotated(item, rectangleElement(item))
   if (item.kind === 'connector') return connectorElement(item)
+  if (item.kind === 'code') return codeElement(item)
+  if (item.kind === 'opaque') return opaqueElement(item)
   return strokeElement(item)
 }
 
@@ -223,6 +258,7 @@ export function buildSheetSvg(rawItems: CanvasItem[], options: SheetExportOption
 function buildSheetSvgInner(rawItems: CanvasItem[], options: SheetExportOptions): string {
   const items = routeConnectors(rawItems)
   inkBoxCount = 0
+  codeCount = 0
   const { width, height } = options
   const defs: string[] = []
   let body = ''
@@ -287,6 +323,9 @@ export function getContentBounds(rawItems: CanvasItem[], sheet: { width: number;
       const box = rotatedItemBounds(item)
       include(box.x, box.y, 0)
       include(box.x + box.width, box.y + box.height, 0)
+    } else if (item.kind === 'code' || item.kind === 'opaque') {
+      const box = item.kind === 'code' ? item : item.box
+      if (box) { include(box.x, box.y, 1); include(box.x + box.width, box.y + box.height, 1) }
     } else if (item.kind === 'rectangle') {
       const box = rotatedItemBounds(item)
       include(box.x, box.y, item.strokeWidth)

@@ -15,7 +15,7 @@ export type IdCounters = { stroke: number; rectangle: number; connector: number;
 
 /** A deep clone of the selected items (page order), with the derived elbow path left out so only saved fields are copied. */
 export function copyItems(items: readonly CanvasItem[], keys: ReadonlySet<string>): CanvasItem[] {
-  const chosen = items.filter((item) => keys.has(canvasItemKey(item)))
+  const chosen = items.filter((item) => item.kind !== 'opaque' && keys.has(canvasItemKey(item)))
   return cloneCanvasItems(chosen).map((item) => {
     if (item.kind !== 'connector' || item.routedPath === undefined) return item
     const { routedPath: _routedPath, ...saved } = item
@@ -61,6 +61,8 @@ export function pasteItems(clip: readonly CanvasItem[], counters: IdCounters, of
       const copy: TextObject = { ...item, id: next.text++, x: item.x + dx, y: item.y + dy }
       return copy
     }
+    if (item.kind === 'code') return { ...item, id: next.text++, x: item.x + dx, y: item.y + dy } // code blocks share the label counter
+    if (item.kind === 'opaque') return item
     if (item.kind === 'connector') {
       const { startAttachment, endAttachment, ...rest } = item
       const copy: ConnectorObject = {

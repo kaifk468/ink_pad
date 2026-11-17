@@ -140,7 +140,7 @@ export function spaceIsPanKey(key: string, targetTag: string, isEditable: boolea
  * - A plain letter picks a tool, and picking the tool already active leaves it active ("set", not "toggle"):
  *   P pen, V select, E eraser, T text, L lasso, C connector, B class box, and the shapes R rectangle, D diamond, O ellipse, A arrow, I line.
  */
-export type KeyTool = 'pen' | 'select' | 'eraser' | 'text' | 'lasso' | 'connector' | 'classBox' | 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'
+export type KeyTool = 'pen' | 'select' | 'eraser' | 'text' | 'code' | 'lasso' | 'connector' | 'classBox' | 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'
 export type KeyCommand =
   | { kind: 'undo' }
   | { kind: 'redo' }
@@ -158,7 +158,7 @@ export type KeyCommand =
   | { kind: 'edit' }
   | { kind: 'tool'; tool: KeyTool }
 
-export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
+export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', k: 'code', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
 
 const ARROW_KEYS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
 
@@ -210,10 +210,10 @@ export function isTypingTarget(tag: string, isEditable: boolean): boolean {
  * order (text, then box, then connector; the topmost of each) and the same tolerances as the select tool.
  * Pass the connector-routed items so elbow connectors are hit where they are drawn.
  */
-export type HitTarget = { key: string; kind: 'rectangle' | 'connector' | 'text' | 'stroke'; id: number }
+export type HitTarget = { key: string; kind: 'rectangle' | 'connector' | 'text' | 'code' | 'stroke'; id: number }
 
 export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scale: number): HitTarget | null {
-  const pick = (kind: 'rectangle' | 'connector' | 'text', test: (item: CanvasItem) => boolean): HitTarget | null => {
+  const pick = (kind: 'rectangle' | 'connector' | 'text' | 'code', test: (item: CanvasItem) => boolean): HitTarget | null => {
     for (let index = routedItems.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
       if (item.kind === kind && test(item)) return { key: canvasItemKey(item), kind, id: item.id }
@@ -221,6 +221,7 @@ export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scal
     return null
   }
   return pick('text', (item) => itemHitTest(item, point, 8 / scale))
+    ?? pick('code', (item) => itemHitTest(item, point, 8 / scale))
     ?? pick('rectangle', (item) => {
       if (item.kind !== 'rectangle') return false
       const pad = Math.max(8 / scale, item.strokeWidth * 2)
@@ -388,13 +389,13 @@ export function escapeAction(state: { cancelableGesture: boolean; anyGesture: bo
 /**
  * Step 11: right-click menu, double-click and Enter to edit, and the cursor per tool (Desktop mode only).
  */
-export type EditTarget = { kind: 'text' | 'classBox'; id: number }
+export type EditTarget = { kind: 'text' | 'classBox' | 'code'; id: number }
 
 /** What a double-click on the target edits: a text label, or a class box (not an ink box, which is written in, nor an oval). */
 export function doubleClickTarget(routedItems: readonly CanvasItem[], point: Point, scale: number): EditTarget | null {
   const target = hitTarget(routedItems, point, scale)
   if (!target) return null
-  if (target.kind === 'text') return { kind: 'text', id: target.id }
+  if (target.kind === 'text' || target.kind === 'code') return { kind: target.kind, id: target.id }
   if (target.kind !== 'rectangle') return null
   const box = routedItems.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === target.id)
   return box?.classBox && !box.inkBox && !box.ellipse && !box.diamond ? { kind: 'classBox', id: box.id } : null
@@ -408,7 +409,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
   const [key] = [...all]
   const item = items.find((candidate) => canvasItemKey(candidate) === key)
   if (!item) return null
-  if (item.kind === 'text') return { kind: 'text', id: item.id }
+  if (item.kind === 'text' || item.kind === 'code') return { kind: item.kind, id: item.id }
   return item.kind === 'rectangle' && item.classBox && !item.inkBox && !item.ellipse && !item.diamond ? { kind: 'classBox', id: item.id } : null
 }
 

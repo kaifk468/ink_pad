@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import ts from 'typescript'
 
-const source = await readFile(new URL('../src/documentFormat.ts', import.meta.url), 'utf8')
-const output = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
-}).outputText
-const doc = await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`)
+import { loadModule } from './helpers/loadModule.mjs'
+
+const doc = await loadModule('documentFormat.ts')
 
 const p = (x, y, pressure = 0.5) => ({ x, y, pressure })
 const sampleItems = () => [
@@ -65,7 +61,7 @@ test('malformed items are dropped and counted, valid ones survive', () => {
     { kind: 'stroke', id: 1, points: [], color: '#111', width: 3 },
     { kind: 'stroke', id: 2, points: [{ x: 'a', y: 1 }], color: '#111', width: 3 },
     { kind: 'rectangle', id: 3, x: NaN, y: 0, width: 1, height: 1, strokeColor: '#111', strokeWidth: 1 },
-    { kind: 'circle', id: 4 },
+    { kind: 'text', id: 4 },
     null,
     { kind: 'rectangle', id: 5, x: 0, y: 0, width: 10, height: 10, strokeColor: '#111', strokeWidth: 2 },
   ]

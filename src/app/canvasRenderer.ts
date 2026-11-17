@@ -9,6 +9,7 @@ import { getCachedTextMeasure, getTextBaselines, labelLines, textFont, type Text
 import type { MinimapGeometry } from '../viewport'
 import { isSketchyRectangle } from '../sketchy'
 import { drawSketchyConnector, fillRectangle, strokeSketchyRectangle, strokeSketchyStroke } from './sketchyRender'
+import { drawCode, drawOpaque } from './codeRenderer'
 
 /** Canvas drawing for every item kind. Pure functions of (context, item, settings): no React state. */
 
@@ -411,6 +412,8 @@ export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, stroke
   if (item.kind === 'rectangle') drawRectangle(ctx, item, strokeDisplayMode, sketchy)
   else if (item.kind === 'text') drawText(ctx, item)
   else if (item.kind === 'connector') drawConnector(ctx, item, item.strokeColor, item.strokeWidth, sketchy)
+  else if (item.kind === 'code') drawCode(ctx, item)
+  else if (item.kind === 'opaque') drawOpaque(ctx, item)
   else drawStroke(ctx, item, strokeDisplayMode, sketchy)
 }
 
@@ -427,6 +430,14 @@ export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasIte
       const box = rotatedItemBounds(item)
       ctx.fillRect(toMiniX(box.x), toMiniY(box.y), Math.max(1, box.width * geometry.scale), Math.max(1, box.height * geometry.scale))
       ctx.globalAlpha = 1
+    } else if (item.kind === 'code' || item.kind === 'opaque') {
+      // A simple box: the block's own background (grey for an unknown item).
+      const box = item.kind === 'code' ? item : item.box
+      if (box) {
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.fillStyle = item.kind === 'code' ? (item.theme === 'dark' ? '#4b5563' : '#cbd5e1') : '#d1d5db'
+        ctx.fillRect(toMiniX(box.x), toMiniY(box.y), Math.max(1, box.width * geometry.scale), Math.max(1, box.height * geometry.scale))
+      }
     } else if (item.kind === 'rectangle') {
       ctx.globalCompositeOperation = 'source-over'
       ctx.strokeStyle = item.strokeColor

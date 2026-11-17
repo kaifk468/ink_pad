@@ -6,6 +6,7 @@ import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import type { TextFontId } from '../canvasModel'
 import { TEXT_FONTS, TEXT_FONT_SIZES } from '../textLayout'
 import { FILL_PRESETS } from '../shapeFill'
+import { CODE_LANGUAGES } from '../codeBlock'
 import { COLORS, MAX_STROKE_WIDTH, MIN_STROKE_WIDTH, WIDTHS } from './appConfig'
 
 type RelationshipProps = {
@@ -60,6 +61,8 @@ type ContextPanelProps = {
   fill?: { color: string | 'none' | null; onFill: (hex: string | null, commit: boolean) => void; onMatchOutline: (hex: string) => void; outlineFor: (fill: string | null) => string | null } | null
   /** The selected label or plain shape that can be rotated: its angle in degrees, and the buttons that set it. */
   rotation?: { degrees: number; onAlign: () => void; onReset: () => void } | null
+  /** Desktop: the one selected code block's language, light/dark choice and text size. */
+  code?: { language: string; dark: boolean; fontSize: number; canSmaller: boolean; canLarger: boolean; onLanguage: (id: string) => void; onTheme: (dark: boolean) => void; onFontSize: (direction: 1 | -1) => void; onEdit: () => void } | null
   objectEraser?: boolean
   eraserSize?: number
   onEraserMode?: (whole: boolean) => void
@@ -103,7 +106,7 @@ function ColorChoices({ value, label, onChange }: { value: string; label: string
 /** Settings that only appear when the active tool or selection needs them. */
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.showTextSizes && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -148,7 +151,7 @@ export function ContextPanel(props: ContextPanelProps) {
           </button>
         </div>}
       </>}
-      {props.showSelectionColor && props.onSelectionColor && <div className="selection-color">
+      {props.showSelectionColor && !props.code && props.onSelectionColor && <div className="selection-color">
         <span className="panel-label">Colour of this object</span>
         <ColorChoices value={props.selectionColor ?? '#202124'} label="Object colour" onChange={props.onSelectionColor} />
       </div>}
@@ -170,6 +173,22 @@ export function ContextPanel(props: ContextPanelProps) {
           <button className="clear-selection-button" type="button" aria-label="Reset rotation" title="Back to upright" disabled={props.rotation.degrees === 0} onClick={props.rotation.onReset}>Reset</button>
         </div>
         <span className="panel-hint">Drag the round handle above it to rotate; hold Shift to snap to 15°.</span>
+      </div>}
+      {props.code && <div className="code-controls" role="group" aria-label="Code block">
+        <span className="panel-label">Code block</span>
+        <select className="relationship-select" aria-label="Code language" value={props.code.language} onChange={(event) => props.code?.onLanguage(event.target.value)}>
+          {CODE_LANGUAGES.map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}
+        </select>
+        <div className="routing-toggle" role="group" aria-label="Code theme">
+          <button type="button" className={props.code.dark ? '' : 'active'} aria-pressed={!props.code.dark} onClick={() => props.code?.onTheme(false)}>Light</button>
+          <button type="button" className={props.code.dark ? 'active' : ''} aria-pressed={props.code.dark} onClick={() => props.code?.onTheme(true)}>Dark</button>
+        </div>
+        <div className="code-row" role="group" aria-label="Code text size">
+          <button className="clear-selection-button" type="button" aria-label="Smaller code text" disabled={!props.code.canSmaller} onClick={() => props.code?.onFontSize(-1)}>A-</button>
+          <span className="panel-label">{props.code.fontSize} px</span>
+          <button className="clear-selection-button" type="button" aria-label="Larger code text" disabled={!props.code.canLarger} onClick={() => props.code?.onFontSize(1)}>A+</button>
+        </div>
+        <button className="clear-selection-button" type="button" aria-label="Edit code" title="Edit the code (Enter or double-click)" onClick={props.code.onEdit}>Edit code</button>
       </div>}
       {props.showEraser && <div className="eraser-panel" role="group" aria-label="Eraser options">
         <span className="panel-label">Mode</span>

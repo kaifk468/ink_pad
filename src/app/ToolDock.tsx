@@ -36,6 +36,8 @@ type ToolDockProps = {
   desktop?: boolean
   tidyLabel: string
   onTidy: () => void
+  /** Desktop only: adds a code block at the middle of the view. */
+  onCode?: () => void
 }
 
 const DESKTOP_SHAPES: Array<{ kind: 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'; label: string; key: string; icon: JSX.Element }> = [
@@ -106,7 +108,7 @@ export function ToolDock(props: ToolDockProps) {
         {divider}
         {inkClass}
         {divider}
-        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} />
+        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} />
       </nav>
     )
   }

@@ -10,7 +10,7 @@ import { tidyItems, tidyScope } from './tidyLayout'
 import { HLD_DEFAULT_SIZE, createHldShape, type HldShape } from './hldShapes'
 import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
 import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, hitInkBoxMoveGrip, inkBoxMoveGrip, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
-import type { CanvasItem, ClassBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
+import type { CanvasItem, ClassBoxContent, CodeObject, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
 import { itemHitTest, selectItemsByLasso } from './lassoSelection'
 import { loadStrokeDisplayMode, saveStrokeDisplayMode, type StrokeDisplayMode } from './strokeDisplayMode'
 import { MAX_PREDICTION_DISTANCE_SCREEN_PX, getPointerSamples, getPredictedPoints } from './pointerSamples'
@@ -31,6 +31,9 @@ import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawIt
 import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
 import { UmlConnectorIcon } from './app/UmlConnectorIcon'
 import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
+import { CodeEditorOverlay } from './CodeEditorOverlay'
+import { DEFAULT_CODE_HEIGHT, DEFAULT_CODE_WIDTH, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, codeFontSize, createCodeObject, setCodeFontSize, setCodeLanguage, setCodeText, setCodeTheme, stepCodeFontSize } from './codeBlock'
+import { ensureCodeHighlighter, isCodeHighlighterReady, onCodeHighlighterReady } from './codeHighlight'
 import { ClassBoxDialog } from './ClassBoxDialog'
 import { AccountButton } from './app/AccountButton'
 import { ContextPanel } from './app/ContextPanel'
@@ -532,6 +535,9 @@ function App() {
   const [textFontId, setTextFontId] = useState<TextFontId>(DEFAULT_TEXT_FONT)
   const [selectedTextId, setSelectedTextId] = useState<number | null>(null)
   const [textEditor, setTextEditor] = useState<TextEditorState | null>(null)
+  const [codeEditor, setCodeEditor] = useState<{ id: number } | null>(null)
+  const codeEditorRef = useRef<{ id: number } | null>(null)
+  const codeEditorValueRef = useRef('')
   const [lassoMode, setLassoMode] = useState(false)
   const [connectorMode, setConnectorMode] = useState(false)
   const [umlConnectorType, setUmlConnectorType] = useState<ConnectorRelationshipType | null>(null)
@@ -738,10 +744,11 @@ function App() {
     const routedItems = routeConnectors(strokesRef.current)
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
-      if (item.kind === 'text') {
+      if (item.kind === 'text' || item.kind === 'code') {
         if (itemHitTest(item, point, 8 / viewportRef.current.scale)) return index
         continue
       }
+      if (item.kind === 'opaque') continue
       if (item.kind === 'rectangle') {
         const pad = Math.max(8 / viewportRef.current.scale, item.strokeWidth * 2)
         if (point.x >= item.x - pad && point.x <= item.x + item.width + pad && point.y >= item.y - pad && point.y <= item.y + item.height + pad) return index
@@ -1108,6 +1115,7 @@ function App() {
     } else {
       // A text label has resize handles, which work in the select and lasso tools.
       if (item.kind === 'text' && !selectionMode && !lassoMode) toggleSelectTool()
+      if (item.kind === 'code' && !selectionMode && !lassoMode) toggleSelectTool()
       setSelectedRectangle(null)
       updateSelectedItems([target.key])
     }
@@ -1526,7 +1534,7 @@ function App() {
         if (itemAngle(item) !== 0) { ctx.translate(item.x + item.width / 2, item.y + item.height / 2); ctx.rotate(itemAngle(item)); ctx.strokeRect(-item.width / 2 - 5, -item.height / 2 - 5, item.width + 10, item.height + 10) }
         else ctx.strokeRect(item.x - 5, item.y - 5, item.width + 10, item.height + 10)
         ctx.restore()
-      } else if (item.kind === 'text') {
+      } else if (item.kind === 'text' || item.kind === 'code') {
         ctx.save()
         ctx.strokeStyle = '#5574ed'
         ctx.lineWidth = 2
@@ -1536,7 +1544,7 @@ function App() {
         ctx.restore()
       } else if (item.kind === 'connector') {
         drawConnector(ctx, item, '#5574ed', item.strokeWidth + 8)
-      } else if (!item.erase) {
+      } else if (item.kind === 'stroke' && !item.erase) {
         ctx.save()
         ctx.globalAlpha = 0.28
         drawStroke(ctx, { ...item, color: '#5574ed', width: item.width + 9 })
@@ -1572,6 +1580,7 @@ function App() {
       target.restore()
     } else {
       const redrawStartedAt = DRAW_READOUT_ENABLED && cacheAllowed ? performance.now() : 0
+      if (!isCodeHighlighterReady() && items.some((item) => item.kind === 'code')) ensureCodeHighlighter() // the library loads only once a code block is on the page
       canvasItemsForRendering(routeConnectors(items)).forEach((item) => { if (!isItemVisible(item, view)) return; if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(target, item) })
       if (redrawStartedAt) {
         // Time of this full redraw (zoom, pan, undo, erase, opening a diagram): JS drawing time, and time until the next frame starts.
@@ -1655,7 +1664,7 @@ function App() {
         ctx.strokeStyle = 'rgba(83, 111, 224, 0.55)'
         ctx.lineWidth = 1.5 / viewport.scale
         if (hovered.kind === 'rectangle') ctx.strokeRect(hovered.x - 4, hovered.y - 4, hovered.width + 8, hovered.height + 8)
-        else if (hovered.kind === 'text') ctx.strokeRect(hovered.x - 4, hovered.y - 4, hovered.width + 8, hovered.height + 8)
+        else if (hovered.kind === 'text' || hovered.kind === 'code') ctx.strokeRect(hovered.x - 4, hovered.y - 4, hovered.width + 8, hovered.height + 8)
         else if (hovered.kind === 'connector') drawConnector(ctx, hovered, 'rgba(83, 111, 224, 0.3)', hovered.strokeWidth + 6)
         ctx.restore()
       }
@@ -1681,7 +1690,7 @@ function App() {
       ? getCanvasSelectionBounds(routeConnectors(strokesRef.current), selectedKeysRef.current)
       : null
     const soleTextKey = !soleSelectedRectangle && selectedKeysRef.current.size === 1 ? [...selectedKeysRef.current][0] : null
-    const textBounds = soleTextKey?.startsWith('text:') ? getCanvasSelectionBounds(strokesRef.current, selectedKeysRef.current) : null
+    const textBounds = soleTextKey?.startsWith('text:') || soleTextKey?.startsWith('code:') ? getCanvasSelectionBounds(strokesRef.current, selectedKeysRef.current) : null
     const resizeBounds = rotatedSelected ? undefined : soleSelectedRectangle ?? groupBounds ?? textBounds ?? undefined
     if (rotatableSelected) {
       // Excalidraw-style rotate handle above the item; a rotated item is outlined rotated and has no resize handles.
@@ -2616,7 +2625,7 @@ function App() {
       const singleSelectedRectangle = selectedItems.length === 1 && selectedItems[0].kind === 'rectangle' ? selectedItems[0] : null
       const selectedBounds = singleSelectedRectangle
         ? { x: singleSelectedRectangle.x, y: singleSelectedRectangle.y, width: singleSelectedRectangle.width, height: singleSelectedRectangle.height }
-        : (selectedItems.length > 1 || (selectedItems.length === 1 && selectedItems[0].kind === 'text')) ? getCanvasSelectionBounds(routeConnectors(strokesRef.current), selectedKeysRef.current) : null
+        : (selectedItems.length > 1 || (selectedItems.length === 1 && selectedItems[0].kind === 'text') || (selectedItems.length === 1 && selectedItems[0].kind === 'code')) ? getCanvasSelectionBounds(routeConnectors(strokesRef.current), selectedKeysRef.current) : null
       const resizeHandle = selectedBounds ? hitTestRectangleResizeHandle(selectedBounds, point, 14 / viewportRef.current.scale) : null
       if (selectedBounds && resizeHandle) {
         event.currentTarget.setPointerCapture(event.pointerId)
@@ -2663,7 +2672,7 @@ function App() {
     }
     if (selectionMode) {
       const soleTextKey = selectedKeysRef.current.size === 1 ? [...selectedKeysRef.current][0] : null
-      if (selectedKeysRef.current.size > 1 || soleTextKey?.startsWith('text:')) {
+      if (selectedKeysRef.current.size > 1 || soleTextKey?.startsWith('text:') || soleTextKey?.startsWith('code:')) {
         // A group selection (Shift + click, marquee, Select all): its handles resize it and pressing a member moves it, as with the lasso.
         const routed = routeConnectors(strokesRef.current)
         const groupBounds = getCanvasSelectionBounds(routed, selectedKeysRef.current)
@@ -3561,8 +3570,79 @@ function App() {
     return true
   }
 
+  // Code blocks (Desktop): create one at the middle of the view, edit it in an overlay, and change its language, theme and text size.
+  const soleCode = (): CodeObject | null => {
+    const keys = currentSelectionKeys()
+    if (keys.size !== 1) return null
+    const key = [...keys][0]
+    const item = key.startsWith('code:') ? strokesRef.current.find((candidate) => canvasItemKey(candidate) === key) : undefined
+    return item?.kind === 'code' ? item : null
+  }
+  const commitCodeEditor = () => {
+    const editor = codeEditorRef.current
+    if (!editor) return
+    codeEditorRef.current = null
+    setCodeEditor(null)
+    const next = setCodeText(strokesRef.current, editor.id, codeEditorValueRef.current)
+    if (next !== strokesRef.current) { saveHistory(); strokesRef.current = next }
+    renderAll()
+  }
+  const openCodeEditor = (id: number): boolean => {
+    if (inputModeRef.current !== 'desktop') return false
+    const item = strokesRef.current.find((candidate) => candidate.kind === 'code' && candidate.id === id)
+    if (!item) return false
+    if (textEditorRef.current) commitTextEditor()
+    if (codeEditorRef.current) commitCodeEditor()
+    codeEditorRef.current = { id }
+    codeEditorValueRef.current = item.kind === 'code' ? item.text : ''
+    setCodeEditor({ id })
+    return true
+  }
+  const insertCodeBlock = () => {
+    const canvas = canvasRef.current
+    if (!canvas || inputModeRef.current !== 'desktop') return
+    if (codeEditorRef.current) commitCodeEditor()
+    const rect = canvas.getBoundingClientRect()
+    const middle = screenToCanvasPoint({ x: rect.width / 2, y: rect.height / 2, pressure: 1 }, viewportRef.current)
+    const bounds = workspaceBoundsRef.current
+    const x = Math.max(bounds.x, Math.min(bounds.x + bounds.width - DEFAULT_CODE_WIDTH, middle.x - DEFAULT_CODE_WIDTH / 2))
+    const y = Math.max(bounds.y, Math.min(bounds.y + bounds.height - DEFAULT_CODE_HEIGHT, middle.y - DEFAULT_CODE_HEIGHT / 2))
+    saveHistory()
+    const block = createCodeObject(nextTextIdRef.current++, x, y)
+    strokesRef.current = [...strokesRef.current, block]
+    setHasInk(true)
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    setSelectedRectangle(null)
+    updateSelectedItems([canvasItemKey(block)])
+    openCodeEditor(block.id)
+    renderAll()
+  }
+  const changeCode = (change: (items: CanvasItem[], id: number) => CanvasItem[]) => {
+    const block = soleCode()
+    if (!block) return
+    const next = change(strokesRef.current, block.id)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+  }
+  const codeForPanel = inputMode === 'desktop' ? soleCode() : null
+  const codePanel = codeForPanel ? {
+    language: codeForPanel.language,
+    dark: codeForPanel.theme === 'dark',
+    fontSize: codeFontSize(codeForPanel),
+    canSmaller: codeFontSize(codeForPanel) > MIN_CODE_FONT_SIZE,
+    canLarger: codeFontSize(codeForPanel) < MAX_CODE_FONT_SIZE,
+    onLanguage: (language: string) => changeCode((items, id) => setCodeLanguage(items, id, language)),
+    onTheme: (dark: boolean) => changeCode((items, id) => setCodeTheme(items, id, dark ? 'dark' : 'light')),
+    onFontSize: (direction: 1 | -1) => changeCode((items, id) => setCodeFontSize(items, id, stepCodeFontSize(codeForPanel, direction))),
+    onEdit: () => { openCodeEditor(codeForPanel.id) },
+  } : null
+
   // Opens the editor of a text label or class box: the same editors and commit rules as a tap in the select tool.
-  const openEditTarget = (target: { kind: 'text' | 'classBox'; id: number }): boolean => {
+  const openEditTarget = (target: { kind: 'text' | 'classBox' | 'code'; id: number }): boolean => {
+    if (target.kind === 'code') return openCodeEditor(target.id)
     const item = strokesRef.current.find((candidate) => candidate.kind === (target.kind === 'text' ? 'text' : 'rectangle') && candidate.id === target.id)
     if (item?.kind === 'text') { editTextItem(item); return true }
     if (item?.kind === 'rectangle' && item.classBox) { openClassBoxEditor({ rectangleId: item.id, x: item.x, y: item.y, content: item.classBox }); return true }
@@ -3648,10 +3728,15 @@ function App() {
   }, [contextMenu])
   useEffect(() => { if (inputMode !== 'desktop') setContextMenu(null) }, [inputMode])
 
+  useEffect(() => { if (inputMode !== 'desktop') commitCodeEditor() }, [inputMode])
+  // When the highlighter library finishes loading, the saved picture of the page is stale (code drawn plain): draw it again.
+  useEffect(() => onCodeHighlighterReady(() => { historyCacheRef.current = null; renderAll() }), [renderAll])
+
   const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
   keyActionsRef.current = (command) => {
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
+    if (codeEditor) return false
     const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
     if (contextMenuRef.current) {
       // While the menu is open Escape closes it and no other shortcut runs.
@@ -3694,6 +3779,7 @@ function App() {
             setEraser(true)
             break
           case 'text': if (!textMode) toggleTextTool(); break
+          case 'code': insertCodeBlock(); break
           case 'lasso': if (!lassoMode) toggleLassoTool(); break
           case 'connector': if (!connectorMode) toggleConnectorTool(); break
           case 'classBox': if (!(classMode && inkClassTool && hldShapeTool === null)) toggleInkClassTool(); break
@@ -3764,6 +3850,10 @@ function App() {
           onCommit={commitTextEditor}
           onCancel={cancelTextEditor}
         />}
+        {codeEditor && inputMode === 'desktop' && (() => {
+          const block = strokesRef.current.find((candidate) => candidate.kind === 'code' && candidate.id === codeEditor.id)
+          return block?.kind === 'code' ? <CodeEditorOverlay key={codeEditor.id} item={block} viewport={viewportRef.current} onChange={(value) => { codeEditorValueRef.current = value }} onCommit={commitCodeEditor} /> : null
+        })()}
         {!hasInk && <div className="canvas-hint" aria-hidden="true">{inputMode === 'desktop' ? 'Draw here with your mouse' : 'Draw here with your S Pen'}</div>}
         <aside
           ref={umlToolboxRef}
@@ -3925,6 +4015,7 @@ function App() {
           : null}
         showEraser={inputMode === 'desktop' && eraser}
         rotation={rotationPanel}
+        code={codePanel}
         objectEraser={objectEraser}
         eraserSize={eraserSize}
         onEraserMode={(whole) => { setObjectEraser(whole); setEraser(true) }}
@@ -3989,6 +4080,7 @@ function App() {
         onShapes={toggleShapeTool}
         tidyLabel={tidyScope(strokesRef.current, selectedKeysRef.current).selection ? 'Tidy selected' : 'Tidy all'}
         onTidy={tidyDiagram}
+        onCode={insertCodeBlock}
       />
       {classBoxEditor && <ClassBoxDialog
         key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}

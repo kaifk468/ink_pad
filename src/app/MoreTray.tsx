@@ -7,10 +7,12 @@ type MoreTrayProps = {
   /** Desktop: the typed UML class box lives here instead of on the dock. */
   onTypedClass?: () => void
   typedClassActive?: boolean
+  /** Desktop: adds a code block. */
+  onCode?: () => void
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -46,6 +48,12 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive }: 
           <div className="insert-tray-heading">LLD</div>
           <button className={`insert-entry${typedClassActive ? ' selected' : ''}`} type="button" aria-label="Typed class box" aria-pressed={typedClassActive} title="Click the sheet to add a typed UML class box; click a box to edit it" onClick={() => { onTypedClass(); setOpen(false) }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9.5h16M4 14.5h16"/></svg><span>Typed class box</span>
+          </button>
+        </>}
+        {onCode && <>
+          <div className="insert-tray-heading">Code</div>
+          <button className="insert-entry" type="button" aria-label="Code block" title="Add a code block in the middle of the view (K)" onClick={() => { onCode(); setOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 8-4 4 4 4M15 8l4 4-4 4"/></svg><span>Code block</span>
           </button>
         </>}
         <div className="insert-tray-heading">Layout</div>

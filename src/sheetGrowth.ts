@@ -10,6 +10,7 @@ export function itemBottom(item: CanvasItem): number {
     return bottom + item.width / 2
   }
   if (item.kind === 'connector') return Math.max(item.start.y, item.end.y) + item.strokeWidth
+  if (item.kind === 'opaque') return item.box ? item.box.y + item.box.height : 0
   return item.y + item.height
 }
 

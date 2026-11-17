@@ -80,7 +80,8 @@ export function itemInkBounds(item: CanvasItem): Bounds {
     const pad = item.strokeWidth + 4
     return { minX: item.x - pad, minY: item.y - pad, maxX: item.x + item.width + pad, maxY: item.y + item.height + pad }
   }
-  if (item.kind === 'text') return { minX: item.x - 4, minY: item.y - 4, maxX: item.x + item.width + 4, maxY: item.y + item.height + 4 }
+  if (item.kind === 'opaque') return item.box ? { minX: item.box.x, minY: item.box.y, maxX: item.box.x + item.box.width, maxY: item.box.y + item.box.height } : { minX: 0, minY: 0, maxX: 0, maxY: 0 }
+  if (item.kind === 'text' || item.kind === 'code') return { minX: item.x - 4, minY: item.y - 4, maxX: item.x + item.width + 4, maxY: item.y + item.height + 4 }
   const pad = Math.max(item.strokeWidth * 4, 60)
   return {
     minX: Math.min(item.start.x, item.end.x) - pad,

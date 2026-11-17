@@ -1,3 +1,6 @@
+/** Smallest code block a resize may give (same numbers as MIN_CODE_WIDTH / MIN_CODE_HEIGHT in codeBlock.ts; a test checks they agree, and this module takes no value imports). */
+const MIN_CODE_WIDTH = 96
+const MIN_CODE_HEIGHT = 48
 export type Point = { x: number; y: number; pressure: number }
 export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line' }
 /** Ink class box: three bands (name, variables, methods) divided at the canvas heights `top` and `mid`, holding its own pen strokes (canvas coordinates). */
@@ -33,7 +36,14 @@ export type ConnectorObject = {
   /** The right-angle path worked out for an elbow connector. Derived while drawing, never saved: only on copies made by routeConnectors. */
   routedPath?: Point[]
 }
-export type CanvasItem = Stroke | RectangleObject | ConnectorObject | TextObject
+/** A code block: monospaced, syntax coloured, with line numbers. `theme` and `fontSize` are written only when not the default (light, 13). */
+export type CodeObject = { kind: 'code'; id: number; x: number; y: number; width: number; height: number; text: string; language: string; theme?: 'dark'; fontSize?: number }
+/**
+ * An item of a kind this InkPad does not know (saved by a newer copy). It is kept as read and written back unchanged (`raw`), and shown as a grey box.
+ * `box` is its saved position and size when it had a usable one. It is never edited, selected or moved.
+ */
+export type OpaqueObject = { kind: 'opaque'; id: number; box: RectangleBounds | null; raw: Record<string, unknown> }
+export type CanvasItem = Stroke | RectangleObject | ConnectorObject | TextObject | CodeObject | OpaqueObject
 export const CONNECTOR_SNAP_TOLERANCE = 36
 
 export function createConnector(
@@ -269,7 +279,7 @@ const sameColor = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
 /** The colour of one item: stroke colour, shape/connector stroke colour, or text colour. */
 export function itemColor(item: CanvasItem): string {
-  return item.kind === 'stroke' ? item.color : item.kind === 'text' ? item.color : item.strokeColor
+  return item.kind === 'stroke' ? item.color : item.kind === 'text' ? item.color : item.kind === 'code' ? (item.theme === 'dark' ? '#e6edf3' : '#24292f') : item.kind === 'opaque' ? '#9ca3af' : item.strokeColor
 }
 
 /** The one colour shared by every selected item, or null when they differ or nothing is selected. */
@@ -300,6 +310,8 @@ export function recolorItems(items: CanvasItem[], keys: ReadonlySet<string>, col
       if (!sameColor(item.color, color)) result = { ...item, color }
     } else if (item.kind === 'connector') {
       if (!sameColor(item.strokeColor, color)) result = { ...item, strokeColor: color }
+    } else if (item.kind === 'code' || item.kind === 'opaque') {
+      // Code blocks have their own light/dark choice; unknown items are never changed.
     } else {
       const inkChanged = !!item.inkBox && item.inkBox.ink.some((s) => !s.erase && !sameColor(s.color, color))
       if (!sameColor(item.strokeColor, color) || inkChanged) {
@@ -322,7 +334,7 @@ export function canvasItemKey(item: CanvasItem): string {
 
 /** The keys of every item on the page (select all). */
 export function allCanvasItemKeys(items: readonly CanvasItem[]): string[] {
-  return items.map(canvasItemKey)
+  return items.filter((item) => item.kind !== 'opaque').map(canvasItemKey)
 }
 
 /**
@@ -467,6 +479,14 @@ export function getCanvasSelectionBounds(items: CanvasItem[], selectedKeys: Read
       const box = rotatedItemBounds(item)
       include(box.x, box.y)
       include(box.x + box.width, box.y + box.height)
+    } else if (item.kind === 'code') {
+      include(item.x, item.y)
+      include(item.x + item.width, item.y + item.height)
+    } else if (item.kind === 'opaque') {
+      if (item.box) {
+        include(item.box.x, item.box.y)
+        include(item.box.x + item.box.width, item.box.y + item.box.height)
+      }
     } else if (!item.erase) {
       for (const point of item.points) include(point.x, point.y, item.width / 2)
       if (item.shape === 'arrow' && item.points.length >= 2) {
@@ -563,6 +583,13 @@ export function resizeSelectedItems(items: CanvasItem[], selectedKeys: ReadonlyS
         }
         : item
     }
+    if (item.kind === 'code') {
+      // A code block resizes as a box; its text size is changed with its own plus and minus buttons.
+      return selected
+        ? { ...item, x: bounds.x + (item.x - originalBounds.x) * scaleX, y: bounds.y + (item.y - originalBounds.y) * scaleY, width: Math.max(MIN_CODE_WIDTH, item.width * Math.abs(scaleX)), height: Math.max(MIN_CODE_HEIGHT, item.height * Math.abs(scaleY)) }
+        : item
+    }
+    if (item.kind === 'opaque') return item
     if (item.kind === 'stroke') {
       return selected
         ? { ...item, points: item.points.map(transformPoint), width: item.width * strokeScale }
@@ -625,7 +652,8 @@ export function cloneCanvasItems(items: CanvasItem[]): CanvasItem[] {
         ...(item.inkBox ? { inkBox: { ...item.inkBox, ink: item.inkBox.ink.map((stroke) => ({ ...stroke, points: stroke.points.map((point) => ({ ...point })) })) } } : {}),
       }
     }
-    if (item.kind === 'text') return { ...item }
+    if (item.kind === 'text' || item.kind === 'code') return { ...item }
+    if (item.kind === 'opaque') return item
     if (item.kind === 'connector') return {
       ...item,
       start: { ...item.start },
@@ -650,7 +678,8 @@ export function translateSelectedItems(items: CanvasItem[], selectedKeys: Readon
   return items.map((item) => {
     const itemSelected = selectedKeys.has(canvasItemKey(item))
     if (item.kind === 'rectangle') return itemSelected ? { ...item, x: item.x + dx, y: item.y + dy, ...(item.inkBox ? { inkBox: translateInkBox(item.inkBox, dx, dy) } : {}) } : item
-    if (item.kind === 'text') return itemSelected ? { ...item, x: item.x + dx, y: item.y + dy } : item
+    if (item.kind === 'text' || item.kind === 'code') return itemSelected ? { ...item, x: item.x + dx, y: item.y + dy } : item
+    if (item.kind === 'opaque') return item
     if (item.kind === 'connector') {
       const connectorSelected = itemSelected
       const startRectangleMoves = !!item.startAttachment && selectedRectangleIds.has(item.startAttachment.rectangleId)

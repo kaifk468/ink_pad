@@ -94,14 +94,14 @@ export function cullTargets(targets: readonly Bounds[], visible: Bounds, margin 
 
 /** Whether moving this selection may snap: it has a box or a text label (ink and connectors alone never snap). */
 export function selectionCanSnap(items: readonly CanvasItem[], keys: ReadonlySet<string>): boolean {
-  return items.some((item) => (item.kind === 'rectangle' || item.kind === 'text') && keys.has(canvasItemKey(item)))
+  return items.some((item) => (item.kind === 'rectangle' || item.kind === 'text' || item.kind === 'code') && keys.has(canvasItemKey(item)))
 }
 
 /** The boxes and labels that are not being moved, as bounds, ready to cull. Read once when a drag starts. */
 export function snapTargetsFor(items: readonly CanvasItem[], movingKeys: ReadonlySet<string>): Bounds[] {
   const targets: Bounds[] = []
   for (const item of items) {
-    if (item.kind !== 'rectangle' && item.kind !== 'text') continue
+    if (item.kind !== 'rectangle' && item.kind !== 'text' && item.kind !== 'code') continue
     const key = canvasItemKey(item)
     if (movingKeys.has(key)) continue
     const bounds = getCanvasSelectionBounds([item], new Set([key]))

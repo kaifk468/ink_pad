@@ -51,8 +51,12 @@ export function viewRectOf(viewport: Viewport, cssWidth: number, cssHeight: numb
   return { x: -viewport.offsetX / viewport.scale, y: -viewport.offsetY / viewport.scale, width: cssWidth / viewport.scale, height: cssHeight / viewport.scale }
 }
 
-/** Only pen strokes are skipped when off screen; rectangles, text and connectors are few and are always drawn. */
+/** Pen strokes and code blocks are skipped when off screen; rectangles, text and connectors are few and are always drawn. */
 export function isItemVisible(item: CanvasItem, view: ViewRect): boolean {
+  if (item.kind === 'code' || item.kind === 'opaque') {
+    const box = item.kind === 'code' ? item : item.box
+    return !box || (box.x + box.width >= view.x && box.x <= view.x + view.width && box.y + box.height >= view.y && box.y <= view.y + view.height)
+  }
   if (item.kind !== 'stroke') return true
   if (!item.points.length) return false
   const bounds = strokeBounds(item)
