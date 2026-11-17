@@ -18,6 +18,7 @@ import { PAGE_BACKGROUND_COLORS } from '../pageBackground'
 import { buildSheetSvg, cropSvg, getContentBounds, svgToPngBlob } from '../sheetExport'
 import { SHEET_HEIGHT, SHEET_WIDTH } from '../viewport'
 import { readLastPage } from '../pages'
+import { createIndexedDbSafetyStore, createLocalStorageEmergency, createLocalStoragePointer, createSafetyKeeper, type RestoredCopy, type SafetyKeeper } from '../safetyCopy'
 
 /**
  * What the document layer needs from the drawing surface. Keeping this small is the seam between
@@ -168,6 +169,37 @@ export function useDocuments(host: DocumentHost) {
     return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()) }
   }
 
+  /**
+   * The safety copy (see safetyCopy.ts): a local copy of the open diagram that is written even while the real storage is
+   * locked or its autosave has not run yet. Writes are held until the startup restore check has finished.
+   */
+  const keeperRef = useRef<SafetyKeeper<DocumentSignature> | null>(null)
+  if (!keeperRef.current) {
+    const keeperStorage = (() => { try { return window.localStorage } catch { return null } })()
+    keeperRef.current = createSafetyKeeper<DocumentSignature>({
+      store: createIndexedDbSafetyStore(),
+      setTimeout: (callback, ms) => window.setTimeout(callback, ms),
+      clearTimeout: (handle) => window.clearTimeout(handle as number),
+      now: () => Date.now(),
+      pointer: createLocalStoragePointer(keeperStorage ?? { getItem: () => null, setItem: () => undefined, removeItem: () => undefined }),
+      emergency: keeperStorage ? createLocalStorageEmergency(keeperStorage) : undefined,
+      idle: typeof window.requestIdleCallback === 'function' ? (callback) => { window.requestIdleCallback(callback, { timeout: 1000 }) } : undefined,
+      getKind: () => backendRef.current.kind,
+      getDocId: () => docIdRef.current,
+      getFolderId: () => pendingFolderRef.current,
+      hasContent: () => hasAnyItems(),
+      isInputActive: () => hostRef.current.isInputActive(),
+      signature: () => currentSignature(),
+      sameSignature,
+      // shares the stroke JSON cached by the normal autosave, so this is cheap
+      buildText: () => stringifyDocument(buildCurrentDocument()),
+    })
+    keeperRef.current.hold()
+  }
+  const keeper = keeperRef.current
+  /** A diagram came back from the safety copy at startup; the storage's own copy must not replace it. */
+  const restoredRef = useRef(false)
+
   const refreshLibrary = async () => {
     const backend = backendRef.current
     if (backend.listCached) {
@@ -270,6 +302,7 @@ export function useDocuments(host: DocumentHost) {
       docIdRef.current = newId
       docMetaRef.current = { title: saved.title, createdAt: saved.createdAt }
       savedSignatureRef.current = signature
+      void keeper.markSynced(signature, previousId, newId)
       if (previousId && previousId !== newId) {
         // A device-folder file was renamed, so its id changed: the star follows it and the old picture is dropped (a new one is made when the Library opens).
         changeLocalStars((ids) => moveStarred(ids, previousId, newId))
@@ -301,6 +334,7 @@ export function useDocuments(host: DocumentHost) {
   }
 
   const scheduleAutosave = () => {
+    keeper.noteChange() // the safety copy is kept even when the storage is locked
     if (!readyRef.current) return
     if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current)
     autosaveTimerRef.current = window.setTimeout(() => {
@@ -320,6 +354,7 @@ export function useDocuments(host: DocumentHost) {
       autosaveTimerRef.current = null
     }
     pendingFolderRef.current = null
+    forceSaveRef.current = false
     hostRef.current.loadDocument(loaded, id ? readLastPage(id) : 0)
     docIdRef.current = id
     docMetaRef.current = { title: loaded.title, createdAt: loaded.createdAt }
@@ -328,6 +363,25 @@ export function useDocuments(host: DocumentHost) {
     setDocTitle(loaded.title)
     writeCurrentId(id)
     setSaveStatus(id ? 'saved' : 'idle')
+  }
+
+  /** Shows a diagram from the safety copy. It counts as unsaved, so it is written to the storage as soon as that is ready. */
+  const applyLocalCopy = ({ record, document: loaded }: RestoredCopy) => {
+    if (autosaveTimerRef.current !== null) {
+      window.clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+    }
+    hostRef.current.loadDocument(loaded, record.docId ? readLastPage(record.docId) : 0)
+    docIdRef.current = record.docId
+    docMetaRef.current = { title: loaded.title, createdAt: loaded.createdAt }
+    pendingFolderRef.current = record.folderId
+    savedSignatureRef.current = null
+    unsavedWhileLockedRef.current = true
+    forceSaveRef.current = !record.docId
+    setDocTitle(loaded.title)
+    setCurrentDocId(record.docId)
+    if (record.docId) writeCurrentId(record.docId)
+    keeper.adopt(record)
   }
 
   /** Drive has a newer version than the browser copy that was shown. Swap it in only if the diagram is still open and nothing was edited here since. */
@@ -345,17 +399,34 @@ export function useDocuments(host: DocumentHost) {
 
   const newDiagram = async (template?: DocumentPageTemplate) => {
     await persistNow()
+    await keeper.flush()
     setFileNotice(null)
     applyDocument(null, blankDocument(template))
+    void keeper.switchTo(null)
     writeCurrentId(null)
     void refreshLibrary()
   }
 
   const openStoredDiagram = async (id: string) => {
     await persistNow()
+    await keeper.flush()
     try {
       const backend = backendRef.current
-      const stored = await backend.load(id, fresherVersion(backend, id))
+      // a copy with edits the storage never got (it was locked) is shown instead, and saved when the storage is ready
+      const local = await keeper.recordFor(backend.kind, id)
+      let stored: InkPadDocument | null = null
+      try {
+        stored = await backend.load(id, local ? () => false : fresherVersion(backend, id))
+      } catch (error) {
+        if (!local) throw error
+      }
+      if (local) {
+        setFileNotice(null)
+        applyLocalCopy(local)
+        setFilePanelOpen(false)
+        void persistNow()
+        return
+      }
       if (!stored) {
         setFileNotice('That diagram no longer exists.')
         void refreshLibrary()
@@ -363,6 +434,7 @@ export function useDocuments(host: DocumentHost) {
       }
       setFileNotice(null)
       applyDocument(id, stored)
+      void keeper.switchTo(id)
       setFilePanelOpen(false)
     } catch {
       setFileNotice('Could not open that diagram.')
@@ -379,6 +451,7 @@ export function useDocuments(host: DocumentHost) {
   const deleteStoredDiagram = async (id: string) => {
     try {
       await backendRef.current.remove(id)
+      void keeper.forget(backendRef.current.kind, id)
       if (docIdRef.current === id) forgetCurrentDiagram()
       void deleteThumbnail(id).catch(() => undefined)
       if (localStarsRef.current.includes(id)) changeLocalStars((ids) => ids.filter((item) => item !== id))
@@ -431,6 +504,7 @@ export function useDocuments(host: DocumentHost) {
     try {
       const ids = new Set(folderAndDescendantIds(folders, id))
       const deleted = await backendRef.current.deleteFolder(id)
+      for (const gone of deleted) void keeper.forget(backendRef.current.kind, gone)
       if (docIdRef.current && deleted.includes(docIdRef.current)) forgetCurrentDiagram()
       if (pendingFolderRef.current && ids.has(pendingFolderRef.current)) pendingFolderRef.current = null
     } catch (error) {
@@ -475,7 +549,10 @@ export function useDocuments(host: DocumentHost) {
         return
       }
       await persistNow()
+      await keeper.flush()
       applyDocument(null, result.document)
+      void keeper.switchTo(null)
+      keeper.noteChange()
       forceSaveRef.current = true
       await persistNow()
       setFileNotice(result.droppedItems ? `Imported with ${result.droppedItems} damaged item${result.droppedItems === 1 ? '' : 's'} skipped.` : `Imported “${result.document.title}”.`)
@@ -615,25 +692,73 @@ export function useDocuments(host: DocumentHost) {
 
   /** Reopen the last diagram of the active storage, then enable autosave (it stays off until this finishes, so a slow read can never be overwritten by an empty sheet). */
   const finishStartup = async (isCancelled: () => boolean = () => false) => {
-    const id = readCurrentId()
+    const restored = restoredRef.current
+    const id = restored ? docIdRef.current : readCurrentId()
     if (id) {
       try {
         const backend = backendRef.current
-        const stored = await backend.load(id, fresherVersion(backend, id))
-        if (!isCancelled() && stored && !hasAnyItems()) applyDocument(id, stored)
+        // For a restored diagram the load only lets the storage learn the file's modified time (Drive conflict copies); the copy stays.
+        const stored = restored ? await backend.load(id) : await backend.load(id, fresherVersion(backend, id))
+        if (!restored && !isCancelled() && stored && !hasAnyItems()) applyDocument(id, stored)
       } catch {
         // Storage unavailable: start with an empty sheet; saving will report the problem.
       }
     }
-    if (!isCancelled()) readyRef.current = true
+    if (isCancelled()) return
+    readyRef.current = true
+    if (restored) {
+      restoredRef.current = false
+      await persistNow()
+      unsavedWhileLockedRef.current = false
+    }
+    await uploadLeftovers()
+  }
+
+  /** Diagrams kept only in the safety copy (drawn while storage was locked, then another diagram was opened) go to the storage now. A copy is dropped only after its save worked. */
+  const uploadLeftovers = async () => {
+    const backend = backendRef.current
+    const kind = backend.kind
+    let leftovers: RestoredCopy[] = []
+    try { leftovers = await keeper.leftovers(kind) } catch { return }
+    for (const { record, document: copy } of leftovers) {
+      if (backendRef.current !== backend || !readyRef.current) return
+      const run = saveChainRef.current.then(async () => {
+        try {
+          if (record.docId) await backend.load(record.docId)
+          await backend.save(record.docId, copy, record.docId ? null : record.folderId)
+          await keeper.discard(kind, null, record.key)
+        } catch { /* the record stays and is tried again next time */ }
+      })
+      saveChainRef.current = run
+      await run
+    }
   }
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
+      const mode = readStorageMode()
+      let handle: DirHandle | null = null
       if (readStorageMode() === 'drive') {
         backendRef.current = createAppDriveBackend()
         setStorage({ kind: 'drive', folderName: null, locked: false, supported: isDeviceFolderSupported() })
+      } else if (readStorageMode() === 'device' && isDeviceFolderSupported()) {
+        try { handle = await loadDeviceHandle() } catch { handle = null }
+        if (handle) {
+          deviceHandleRef.current = handle
+          backendRef.current = createDeviceBackend(handle)
+        }
+      }
+      // Bring back changes kept on this device BEFORE waiting for Google or the folder permission, so a locked storage can never lose them.
+      let restored: RestoredCopy | null = null
+      try { restored = await keeper.restore(backendRef.current.kind) } catch { restored = null } finally { keeper.release() }
+      if (cancelled) return
+      if (restored) {
+        restoredRef.current = true
+        applyLocalCopy(restored)
+        setFileNotice('Restored changes kept on this device.')
+      }
+      if (mode === 'drive') {
         try {
           // A token kept from this tab's earlier load is used at once; otherwise Google is asked quietly, without a window.
           await withTimeout(driveAuth.getToken(), STARTUP_SIGN_IN_WAIT_MS)
@@ -649,24 +774,17 @@ export function useDocuments(host: DocumentHost) {
         await finishStartup(() => cancelled)
         return
       }
-      if (readStorageMode() === 'device' && isDeviceFolderSupported()) {
-        let handle: DirHandle | null = null
-        try { handle = await loadDeviceHandle() } catch { handle = null }
+      if (handle) {
+        const permission = await queryDevicePermission(handle)
         if (cancelled) return
-        if (handle) {
-          deviceHandleRef.current = handle
-          backendRef.current = createDeviceBackend(handle)
-          const permission = await queryDevicePermission(handle)
-          if (cancelled) return
-          if (permission !== 'granted') {
-            // Autosave stays off until the person taps Reconnect, because the browser needs a tap to allow the folder again.
-            setStorage({ kind: 'device', folderName: handle.name, locked: true, supported: true })
-            setSaveStatus('locked')
-            setStoragePanelOpen(true)
-            return
-          }
-          setStorage({ kind: 'device', folderName: handle.name, locked: false, supported: true })
+        if (permission !== 'granted') {
+          // Autosave stays off until the person taps Reconnect, because the browser needs a tap to allow the folder again.
+          setStorage({ kind: 'device', folderName: handle.name, locked: true, supported: true })
+          setSaveStatus('locked')
+          setStoragePanelOpen(true)
+          return
         }
+        setStorage({ kind: 'device', folderName: handle.name, locked: false, supported: true })
       }
       await finishStartup(() => cancelled)
     })()
@@ -676,6 +794,10 @@ export function useDocuments(host: DocumentHost) {
   const switchBackend = async (backend: StorageBackend, handle: DirHandle | null) => {
     // A sheet drawn while saving was off (device folder locked) is kept and saved into the new storage, never discarded.
     const keepSheet = !readyRef.current && hasAnyItems()
+    await keeper.flush() // before the storage changes, so the copy is filed under the storage it was drawn for
+    const leftKey = keeper.currentKey()
+    const leftKind = backendRef.current.kind
+    restoredRef.current = false
     backendRef.current = backend
     deviceHandleRef.current = handle
     readyRef.current = true
@@ -684,10 +806,13 @@ export function useDocuments(host: DocumentHost) {
     if (keepSheet) {
       forgetCurrentDiagram()
       await persistNow()
+      // it reached the new storage, so the copy filed under the old one is no longer needed
+      if (docIdRef.current && leftKey && leftKind !== backend.kind) void keeper.discard(leftKind, null, leftKey)
     } else {
       // The sheet shows a diagram of the previous storage, so start blank and reopen this storage's last diagram.
       const remembered = readCurrentId()
       applyDocument(null, blankDocument())
+      void keeper.switchTo(null)
       writeCurrentId(remembered)
       await finishStartup()
     }
@@ -809,12 +934,30 @@ export function useDocuments(host: DocumentHost) {
   }, [])
 
   useEffect(() => {
-    const flush = () => { if (document.visibilityState === 'hidden') void persistNow() }
+    const flush = () => {
+      if (document.visibilityState !== 'hidden') return
+      void keeper.flush()
+      void persistNow()
+    }
+    const leaving = () => {
+      keeper.emergencySave() // synchronous, in case the page goes away before IndexedDB finishes
+      void keeper.flush()
+      void persistNow()
+    }
+    // Closing or refreshing with changes that nothing holds yet asks first, and starts the safety write meanwhile.
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      if (!keeper.hasUnstoredChanges(savedSignatureRef.current)) return
+      void keeper.flush()
+      event.preventDefault()
+      event.returnValue = ''
+    }
     document.addEventListener('visibilitychange', flush)
-    window.addEventListener('pagehide', flush)
+    window.addEventListener('pagehide', leaving)
+    window.addEventListener('beforeunload', warnBeforeLeaving)
     return () => {
       document.removeEventListener('visibilitychange', flush)
-      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('pagehide', leaving)
+      window.removeEventListener('beforeunload', warnBeforeLeaving)
     }
   }, [])
 

@@ -252,3 +252,13 @@ test('writes wait while held and run after release', async () => {
   await a.settle()
   assert.equal((await a.store.list()).length, 1)
 })
+test('wiring: useDocuments restores first, warns on unload and notes changes before the ready check', async () => {
+  const source = await readAppSource()
+  const start = source.indexOf('Reopen the last diagram of the active storage')
+  const effect = source.slice(source.indexOf('useEffect(() => {\n    let cancelled = false', start))
+  assert.ok(effect.indexOf('keeper.restore(') > -1)
+  assert.ok(effect.indexOf('keeper.restore(') < effect.indexOf('driveAuth.getToken'))
+  assert.ok(effect.indexOf('keeper.restore(') < effect.indexOf('queryDevicePermission'))
+  assert.match(source, /addEventListener\('beforeunload'/)
+  assert.match(source, /const scheduleAutosave = \(\) => \{\n\s*keeper\.noteChange\(\)[^\n]*\n\s*if \(!readyRef\.current\) return/)
+})

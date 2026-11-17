@@ -3,6 +3,10 @@ import { createDocumentId, createFolderId, deleteFolderRecord, deleteStoredDocum
 import { cleanFolderName, folderAndDescendantIds } from './folderTree'
 
 /**
+ * Layering: the safety copy (safetyCopy.ts, a separate IndexedDB database in this browser) sits UNDER every StorageBackend
+ * (browser, device folder, Drive, any future one). It keeps the open diagram even while a backend is locked or has not
+ * saved yet, and is dropped once the backend confirms the save. Backends stay interchangeable and know nothing about it.
+ *
  * Where diagrams live. Both backends expose the same shapes: a diagram id and a folder id are
  * opaque strings (a random id in the browser, a relative path such as "LLD/Payments/Order.inkpad"
  * on a device folder), and a folder's parentId is the id of the folder that contains it.
