@@ -23,7 +23,7 @@ What got there: cached path is the only default (direct limit 0), the whole page
 ## Current Status — 2026-11-06
 
 ### 2026-11-17 — PROGRESS (resume here): build run of tasks 1 to 7 (see the build prompt of 2026-11-17)
-- Done: Task 1 (commits 18da4de, d53e34b). In progress: tasks 2 to 6 in parallel. Next: task 7 (reviews, round-trip tests, report). Nothing pushed.
+- Done: Task 1 (18da4de, d53e34b), Task 3 paste at cursor (ceac6d8), Task 6 small text + auto-fit (ae2f6f8), Task 4 sketchy + fills (461f25e), Task 2 double-click text (882ffeb). Each merged as one squashed commit from branches task2..task6 (worktrees under /home/claude/wt). In progress: Task 5 code block (branch task5). Next: merge task5, then task 7 (Sonnet review, Opus review of autosave/restore, format and pen/touch code, round-trip tests, report). Nothing pushed.
 
 ### 2026-11-17 — Fix: a refresh can no longer lose a diagram (local safety copy)
 - Root cause (reproduced in headless Chrome, functional check only): when the chosen storage is locked (Google Drive sign-in not live after a reload or lapsed mid-session, or a device folder whose permission was not regranted) `readyRef` stays false and `scheduleAutosave` returned at once, so nothing was stored anywhere and there was no warning; a refresh lost everything drawn since. A new Drive diagram also had no local copy before its first upload, and with browser storage a reload inside the 1.2 s autosave delay lost the last strokes. Before the fix: Drive-locked desktop and tablet reloads lost the drawing every time, browser-storage reload at once lost it too.
