@@ -37,6 +37,7 @@ export type DocumentHost = {
 }
 
 const AUTOSAVE_DELAY_MS = 1200
+const SAFETY_FLUSH_WAIT_MS = 3000
 const DEVICE_CURRENT_KEY = 'inkpad.currentDocument.device'
 const DRIVE_CURRENT_KEY = 'inkpad.currentDocument.drive'
 const STARTUP_SIGN_IN_WAIT_MS = 9000
@@ -84,6 +85,8 @@ const withTimeout = <T,>(work: Promise<T>, ms: number): Promise<T> => new Promis
 const errorText = (error: unknown, fallback: string) => (error instanceof Error && error.message ? error.message : fallback)
 
 export function useDocuments(host: DocumentHost) {
+  /** Writes the safety copy before leaving a diagram, but never waits more than a few seconds for a browser store that does not answer. */
+  const flushCopy = (): Promise<void> => Promise.race([keeper.flush().catch(() => undefined), new Promise<void>((resolve) => window.setTimeout(resolve, SAFETY_FLUSH_WAIT_MS))])
   const hostRef = useRef(host)
   hostRef.current = host
 
@@ -412,7 +415,7 @@ export function useDocuments(host: DocumentHost) {
 
   const newDiagram = async (template?: DocumentPageTemplate) => {
     await persistNow()
-    await keeper.flush()
+    await flushCopy()
     setFileNotice(null)
     applyDocument(null, blankDocument(template))
     void keeper.switchTo(null)
@@ -422,7 +425,7 @@ export function useDocuments(host: DocumentHost) {
 
   const openStoredDiagram = async (id: string) => {
     await persistNow()
-    await keeper.flush()
+    await flushCopy()
     try {
       const backend = backendRef.current
       // a copy with edits the storage never got (it was locked) is shown instead, and saved when the storage is ready
@@ -569,7 +572,7 @@ export function useDocuments(host: DocumentHost) {
         return
       }
       await persistNow()
-      await keeper.flush()
+      await flushCopy()
       applyDocument(null, result.document)
       void keeper.switchTo(null)
       keeper.noteChange()
@@ -826,7 +829,7 @@ export function useDocuments(host: DocumentHost) {
   const switchBackend = async (backend: StorageBackend, handle: DirHandle | null) => {
     // A sheet drawn while saving was off (device folder locked) is kept and saved into the new storage, never discarded.
     const keepSheet = !readyRef.current && hasAnyItems()
-    await keeper.flush() // before the storage changes, so the copy is filed under the storage it was drawn for
+    await flushCopy() // before the storage changes, so the copy is filed under the storage it was drawn for
     const leftKey = keeper.currentKey()
     const leftKind = backendRef.current.kind
     restoredRef.current = false

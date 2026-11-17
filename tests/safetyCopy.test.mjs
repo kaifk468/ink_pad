@@ -486,3 +486,10 @@ test('wiring: sign-out and account change drop Drive safety copies before the ca
   const persist = source.slice(source.indexOf('const doPersist'), source.indexOf('Saves run one after another'))
   assert.match(persist, /sameSignature\(signature, savedSignatureRef\.current\)\) \{\n\s*void keeper\.markSynced/)
 })
+
+test('leaving a diagram never waits forever on the safety copy store', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const source = await readFile(new URL('../src/app/useDocuments.ts', import.meta.url), 'utf8')
+  assert.match(source, /const flushCopy = \(\): Promise<void> => Promise\.race\(\[keeper\.flush\(\)\.catch\(\(\) => undefined\), new Promise<void>\(\(resolve\) => window\.setTimeout\(resolve, SAFETY_FLUSH_WAIT_MS\)\)\]\)/)
+  assert.doesNotMatch(source, /await keeper\.flush\(\)/)
+})
