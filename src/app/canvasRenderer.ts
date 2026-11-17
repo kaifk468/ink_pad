@@ -5,7 +5,7 @@ import { filterDisplayPoints } from '../oneEuroFilter'
 import { buildInterpolatingCurve, buildMidpointCurve, type InterpolatingStrokeSegment } from '../strokeCurves'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import { classBoxFont, getClassBoxGeometry, type ClassBoxCompartment, type FontMeasure } from '../classBoxLayout'
-import { getTextBaselines, splitTextLines, textFont, type TextMeasure } from '../textLayout'
+import { getCachedTextMeasure, getTextBaselines, labelLines, textFont, type TextMeasure } from '../textLayout'
 import type { MinimapGeometry } from '../viewport'
 
 /** Canvas drawing for every item kind. Pure functions of (context, item, settings): no React state. */
@@ -358,17 +358,9 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
   ctx.restore()
 }
 
-let measureContext: CanvasRenderingContext2D | null = null
-
-/** Measures a line of label text with the same font the renderer uses. Falls back to an estimate off-DOM. */
+/** Measures a line of label text with the same font the renderer uses (cached). Falls back to an estimate off-DOM. */
 export function createTextMeasure(fontSize: number, fontId?: TextFontId): TextMeasure | undefined {
-  if (!measureContext && typeof document !== 'undefined') measureContext = document.createElement('canvas').getContext('2d')
-  const ctx = measureContext
-  if (!ctx) return undefined
-  return (line) => {
-    ctx.font = textFont(fontSize, fontId)
-    return ctx.measureText(line).width
-  }
+  return getCachedTextMeasure(fontSize, fontId)
 }
 
 export function drawText(ctx: CanvasRenderingContext2D, text: TextObject): void {
@@ -385,8 +377,9 @@ export function drawText(ctx: CanvasRenderingContext2D, text: TextObject): void 
   ctx.fillStyle = text.color
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
-  const baselines = getTextBaselines(text.text, text.fontSize)
-  splitTextLines(text.text).forEach((line, index) => ctx.fillText(line, text.x, text.y + baselines[index]))
+  const lines = labelLines(text)
+  const baselines = getTextBaselines(lines.join('\n'), text.fontSize)
+  lines.forEach((line, index) => ctx.fillText(line, text.x, text.y + baselines[index]))
   ctx.restore()
 }
 

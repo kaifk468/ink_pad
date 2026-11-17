@@ -31,6 +31,9 @@ type ContextPanelProps = {
   onTextFont: (id: TextFontId) => void
   textSize: number
   onTextSize: (size: number) => void
+  /** Desktop only: sizes to offer (default TEXT_FONT_SIZES) and the auto-fit toggle for the label being edited or selected. */
+  textSizeChoices?: readonly number[]
+  textFit?: { on: boolean; onToggle: () => void }
   selectedItemCount: number
   onClearSelection: () => void
   /** True when something is selected that Delete can remove (including a single selected box). */
@@ -97,7 +100,7 @@ function ColorChoices({ value, label, onChange }: { value: string; label: string
 /** Settings that only appear when the active tool or selection needs them. */
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.showTextSizes && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
+  if (!props.showStyle && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.showTextSizes && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -178,8 +181,8 @@ export function ContextPanel(props: ContextPanelProps) {
           >Aa<span>{font.label}</span></button>
         ))}
       </div>}
-      {props.showTextSizes && <div className="tool-group text-size-group" role="group" aria-label="Text size">
-        {TEXT_FONT_SIZES.map((size) => (
+      {(props.showTextSizes || props.textFit) && <div className="tool-group text-size-group" role="group" aria-label="Text size" onMouseDown={props.textFit ? (event) => event.preventDefault() : undefined}>
+        {(props.textSizeChoices ?? TEXT_FONT_SIZES).map((size) => (
           <button
             className={`text-size-button${props.textSize === size ? ' selected' : ''}`}
             key={size}
@@ -190,6 +193,14 @@ export function ContextPanel(props: ContextPanelProps) {
             onClick={() => props.onTextSize(size)}
           >{size}</button>
         ))}
+        {props.textFit && <button
+          className={`text-size-button text-fit-toggle${props.textFit.on ? ' selected' : ''}`}
+          type="button"
+          aria-label="Auto-fit text in shape"
+          aria-pressed={props.textFit.on}
+          title="Shrink text to fit inside the shape it is in; turns off when you pick a size"
+          onClick={props.textFit.onToggle}
+        >Fit</button>}
       </div>}
       {props.selectedItemCount > 0 && <button className="clear-selection-button" type="button" onClick={props.onClearSelection}>Clear selection</button>}
       {(props.canCopy || props.canPaste) && <div className="selection-actions" role="group" aria-label="Copy and paste">

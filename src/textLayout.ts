@@ -18,6 +18,9 @@ export function textFontFamily(id?: TextFontId): string {
 }
 
 export const TEXT_FONT_SIZES = [18, 24, 32, 48]
+/** Extra small sizes, offered in Desktop mode only (the tablet panel keeps TEXT_FONT_SIZES). 10 is the smallest. */
+export const TEXT_FONT_SIZES_SMALL = [10, 12, 14, 16]
+export const TEXT_FONT_SIZES_DESKTOP = [...TEXT_FONT_SIZES_SMALL, ...TEXT_FONT_SIZES]
 export const DEFAULT_TEXT_FONT_SIZE = 24
 export const MAX_TEXT_LENGTH = 2000
 export const TEXT_LINE_HEIGHT = 1.3
@@ -53,10 +56,78 @@ export function estimateTextSize(text: string, fontSize: number): { width: numbe
   return { width: Math.max(fontSize * 0.5, longest * fontSize * ESTIMATED_GLYPH_EM), height: lines.length * getTextLineHeight(fontSize) }
 }
 
+const measureCache = new Map<string, number>()
+const wrapCache = new Map<string, string[]>()
+let measureContext: CanvasRenderingContext2D | null | undefined
+
+/** Forget cached widths and wrapped lines (call when a font finishes loading, since fallback widths may have been cached). */
+export function clearTextMeasureCache(): void {
+  measureCache.clear()
+  wrapCache.clear()
+}
+
+/** A line measurer with a per font/size/string cache, so repeated measuring while typing or drawing costs a map lookup. Undefined off-DOM. */
+export function getCachedTextMeasure(fontSize: number, fontId?: TextFontId): TextMeasure | undefined {
+  if (measureContext === undefined) measureContext = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null
+  const ctx = measureContext
+  if (!ctx) return undefined
+  const font = textFont(fontSize, fontId)
+  return (line) => {
+    const key = `${font}|${line}`
+    const hit = measureCache.get(key)
+    if (hit !== undefined) return hit
+    ctx.font = font
+    const width = ctx.measureText(line).width
+    if (measureCache.size > 5000) measureCache.clear()
+    measureCache.set(key, width)
+    return width
+  }
+}
+
+/** Word-wraps text to `maxWidth`: explicit newlines are kept, words that are wider than the width are broken by character. */
+export function wrapTextLines(text: string, maxWidth: number, measure: TextMeasure): string[] {
+  const out: string[] = []
+  for (const paragraph of splitTextLines(text)) {
+    if (paragraph === '') { out.push(''); continue }
+    let line = ''
+    for (const word of paragraph.split(' ')) {
+      const candidate = line === '' ? word : `${line} ${word}`
+      if (measure(candidate) <= maxWidth) { line = candidate; continue }
+      if (line !== '') { out.push(line); line = '' }
+      if (measure(word) <= maxWidth) { line = word; continue }
+      let piece = ''
+      for (const char of word) {
+        if (piece !== '' && measure(piece + char) > maxWidth) { out.push(piece); piece = char } else piece += char
+      }
+      line = piece
+    }
+    out.push(line)
+  }
+  return out
+}
+
+/** The lines a label shows: wrapped to its width when it is a wrapped (auto-fit at the minimum size) label, otherwise its own lines. */
+export function labelLines(item: { text: string; fontSize: number; fontFamily?: TextFontId; width: number; fit?: 'off' | 'wrap' }, measure?: TextMeasure): string[] {
+  if (item.fit !== 'wrap') return splitTextLines(item.text)
+  const key = `${textFont(item.fontSize, item.fontFamily)}|${item.width}|${item.text}`
+  const hit = wrapCache.get(key)
+  if (hit) return hit
+  const lines = wrapTextLines(item.text, item.width, measure ?? getCachedTextMeasure(item.fontSize, item.fontFamily) ?? ((line) => estimateTextSize(line, item.fontSize).width))
+  if (wrapCache.size > 500) wrapCache.clear()
+  wrapCache.set(key, lines)
+  return lines
+}
+
 export function measureTextSize(text: string, fontSize: number, measure?: TextMeasure): { width: number; height: number } {
   if (!measure) return estimateTextSize(text, fontSize)
   const lines = splitTextLines(text)
   return { width: Math.max(fontSize * 0.5, ...lines.map(measure)), height: lines.length * getTextLineHeight(fontSize) }
+}
+
+/** Height of a label wrapped to `width`. */
+export function wrappedHeight(text: string, fontSize: number, width: number, measure?: TextMeasure): number {
+  const lines = wrapTextLines(text, width, measure ?? ((line) => estimateTextSize(line, fontSize).width))
+  return lines.length * getTextLineHeight(fontSize)
 }
 
 export function normalizeText(text: string): string {
@@ -84,6 +155,7 @@ export function createTextObject(
 
 /** The same label in another font, re-measured. Position, id, text, size and color are kept. */
 export function changeTextFont(item: TextObject, fontFamily: TextFontId, measure?: TextMeasure): TextObject {
+  if (item.fit === 'wrap') return { ...item, fontFamily, height: wrappedHeight(item.text, item.fontSize, item.width, measure) }
   const size = measureTextSize(item.text, item.fontSize, measure)
   return { ...item, fontFamily, width: size.width, height: size.height }
 }
@@ -91,6 +163,7 @@ export function changeTextFont(item: TextObject, fontFamily: TextFontId, measure
 /** Same object with new text/size, re-measured. Position, id and color are kept. */
 export function updateTextObject(item: TextObject, text: string, fontSize: number, measure?: TextMeasure): TextObject {
   const clean = normalizeText(text)
+  if (item.fit === 'wrap') return { ...item, text: clean, fontSize, height: wrappedHeight(clean, fontSize, item.width, measure) }
   const size = measureTextSize(clean, fontSize, measure)
   return { ...item, text: clean, fontSize, width: size.width, height: size.height }
 }

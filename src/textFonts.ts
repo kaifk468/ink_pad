@@ -1,4 +1,4 @@
-import { TEXT_FONTS } from './textLayout'
+import { TEXT_FONTS, clearTextMeasureCache } from './textLayout'
 import type { TextFontId } from './canvasModel'
 
 /**
@@ -9,5 +9,5 @@ import type { TextFontId } from './canvasModel'
 export function loadTextFont(id: TextFontId): Promise<void> {
   if (id !== 'excalifont' || typeof document === 'undefined' || !document.fonts?.load) return Promise.resolve()
   const family = TEXT_FONTS.find((font) => font.id === id)?.family ?? 'Excalifont'
-  return document.fonts.load(`24px ${family}`).then(() => undefined, () => undefined)
+  return document.fonts.load(`24px ${family}`).then(() => clearTextMeasureCache(), () => undefined)
 }

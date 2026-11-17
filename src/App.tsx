@@ -43,7 +43,8 @@ import { ZoomControls } from './app/ZoomControls'
 import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
-import { DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
+import { buildEditedLabel, prepareEditorFit } from './textFit'
+import { TEXT_FONT_SIZES_DESKTOP, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
 import type { TextFontId } from './canvasModel'
 import { useDocuments } from './app/useDocuments'
@@ -803,8 +804,10 @@ function App() {
     return null
   }
 
-  const openTextEditor = (editor: TextEditorState) => {
+  const openTextEditor = (rawEditor: TextEditorState) => {
     if (textEditorRef.current) commitTextEditor()
+    // Desktop auto-fit: find the shape the label sits in (none on the tablet or on plain canvas).
+    const editor = prepareEditorFit(rawEditor, strokesRef.current, inputModeRef.current === 'desktop')
     textEditorRef.current = editor
     textEditorValueRef.current = editor.initialText
     setTextEditor(editor)
@@ -822,7 +825,8 @@ function App() {
     if (editor.itemId === null) {
       if (!isBlankText(value)) {
         saveHistory()
-        strokesRef.current.push(createTextObject(nextTextIdRef.current++, editor.x, editor.y, value, editor.color, editor.fontSize, createTextMeasure(editor.fontSize, editor.fontFamily), editor.fontFamily))
+        const created = createTextObject(nextTextIdRef.current++, editor.x, editor.y, value, editor.color, editor.fontSize, createTextMeasure(editor.fontSize, editor.fontFamily), editor.fontFamily)
+        strokesRef.current.push(editor.fitArea || editor.fitOff ? buildEditedLabel(created, value, editor, createTextMeasure) : created)
         setHasInk(true)
       }
     } else {
@@ -834,10 +838,13 @@ function App() {
           strokesRef.current = strokesRef.current.filter((_, itemIndex) => itemIndex !== index)
           setHasInk(strokesRef.current.length > 0)
           reconcileSelectedItems()
-        } else if (value !== existing.text) {
-          saveHistory()
-          const updated = updateTextObject(existing, value, existing.fontSize, createTextMeasure(existing.fontSize, existing.fontFamily))
-          strokesRef.current = strokesRef.current.map((item, itemIndex) => (itemIndex === index ? updated : item))
+        } else {
+          const autoFit = editor.fitArea !== undefined || editor.fitOff === true
+          const updated = autoFit ? buildEditedLabel(existing, value, editor, createTextMeasure) : value !== existing.text ? updateTextObject(existing, value, existing.fontSize, createTextMeasure(existing.fontSize, existing.fontFamily)) : existing
+          if (updated.text !== existing.text || updated.fontSize !== existing.fontSize || updated.fit !== existing.fit) {
+            saveHistory()
+            strokesRef.current = strokesRef.current.map((item, itemIndex) => (itemIndex === index ? updated : item))
+          }
         }
       }
     }
@@ -1270,6 +1277,52 @@ function App() {
   const rotationPanel = rotatableForPanel
     ? { degrees: Math.round((itemAngle(rotatableForPanel) * 180) / Math.PI), onAlign: alignSelectionToLine, onReset: () => setSelectedItemAngle(0) }
     : null
+
+  /** Desktop: the single selected text label, if any. */
+  const selectedTextItem = (): TextObject | null => {
+    if (inputModeRef.current !== 'desktop' || selectedTextId === null || selectedItemCount !== 1) return null
+    const item = strokesRef.current.find((candidate) => candidate.kind === 'text' && candidate.id === selectedTextId)
+    return item?.kind === 'text' ? item : null
+  }
+  const replaceTextItem = (updated: TextObject) => {
+    saveHistory()
+    strokesRef.current = strokesRef.current.map((candidate) => (candidate.kind === 'text' && candidate.id === updated.id ? updated : candidate))
+    renderAll()
+  }
+  /** Picking a size by hand wins for that label (open editor or selected label): its auto-fit turns off. */
+  const pickTextSize = (size: number) => {
+    setTextSize(size)
+    if (inputModeRef.current !== 'desktop') return
+    const editor = textEditorRef.current
+    if (editor) {
+      const next = { ...editor, fontSize: size, pickedSize: size, fitOff: true }
+      textEditorRef.current = next
+      setTextEditor(next)
+      return
+    }
+    const item = selectedTextItem()
+    if (item && (item.fontSize !== size || item.fit !== 'off')) replaceTextItem(buildEditedLabel(item, item.text, { itemId: item.id, x: item.x, y: item.y, fontSize: size, fontFamily: item.fontFamily, initialText: item.text, fitOff: true }, createTextMeasure))
+  }
+  /** The Desktop text panel toggle: auto-fit on or off for the label being edited or selected. */
+  const textFitOn = (() => {
+    if (inputMode !== 'desktop') return null
+    if (textEditor) return !textEditor.fitOff
+    return selectedTextItem() ? strokesRef.current.some((candidate) => candidate.kind === 'text' && candidate.id === selectedTextId && candidate.fit !== 'off') : null
+  })()
+  const toggleTextFit = () => {
+    const editor = textEditorRef.current
+    if (editor) {
+      const next = editor.fitOff ? { ...editor, fitOff: false, pickedSize: editor.fontSize } : { ...editor, fitOff: true }
+      textEditorRef.current = next
+      setTextEditor(next)
+      return
+    }
+    const item = selectedTextItem()
+    if (!item) return
+    if (item.fit !== 'off') { replaceTextItem(buildEditedLabel(item, item.text, { itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, initialText: item.text, fitOff: true }, createTextMeasure)); return }
+    const on = prepareEditorFit({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, initialText: '' }, strokesRef.current, true)
+    replaceTextItem(buildEditedLabel(item, item.text, on, createTextMeasure))
+  }
 
   const changeTextFontChoice = (fontId: TextFontId) => {
     setTextFontId(fontId)
@@ -3794,7 +3847,9 @@ function App() {
         onStrokeDisplayMode={setStrokeDisplayMode}
         showTextSizes={(optionsFor === 'text' || inputMode === 'desktop') && textMode}
         textSize={textSize}
-        onTextSize={setTextSize}
+        onTextSize={pickTextSize}
+        textSizeChoices={inputMode === 'desktop' ? TEXT_FONT_SIZES_DESKTOP : undefined}
+        textFit={textFitOn === null ? undefined : { on: textFitOn, onToggle: toggleTextFit }}
         showTextFonts={((optionsFor === 'text' || inputMode === 'desktop') && textMode) || (selectedTextId !== null && selectedItemCount === 1)}
         textFontId={selectedTextFont ?? textFontId}
         onTextFont={changeTextFontChoice}

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { TextFontId } from './canvasModel'
 import { TEXT_LINE_HEIGHT, measureTextSize, textFontFamily, type TextMeasure } from './textLayout'
+import { editorFit, type FitEditorState } from './textFit'
 
 export type TextEditorState = {
   /** Existing text item being edited, or null when creating a new label. */
@@ -13,6 +14,10 @@ export type TextEditorState = {
   fontFamily?: TextFontId
   color: string
   initialText: string
+  /** Desktop auto-fit (see textFit.ts); all missing on the tablet and on plain canvas. */
+  fitArea?: FitEditorState['fitArea']
+  pickedSize?: number
+  fitOff?: boolean
 }
 
 type TextEditorOverlayProps = {
@@ -29,7 +34,9 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const [value, setValue] = useState(editor.initialText)
   const scale = viewport.scale
-  const size = measureTextSize(value, editor.fontSize, measure(editor.fontSize, editor.fontFamily))
+  const fit = editorFit(editor, value, measure)
+  const fontSize = fit ? fit.fontSize : editor.fontSize
+  const size = fit ?? measureTextSize(value, fontSize, measure(fontSize, editor.fontFamily))
   const padding = 6
 
   useLayoutEffect(() => {
@@ -49,17 +56,18 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
       spellCheck={false}
       autoCapitalize="sentences"
       rows={1}
-      wrap="off"
+      wrap={fit?.wrap ? 'soft' : 'off'}
       style={{
         left: editor.x * scale + viewport.offsetX - padding,
         top: editor.y * scale + viewport.offsetY - padding,
-        width: Math.max(size.width * scale + padding * 2 + 8, editor.fontSize * scale * 4),
+        width: fit?.wrap ? size.width * scale + padding * 2 : Math.max(size.width * scale + padding * 2 + 8, fontSize * scale * 4),
         height: size.height * scale + padding * 2,
         padding,
         fontFamily: textFontFamily(editor.fontFamily),
-        fontSize: editor.fontSize * scale,
+        fontSize: fontSize * scale,
         lineHeight: TEXT_LINE_HEIGHT,
         color: editor.color,
+        ...(fit?.wrap ? { overflow: 'hidden' } : {}),
       }}
       onChange={(event) => { setValue(event.target.value); onChange(event.target.value) }}
       onBlur={onCommit}

@@ -3,7 +3,7 @@ import { routeConnectors } from './connectorRoute'
 import { hldOutlinePath } from './hldShapes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 import { getClassBoxGeometry, type ClassBoxCompartment } from './classBoxLayout'
-import { getTextBaselines, splitTextLines, TEXT_FONT_FAMILY, textFontFamily } from './textLayout'
+import { getTextBaselines, labelLines, TEXT_FONT_FAMILY, textFontFamily } from './textLayout'
 
 export type ExportTemplate = 'blank' | 'lined' | 'dotted'
 export type SheetExportOptions = {
@@ -152,9 +152,10 @@ function connectorElement(connector: ConnectorObject): string {
 }
 
 function textElement(text: TextObject): string {
-  const baselines = getTextBaselines(text.text, text.fontSize)
+  const lines = labelLines(text)
+  const baselines = getTextBaselines(lines.join('\n'), text.fontSize)
   const family = esc(textFontFamily(text.fontFamily))
-  return splitTextLines(text.text)
+  return lines
     .map((line, index) => (line.length === 0
       ? ''
       : `<text x="${n(text.x)}" y="${n(text.y + baselines[index])}" font-family="${family}" font-size="${n(text.fontSize)}" fill="${esc(text.color)}" xml:space="preserve">${esc(line)}</text>`))
