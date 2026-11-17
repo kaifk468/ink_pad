@@ -212,6 +212,8 @@ function codeElement(item: CodeObject): string {
   const fontSize = codeGeometry(item, lines.length, 1).fontSize
   const geometry = codeGeometry(item, lines.length, fontSize * 0.6)
   const clipId = `code-clip-${(codeCount += 1)}`
+  const width = Math.max(0, item.width)
+  const height = Math.max(0, item.height)
   const family = esc(CODE_FONT_FAMILY)
   const body = lines.slice(0, geometry.visibleLines).map((tokens, index) => {
     const y = n(item.y + geometry.firstBaseline + index * geometry.lineHeight)
@@ -219,8 +221,8 @@ function codeElement(item: CodeObject): string {
     const code = tokens.length === 0 ? '' : `<text x="${n(item.x + geometry.textX)}" y="${y}" fill="${colors.plain}" xml:space="preserve">${tokens.map((token) => (token.kind === 'plain' ? esc(token.text) : `<tspan fill="${colors[token.kind]}">${esc(token.text)}</tspan>`)).join('')}</text>`
     return number + code
   }).join('')
-  return `<g><clipPath id="${clipId}"><rect x="${n(item.x)}" y="${n(item.y)}" width="${n(item.width)}" height="${n(item.height)}"/></clipPath>`
-    + `<rect x="${n(item.x + 0.5)}" y="${n(item.y + 0.5)}" width="${n(item.width - 1)}" height="${n(item.height - 1)}" fill="${colors.background}" stroke="${colors.border}" stroke-width="1"/>`
+  return `<g><clipPath id="${clipId}"><rect x="${n(item.x)}" y="${n(item.y)}" width="${n(width)}" height="${n(height)}"/></clipPath>`
+    + `<rect x="${n(item.x + 0.5)}" y="${n(item.y + 0.5)}" width="${n(Math.max(0, width - 1))}" height="${n(Math.max(0, height - 1))}" fill="${colors.background}" stroke="${colors.border}" stroke-width="1"/>`
     + `<g clip-path="url(#${clipId})" font-family="${family}" font-size="${fontSize}">${body}</g></g>`
 }
 
@@ -229,7 +231,7 @@ function opaqueElement(item: OpaqueObject): string {
   if (!item.box) return ''
   const { x, y, width, height } = item.box
   const kind = typeof item.raw.kind === 'string' ? item.raw.kind.slice(0, 24) : 'item'
-  return `<rect x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}" fill="#e5e7eb" stroke="#9ca3af" stroke-width="1"/>`
+  return `<rect x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}" fill="#9ca3af" fill-opacity="0.18" stroke="#9ca3af" stroke-width="1"/>`
     + `<text x="${n(x + 8)}" y="${n(y + 18)}" font-family="${esc(TEXT_FONT_FAMILY)}" font-size="12" fill="#6b7280">${esc(`Unsupported: ${kind}`)}</text>`
 }
 

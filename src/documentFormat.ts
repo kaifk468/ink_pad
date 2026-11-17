@@ -99,6 +99,7 @@ export function stringifyDocument(document: InkPadDocument): string {
   const head = JSON.stringify({ ...rest, items: [] })
   if (!head.endsWith('"items":[]}')) return JSON.stringify(document)
   const itemsText = (items: CanvasItem[]) => items.map((item) => {
+    if (item.kind === 'opaque') return opaqueJson.get(item) ?? JSON.stringify(item)
     if (item.kind !== 'stroke') return JSON.stringify(item)
     let text = strokeJson.get(item)
     if (text === undefined) {
@@ -143,8 +144,16 @@ export function sameSignature(a: DocumentSignature | null, b: DocumentSignature 
 /** Largest used id per kind + 1, so new items never collide with loaded ones. */
 export function getNextIds(items: CanvasItem[]): NextIds {
   const next: NextIds = { stroke: 1, rectangle: 1, connector: 1, text: 1 }
-  // Code blocks share the text counter (their keys differ by kind, so ids never clash). Unknown items take no id from us.
-  for (const item of items) if (item.kind !== 'opaque') { const kind = item.kind === 'code' ? 'text' : item.kind; next[kind] = Math.max(next[kind], item.id + 1) }
+  // Code blocks share the text counter (their keys differ by kind, so ids never clash). Unknown items push every counter past their id.
+  for (const item of items) {
+    if (item.kind === 'opaque') {
+      // We never hand out an id of this kind's own, but a saved copy may later be read by a newer InkPad: stay clear of its ids in every counter.
+      for (const kind of ['stroke', 'rectangle', 'connector', 'text'] as const) next[kind] = Math.max(next[kind], item.id + 1)
+      continue
+    }
+    const kind = item.kind === 'code' ? 'text' : item.kind
+    next[kind] = Math.max(next[kind], item.id + 1)
+  }
   return next
 }
 
@@ -360,12 +369,25 @@ function sanitizeItem(value: unknown): CanvasItem | null {
   return opaqueItem(value)
 }
 
+/** Largest text an unknown item may take in the file; a bigger or unserialisable one (cycle, absurd nesting) is dropped and counted. */
+const MAX_OPAQUE_JSON = 1_000_000
+/** The JSON text of each unknown item, made once when it is read (items are never edited), so saving does not serialise it again. */
+const opaqueJson = new WeakMap<object, string>()
+
 /** An item of a kind this version does not know (it needs a string kind and the numeric id checked above): kept as it was read, with its box when it has a finite one. */
 function opaqueItem(value: Record<string, unknown>): OpaqueObject | null {
   if (typeof value.kind !== 'string' || KNOWN_KINDS.includes(value.kind)) return null
+  let text: string
+  try {
+    text = JSON.stringify(value)
+  } catch {
+    return null
+  }
+  if (typeof text !== 'string' || text.length > MAX_OPAQUE_JSON) return null
   const hasBox = isNum(value.x) && isNum(value.y) && isNum(value.width) && isNum(value.height) && value.width >= 0 && value.height >= 0
   const item: OpaqueObject = { kind: 'opaque', id: value.id as number, box: hasBox ? { x: value.x as number, y: value.y as number, width: value.width as number, height: value.height as number } : null, raw: value }
-  // Written back as it was read (JSON.stringify and the saved copies call this); a plain property so clones keep it.
+  opaqueJson.set(item, text)
+  // Fallback only: stringifyDocument writes the cached text above. A non-enumerable toJSON keeps JSON.stringify(item) writing the raw data (it would not survive a spread, but items of this kind are never spread: the model shares them as they are).
   Object.defineProperty(item, 'toJSON', { value: () => value, enumerable: false })
   return item
 }

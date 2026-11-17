@@ -348,6 +348,7 @@ export function rectFromPoints(a: Point, b: Point): RectangleBounds {
 export function marqueeKeys(routedItems: readonly CanvasItem[], rect: RectangleBounds): string[] {
   const keys: string[] = []
   for (const item of routedItems) {
+    if (item.kind === 'opaque') continue // unknown items are never selected
     const key = canvasItemKey(item)
     const bounds = getCanvasSelectionBounds([item], new Set([key]))
     if (!bounds) continue

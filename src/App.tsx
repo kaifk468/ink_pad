@@ -33,7 +33,7 @@ import { UmlConnectorIcon } from './app/UmlConnectorIcon'
 import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
 import { CodeEditorOverlay } from './CodeEditorOverlay'
 import { DEFAULT_CODE_HEIGHT, DEFAULT_CODE_WIDTH, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, codeFontSize, createCodeObject, setCodeFontSize, setCodeLanguage, setCodeText, setCodeTheme, stepCodeFontSize } from './codeBlock'
-import { ensureCodeHighlighter, isCodeHighlighterReady, onCodeHighlighterReady } from './codeHighlight'
+import { onCodeHighlighterReady } from './codeHighlight'
 import { ClassBoxDialog } from './ClassBoxDialog'
 import { AccountButton } from './app/AccountButton'
 import { ContextPanel } from './app/ContextPanel'
@@ -347,7 +347,7 @@ function App() {
     getItems: () => strokesRef.current,
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
     getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current }),
-    isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null,
+    isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null || codeEditorRef.current !== null,
     loadDocument: (loaded, startPage) => {
       resetInteractionState()
       dismissDeletedPage()
@@ -407,6 +407,8 @@ function App() {
     classTapRef.current = null
     setTextEditor(null)
     setClassBoxEditor(null)
+    codeEditorRef.current = null
+    setCodeEditor(null)
   }
 
   /** Shows the page at `index` of pagesRef: its items and its own undo history become the live ones. */
@@ -1580,7 +1582,6 @@ function App() {
       target.restore()
     } else {
       const redrawStartedAt = DRAW_READOUT_ENABLED && cacheAllowed ? performance.now() : 0
-      if (!isCodeHighlighterReady() && items.some((item) => item.kind === 'code')) ensureCodeHighlighter() // the library loads only once a code block is on the page
       canvasItemsForRendering(routeConnectors(items)).forEach((item) => { if (!isItemVisible(item, view)) return; if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(target, item) })
       if (redrawStartedAt) {
         // Time of this full redraw (zoom, pan, undo, erase, opening a diagram): JS drawing time, and time until the next frame starts.
@@ -3732,7 +3733,18 @@ function App() {
   // The small sizes (10-16) exist in Desktop mode only: leaving it must not keep a size the tablet panel cannot show or change.
   useEffect(() => { if (inputMode !== 'desktop') setTextSize((size) => (TEXT_FONT_SIZES.includes(size) ? size : DEFAULT_TEXT_FONT_SIZE)) }, [inputMode])
   // When the highlighter library finishes loading, the saved picture of the page is stale (code drawn plain): draw it again.
-  useEffect(() => onCodeHighlighterReady(() => { historyCacheRef.current = null; renderAll() }), [renderAll])
+  // Never a full redraw while a pen/touch stroke or pointer is active: wait until it ends.
+  useEffect(() => {
+    let timer: number | null = null
+    const redrawWhenIdle = () => {
+      timer = null
+      if (activeStrokeRef.current !== null || activePointerRef.current !== null) { timer = window.setTimeout(redrawWhenIdle, 150); return }
+      historyCacheRef.current = null
+      renderAll()
+    }
+    const off = onCodeHighlighterReady(() => { if (timer === null) redrawWhenIdle() })
+    return () => { off(); if (timer !== null) window.clearTimeout(timer) }
+  }, [renderAll])
 
   const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
   keyActionsRef.current = (command) => {

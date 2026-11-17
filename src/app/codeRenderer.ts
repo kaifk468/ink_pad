@@ -1,6 +1,6 @@
 import type { CodeObject, OpaqueObject } from '../canvasModel'
 import { CODE_FONT_FAMILY, codeColors, codeGeometry } from '../codeBlock'
-import { getCodeLines } from '../codeHighlight'
+import { ensureCodeHighlighter, getCodeLines } from '../codeHighlight'
 
 /** Canvas drawing for code blocks and for items of a kind this version does not know. Plain style: the sketchy-style toggle does not touch these. */
 
@@ -19,18 +19,21 @@ export function codeCharWidth(fontSize: number): number {
 }
 
 export function drawCode(ctx: CanvasRenderingContext2D, item: CodeObject): void {
+  ensureCodeHighlighter() // loads the library once, the first time any block is drawn (a no-op after that)
+  const width = Math.max(0, item.width)
+  const height = Math.max(0, item.height)
   const colors = codeColors(item)
   const lines = getCodeLines(item)
   const fontSize = codeGeometry(item, lines.length, 1).fontSize
   const geometry = codeGeometry(item, lines.length, codeCharWidth(fontSize))
   ctx.save()
   ctx.fillStyle = colors.background
-  ctx.fillRect(item.x, item.y, item.width, item.height)
+  ctx.fillRect(item.x, item.y, width, height)
   ctx.strokeStyle = colors.border
   ctx.lineWidth = 1
-  ctx.strokeRect(item.x + 0.5, item.y + 0.5, item.width - 1, item.height - 1)
+  ctx.strokeRect(item.x + 0.5, item.y + 0.5, Math.max(0, width - 1), Math.max(0, height - 1))
   ctx.beginPath()
-  ctx.rect(item.x + 1, item.y + 1, item.width - 2, item.height - 2)
+  ctx.rect(item.x + 1, item.y + 1, Math.max(0, width - 2), Math.max(0, height - 2))
   ctx.clip()
   ctx.font = `${fontSize}px ${CODE_FONT_FAMILY}`
   ctx.textBaseline = 'alphabetic'
@@ -58,7 +61,7 @@ export function drawOpaque(ctx: CanvasRenderingContext2D, item: OpaqueObject): v
   if (!item.box) return
   const { x, y, width, height } = item.box
   ctx.save()
-  ctx.fillStyle = '#e5e7eb'
+  ctx.fillStyle = 'rgba(156, 163, 175, 0.18)'
   ctx.fillRect(x, y, width, height)
   ctx.strokeStyle = '#9ca3af'
   ctx.lineWidth = 1

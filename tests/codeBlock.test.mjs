@@ -65,9 +65,9 @@ test('round trip: code items survive save and load, and old files are written ba
   assert.equal(JSON.parse(again).version, 1)
 })
 
-test('getNextIds counts code ids in the text counter and ignores unknown items', () => {
+test('getNextIds counts code ids in the text counter and keeps every counter past unknown item ids', () => {
   const items = parse([code({ id: 7 }), unknownItem, { kind: 'text', id: 2, x: 0, y: 0, width: 1, height: 1, text: 'a', fontSize: 20, color: '#111111' }]).document.items
-  assert.deepEqual(doc.getNextIds(items), { stroke: 1, rectangle: 1, connector: 1, text: 8 })
+  assert.deepEqual(doc.getNextIds(items), { stroke: 10, rectangle: 10, connector: 10, text: 10 })
 })
 
 test('unknown kind: kept, written back unchanged, and nothing throws in model, render or export paths', () => {
@@ -228,4 +228,36 @@ test('Tab and Shift+Tab', () => {
 test('the model and parser constants agree with codeBlock', () => {
   assert.equal(block.MIN_CODE_WIDTH, 96)
   assert.equal(block.MIN_CODE_HEIGHT, 48)
+})
+
+test('review fixes: unknown items are capped and cached, marquee skips them, highlighter and editor wiring', async () => {
+  // a 100k-deep unknown item cannot be written: it is dropped (counted) and the rest still saves
+  const deepText = `{"kind":"deep","id":3,"x":0,"y":0,"width":5,"height":5,"nest":${'['.repeat(100000)}${']'.repeat(100000)}}`
+  const loaded = doc.parseDocument(`{"format":"inkpad-document","version":1,"items":[${deepText},${JSON.stringify(unknownItem)}]}`)
+  assert.equal(loaded.ok, true)
+  assert.equal(loaded.droppedItems, 1)
+  assert.equal(loaded.document.items.length, 1)
+  assert.ok(doc.stringifyDocument(loaded.document).length > 0)
+  // over the size cap: dropped too
+  assert.equal(parse([{ kind: 'big', id: 4, blob: 'x'.repeat(1_100_000) }]).droppedItems, 1)
+  // the written text is the cached text of the item as read
+  const kept = parse([unknownItem]).document
+  assert.deepEqual(JSON.parse(doc.stringifyDocument(kept)).items[0], unknownItem)
+  // marquee never picks an unknown item, even one with a box inside it
+  const input = await loadModule('desktopInput.ts')
+  assert.deepEqual(input.marqueeKeys(kept.items, { x: 0, y: 0, width: 500, height: 500 }), [])
+  // drawCode starts the highlighter library by itself; the canvas is not redrawn mid-stroke
+  const { readFile } = await import('node:fs/promises')
+  assert.match(await readFile(new URL('../src/app/codeRenderer.ts', import.meta.url), 'utf8'), /ensureCodeHighlighter\(\)/)
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /redrawWhenIdle/)
+  assert.match(app, /activePointerRef\.current !== null \|\| codeEditorRef\.current !== null/)
+  assert.match(app, /codeEditorRef\.current = null\n    setCodeEditor\(null\)\n  }/)
+})
+
+test('review fixes: zero-size code and unknown boxes draw and export without negative sizes', () => {
+  const tiny = { kind: 'code', id: 1, x: 0, y: 0, width: 0, height: 0, text: 'a', language: 'plaintext' }
+  const svg = exporter.buildSheetSvg([tiny, ...parse([unknownItem]).document.items], { width: 400, height: 300, template: 'blank', backgroundColor: '#ffffff' })
+  assert.doesNotMatch(svg, /(width|height)="-/)
+  assert.match(svg, /fill-opacity="0.18"/)
 })
