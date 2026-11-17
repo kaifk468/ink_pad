@@ -49,7 +49,7 @@ import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
-import { TEXT_FONT_SIZES_DESKTOP, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
+import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
 import type { TextFontId } from './canvasModel'
 import { useDocuments } from './app/useDocuments'
@@ -3729,6 +3729,8 @@ function App() {
   useEffect(() => { if (inputMode !== 'desktop') setContextMenu(null) }, [inputMode])
 
   useEffect(() => { if (inputMode !== 'desktop') commitCodeEditor() }, [inputMode])
+  // The small sizes (10-16) exist in Desktop mode only: leaving it must not keep a size the tablet panel cannot show or change.
+  useEffect(() => { if (inputMode !== 'desktop') setTextSize((size) => (TEXT_FONT_SIZES.includes(size) ? size : DEFAULT_TEXT_FONT_SIZE)) }, [inputMode])
   // When the highlighter library finishes loading, the saved picture of the page is stale (code drawn plain): draw it again.
   useEffect(() => onCodeHighlighterReady(() => { historyCacheRef.current = null; renderAll() }), [renderAll])
 

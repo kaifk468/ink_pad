@@ -159,3 +159,7 @@ test('wiring: the label double-click is Desktop-mouse only, shares the Text tool
   assert.match(app, /const onWheel[\s\S]{0,400}clickPairRef\.current = null/)
   assert.match(app, /const onKeyDown = \(event: KeyboardEvent\) => \{\n\s*clickPairRef\.current = null/)
 })
+
+test('leaving Desktop mode resets a small desktop-only text size to the default', () => {
+  assert.match(app, /if \(inputMode !== 'desktop'\) setTextSize\(\(size\) => \(TEXT_FONT_SIZES\.includes\(size\) \? size : DEFAULT_TEXT_FONT_SIZE\)\)/)
+})
