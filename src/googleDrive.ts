@@ -177,8 +177,19 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
     return { document: result.document, text, modifiedTime }
   }
 
+  /** Uploads of one file run one after another, so an older upload started in the background can never land after a newer one. */
+  const uploadQueues = new Map<string, Promise<unknown>>()
+  function upload(id: string, document: InkPadDocument, content: string, folderId: string | null = null): Promise<string> {
+    const previous = uploadQueues.get(id) ?? Promise.resolve()
+    const run = previous.then(() => undefined, () => undefined).then(() => uploadNow(id, document, content, folderId))
+    uploadQueues.set(id, run)
+    const cleanup = () => { if (uploadQueues.get(id) === run) uploadQueues.delete(id) }
+    run.then(cleanup, cleanup)
+    return run
+  }
+
   /** Uploads a diagram over an existing Drive file, keeping the other device's version as a copy when Drive changed meanwhile. */
-  async function upload(id: string, document: InkPadDocument, content: string, folderId: string | null = null): Promise<string> {
+  async function uploadNow(id: string, document: InkPadDocument, content: string, folderId: string | null = null): Promise<string> {
     const name = `${sanitizeName(document.title)}${DOCUMENT_FILE_EXTENSION}`
     const itemCount = documentItemCount(document)
     const pageCount = documentPageCount(document)
@@ -191,7 +202,8 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
       await quietly(cache?.putText(newId, content, { modifiedTime: knownModified.get(newId) ?? '', pending: false }))
       return newId
     }
-    if (known && remote.modifiedTime && remote.modifiedTime !== known) {
+    // No known version (a restored or leftover copy): the remote file may hold something newer, so keep it first. Safe direction.
+    if (remote.modifiedTime && (!known || remote.modifiedTime !== known)) {
       const stamp = new Date(remote.modifiedTime).toISOString().slice(0, 16).replace('T', ' ')
       await call(env, `${FILES_URL}/${encodeURIComponent(id)}/copy?fields=id`, {
         method: 'POST',
@@ -202,7 +214,10 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
     const { body, headers } = multipart({ name, appProperties: summaryProperties(itemCount, pageCount, true) }, content)
     const result = await (await call(env, `${UPLOAD_URL}/${encodeURIComponent(id)}?uploadType=multipart&fields=id,modifiedTime`, { method: 'PATCH', headers, body })).json() as DriveFile
     if (result.modifiedTime) knownModified.set(id, result.modifiedTime)
-    await quietly(cache?.setState(id, { modifiedTime: result.modifiedTime ?? known ?? '', pending: false }))
+    // a newer edit may have been put in the browser copy while this one uploaded: it stays marked as waiting
+    let stillPending = false
+    try { const cached = cache ? await cache.get(id) : null; stillPending = Boolean(cached && cached.text !== content) } catch { /* mark clean as before */ }
+    await quietly(cache?.setState(id, { modifiedTime: result.modifiedTime ?? known ?? '', pending: stillPending }))
     return id
   }
 

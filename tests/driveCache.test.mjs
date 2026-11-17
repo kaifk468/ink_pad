@@ -184,3 +184,38 @@ test('a newer version that was not used because the diagram was edited meanwhile
   await second.save(id, doc('Shared', [stroke(1), stroke(9)]), null)
   assert.ok(tree(fake).some((name) => /other device/.test(name)), tree(fake).join(','))
 })
+
+test('a background upload of the pending browser copy and an immediate save of newer content never overlap: the newer content lands last, no "other device" copy', async () => {
+  const { fake, store, cache } = setup()
+  const id = await store.save(null, doc('Notes', [stroke(1)]), null)
+  // an interrupted upload: the browser copy is newer than Drive and waits
+  const meta = (await cache.get(id))
+  await cache.putText(id, JSON.stringify(doc('Notes', [stroke(1), stroke(2)])), { modifiedTime: meta.modifiedTime, pending: true })
+  const second = setup(30, fake)
+  await second.cache.putText(id, JSON.stringify(doc('Notes', [stroke(1), stroke(2)])), { modifiedTime: meta.modifiedTime, pending: true })
+  // overlap detector: count PATCH uploads in flight
+  let running = 0
+  let overlapped = false
+  const inner = fake.fetch
+  fake.fetch = async (url, init) => {
+    const patch = (init?.method ?? 'GET') === 'PATCH' && String(url).includes('/upload/')
+    if (patch) { running += 1; if (running > 1) overlapped = true; await new Promise((r) => setTimeout(r, 5)) }
+    try { return await inner(url, init) } finally { if (patch) running -= 1 }
+  }
+  await second.store.load(id) // starts the pending upload in the background
+  await second.store.save(id, doc('Notes', [stroke(1), stroke(2), stroke(3)]), null)
+  await settle()
+  assert.equal(overlapped, false)
+  assert.equal(JSON.parse(fake.files.get(id).content).items.length, 3)
+  assert.equal(tree(fake).some((name) => /other device/.test(name)), false, tree(fake).join(','))
+  assert.equal((await second.cache.get(id)).pending, false)
+})
+
+test('an upload without a known Drive version (restored copy) keeps the remote file as an "other device" copy first', async () => {
+  const { fake, store } = setup()
+  const id = await store.save(null, doc('Notes', [stroke(1)]), null)
+  const fresh = setup(30, fake).store // a new session that never loaded the file
+  await fresh.save(id, doc('Notes', [stroke(1), stroke(2)]), null)
+  assert.ok(tree(fake).some((name) => /other device/.test(name)), tree(fake).join(','))
+  assert.equal(JSON.parse(fake.files.get(id).content).items.length, 2)
+})

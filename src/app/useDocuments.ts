@@ -18,7 +18,7 @@ import { PAGE_BACKGROUND_COLORS } from '../pageBackground'
 import { buildSheetSvg, cropSvg, getContentBounds, svgToPngBlob } from '../sheetExport'
 import { SHEET_HEIGHT, SHEET_WIDTH } from '../viewport'
 import { readLastPage } from '../pages'
-import { createIndexedDbSafetyStore, createLocalStorageEmergency, createLocalStoragePointer, createSafetyKeeper, type RestoredCopy, type SafetyKeeper } from '../safetyCopy'
+import { acquireTabLock, createIndexedDbSafetyStore, createLocalStorageEmergency, createLocalStoragePointer, createSafetyKeeper, type RestoredCopy, type SafetyKeeper } from '../safetyCopy'
 
 /**
  * What the document layer needs from the drawing surface. Keeping this small is the seam between
@@ -175,6 +175,9 @@ export function useDocuments(host: DocumentHost) {
    * locked or its autosave has not run yet. Writes are held until the startup restore check has finished.
    */
   const keeperRef = useRef<SafetyKeeper<DocumentSignature> | null>(null)
+  const safetyTextRef = useRef<{ signature: DocumentSignature; text: string } | null>(null)
+  /** False in a second tab: only the tab holding the lock restores copies and uploads leftovers, so they are never duplicated. */
+  const leaderRef = useRef(true)
   if (!keeperRef.current) {
     const keeperStorage = (() => { try { return window.localStorage } catch { return null } })()
     keeperRef.current = createSafetyKeeper<DocumentSignature>({
@@ -191,9 +194,17 @@ export function useDocuments(host: DocumentHost) {
       hasContent: () => hasAnyItems(),
       isInputActive: () => hostRef.current.isInputActive(),
       signature: () => currentSignature(),
+      backendSignature: () => savedSignatureRef.current,
       sameSignature,
-      // shares the stroke JSON cached by the normal autosave, so this is cheap
-      buildText: () => stringifyDocument(buildCurrentDocument()),
+      // shares the stroke JSON cached by the normal autosave, so this is cheap; one text per signature (the pagehide emergency copy and the flush share it)
+      buildText: () => {
+        const signature = currentSignature()
+        const cached = safetyTextRef.current
+        if (cached && sameSignature(cached.signature, signature)) return cached.text
+        const text = stringifyDocument(buildCurrentDocument())
+        safetyTextRef.current = { signature, text }
+        return text
+      },
     })
     keeperRef.current.hold()
   }
@@ -289,6 +300,7 @@ export function useDocuments(host: DocumentHost) {
     // Nothing changed since this diagram was last saved or opened: skip the upload (switching diagrams used to save every time).
     const signature = currentSignature()
     if (docIdRef.current && !forced && sameSignature(signature, savedSignatureRef.current)) {
+      void keeper.markSynced(signature, docIdRef.current, docIdRef.current) // the storage holds this content, so any local copy of it is clean
       setSaveStatus('saved')
       return
     }
@@ -442,18 +454,23 @@ export function useDocuments(host: DocumentHost) {
     }
   }
 
-  const forgetCurrentDiagram = () => {
+  const forgetCurrentDiagram = (deleted = false) => {
     docIdRef.current = null
     setCurrentDocId(null)
     writeCurrentId(null)
     setSaveStatus('idle')
+    if (deleted) {
+      // The sheet stays on screen but is not a diagram any more: its safety copy is stored only if it is edited afterwards.
+      void keeper.switchTo(null)
+      keeper.markStored()
+    }
   }
 
   const deleteStoredDiagram = async (id: string) => {
     try {
       await backendRef.current.remove(id)
       void keeper.forget(backendRef.current.kind, id)
-      if (docIdRef.current === id) forgetCurrentDiagram()
+      if (docIdRef.current === id) forgetCurrentDiagram(true)
       void deleteThumbnail(id).catch(() => undefined)
       if (localStarsRef.current.includes(id)) changeLocalStars((ids) => ids.filter((item) => item !== id))
       setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
@@ -484,6 +501,7 @@ export function useDocuments(host: DocumentHost) {
     try {
       const moved = await backendRef.current.renameFolder(id, name)
       if (moved) {
+        void keeper.rekey(backendRef.current.kind, moved.from, moved.to)
         const rebase = (path: string | null) => (path === moved.from ? moved.to : path && path.startsWith(`${moved.from}/`) ? moved.to + path.slice(moved.from.length) : path)
         const nextDoc = rebase(docIdRef.current)
         if (nextDoc !== docIdRef.current) {
@@ -506,7 +524,7 @@ export function useDocuments(host: DocumentHost) {
       const ids = new Set(folderAndDescendantIds(folders, id))
       const deleted = await backendRef.current.deleteFolder(id)
       for (const gone of deleted) void keeper.forget(backendRef.current.kind, gone)
-      if (docIdRef.current && deleted.includes(docIdRef.current)) forgetCurrentDiagram()
+      if (docIdRef.current && deleted.includes(docIdRef.current)) forgetCurrentDiagram(true)
       if (pendingFolderRef.current && ids.has(pendingFolderRef.current)) pendingFolderRef.current = null
     } catch (error) {
       setFileNotice(errorText(error, 'Could not delete that folder.'))
@@ -519,6 +537,7 @@ export function useDocuments(host: DocumentHost) {
     try {
       await persistNow()
       const newId = await backendRef.current.move(docId, folderId)
+      if (newId !== docId) void keeper.rekey(backendRef.current.kind, docId, newId)
       if (docIdRef.current === docId && newId !== docId) {
         docIdRef.current = newId
         setCurrentDocId(newId)
@@ -686,7 +705,10 @@ export function useDocuments(host: DocumentHost) {
     try {
       const profile = await fetchDriveProfile(driveEnv)
       const previous = readStoredProfile()
-      if (previous?.email && profile.email && previous.email !== profile.email) await getDriveCache().clear().catch(() => undefined)
+      if (previous?.email && profile.email && previous.email !== profile.email) {
+        await keeper.dropKind('drive') // copies kept for the other account must never be uploaded into this one
+        await getDriveCache().clear().catch(() => undefined)
+      }
       writeStoredProfile(profile)
       setDriveProfile(profile)
     } catch { /* keep the remembered name and photo */ }
@@ -718,17 +740,23 @@ export function useDocuments(host: DocumentHost) {
 
   /** Diagrams kept only in the safety copy (drawn while storage was locked, then another diagram was opened) go to the storage now. A copy is dropped only after its save worked. */
   const uploadLeftovers = async () => {
+    if (!leaderRef.current) return
     const backend = backendRef.current
     const kind = backend.kind
     let leftovers: RestoredCopy[] = []
     try { leftovers = await keeper.leftovers(kind) } catch { return }
     for (const { record, document: copy } of leftovers) {
       if (backendRef.current !== backend || !readyRef.current) return
+      // the open diagram is not a leftover (the check is repeated right before saving)
+      const isOpen = () => record.key === keeper.currentKey() || (record.docId !== null && record.docId === docIdRef.current)
+      if (isOpen()) continue
       const run = saveChainRef.current.then(async () => {
         try {
+          if (isOpen() || backendRef.current !== backend || !readyRef.current) return
           if (record.docId) await backend.load(record.docId)
+          if (isOpen() || backendRef.current !== backend || !readyRef.current) return
           await backend.save(record.docId, copy, record.docId ? null : record.folderId)
-          await keeper.discard(kind, null, record.key)
+          await keeper.discardUploaded(record.key, record.rev)
         } catch { /* the record stays and is tried again next time */ }
       })
       saveChainRef.current = run
@@ -752,8 +780,10 @@ export function useDocuments(host: DocumentHost) {
         }
       }
       // Bring back changes kept on this device BEFORE waiting for Google or the folder permission, so a locked storage can never lose them.
+      leaderRef.current = await acquireTabLock(typeof navigator !== 'undefined' ? (navigator.locks as unknown as Parameters<typeof acquireTabLock>[0]) : undefined)
       let restored: RestoredCopy | null = null
-      try { restored = await keeper.restore(backendRef.current.kind) } catch { restored = null } finally { keeper.release() }
+      // restore gives up after a few seconds (a hung browser database must not leave autosave off); a second tab restores nothing
+      try { restored = leaderRef.current ? await keeper.restore(backendRef.current.kind) : null } catch { restored = null } finally { keeper.release() }
       if (cancelled) return
       if (restored) {
         restoredRef.current = true
@@ -894,6 +924,7 @@ export function useDocuments(host: DocumentHost) {
       driveExportAuth.signOut()
       writeStoredProfile(null)
       setDriveProfile(null)
+      await keeper.dropKind('drive')
       await getDriveCache().clear().catch(() => undefined)
     } else { try { await saveDeviceHandle(null) } catch { /* nothing to forget */ } }
     writeStorageMode('browser')

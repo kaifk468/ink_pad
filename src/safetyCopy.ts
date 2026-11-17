@@ -58,6 +58,8 @@ export function createIndexedDbSafetyStore(): SafetyStore {
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => { opened = null; reject(request.error ?? new Error('Could not open the recovery store.')) }
+    // another tab holds an older connection open: do not wait for it forever
+    request.onblocked = () => { opened = null; reject(new Error('The recovery store is blocked by another tab.')) }
   }))
   const run = async <T,>(mode: IDBTransactionMode, work: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> => {
     const db = await open()
@@ -117,6 +119,26 @@ export function createLocalStorageEmergency(storage: StringStorage): SafetyEmerg
   }
 }
 
+type LockManagerLike = { request(name: string, options: { ifAvailable: boolean }, callback: (lock: unknown) => unknown): Promise<unknown> }
+
+/**
+ * Takes the tab-lifetime lock that makes one tab the only one to restore and upload leftovers (a second tab would
+ * otherwise restore the same copies again and duplicate diagrams). Held until the page is gone. True = this tab leads;
+ * also true where Web Locks do not exist (then behave as before).
+ */
+export function acquireTabLock(locks: LockManagerLike | undefined, name = 'inkpad-safety'): Promise<boolean> {
+  if (!locks) return Promise.resolve(true)
+  return new Promise<boolean>((resolve) => {
+    try {
+      void Promise.resolve(locks.request(name, { ifAvailable: true }, (lock) => {
+        if (!lock) { resolve(false); return undefined }
+        resolve(true)
+        return new Promise<void>(() => undefined) // never released: the browser frees it when the tab goes away
+      })).catch(() => resolve(true))
+    } catch { resolve(true) }
+  })
+}
+
 export type SafetyKeeperDeps<S> = {
   store: SafetyStore
   setTimeout: (callback: () => void, ms: number) => unknown
@@ -133,6 +155,8 @@ export type SafetyKeeperDeps<S> = {
   hasContent: () => boolean
   isInputActive: () => boolean
   signature: () => S
+  /** What the real storage last confirmed holding for the open diagram (null when unknown). A copy equal to it is clean. */
+  backendSignature?: () => S | null
   sameSignature: (a: S | null, b: S | null) => boolean
   buildText: () => string
 }
@@ -153,7 +177,6 @@ type State<S> = {
   sig: S | null
   /** Signature the backend last confirmed saving. */
   syncedSig: S | null
-  emergencyRev: number
 }
 
 export function createSafetyKeeper<S>(deps: SafetyKeeperDeps<S>) {
@@ -164,9 +187,11 @@ export function createSafetyKeeper<S>(deps: SafetyKeeperDeps<S>) {
   let chain: Promise<void> = Promise.resolve()
   let gate: Promise<void> | null = null
   let openGate: (() => void) | null = null
+  /** The emergency copy this keeper wrote and has not seen cleared: which diagram and when. */
+  let emergencyMark: { key: string; savedAt: string; sig: S } | null = null
 
   function freshState(kind: SafetyKind | null, key: string | null): State<S> {
-    return { kind, key, rev: 0, syncedRev: 0, loaded: false, sig: null, syncedSig: null, emergencyRev: 0 }
+    return { kind, key, rev: 0, syncedRev: 0, loaded: false, sig: null, syncedSig: null }
   }
   const enqueue = (work: () => Promise<void>): Promise<void> => {
     const run = chain.then(work, work).catch(() => undefined)
@@ -174,6 +199,19 @@ export function createSafetyKeeper<S>(deps: SafetyKeeperDeps<S>) {
     return run
   }
   const keyFor = (kind: SafetyKind, docId: string) => `${kind}:${docId}`
+  /** The backend already holds exactly this content for the open (already saved) diagram, or the keeper was told it saved it. */
+  const isSynced = (sig: S, docId: string | null): boolean => {
+    if (state.syncedSig !== null && deps.sameSignature(sig, state.syncedSig)) return true
+    if (docId === null || !deps.backendSignature) return false
+    return deps.sameSignature(sig, deps.backendSignature())
+  }
+  const clearEmergencyFor = (key: string, savedAt: string, sig: S) => {
+    // same millisecond: only when the stored text is the very content the emergency copy holds
+    if (emergencyMark && emergencyMark.key === key && (savedAt > emergencyMark.savedAt || (savedAt === emergencyMark.savedAt && deps.sameSignature(sig, emergencyMark.sig)))) {
+      emergencyMark = null
+      deps.emergency?.clear()
+    }
+  }
 
   /** The key the open diagram is stored under; keeps the "new" key stable until the diagram gets an id. */
   const resolveKey = (): string => {
@@ -227,11 +265,14 @@ export function createSafetyKeeper<S>(deps: SafetyKeeperDeps<S>) {
     // From here to the put call nothing waits, so the signature and the text describe the same moment.
     const sig = deps.signature()
     if (state.sig !== null && deps.sameSignature(sig, state.sig)) return
+    const synced = isSynced(sig, docId)
+    // Content the storage already holds, with no unsaved copy waiting: nothing to keep (an opened-only diagram must not become a dirty record).
+    if (synced && state.rev <= state.syncedRev) return
     const text = deps.buildText()
     const rev = state.rev + 1
     const record: SafetyRecord = {
       key, kind, docId, folderId: deps.getFolderId(), text, rev,
-      syncedRev: state.syncedSig !== null && deps.sameSignature(sig, state.syncedSig) ? rev : state.syncedRev,
+      syncedRev: synced ? rev : state.syncedRev,
       savedAt: new Date(deps.now()).toISOString(),
     }
     try {
@@ -244,19 +285,56 @@ export function createSafetyKeeper<S>(deps: SafetyKeeperDeps<S>) {
     state.syncedRev = record.syncedRev
     state.sig = sig
     deps.pointer.set(kind, key)
-    if (state.emergencyRev > 0 && state.emergencyRev <= rev) {
-      state.emergencyRev = 0
-      deps.emergency?.clear()
-    }
+    clearEmergencyFor(key, record.savedAt, sig)
   })
 
-  const newer = (a: SafetyRecord, b: SafetyRecord) => a.rev > b.rev || (a.rev === b.rev && a.savedAt > b.savedAt)
 
   const parse = (record: SafetyRecord): RestoredCopy | null => {
     try {
       const result = parseDocument(record.text)
       return result.ok ? { record, document: result.document } : null
     } catch { return null }
+  }
+
+  const restoreNow = async (kind: SafetyKind, isAbandoned: () => boolean): Promise<RestoredCopy | null> => {
+    const candidates: SafetyRecord[] = []
+    try {
+      const key = deps.pointer.get(kind)
+      const pointed = key ? await deps.store.get(key) : null
+      if (pointed && pointed.kind === kind && isDirty(pointed)) candidates.push(pointed)
+      const emergency = deps.emergency?.read()
+      if (emergency && !isAbandoned()) {
+        const stored = emergency.key === pointed?.key ? pointed : await deps.store.get(emergency.key)
+        if (isAbandoned()) return null
+        if (!stored || emergency.savedAt >= stored.savedAt) {
+          // It is the newest copy. Its rev can be from early in a session, so it continues after the stored one.
+          const rev = Math.max(emergency.rev, (stored?.rev ?? 0) + 1)
+          const clean = emergency.syncedRev >= emergency.rev
+          const merged: SafetyRecord = { ...emergency, rev, syncedRev: clean ? rev : Math.min(emergency.syncedRev, rev - 1) }
+          let moved = false
+          try { await deps.store.put(merged); moved = true } catch { /* keep the localStorage copy */ }
+          if (moved) deps.emergency?.clear()
+          const index = candidates.findIndex((entry) => entry.key === merged.key)
+          if (index >= 0) candidates.splice(index, 1)
+          if (emergency.kind === kind && isDirty(merged)) candidates.unshift(merged)
+        } else {
+          deps.emergency?.clear() // older than what is stored: stale
+        }
+      } else if (emergency) {
+        return null
+      }
+      if (candidates.length === 0 && !pointed) {
+        const unsaved = (await deps.store.list()).filter((entry) => entry.kind === kind && entry.docId === null && isDirty(entry))
+        unsaved.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))
+        candidates.push(...unsaved)
+      }
+    } catch { return null }
+    candidates.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))
+    for (const record of candidates) {
+      const parsed = parse(record)
+      if (parsed) return parsed
+    }
+    return null
   }
 
   return {
@@ -301,15 +379,18 @@ export function createSafetyKeeper<S>(deps: SafetyKeeperDeps<S>) {
         const key = resolveKey()
         const sig = deps.signature()
         if (state.sig !== null && deps.sameSignature(sig, state.sig)) return
+        const synced = isSynced(sig, docId)
+        if (synced && state.rev <= state.syncedRev) return
         const text = deps.buildText()
         if (text.length >= EMERGENCY_MAX_CHARS) return
         const rev = state.rev + 1
+        const savedAt = new Date(deps.now()).toISOString()
         deps.emergency.write({
           key, kind, docId, folderId: deps.getFolderId(), text, rev,
-          syncedRev: state.syncedSig !== null && deps.sameSignature(sig, state.syncedSig) ? rev : state.syncedRev,
-          savedAt: new Date(deps.now()).toISOString(),
+          syncedRev: synced ? rev : state.syncedRev,
+          savedAt,
         })
-        state.emergencyRev = rev
+        emergencyMark = { key, savedAt, sig }
       } catch { /* storage full or blocked: nothing more can be done */ }
     },
 
@@ -348,42 +429,23 @@ export function createSafetyKeeper<S>(deps: SafetyKeeperDeps<S>) {
         if (newKey !== key) {
           state.key = newKey
           deps.pointer.set(kind, newKey)
+          if (emergencyMark && emergencyMark.key === key) emergencyMark = { ...emergencyMark, key: newKey }
         }
       })
     },
 
-    /** The dirty copy to bring back at startup, or null. An emergency copy newer than the stored one wins. */
-    async restore(kind: SafetyKind): Promise<RestoredCopy | null> {
-      const candidates: SafetyRecord[] = []
-      try {
-        const key = deps.pointer.get(kind)
-        const pointed = key ? await deps.store.get(key) : null
-        if (pointed && pointed.kind === kind && isDirty(pointed)) candidates.push(pointed)
-        const emergency = deps.emergency?.read()
-        if (emergency && emergency.kind === kind && isDirty(emergency)) {
-          const stored = emergency.key === pointed?.key ? pointed : await deps.store.get(emergency.key)
-          if (!stored || newer(emergency, stored)) {
-            // keep it in the proper store from now on
-            let moved = false
-            try { await deps.store.put(emergency); moved = true } catch { /* keep the localStorage copy */ }
-            if (moved) deps.emergency?.clear()
-            const index = candidates.findIndex((entry) => entry.key === emergency.key)
-            if (index >= 0) candidates.splice(index, 1)
-            candidates.unshift(emergency)
-          }
-        }
-        if (candidates.length === 0 && !pointed) {
-          const unsaved = (await deps.store.list()).filter((entry) => entry.kind === kind && entry.docId === null && isDirty(entry))
-          unsaved.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))
-          candidates.push(...unsaved)
-        }
-      } catch { return null }
-      candidates.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1))
-      for (const record of candidates) {
-        const parsed = parse(record)
-        if (parsed) return parsed
-      }
-      return null
+    /**
+     * The dirty copy to bring back at startup, or null. An emergency copy newer (by save time) than the stored one wins.
+     * The emergency copy is always cleared once considered, so it can never resurface later over newer content.
+     * If the store does not answer within `timeoutMs`, nothing is restored (the app must not stay without autosave).
+     */
+    restore(kind: SafetyKind, timeoutMs = 3000): Promise<RestoredCopy | null> {
+      let abandoned = false
+      const work = restoreNow(kind, () => abandoned)
+      return new Promise<RestoredCopy | null>((resolve) => {
+        const handle = deps.setTimeout(() => { abandoned = true; resolve(null) }, timeoutMs)
+        work.then((value) => { deps.clearTimeout(handle); resolve(value) }, () => { deps.clearTimeout(handle); resolve(null) })
+      })
     },
 
     /** A dirty local copy of this diagram (the backend does not have its latest edits), or null. */
@@ -438,7 +500,80 @@ export function createSafetyKeeper<S>(deps: SafetyKeeperDeps<S>) {
           state = freshState(state.kind, null)
           if (deps.pointer.get(kind) === target) deps.pointer.set(kind, null)
         }
+        // a last-moment copy of a diagram that is gone must not bring it back
+        if (emergencyMark && emergencyMark.key === target) emergencyMark = null
+        try { if (deps.emergency?.read()?.key === target) deps.emergency.clear() } catch { /* ignore */ }
         try { await deps.store.remove(target) } catch { /* leftover record is harmless */ }
+      })
+    },
+
+    /** Drops an uploaded leftover only if it was not edited since (its rev is still the uploaded one). */
+    discardUploaded(key: string, rev: number): Promise<void> {
+      return enqueue(async () => {
+        if (state.key === key) return
+        try {
+          const current = await deps.store.get(key)
+          if (current && current.rev === rev) await deps.store.remove(key)
+        } catch { /* the record stays and is tried again next time */ }
+      })
+    },
+
+    /** Drops every stored copy of one kind (Drive after sign-out or an account change: they belong to someone else's Drive). */
+    dropKind(kind: SafetyKind): Promise<void> {
+      if (state.kind === kind) {
+        // the open sheet counts as stored, so the next flush does not write it straight back
+        const had = state.key
+        state = freshState(kind, had)
+        if (had) { state.loaded = true; state.sig = deps.signature() }
+      }
+      if (deps.pointer.get(kind)) deps.pointer.set(kind, null)
+      try { if (deps.emergency?.read()?.kind === kind) deps.emergency.clear() } catch { /* ignore */ }
+      emergencyMark = null
+      return enqueue(async () => {
+        try {
+          for (const record of await deps.store.list()) if (record.kind === kind) await deps.store.remove(record.key)
+        } catch { /* leftovers are harmless but are tried again next time */ }
+      })
+    },
+
+    /** The open sheet is not a diagram the person made on purpose (its diagram was deleted): do not store it unless it is edited. */
+    markStored() {
+      if (!state.key) return
+      state.loaded = true
+      state.sig = deps.signature()
+    },
+
+    /** A device-folder id changed (rename of a folder or move of a diagram): the copies follow it, exact ids and path prefixes. */
+    rekey(kind: SafetyKind, fromId: string, toId: string): Promise<void> {
+      if (fromId === toId) return Promise.resolve()
+      const rebase = (path: string | null) => (path === fromId ? toId : path !== null && path.startsWith(`${fromId}/`) ? toId + path.slice(fromId.length) : path)
+      if (state.key && state.kind === kind) {
+        const current = state.key.startsWith(`${kind}:new:`) ? null : state.key.slice(kind.length + 1)
+        const next = rebase(current)
+        if (current !== null && next !== current && next !== null) {
+          state.key = keyFor(kind, next)
+          if (deps.pointer.get(kind) === keyFor(kind, current)) deps.pointer.set(kind, state.key)
+          if (emergencyMark && emergencyMark.key === keyFor(kind, current)) emergencyMark = { ...emergencyMark, key: state.key }
+        }
+      }
+      return enqueue(async () => {
+        try {
+          for (const record of await deps.store.list()) {
+            if (record.kind !== kind) continue
+            const docId = rebase(record.docId)
+            const folderId = rebase(record.folderId)
+            if (docId === record.docId && folderId === record.folderId) continue
+            const key = record.docId !== null && docId !== null ? keyFor(kind, docId) : record.key
+            if (key !== record.key) {
+              const existing = await deps.store.get(key)
+              if (!existing || existing.savedAt < record.savedAt) await deps.store.put({ ...record, key, docId, folderId })
+              await deps.store.remove(record.key)
+              if (deps.pointer.get(kind) === record.key) deps.pointer.set(kind, key)
+            } else {
+              await deps.store.put({ ...record, docId, folderId })
+            }
+          }
+        } catch { /* the old record stays; it is uploaded as a leftover */ }
       })
     },
 
