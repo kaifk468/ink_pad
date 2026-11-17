@@ -124,3 +124,13 @@ test('wrapped label draws and exports its wrapped lines', () => {
   assert.deepEqual(layout.labelLines({ ...label, fit: undefined }), ['aaaa bbbb'])
   void svgExport
 })
+
+test('buildEditedLabel: opening a wrapped label and leaving it unchanged keeps it wrapped', () => {
+  const text = 'word '.repeat(20).trim()
+  const wrapped = { kind: 'text', id: 1, x: 10, y: 10, width: 200, height: 52, text, fontSize: 10, color: '#111', fit: 'wrap' }
+  const editor = { itemId: 1, x: 10, y: 10, fontSize: 10, initialText: text, fitArea: area, pickedSize: 10 }
+  const same = fit.buildEditedLabel(wrapped, text, editor, measureFor)
+  assert.equal(same.fit, 'wrap')
+  assert.equal(same.width, 200)
+  assert.equal(same.height, 52)
+})

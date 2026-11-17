@@ -129,6 +129,8 @@ export function buildEditedLabel(base: TextObject, value: string, editor: FitEdi
   const { fit: _old, ...plain } = base
   void _old
   const fit = editorFit(editor, value, measureFor)
+  // Opened and closed without a change: a wrapped label stays exactly as it was (re-measuring would un-wrap it).
+  if (!fit && base.fit === 'wrap' && !editor.fitOff && value === base.text && editor.fontSize === base.fontSize) return base
   const size = fit ? fit.fontSize : editor.fontSize
   const updated = updateTextObject(plain, value, size, measureFor(size, editor.fontFamily))
   if (fit) return { ...updated, width: fit.width, height: fit.height, ...(fit.wrap ? { fit: 'wrap' as const } : {}) }
