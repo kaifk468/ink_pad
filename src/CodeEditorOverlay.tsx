@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import type { CodeObject } from './canvasModel'
 import { CODE_FONT_FAMILY, CODE_PADDING, CODE_TAB_WIDTH, codeColors, codeFontSize, codeGeometry } from './codeBlock'
 import { codeCharWidth } from './app/codeRenderer'
-import { indentSelection } from './codeEditing'
+import { codeKeyEdit, indentSelection } from './codeEditing'
 
 type CodeEditorOverlayProps = {
   item: CodeObject
@@ -12,7 +12,10 @@ type CodeEditorOverlayProps = {
   onCommit: () => void
 }
 
-/** A textarea laid exactly over the code block (Desktop only). Tab indents, Shift+Tab outdents, Escape or clicking away commits. */
+/**
+ * A textarea laid exactly over the code block (Desktop only). Tab indents, Shift+Tab outdents, Escape or clicking away commits.
+ * Brackets and quotes close themselves, Enter keeps the indent and a closing bracket outdents (codeKeyEdit, per language).
+ */
 export function CodeEditorOverlay({ item, viewport, onChange, onCommit }: CodeEditorOverlayProps) {
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const gutterRef = useRef<HTMLDivElement>(null)
@@ -32,10 +35,25 @@ export function CodeEditorOverlay({ item, viewport, onChange, onCommit }: CodeEd
     onChange(item.text)
   }, [])
 
+  // The caret after a programmatic edit, placed as soon as React has written the new value (before the next key can arrive).
+  const pendingSelectionRef = useRef<[number, number] | null>(null)
+  useLayoutEffect(() => {
+    const pending = pendingSelectionRef.current
+    if (!pending || !fieldRef.current) return
+    pendingSelectionRef.current = null
+    fieldRef.current.setSelectionRange(pending[0], pending[1])
+  })
+
   const edit = (next: string, selectionStart: number, selectionEnd: number) => {
+    pendingSelectionRef.current = [selectionStart, selectionEnd]
+    if (next === fieldRef.current?.value) {
+      // Typing over a closing character changes only the caret.
+      pendingSelectionRef.current = null
+      fieldRef.current?.setSelectionRange(selectionStart, selectionEnd)
+      return
+    }
     setValue(next)
     onChange(next)
-    requestAnimationFrame(() => fieldRef.current?.setSelectionRange(selectionStart, selectionEnd))
   }
 
   return (
@@ -66,6 +84,14 @@ export function CodeEditorOverlay({ item, viewport, onChange, onCommit }: CodeEd
             event.preventDefault()
             const field = event.currentTarget
             const result = indentSelection(field.value, field.selectionStart, field.selectionEnd, event.shiftKey)
+            edit(result.text, result.start, result.end)
+            return
+          }
+          if (event.ctrlKey || event.metaKey || event.altKey || event.nativeEvent.isComposing) return
+          const field = event.currentTarget
+          const result = codeKeyEdit(field.value, field.selectionStart, field.selectionEnd, event.key, item.language)
+          if (result) {
+            event.preventDefault()
             edit(result.text, result.start, result.end)
           }
         }}
