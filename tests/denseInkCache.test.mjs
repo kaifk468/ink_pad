@@ -8,7 +8,7 @@ test('the ink already on the page is kept as a picture between frames and betwee
   assert.match(app, /historyLayerRef/)
   assert.match(app, /historyCacheRef/)
   // never used for benchmark runs or while a text label is being edited
-  assert.match(app, /const cacheAllowed = !benchmarkBackground && editingTextId === null && PAGE_CACHE_ENABLED/)
+  assert.match(app, /const cacheAllowed = !benchmarkBackground && nothingEdited && PAGE_CACHE_ENABLED/)
   // reused only for the same items (same objects, same order), display mode, pixel density and canvas size
   for (const key of ['sameItems(cache!.snapshot, items, items.length)', 'cache.mode === strokeDisplayMode', 'cache.dpr === dpr', 'cache.width === canvas.width', 'cache.height === canvas.height', 'cache!.scale === viewport.scale', 'cache!.offsetX === viewport.offsetX', 'cache!.offsetY === viewport.offsetY']) {
     assert.ok(app.includes(key), key)

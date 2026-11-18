@@ -48,3 +48,25 @@ test('App: insertCodeBlock uses the mouse point when it is over the canvas', () 
   // the mouse point is forgotten when it leaves the canvas, so the menu button falls back to the centre
   assert.match(app, /if \(event\.pointerType === 'mouse'\) \{ setMouseHover\(null\); cursorPointRef\.current = null \}/)
 })
+
+test('a code block is transparent: no background or border on the canvas or in the SVG export; the editor is transparent too', async () => {
+  const renderer = await readFile(new URL('../src/app/codeRenderer.ts', import.meta.url), 'utf8')
+  const drawCode = renderer.slice(renderer.indexOf('export function drawCode'), renderer.indexOf('export function drawOpaque'))
+  assert.doesNotMatch(drawCode, /fillRect|strokeRect|colors\.background|colors\.border/)
+  const exportSource = await readFile(new URL('../src/sheetExport.ts', import.meta.url), 'utf8')
+  const codeElement = exportSource.slice(exportSource.indexOf('function codeElement'), exportSource.indexOf('function opaqueElement'))
+  assert.doesNotMatch(codeElement, /colors\.background|colors\.border/)
+  const overlay = await readFile(new URL('../src/CodeEditorOverlay.tsx', import.meta.url), 'utf8')
+  assert.doesNotMatch(overlay, /background: colors\.background/)
+  const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
+  assert.match(css, /\.code-editor \{[^}]*background: transparent;[^}]*border: 1px solid rgba\(85, 116, 237, 0\.45\)/)
+})
+
+test('App: a code block being edited is drawn only by its editor (no cached page picture while editing)', () => {
+  assert.match(app, /const editingCodeId = codeEditorRef\.current\?\.id \?\? null/)
+  assert.match(app, /const nothingEdited = editingTextId === null && editingCodeId === null/)
+  assert.match(app, /const penStrokeFrame = !benchmarkBackground && nothingEdited/)
+  assert.match(app, /const gestureFrame = !benchmarkBackground && nothingEdited/)
+  const open = app.slice(app.indexOf('const openCodeEditor = (id: number): boolean => {'), app.indexOf('const insertCodeBlock = () => {'))
+  assert.match(open, /setCodeEditor\(\{ id \}\)\n\s*renderAll\(\)/)
+})

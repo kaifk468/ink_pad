@@ -26,12 +26,8 @@ export function drawCode(ctx: CanvasRenderingContext2D, item: CodeObject): void 
   const lines = getCodeLines(item)
   const fontSize = codeGeometry(item, lines.length, 1).fontSize
   const geometry = codeGeometry(item, lines.length, codeCharWidth(fontSize))
+  // Transparent block: only the line numbers and the code are drawn over the page (the outline shows while selected or edited).
   ctx.save()
-  ctx.fillStyle = colors.background
-  ctx.fillRect(item.x, item.y, width, height)
-  ctx.strokeStyle = colors.border
-  ctx.lineWidth = 1
-  ctx.strokeRect(item.x + 0.5, item.y + 0.5, Math.max(0, width - 1), Math.max(0, height - 1))
   ctx.beginPath()
   ctx.rect(item.x + 1, item.y + 1, Math.max(0, width - 2), Math.max(0, height - 2))
   ctx.clip()

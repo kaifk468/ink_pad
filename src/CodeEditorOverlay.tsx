@@ -41,7 +41,7 @@ export function CodeEditorOverlay({ item, viewport, onChange, onCommit }: CodeEd
   return (
     <div
       className="code-editor"
-      style={{ left: item.x * scale + viewport.offsetX, top: item.y * scale + viewport.offsetY, width: item.width * scale, height: item.height * scale, background: colors.background, borderColor: colors.border, fontFamily: CODE_FONT_FAMILY, fontSize, lineHeight: `${lineHeight}px` }}
+      style={{ left: item.x * scale + viewport.offsetX, top: item.y * scale + viewport.offsetY, width: item.width * scale, height: item.height * scale, fontFamily: CODE_FONT_FAMILY, fontSize, lineHeight: `${lineHeight}px` }}
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div ref={gutterRef} className="code-editor-gutter" aria-hidden="true" style={{ width: geometry.gutterRight * scale, color: colors.gutter, paddingTop: CODE_PADDING * scale }}>

@@ -205,7 +205,7 @@ function rotated(item: CanvasItem, markup: string): string {
 
 let codeCount = 0
 
-/** A code block as plain SVG: background, line numbers and the coloured text (coloured only if the highlighter had loaded). */
+/** A code block as plain SVG, transparent like on the canvas: line numbers and the coloured text (coloured only if the highlighter had loaded). */
 function codeElement(item: CodeObject): string {
   const colors = codeColors(item)
   const lines = getCodeLines(item)
@@ -222,7 +222,6 @@ function codeElement(item: CodeObject): string {
     return number + code
   }).join('')
   return `<g><clipPath id="${clipId}"><rect x="${n(item.x)}" y="${n(item.y)}" width="${n(width)}" height="${n(height)}"/></clipPath>`
-    + `<rect x="${n(item.x + 0.5)}" y="${n(item.y + 0.5)}" width="${n(Math.max(0, width - 1))}" height="${n(Math.max(0, height - 1))}" fill="${colors.background}" stroke="${colors.border}" stroke-width="1"/>`
     + `<g clip-path="url(#${clipId})" font-family="${family}" font-size="${fontSize}">${body}</g></g>`
 }
 

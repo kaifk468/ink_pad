@@ -51,7 +51,7 @@ test('the default draw path is always cached, and a limit of 0 never goes direct
 
 test('renderAll picks the path from the visible ink, only between strokes, and skips off-screen strokes when redrawing', () => {
   assert.match(app, /if \(!benchmarkBackground && liveStroke === null\) \{\s*const visiblePoints = countVisiblePoints\(items, view\)[\s\S]*?const nextMode = chooseDrawMode\(drawModeRef\.current, visiblePoints, DIRECT_MAX_VISIBLE_POINTS\)/)
-  assert.match(app, /const cacheAllowed = !benchmarkBackground && editingTextId === null && PAGE_CACHE_ENABLED && drawMode === 'cached'/)
+  assert.match(app, /const cacheAllowed = !benchmarkBackground && nothingEdited && PAGE_CACHE_ENABLED && drawMode === 'cached'/)
   // cached by default (limit 0); ?direct=N turns direct drawing on up to N visible points
   assert.match(app, /DRAW_SWITCHES\.get\('direct'\) !== null \? Number\(DRAW_SWITCHES\.get\('direct'\)\) : DEFAULT_DIRECT_MAX_VISIBLE_POINTS/)
   assert.match(app, /if \(!isItemVisible\(item, view\)\) return/)

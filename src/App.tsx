@@ -1412,10 +1412,13 @@ function App() {
     const dpr = benchmarkBackground?.dpr ?? canvasPixelRatio()
     const viewport = benchmarkBackground?.viewport ?? viewportRef.current
     const editingTextId = textEditorRef.current?.itemId ?? null
+    // A code block being edited is drawn by its (transparent) editor overlay only, like a label being edited.
+    const editingCodeId = codeEditorRef.current?.id ?? null
+    const nothingEdited = editingTextId === null && editingCodeId === null
     const items = strokesRef.current
     const liveStroke = activeStrokeRef.current
-    const penStrokeFrame = !benchmarkBackground && editingTextId === null && liveStroke !== null && liveStroke.kind === 'stroke' && !liveStroke.erase
-    const gestureFrame = !benchmarkBackground && editingTextId === null && viewportGestureRef.current
+    const penStrokeFrame = !benchmarkBackground && nothingEdited && liveStroke !== null && liveStroke.kind === 'stroke' && !liveStroke.erase
+    const gestureFrame = !benchmarkBackground && nothingEdited && viewportGestureRef.current
     // The picture of everything already on the page is kept between frames and between strokes. A finished pen stroke is
     // added to it directly, so neither starting nor ending a stroke redraws the whole page.
     const viewCssWidth = canvas.width / dpr
@@ -1441,7 +1444,7 @@ function App() {
       }
     }
     const drawMode = drawModeRef.current
-    const cacheAllowed = !benchmarkBackground && editingTextId === null && PAGE_CACHE_ENABLED && drawMode === 'cached'
+    const cacheAllowed = !benchmarkBackground && nothingEdited && PAGE_CACHE_ENABLED && drawMode === 'cached'
     const cache = historyCacheRef.current
     const historyLayerNow = historyLayerRef.current
     const cacheBase = cacheAllowed && cache !== null && historyLayerNow !== null
@@ -1592,7 +1595,7 @@ function App() {
       target.restore()
     } else {
       const redrawStartedAt = DRAW_READOUT_ENABLED && cacheAllowed ? performance.now() : 0
-      canvasItemsForRendering(routeConnectors(items)).forEach((item) => { if (!isItemVisible(item, view)) return; if (editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) drawItem(target, item) })
+      canvasItemsForRendering(routeConnectors(items)).forEach((item) => { if (!isItemVisible(item, view)) return; if ((editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) && (editingCodeId === null || item.kind !== 'code' || item.id !== editingCodeId)) drawItem(target, item) })
       if (redrawStartedAt) {
         // Time of this full redraw (zoom, pan, undo, erase, opening a diagram): JS drawing time, and time until the next frame starts.
         const redrawJs = performance.now() - redrawStartedAt
@@ -3617,6 +3620,7 @@ function App() {
     codeEditorRef.current = { id }
     codeEditorValueRef.current = item.kind === 'code' ? item.text : ''
     setCodeEditor({ id })
+    renderAll() // the block's canvas copy steps aside for the transparent editor
     return true
   }
   const insertCodeBlock = () => {
