@@ -65,6 +65,23 @@ export function createCodeObject(id: number, x: number, y: number, language = DE
   return { kind: 'code', id, x, y, width: DEFAULT_CODE_WIDTH, height: DEFAULT_CODE_HEIGHT, text: '', language: cleanCodeLanguage(language) }
 }
 
+/**
+ * Where a new block goes: its top-left corner at the mouse (`atMouse`), or centred on the middle of the view when the mouse is not
+ * over the canvas (menu button). Always kept inside the workspace.
+ */
+export function newCodeBlockOrigin(
+  anchor: { x: number; y: number },
+  atMouse: boolean,
+  workspace: { x: number; y: number; width: number; height: number },
+): { x: number; y: number } {
+  const x = atMouse ? anchor.x : anchor.x - DEFAULT_CODE_WIDTH / 2
+  const y = atMouse ? anchor.y : anchor.y - DEFAULT_CODE_HEIGHT / 2
+  return {
+    x: Math.max(workspace.x, Math.min(workspace.x + workspace.width - DEFAULT_CODE_WIDTH, x)),
+    y: Math.max(workspace.y, Math.min(workspace.y + workspace.height - DEFAULT_CODE_HEIGHT, y)),
+  }
+}
+
 /** Replaces one code block (never edits in place). Returns the same array when nothing changes. */
 function updateCode(items: CanvasItem[], id: number, change: (item: CodeObject) => CodeObject): CanvasItem[] {
   let changed = false

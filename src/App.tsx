@@ -33,7 +33,7 @@ import { UmlConnectorIcon } from './app/UmlConnectorIcon'
 import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
 import { CodeEditorOverlay } from './CodeEditorOverlay'
 import { codeEditorIsLive } from './codeEditing'
-import { DEFAULT_CODE_HEIGHT, DEFAULT_CODE_WIDTH, MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, codeFontSize, createCodeObject, setCodeFontSize, setCodeLanguage, setCodeText, setCodeTheme, stepCodeFontSize } from './codeBlock'
+import { MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, codeFontSize, createCodeObject, newCodeBlockOrigin, setCodeFontSize, setCodeLanguage, setCodeText, setCodeTheme, stepCodeFontSize } from './codeBlock'
 import { onCodeHighlighterReady } from './codeHighlight'
 import { ClassBoxDialog } from './ClassBoxDialog'
 import { AccountButton } from './app/AccountButton'
@@ -3585,7 +3585,7 @@ function App() {
     return true
   }
 
-  // Code blocks (Desktop): create one at the middle of the view, edit it in an overlay, and change its language, theme and text size.
+  // Code blocks (Desktop): create one at the mouse (or the middle of the view), edit it in an overlay, and change its language, theme and text size.
   const soleCode = (): CodeObject | null => {
     const keys = currentSelectionKeys()
     if (keys.size !== 1) return null
@@ -3624,10 +3624,10 @@ function App() {
     if (!canvas || inputModeRef.current !== 'desktop') return
     if (codeEditorRef.current) commitCodeEditor()
     const rect = canvas.getBoundingClientRect()
-    const middle = screenToCanvasPoint({ x: rect.width / 2, y: rect.height / 2, pressure: 1 }, viewportRef.current)
-    const bounds = workspaceBoundsRef.current
-    const x = Math.max(bounds.x, Math.min(bounds.x + bounds.width - DEFAULT_CODE_WIDTH, middle.x - DEFAULT_CODE_WIDTH / 2))
-    const y = Math.max(bounds.y, Math.min(bounds.y + bounds.height - DEFAULT_CODE_HEIGHT, middle.y - DEFAULT_CODE_HEIGHT / 2))
+    // At the mouse when it is over the canvas (K key); from the menu button, the middle of the view.
+    const mouse = cursorPointRef.current
+    const anchor = screenToCanvasPoint(mouse ?? { x: rect.width / 2, y: rect.height / 2, pressure: 1 }, viewportRef.current)
+    const { x, y } = newCodeBlockOrigin(anchor, mouse !== null, workspaceBoundsRef.current)
     saveHistory()
     const block = createCodeObject(nextTextIdRef.current++, x, y)
     strokesRef.current = [...strokesRef.current, block]

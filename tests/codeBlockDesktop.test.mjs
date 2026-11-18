@@ -31,3 +31,20 @@ test('App: the Select tool press tests code blocks after labels and before boxes
   assert.match(down, /clickSelectTarget\([^\n]{0,300}selectedRectangleIdRef\.current, event\.altKey\)/)
   assert.match(app, /const hitTestCode = \(point: Point\): CodeObject \| null =>/)
 })
+
+test('a new code block goes at the mouse (top-left corner), or centred in the view without one, inside the workspace', async () => {
+  const block = await loadModule('codeBlock.ts')
+  const ws = { x: 0, y: 0, width: 1000, height: 800 }
+  assert.deepEqual(block.newCodeBlockOrigin({ x: 200, y: 150 }, true, ws), { x: 200, y: 150 })
+  assert.deepEqual(block.newCodeBlockOrigin({ x: 500, y: 400 }, false, ws), { x: 500 - block.DEFAULT_CODE_WIDTH / 2, y: 400 - block.DEFAULT_CODE_HEIGHT / 2 })
+  assert.deepEqual(block.newCodeBlockOrigin({ x: 990, y: 790 }, true, ws), { x: 1000 - block.DEFAULT_CODE_WIDTH, y: 800 - block.DEFAULT_CODE_HEIGHT })
+  assert.deepEqual(block.newCodeBlockOrigin({ x: -50, y: -20 }, false, ws), { x: 0, y: 0 })
+})
+
+test('App: insertCodeBlock uses the mouse point when it is over the canvas', () => {
+  const insert = app.slice(app.indexOf('const insertCodeBlock = () => {'), app.indexOf('const changeCode = '))
+  assert.match(insert, /const mouse = cursorPointRef\.current/)
+  assert.match(insert, /newCodeBlockOrigin\(anchor, mouse !== null, workspaceBoundsRef\.current\)/)
+  // the mouse point is forgotten when it leaves the canvas, so the menu button falls back to the centre
+  assert.match(app, /if \(event\.pointerType === 'mouse'\) \{ setMouseHover\(null\); cursorPointRef\.current = null \}/)
+})
