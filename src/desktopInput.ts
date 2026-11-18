@@ -212,7 +212,8 @@ export function isTypingTarget(tag: string, isEditable: boolean): boolean {
  */
 export type HitTarget = { key: string; kind: 'rectangle' | 'connector' | 'text' | 'code' | 'stroke'; id: number }
 
-export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scale: number): HitTarget | null {
+/** `skipCode`: look through code blocks (Alt + click reaches what lies under a block). */
+export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scale: number, skipCode = false): HitTarget | null {
   const pick = (kind: 'rectangle' | 'connector' | 'text' | 'code', test: (item: CanvasItem) => boolean): HitTarget | null => {
     for (let index = routedItems.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
@@ -221,7 +222,7 @@ export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scal
     return null
   }
   return pick('text', (item) => itemHitTest(item, point, 8 / scale))
-    ?? pick('code', (item) => itemHitTest(item, point, 8 / scale))
+    ?? (skipCode ? null : pick('code', (item) => itemHitTest(item, point, 8 / scale)))
     ?? pick('rectangle', (item) => {
       if (item.kind !== 'rectangle') return false
       const pad = Math.max(8 / scale, item.strokeWidth * 2)
@@ -246,12 +247,13 @@ export function clickSelectTarget(
   tool: ClickTool,
   hasSelection: boolean,
   selectedRectangleId: number | null = null,
+  skipCode = false,
 ): HitTarget | null {
   if (tool === 'eraser' || tool === 'select') return null
   // The connector tool's press starts a connector (from the box edge or inside it); it must never grab the box instead.
   if (tool === 'connector' || tool === 'shapeDraw') return null
   if (tool === 'lasso' && hasSelection) return null
-  return edgeOnlyForInkBoxes(routedItems, hitTarget(routedItems, point, scale), point, scale, tool === 'pen' ? selectedRectangleId : null)
+  return edgeOnlyForInkBoxes(routedItems, hitTarget(routedItems, point, scale, skipCode), point, scale, tool === 'pen' ? selectedRectangleId : null)
 }
 
 /**

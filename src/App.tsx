@@ -816,6 +816,15 @@ function App() {
     return null
   }
 
+  const hitTestCode = (point: Point): CodeObject | null => {
+    const pad = 8 / viewportRef.current.scale
+    for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
+      const item = strokesRef.current[index]
+      if (item.kind === 'code' && itemHitTest(item, point, pad)) return item
+    }
+    return null
+  }
+
   const hitTestText = (point: Point): TextObject | null => {
     const pad = 8 / viewportRef.current.scale
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
@@ -2532,7 +2541,7 @@ function App() {
         }
       }
       // Desktop: a left click selects the box, connector or text under it with any tool but the eraser, and dragging moves it.
-      const clicked = clickSelectTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale, clickToolName(), selectedKeysRef.current.size > 0, selectedRectangleIdRef.current)
+      const clicked = clickSelectTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale, clickToolName(), selectedKeysRef.current.size > 0, selectedRectangleIdRef.current, event.altKey)
       if (clicked && selectedKeysRef.current.size > 1 && selectedKeysRef.current.has(clicked.key)) {
         // Pressing on a member of a group selection moves the whole group.
         startGroupDrag(event, point)
@@ -2689,7 +2698,9 @@ function App() {
           return
         }
       }
-      if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop' && !hitTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)) {
+      // Alt + click with the mouse looks through code blocks, so a shape or label under a block can still be reached.
+      const passThroughCode = event.altKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop'
+      if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop' && !hitTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale, passThroughCode)) {
         // Empty space with the mouse: a marquee (Shift keeps the old selection); released, it selects what is fully inside.
         const before = selectionKeysWithBox()
         const base = event.shiftKey ? before : new Set<string>()
@@ -2729,14 +2740,16 @@ function App() {
         return
       }
       const previouslySelectedRectangleId = selectedRectangleIdRef.current
+      // Same order as hitTarget: label, code block, box, connector.
       const textHit = hitTestText(point)
-      const rectangle = textHit ? null : hitTestRectangle(point)
-      const connector = textHit || rectangle ? null : hitTestConnector(point)
+      const codeHit = textHit || passThroughCode ? null : hitTestCode(point)
+      const rectangle = textHit || codeHit ? null : hitTestRectangle(point)
+      const connector = textHit || codeHit || rectangle ? null : hitTestConnector(point)
       const textWasSelected = textHit !== null && selectedKeysRef.current.has(canvasItemKey(textHit))
       setSelectedRectangle(rectangle?.id ?? null)
-      updateSelectedItems(textHit ? [canvasItemKey(textHit)] : connector ? [canvasItemKey(connector)] : [])
+      updateSelectedItems(textHit ? [canvasItemKey(textHit)] : codeHit ? [canvasItemKey(codeHit)] : connector ? [canvasItemKey(connector)] : [])
       renderAll()
-      const selectedItem = textHit ?? rectangle ?? connector
+      const selectedItem = textHit ?? codeHit ?? rectangle ?? connector
       if (!selectedItem) return
       event.currentTarget.setPointerCapture(event.pointerId)
       activeDragRef.current = {
