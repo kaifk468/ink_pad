@@ -62,7 +62,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, canvasCursor, clampMenuPosition, clickPairOnDown, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, canvasCursor, clampMenuPosition, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 const DOUBLE_TAP_MS = 400
@@ -3203,7 +3203,7 @@ function App() {
   }
 
   const onPointerEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    clickPairRef.current = null
+    clickPairRef.current = clickPairOnEnd(clickPairRef.current, event.type)
     if (snapStateRef.current?.pointerId === event.pointerId) clearSnapGuides()
     if (edgeHoldRef.current?.pointerId === event.pointerId) cancelEdgeHold()
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())

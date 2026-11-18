@@ -155,11 +155,31 @@ test('wiring: the label double-click is Desktop-mouse only, shares the Text tool
   const down = app.slice(app.indexOf('const onPointerDown = (event: React.PointerEvent'), app.indexOf('const onPointerMove = (event: React.PointerEvent'))
   assert.match(down, /clickPairRef\.current = null/)
   assert.match(down, /event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop' && event\.button === 0 && !event\.shiftKey/)
-  assert.match(app, /const onPointerEnd[^\n]*\n\s*clickPairRef\.current = null/)
+  assert.match(app, /const onPointerEnd[^\n]*\n\s*clickPairRef\.current = clickPairOnEnd\(clickPairRef\.current, event\.type\)/)
   assert.match(app, /const onWheel[\s\S]{0,400}clickPairRef\.current = null/)
   assert.match(app, /const onKeyDown = \(event: KeyboardEvent\) => \{\n\s*clickPairRef\.current = null/)
 })
 
 test('leaving Desktop mode resets a small desktop-only text size to the default', () => {
   assert.match(app, /if \(inputMode !== 'desktop'\) setTextSize\(\(size\) => \(TEXT_FONT_SIZES\.includes\(size\) \? size : DEFAULT_TEXT_FONT_SIZE\)\)/)
+})
+
+test('lostpointercapture after pointerup keeps the click pair; a cancel or a capture lost mid-press ends it', () => {
+  let { pair } = input.clickPairOnDown(null, { x: 100, y: 100, at: 0, context: ctx })
+  assert.equal(input.clickPairOnEnd(pair, 'lostpointercapture'), null)
+  pair = input.clickPairOnUp(pair, 50)
+  assert.equal(input.clickPairOnEnd(pair, 'lostpointercapture'), pair)
+  assert.equal(input.clickPairOnEnd(pair, 'pointercancel'), null)
+  // The whole browser sequence: down, up, lostpointercapture, down, up, lostpointercapture, dblclick.
+  pair = input.clickPairOnEnd(pair, 'lostpointercapture')
+  const second = input.clickPairOnDown(pair, { x: 101, y: 100, at: 200, context: ctx })
+  assert.equal(second.continued, true)
+  const done = input.clickPairOnEnd(input.clickPairOnUp(second.pair, 250), 'lostpointercapture')
+  assert.equal(done.phase, 'up2')
+  assert.deepEqual(decide({ pair: done }), { create: true, revert: false })
+  assert.equal(input.clickPairOnEnd(null, 'lostpointercapture'), null)
+})
+
+test('App: pointer end keeps the click pair through lostpointercapture', () => {
+  assert.match(app, /clickPairRef\.current = clickPairOnEnd\(clickPairRef\.current, event\.type\)/)
 })

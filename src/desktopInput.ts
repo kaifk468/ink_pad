@@ -485,6 +485,17 @@ export function clickPairOnUp(pair: ClickPair, at: number): ClickPair {
   return pair
 }
 
+/**
+ * The click pair after a pointercancel or lostpointercapture. The browser fires lostpointercapture right after every
+ * pointerup of a captured pointer, so a capture lost once the button is up keeps the pair; a cancel, or a capture lost while
+ * the button is still down, ends it.
+ */
+export function clickPairOnEnd(pair: ClickPair | null, eventType: string): ClickPair | null {
+  if (!pair) return null
+  if (eventType === 'lostpointercapture' && (pair.phase === 'up1' || pair.phase === 'up2')) return pair
+  return null
+}
+
 /** True when both items lists hold exactly the same items (same objects, same order). */
 export function clickItemsUnchanged(a: readonly CanvasItem[], b: readonly CanvasItem[]): boolean {
   return a.length === b.length && a.every((item, index) => item === b[index])
