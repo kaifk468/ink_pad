@@ -50,3 +50,6 @@ Goal: make Desktop mode (mouse + keyboard, behind the Tablet/Desktop switch) far
 - Arrow labels bound to connectors and fully bound container text: new linked objects; next round.
 - Alt-drag duplicate: Alt already means "no snapping" and "look through code blocks".
 - Icon library (person, Redis, CDN): new item kind or drawing set; next round.
+
+## Status (2026-11-19)
+All 20 items built on branch `desktop-20x` (batches A-E), reviewed by an independent Opus pass, review defects fixed, plus three fixes from a headless Chrome run. Details and the manual checklist: project-context.md, 2026-11-19 entry.
