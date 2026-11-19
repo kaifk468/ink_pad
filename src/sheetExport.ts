@@ -1,4 +1,4 @@
-import { connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, getConnectorSymbolGeometry, strokeHeadGeometry, itemAngle, itemCenter, rotatedItemBounds } from './canvasModel'
+import { lockedRedrawsAfterEraserRun, connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, getConnectorSymbolGeometry, strokeHeadGeometry, itemAngle, itemCenter, rotatedItemBounds } from './canvasModel'
 import { routeConnectors } from './connectorRoute'
 import { hldOutlinePath } from './hldShapes'
 import { isSketchyRectangle, plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokeParts } from './sketchy'
@@ -269,30 +269,30 @@ function buildSheetSvgInner(rawItems: CanvasItem[], options: SheetExportOptions)
   // The stroke eraser only cuts ink, never connectors: they are put on top of each eraser mask again.
   const connectorElements: string[] = []
 
-  const flushWithEraser = (erasers: Stroke[]) => {
+  const flushWithEraser = (erasers: Stroke[], runStart: number, runEnd: number) => {
     maskCount += 1
     const id = `erase-${maskCount}`
     const cuts = erasers.map((eraser) => strokeElement({ ...eraser, color: '#000000' })).join('')
     defs.push(`<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#fff"/>${cuts}</mask>`)
-    body = `<g mask="url(#${id})">${body}${pending}</g>${connectorElements.join('')}`
+    body = `<g mask="url(#${id})">${body}${pending}</g>${connectorElements.join('')}${lockedRedrawsAfterEraserRun(items, runStart, runEnd).map(itemElement).join('')}`
     pending = ''
   }
 
   let eraserRun: Stroke[] = []
-  for (const item of items) {
+  for (const [index, item] of items.entries()) {
     if (item.kind === 'stroke' && item.erase) {
       eraserRun.push(item)
       continue
     }
     if (eraserRun.length) {
-      flushWithEraser(eraserRun)
+      flushWithEraser(eraserRun, index - eraserRun.length, index - 1)
       eraserRun = []
     }
     const element = itemElement(item)
     if (item.kind === 'connector') connectorElements.push(element)
     pending += element
   }
-  if (eraserRun.length) flushWithEraser(eraserRun)
+  if (eraserRun.length) flushWithEraser(eraserRun, items.length - eraserRun.length, items.length - 1)
   body += pending
 
   const template = options.transparent ? 'blank' : options.template

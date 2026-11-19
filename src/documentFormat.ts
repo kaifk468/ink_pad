@@ -375,7 +375,7 @@ function sanitizeItemFields(value: unknown): CanvasItem | null {
       kind: 'connector', id: value.id, start, end, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth,
       relationshipType, reversed: value.reversed === true,
       ...(value.routing === 'elbow' ? { routing: 'elbow' as const } : {}),
-      ...(value.dash === 'dashed' || value.dash === 'dotted' ? { dash: value.dash } : {}),
+      ...(value.dash === 'dashed' || value.dash === 'dotted' || value.dash === 'solid' ? { dash: value.dash } : {}),
       ...(startAttachment ? { startAttachment } : {}),
       ...(endAttachment ? { endAttachment } : {}),
     }

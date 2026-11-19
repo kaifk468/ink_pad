@@ -200,7 +200,10 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
   const command = event.ctrlKey || event.metaKey
   if (command && !event.altKey) {
     // Layer order: Ctrl+] / Ctrl+[ one step, with Shift all the way. The physical key decides (Shift changes `key` to } or {).
-    if (event.code === 'BracketRight' || event.code === 'BracketLeft') {
+    // Zoom keys are checked by `key` first: on a German layout Ctrl+'+' is the physical BracketRight key. The bracket `code` counts only when `key` is a bracket or not a single printable character.
+    const zoomKey = key === '=' || key === '+' || key === '-' || key === '_'
+    const bracketKey = event.key === '[' || event.key === ']' || event.key === '{' || event.key === '}' || event.key.length !== 1
+    if (!zoomKey && bracketKey && (event.code === 'BracketRight' || event.code === 'BracketLeft')) {
       if (event.repeat) return null
       const forward = event.code === 'BracketRight'
       return { kind: 'layer', move: event.shiftKey ? (forward ? 'front' : 'back') : (forward ? 'forward' : 'backward') }
@@ -506,8 +509,8 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection),
     entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection),
     entry('zoomSelection', 'Zoom to selection', 'Shift+2', 'view', hasSelection),
-    ...(hasSelection ? [entry('lock', 'Lock', 'Ctrl+Shift+L', 'lock', true)] : []),
-    ...(!hasSelection && lockedTarget ? [entry('unlock', 'Unlock', '', 'lock', true)] : []),
+    ...(hasSelection && !lockedTarget ? [entry('lock', 'Lock', 'Ctrl+Shift+L', 'lock', true)] : []),
+    ...(lockedTarget ? [entry('unlock', 'Unlock', '', 'lock', true)] : []),
     ...(!hasSelection && !lockedTarget && anyLocked ? [entry('unlockAll', 'Unlock all', '', 'lock', true)] : []),
     entry('copyPng', 'Copy as PNG', 'Shift+Alt+C', 'export', hasSelection || pageHasItems),
     // Only offered when something is selected.

@@ -106,14 +106,22 @@ export function quickCreateConnected(
   return { box, connector }
 }
 
-/** Keys of the text labels that lie fully inside one of the flow boxes in `boxKeys` and are not themselves in `boxKeys`. */
+/**
+ * Keys of the unlocked text labels that lie fully inside one of the flow boxes in `boxKeys` (and are not themselves in `boxKeys`).
+ * A label belongs to the innermost flow box that contains it, so dragging a container does not carry the labels of boxes nested in it.
+ */
 export function labelsInside(items: readonly CanvasItem[], boxKeys: ReadonlySet<string>): string[] {
-  const boxes = items.filter((item): item is RectangleObject => isFlowBox(item) && boxKeys.has(canvasItemKey(item)))
-  if (boxes.length === 0) return []
+  const flowBoxes = items.filter(isFlowBox)
+  if (!flowBoxes.some((box) => boxKeys.has(canvasItemKey(box)))) return []
   const result: string[] = []
   for (const item of items) {
-    if (item.kind !== 'text' || boxKeys.has(canvasItemKey(item))) continue
-    if (boxes.some((box) => labelInsideBox(item, box))) result.push(canvasItemKey(item))
+    if (item.kind !== 'text' || item.locked === true || boxKeys.has(canvasItemKey(item))) continue
+    let owner: RectangleObject | null = null
+    for (const box of flowBoxes) {
+      if (!labelInsideBox(item, box)) continue
+      if (!owner || box.width * box.height < owner.width * owner.height) owner = box
+    }
+    if (owner && boxKeys.has(canvasItemKey(owner))) result.push(canvasItemKey(item))
   }
   return result
 }
@@ -128,7 +136,7 @@ export function labelInsideBox(label: TextObject, box: RectangleObject): boolean
 export function labelInShape(items: readonly CanvasItem[], box: RectangleObject): TextObject | null {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index]
-    if (item.kind === 'text' && labelInsideBox(item, box)) return item
+    if (item.kind === 'text' && item.locked !== true && labelInsideBox(item, box)) return item
   }
   return null
 }

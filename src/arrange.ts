@@ -1,3 +1,4 @@
+import { labelsInside, isFlowBox } from './diagramFlow'
 import { canvasItemKey, getCanvasSelectionBounds, translateSelectedItems, type CanvasItem, type RectangleBounds } from './canvasModel'
 
 export type AlignOp = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'
@@ -10,13 +11,33 @@ export type ItemMove = { key: string; dx: number; dy: number }
  */
 export function arrangeableItems(items: readonly CanvasItem[], keys: ReadonlySet<string>): Array<{ key: string; bounds: RectangleBounds }> {
   const result: Array<{ key: string; bounds: RectangleBounds }> = []
+  const owned = new Set(labelsInside(items, selectedFlowBoxKeys(items, keys)))
   for (const item of items) {
     const key = canvasItemKey(item)
-    if (!keys.has(key) || item.kind === 'opaque') continue
+    if (!keys.has(key) || item.kind === 'opaque' || owned.has(key)) continue
     if (item.kind === 'connector' && (item.startAttachment || item.endAttachment)) continue
     if (item.kind === 'stroke' && item.erase) continue
     const bounds = getCanvasSelectionBounds(items as CanvasItem[], new Set([key]))
     if (bounds) result.push({ key, bounds })
+  }
+  return result
+}
+
+const selectedFlowBoxKeys = (items: readonly CanvasItem[], keys: ReadonlySet<string>): Set<string> =>
+  new Set(items.filter((item) => isFlowBox(item) && keys.has(canvasItemKey(item))).map(canvasItemKey))
+
+/** Adds a move for every label a moved box carries (so labels follow their box even when they were not selected). */
+function withCarried(items: readonly CanvasItem[], moves: ItemMove[]): ItemMove[] {
+  const result = moves.slice()
+  const done = new Set(moves.map((m) => m.key))
+  for (const move of moves) {
+    const box = items.find((item) => canvasItemKey(item) === move.key)
+    if (!box || !isFlowBox(box)) continue
+    for (const labelKey of labelsInside(items, new Set([move.key]))) {
+      if (done.has(labelKey)) continue
+      done.add(labelKey)
+      result.push({ key: labelKey, dx: move.dx, dy: move.dy })
+    }
   }
   return result
 }
@@ -44,7 +65,7 @@ export function alignMoves(items: readonly CanvasItem[], keys: ReadonlySet<strin
     else dy = (top + bottom) / 2 - (bounds.y + bounds.height / 2)
     if (dx !== 0 || dy !== 0) moves.push({ key, dx, dy })
   }
-  return moves
+  return withCarried(items, moves)
 }
 
 /** Spreads 3 or more items so the gaps between neighbours are equal; the two outermost stay where they are. */
@@ -68,7 +89,7 @@ export function distributeMoves(items: readonly CanvasItem[], keys: ReadonlySet<
     if (delta !== 0) moves.push(horizontal ? { key, dx: delta, dy: 0 } : { key, dx: 0, dy: delta })
     cursor += size(bounds) + gap
   }
-  return moves
+  return withCarried(items, moves)
 }
 
 /** Applies the moves one item at a time with the normal translate, so connectors attached to a moved box follow it. Same array when there are no moves. */

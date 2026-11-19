@@ -37,8 +37,8 @@ export type ConnectorObject = {
   endAttachment?: ConnectorAttachment
   /** Line shape: straight (default when missing) or elbow (right angles). Saved. */
   routing?: ConnectorRouting
-  /** Own line style: wins over the dash of the relationship type. Missing = the relationship type decides. */
-  dash?: LineDash
+  /** Own line style: wins over the dash of the relationship type ('solid' = draw solid although the relationship type is dashed). Missing = the relationship type decides. */
+  dash?: LineDash | 'solid'
   /** Desktop lock: drawn normally, never selected, edited or erased. Only ever `true`. */
   locked?: true
   /** The right-angle path worked out for an elbow connector. Derived while drawing, never saved: only on copies made by routeConnectors. */
@@ -113,6 +113,7 @@ export function dashPattern(dash: LineDash | undefined, width: number): number[]
 
 /** A connector's dash pattern: its own style when it has one, otherwise the dashes of its relationship type. */
 export function connectorDashPattern(connector: ConnectorObject, width = connector.strokeWidth): number[] {
+  if (connector.dash === 'solid') return []
   if (connector.dash) return dashPattern(connector.dash, width)
   return getConnectorRenderSpec(connector).lineStyle === 'dashed' ? dashPattern('dashed', width) : []
 }
@@ -210,36 +211,95 @@ export function setItemsLocked(items: CanvasItem[], keys: ReadonlySet<string> | 
   return changed ? next : items
 }
 
-/** The locked items other than connectors (those are already drawn again after an eraser run), in page order. */
-function lockedNonConnectors(items: readonly CanvasItem[]): CanvasItem[] {
-  return items.filter((item) => item.kind !== 'connector' && item.kind !== 'opaque' && item.locked === true && !(item.kind === 'stroke' && item.erase))
+/** The drawn bounds of one item (eraser strokes included: their points widened by half the brush). Null when it has none. */
+function paintBounds(item: CanvasItem): RectangleBounds | null {
+  if (item.kind === 'stroke' && item.erase) {
+    if (item.points.length === 0) return null
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const point of item.points) {
+      minX = Math.min(minX, point.x); minY = Math.min(minY, point.y)
+      maxX = Math.max(maxX, point.x); maxY = Math.max(maxY, point.y)
+    }
+    const half = item.width / 2
+    return { x: minX - half, y: minY - half, width: maxX - minX + item.width, height: maxY - minY + item.width }
+  }
+  return getCanvasSelectionBounds([item], new Set([canvasItemKey(item)]))
+}
+
+const boundsOverlap = (a: RectangleBounds, b: RectangleBounds) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+
+/**
+ * What is drawn again after the eraser run items[runStart..runEnd]: the locked items (other than connectors, which are redrawn
+ * anyway) painted before the run whose bounds overlap it, each followed again by the later non-eraser items that overlap it, in
+ * array order, so locked items are never erased but stay under what was in front of them. Empty when nothing is locked.
+ * Shared by the canvas renderer and the SVG/PNG export.
+ */
+export function lockedRedrawsAfterEraserRun(items: readonly CanvasItem[], runStart: number, runEnd: number): CanvasItem[] {
+  let any = false
+  for (let index = 0; index < runStart; index += 1) {
+    const item = items[index]
+    if (item.kind !== 'opaque' && item.locked === true && item.kind !== 'connector' && !(item.kind === 'stroke' && item.erase)) { any = true; break }
+  }
+  if (!any) return []
+  let run: RectangleBounds | null = null
+  for (let index = runStart; index <= runEnd; index += 1) {
+    const box = paintBounds(items[index])
+    if (!box) continue
+    run = run ? { x: Math.min(run.x, box.x), y: Math.min(run.y, box.y), width: Math.max(run.x + run.width, box.x + box.width) - Math.min(run.x, box.x), height: Math.max(run.y + run.height, box.y + box.height) - Math.min(run.y, box.y) } : box
+  }
+  if (!run) return []
+  const result: CanvasItem[] = []
+  const seen = new Set<CanvasItem>()
+  const add = (item: CanvasItem) => { if (!seen.has(item)) { seen.add(item); result.push(item) } }
+  for (let index = 0; index < runStart; index += 1) {
+    const item = items[index]
+    if (item.kind === 'opaque' || item.locked !== true || item.kind === 'connector' || (item.kind === 'stroke' && item.erase)) continue
+    const box = paintBounds(item)
+    if (!box || !boundsOverlap(box, run)) continue
+    add(item)
+    for (let later = index + 1; later < runStart; later += 1) {
+      const other = items[later]
+      if (other.kind === 'opaque' || (other.kind === 'stroke' && other.erase)) continue
+      const otherBox = paintBounds(other)
+      if (otherBox && boundsOverlap(box, otherBox)) add(other)
+    }
+  }
+  return result
+}
+
+/** The rectangles a connector is attached to, in array order (so the one that is higher in the layer order is drawn last). */
+function attachedRectanglesInOrder(connector: ConnectorObject, rectangles: ReadonlyMap<number, { rectangle: RectangleObject; index: number }>): RectangleObject[] {
+  const found: Array<{ rectangle: RectangleObject; index: number }> = []
+  for (const rectangleId of new Set([connector.startAttachment?.rectangleId, connector.endAttachment?.rectangleId])) {
+    const entry = rectangleId === undefined ? undefined : rectangles.get(rectangleId)
+    if (entry) found.push(entry)
+  }
+  return found.sort((a, b) => a.index - b.index).map((entry) => entry.rectangle)
 }
 
 export function canvasItemsForRendering(items: CanvasItem[]): CanvasItem[] {
-  const rectangles = new Map(items
-    .filter((item): item is RectangleObject => item.kind === 'rectangle')
-    .map((rectangle) => [rectangle.id, rectangle]))
+  const rectangles = new Map<number, { rectangle: RectangleObject; index: number }>()
+  items.forEach((item, index) => { if (item.kind === 'rectangle') rectangles.set(item.id, { rectangle: item, index }) })
   const renderItems: CanvasItem[] = []
   // The stroke eraser only cuts ink: connectors are drawn again after each run of eraser strokes, so it never leaves a gap in one.
   const connectorsSoFar: ConnectorObject[] = []
-  // Locked items are never erased: they are drawn again over the eraser strokes too (only when something is locked).
-  const lockedSoFar: CanvasItem[] = []
+  let runStart = -1
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index]
     renderItems.push(item)
     if (item.kind === 'stroke' && item.erase) {
+      if (runStart < 0) runStart = index
       const next = items[index + 1]
-      if (!(next && next.kind === 'stroke' && next.erase)) renderItems.push(...connectorsSoFar, ...lockedSoFar)
+      if (!(next && next.kind === 'stroke' && next.erase)) {
+        // Locked items are never erased: they are drawn again over the eraser run (only when something is locked).
+        renderItems.push(...connectorsSoFar, ...lockedRedrawsAfterEraserRun(items, runStart, index))
+        runStart = -1
+      }
       continue
     }
-    if (item.kind !== 'connector' && item.kind !== 'opaque' && item.locked === true) lockedSoFar.push(item)
     if (item.kind !== 'connector') continue
     connectorsSoFar.push(item)
-    const attachedRectangleIds = new Set([item.startAttachment?.rectangleId, item.endAttachment?.rectangleId])
-    for (const rectangleId of attachedRectangleIds) {
-      const rectangle = rectangleId === undefined ? undefined : rectangles.get(rectangleId)
-      if (rectangle) renderItems.push(rectangle)
-    }
+    renderItems.push(...attachedRectanglesInOrder(item, rectangles))
   }
   return renderItems
 }
@@ -252,16 +312,19 @@ export function canvasItemsForRendering(items: CanvasItem[]): CanvasItem[] {
 export function appendedItemsForRendering(items: CanvasItem[]): CanvasItem[] {
   const last = items[items.length - 1]
   if (!last) return []
-  if (last.kind === 'stroke' && last.erase) return [last, ...items.filter((item): item is ConnectorObject => item.kind === 'connector'), ...lockedNonConnectors(items)]
-  if (last.kind !== 'connector') return [last]
-  const result: CanvasItem[] = [last]
-  for (const rectangleId of new Set([last.startAttachment?.rectangleId, last.endAttachment?.rectangleId])) {
-    if (rectangleId === undefined) continue
-    let rectangle: RectangleObject | undefined
-    for (const item of items) if (item.kind === 'rectangle' && item.id === rectangleId) rectangle = item
-    if (rectangle) result.push(rectangle)
+  if (last.kind === 'stroke' && last.erase) {
+    let runStart = items.length - 1
+    while (runStart > 0) {
+      const before = items[runStart - 1]
+      if (before.kind === 'stroke' && before.erase) runStart -= 1
+      else break
+    }
+    return [last, ...items.filter((item): item is ConnectorObject => item.kind === 'connector'), ...lockedRedrawsAfterEraserRun(items, runStart, items.length - 1)]
   }
-  return result
+  if (last.kind !== 'connector') return [last]
+  const rectangles = new Map<number, { rectangle: RectangleObject; index: number }>()
+  items.forEach((item, index) => { if (item.kind === 'rectangle') rectangles.set(item.id, { rectangle: item, index }) })
+  return [last, ...attachedRectanglesInOrder(last, rectangles)]
 }
 
 export function updateConnectorRelationship(items: CanvasItem[], connectorId: number, relationshipType: ConnectorRelationshipType): CanvasItem[] {
@@ -1184,11 +1247,12 @@ export function setLineDash(items: CanvasItem[], keys: ReadonlySet<string>, dash
   const result = items.map((item): CanvasItem => {
     if (!keys.has(canvasItemKey(item)) || !hasLineDash(item)) return item
     if (item.kind === 'connector') {
-      // A connector whose relationship type is already dashed keeps drawing dashed when its own dash is removed.
-      if (item.dash === (dash ?? undefined)) return item
+      // A connector whose relationship type is dashed keeps drawing dashed when its own dash is removed, so Solid is stored as an override there.
+      const wanted: LineDash | 'solid' | undefined = dash ?? (getConnectorRenderSpec(item).lineStyle === 'dashed' ? 'solid' : undefined)
+      if (item.dash === wanted) return item
       changed = true
       const { dash: _old, ...rest } = item as ConnectorObject
-      return dash ? { ...rest, dash } : rest
+      return wanted ? { ...rest, dash: wanted } : rest
     }
     const current = (item as Stroke | RectangleObject).dash
     if (current === (dash ?? undefined)) return item
@@ -1237,28 +1301,61 @@ export type LayerMove = 'forward' | 'backward' | 'front' | 'back'
  * Paint order is array order, so layer order is the order of the array. Moves the items whose keys are given
  * one step toward the front (forward: each passes the next item that is not selected), one step toward the back,
  * or all the way to the front/back. The selected items keep their order among themselves. Opaque items never move.
- * Returns the same array when nothing changes.
+ * An eraser stroke whose bounds overlap a moving item is a barrier: the item never passes it (it would change what the eraser cut).
+ * A box moves together with the connectors attached to it, which stay right after it. Returns the same array when nothing changes.
  */
 export function reorderItems(items: CanvasItem[], keys: ReadonlySet<string>, move: LayerMove): CanvasItem[] {
   if (keys.size === 0) return items
-  const selected = (item: CanvasItem) => item.kind !== 'opaque' && keys.has(canvasItemKey(item))
-  let result: CanvasItem[]
-  if (move === 'front' || move === 'back') {
-    const picked = items.filter(selected)
-    if (picked.length === 0) return items
-    const rest = items.filter((item) => !selected(item))
-    result = move === 'front' ? [...rest, ...picked] : [...picked, ...rest]
-  } else {
-    result = items.slice()
-    if (move === 'forward') {
-      for (let index = result.length - 2; index >= 0; index -= 1) {
-        if (selected(result[index]) && !selected(result[index + 1]) && result[index + 1].kind !== 'opaque') [result[index], result[index + 1]] = [result[index + 1], result[index]]
-      }
-    } else {
-      for (let index = 1; index < result.length; index += 1) {
-        if (selected(result[index]) && !selected(result[index - 1]) && result[index - 1].kind !== 'opaque') [result[index], result[index - 1]] = [result[index - 1], result[index]]
-      }
+  const selectedBoxIds = new Set<number>()
+  for (const item of items) if (item.kind === 'rectangle' && keys.has(canvasItemKey(item))) selectedBoxIds.add(item.id)
+  const attachedTo = (item: CanvasItem): number[] => item.kind === 'connector'
+    ? [item.startAttachment?.rectangleId, item.endAttachment?.rectangleId].filter((id): id is number => id !== undefined && selectedBoxIds.has(id))
+    : []
+  const moving = (item: CanvasItem) => item.kind !== 'opaque' && (keys.has(canvasItemKey(item)) || attachedTo(item).length > 0)
+  const boundsCache = new Map<CanvasItem, RectangleBounds | null>()
+  const boundsOf = (item: CanvasItem) => {
+    if (!boundsCache.has(item)) boundsCache.set(item, paintBounds(item))
+    return boundsCache.get(item) ?? null
+  }
+  const blocks = (mover: CanvasItem, other: CanvasItem): boolean => {
+    if (other.kind !== 'stroke' || !other.erase || mover.kind === 'connector') return false
+    const a = boundsOf(mover)
+    const b = boundsOf(other)
+    return a !== null && b !== null && boundsOverlap(a, b)
+  }
+  const result = items.slice()
+  const whole = move === 'front' || move === 'back'
+  // Slides one item toward the front (+1) or back (-1): one step, or as far as it can go.
+  const slide = (from: number, direction: 1 | -1) => {
+    let index = from
+    for (;;) {
+      const next = index + direction
+      if (next < 0 || next >= result.length) return
+      const other = result[next]
+      if (moving(other) || (!whole && other.kind === 'opaque') || blocks(result[index], other)) return
+      ;[result[index], result[next]] = [result[next], result[index]]
+      index = next
+      if (!whole) return
     }
+  }
+  if (move === 'forward' || move === 'front') {
+    for (let index = result.length - 1; index >= 0; index -= 1) if (moving(result[index])) slide(index, 1)
+  } else {
+    for (let index = 0; index < result.length; index += 1) if (moving(result[index])) slide(index, -1)
+  }
+  if (selectedBoxIds.size > 0) {
+    // Keep each attached connector right after the box it belongs to (after the later box when it joins two moving boxes).
+    const connectors = result.filter((item) => attachedTo(item).length > 0)
+    const pulled = new Set<CanvasItem>(connectors)
+    const rest = result.filter((item) => !pulled.has(item))
+    const anchorIndex = (connector: CanvasItem) => Math.max(...attachedTo(connector).map((id) => rest.findIndex((item) => item.kind === 'rectangle' && item.id === id)))
+    const after = new Map<number, CanvasItem[]>()
+    for (const connector of connectors) {
+      const at = anchorIndex(connector)
+      after.set(at, [...(after.get(at) ?? []), connector])
+    }
+    result.length = 0
+    rest.forEach((item, index) => { result.push(item, ...(after.get(index) ?? [])) })
   }
   return result.every((item, index) => item === items[index]) ? items : result
 }

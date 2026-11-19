@@ -105,8 +105,9 @@ test('the stroke eraser leaves locked ink alone and locked items are drawn after
   const locked = { ...ink, locked: true }
   const result = compactAfterErase([locked, eraser], () => 50)
   assert.equal(result[0], locked)
-  const rendered = model.canvasItemsForRendering([locked, box(1, 0, 0, { locked: true }), eraser])
-  assert.deepEqual(rendered.slice(-2), [locked, box(1, 0, 0, { locked: true })])
+  const lockedBox = box(1, 0, 60, { locked: true })
+  const rendered = model.canvasItemsForRendering([locked, lockedBox, eraser])
+  assert.deepEqual(rendered.slice(-2), [locked, lockedBox])
   assert.equal(model.canvasItemsForRendering([ink, eraser]).length, 2, 'nothing extra when nothing is locked')
   assert.ok(model.appendedItemsForRendering([locked, eraser]).includes(locked))
   assert.equal(model.appendedItemsForRendering([ink, eraser]).length, 1)

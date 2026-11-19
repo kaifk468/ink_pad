@@ -235,7 +235,7 @@ test('(b) dash and arrowheads with unknown values, or on items that cannot carry
     { kind: 'rectangle', id: 1, x: 10, y: 20, width: 100, height: 60, strokeColor: '#111', strokeWidth: 2, dash: 'dashes' },
     { kind: 'rectangle', id: 2, x: 10, y: 20, width: 100, height: 60, strokeColor: '#111', strokeWidth: 2, classBox: { name: 'A', attributes: '', methods: '' }, dash: 'dashed' },
     { kind: 'rectangle', id: 3, x: 10, y: 20, width: 100, height: 60, strokeColor: '#111', strokeWidth: 2, inkBox: { top: 40, mid: 60, ink: [] }, dash: 'dashed' },
-    { kind: 'connector', id: 1, start: p(1, 1, 0), end: p(9, 9, 0), strokeColor: '#111', strokeWidth: 2, relationshipType: 'association', reversed: false, dash: 'solid' },
+    { kind: 'connector', id: 1, start: p(1, 1, 0), end: p(9, 9, 0), strokeColor: '#111', strokeWidth: 2, relationshipType: 'association', reversed: false, dash: 'wavy' },
   ]
   const { result } = roundTrip(JSON.stringify({ ...file, items }))
   for (const item of result.document.items) {

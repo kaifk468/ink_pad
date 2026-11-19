@@ -234,7 +234,7 @@ test('Ctrl+] and Ctrl+[ (with Shift for the extremes) map to layer commands by p
   assert.deepEqual(input.keyCommand(ev('BracketLeft', '['), 'desktop'), { kind: 'layer', move: 'backward' })
   assert.deepEqual(input.keyCommand(ev('BracketRight', '}', { shiftKey: true }), 'desktop'), { kind: 'layer', move: 'front' })
   assert.deepEqual(input.keyCommand(ev('BracketLeft', '{', { shiftKey: true }), 'desktop'), { kind: 'layer', move: 'back' })
-  assert.deepEqual(input.keyCommand(ev('BracketRight', 'ü', { metaKey: true, ctrlKey: false }), 'desktop'), { kind: 'layer', move: 'forward' })
+  assert.deepEqual(input.keyCommand(ev('BracketRight', 'Dead', { metaKey: true, ctrlKey: false }), 'desktop'), { kind: 'layer', move: 'forward' })
   assert.equal(input.keyCommand(ev('BracketRight', ']'), 'tablet'), null)
   assert.equal(input.keyCommand(ev('BracketRight', ']', { repeat: true }), 'desktop'), null)
   assert.equal(input.keyCommand(ev('BracketRight', ']', { altKey: true }), 'desktop'), null)

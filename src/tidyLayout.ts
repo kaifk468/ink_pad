@@ -259,7 +259,7 @@ export function layoutBoxes(nodes: TidyNode[], edges: TidyEdge[]): Map<number, P
 
 /** The boxes Tidy arranges: class boxes (typed and ink) and HLD shapes. Plain rectangles may be frames, so they stay put. */
 export function isTidyBox(item: CanvasItem): item is RectangleObject {
-  return item.kind === 'rectangle' && (item.classBox !== undefined || item.inkBox !== undefined)
+  return item.kind === 'rectangle' && item.locked !== true && (item.classBox !== undefined || item.inkBox !== undefined)
 }
 
 /** What the Tidy button would do now: the selected boxes when at least two are selected, otherwise every box. */
