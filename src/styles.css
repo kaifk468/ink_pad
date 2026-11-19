@@ -689,3 +689,12 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .code-controls { display: flex; flex-direction: column; gap: 6px; }
 .code-controls .code-row { display: flex; gap: 6px; align-items: center; }
 .code-controls select { flex: 1; min-width: 0; }
+
+/* Desktop shortcut help (uses the file panel look). */
+.shortcut-help { width: min(520px, 100%); }
+.shortcut-list { margin: 0; }
+.shortcut-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid #eef0f3; }
+.shortcut-row dt { margin: 0; color: #343944; }
+.shortcut-row dd { margin: 0; text-align: right; }
+.shortcut-row kbd { display: inline-block; padding: 2px 7px; border: 1px solid #d9dce2; border-radius: 6px; background: #f4f6fa; color: #343944; font: 600 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.zoom-controls .zoom-indicator.zoom-indicator-button { width: auto; min-width: 58px; height: 48px; padding: 0 4px; font-size: 14px; font-weight: 700; line-height: 1.2; }

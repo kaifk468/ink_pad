@@ -6,6 +6,8 @@ import type { PageSpacing, PageTemplate } from '../pageTemplates'
 import type { InputMode } from '../desktopInput'
 
 type TopLeftBarProps = {
+  /** Desktop only: opens the keyboard shortcut list. */
+  onShortcutHelp?: () => void
   title: string
   /** Called with the cleaned new title when the name is edited in place in the bar. */
   onRenameTitle: (title: string) => void
@@ -166,11 +168,15 @@ export function TopLeftBar(props: TopLeftBarProps) {
             <span className="menu-row-label menu-row-stack"><span>Snap and guides</span><span className="menu-row-sub">Boxes snap to the edges and centres of nearby boxes while you drag</span></span>
             <span className={`menu-switch${props.snapping ? ' on' : ''}`} aria-hidden="true"><span /></span>
           </button>
-          <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.oneFingerPan} onClick={() => props.onOneFingerPan(!props.oneFingerPan)}>
+          {props.inputMode !== 'desktop' && <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.oneFingerPan} onClick={() => props.onOneFingerPan(!props.oneFingerPan)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V5a1.5 1.5 0 0 1 3 0v6M12 10.5a1.5 1.5 0 0 1 3 0V12M15 11.5a1.5 1.5 0 0 1 3 0V16a5 5 0 0 1-5 5h-1.5a5 5 0 0 1-4-2L5 15.5a1.5 1.5 0 0 1 2.4-1.8L9 15"/></svg>
             <span className="menu-row-label menu-row-stack"><span>One-finger pan</span><span className="menu-row-sub">Ignored while the pen is near</span></span>
             <span className={`menu-switch${props.oneFingerPan ? ' on' : ''}`} aria-hidden="true"><span /></span>
-          </button>
+          </button>}
+          {props.inputMode === 'desktop' && props.onShortcutHelp && <button className="menu-row shortcut-help-row" type="button" aria-haspopup="dialog" onClick={() => { props.onShortcutHelp?.(); setMenuOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/></svg>
+            <span className="menu-row-label">Keyboard shortcuts</span><span className="menu-row-hint">?</span>
+          </button>}
 
           <div className="menu-divider" role="separator" />
           <button className="menu-row clear-row" type="button" onClick={() => { props.onClear(); setMenuOpen(false) }} disabled={!props.hasInk}>

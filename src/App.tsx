@@ -46,6 +46,7 @@ import { TopLeftBar } from './app/TopLeftBar'
 import { HomeScreen } from './app/HomeScreen'
 import { storageLabel } from './StoragePanel'
 import { ZoomControls } from './app/ZoomControls'
+import { ShortcutHelp } from './app/ShortcutHelp'
 import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
@@ -247,10 +248,12 @@ function App() {
   const viewportRef = useRef<Viewport>({ scale: INITIAL_ZOOM, offsetX: 0, offsetY: 0 })
   const [navigationSettings, setNavigationSettings] = useState<NavigationSettings>(() => loadNavigationSettings())
   const navigationSettingsRef = useRef(navigationSettings)
-  navigationSettingsRef.current = navigationSettings
   // Per-device input mode (menu switch). Tablet, the default, leaves the canvas exactly as it always was; Desktop lets a mouse draw and edit.
   const [inputMode, setInputMode] = useState<InputMode>(() => loadInputMode())
   const inputModeRef = useRef(inputMode)
+  // The zoom lock is a tablet-only control: in Desktop mode a lock saved earlier is ignored (and its switch is hidden), so it can never trap the menu.
+  const zoomLockActive = navigationSettings.zoomLocked && inputMode !== 'desktop'
+  navigationSettingsRef.current = zoomLockActive === navigationSettings.zoomLocked ? navigationSettings : { ...navigationSettings, zoomLocked: zoomLockActive }
   inputModeRef.current = inputMode
   const updateInputMode = (mode: InputMode) => {
     inputModeRef.current = mode
@@ -2309,6 +2312,30 @@ function App() {
     applyViewport(fitViewportToBounds(bounds, rect.width, rect.height, 48))
   }
 
+  /** Desktop Shift+2: fit the selection with padding (zoom clamped to the limits). With nothing selected, do nothing. */
+  const zoomToSelection = (): boolean => {
+    if (navigationSettingsRef.current.zoomLocked) return false
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return false
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) return false
+    const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), keys)
+    if (!bounds) return false
+    applyViewport(fitViewportToBounds(bounds, rect.width, rect.height, 64))
+    return true
+  }
+
+  /** Desktop Ctrl+0 and the % readout: 100% zoom around the centre of the current view. */
+  const zoomToActualSize = () => {
+    if (navigationSettingsRef.current.zoomLocked) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const viewport = viewportRef.current
+    const center = { x: rect.width / 2, y: rect.height / 2, pressure: 1 }
+    const anchor = screenToCanvasPoint(center, viewport)
+    applyViewport({ scale: DEFAULT_ZOOM, offsetX: center.x - anchor.x * DEFAULT_ZOOM, offsetY: center.y - anchor.y * DEFAULT_ZOOM })
+  }
+
   const resetView = () => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -3770,10 +3797,11 @@ function App() {
     return () => { off(); if (timer !== null) window.clearTimeout(timer) }
   }, [renderAll])
 
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
   const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
   keyActionsRef.current = (command) => {
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
-    if (filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
+    if (shortcutHelpOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
     if (codeEditor && liveCodeEditor()) return false
     const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
     if (contextMenuRef.current) {
@@ -3794,7 +3822,12 @@ function App() {
       case 'redo': redo(); return true
       case 'zoomIn': if (!navigationSettingsRef.current.zoomLocked) zoomBy(ZOOM_STEP); return true
       case 'zoomOut': if (!navigationSettingsRef.current.zoomLocked) zoomBy(1 / ZOOM_STEP); return true
-      case 'zoomReset': if (!navigationSettingsRef.current.zoomLocked) resetView(); return true
+      case 'zoomReset': zoomToActualSize(); return true
+      case 'zoomFit': fitDrawingView(); return true
+      case 'zoomSelection': zoomToSelection(); return true
+      case 'pagePrev': goToPage(pageIndexRef.current - 1); return true
+      case 'pageNext': goToPage(pageIndexRef.current + 1); return true
+      case 'help': setShortcutHelpOpen((open) => !open); return true
       case 'deselect':
         if (selectedKeysRef.current.size === 0 && selectedRectangleIdRef.current === null) return false
         clearLassoSelection()
@@ -4004,7 +4037,7 @@ function App() {
         </aside>
       </section>
       {/* With the zoom lock on the screen is in focus mode: the menu, folders, title and account hide; undo/redo, the dock, the pen colours and the zoom controls stay. */}
-      {!navigationSettings.zoomLocked && (
+      {!zoomLockActive && (
         <TopLeftBar
           title={docTitle}
           onRenameTitle={renameDiagram}
@@ -4020,6 +4053,7 @@ function App() {
           onInputMode={updateInputMode}
           snapping={snapping}
           onSnapping={updateSnapping}
+          onShortcutHelp={() => setShortcutHelpOpen(true)}
           oneFingerPan={navigationSettings.oneFingerPan}
           onOneFingerPan={(value) => updateNavigationSettings({ oneFingerPan: value })}
           hasInk={hasInk}
@@ -4040,8 +4074,8 @@ function App() {
           diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open), onFillTestInk: fillTestInk, onRemoveTestInk: removeTestInk }}
         />
       )}
-      <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
-      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={navigationSettings.zoomLocked} onOpenStorage={() => setStoragePanelOpen(true)} leading={penModeActive && inputMode !== 'desktop' ? <PenColors color={color} onColor={selectColor} /> : undefined} />
+      <HistoryBar desktop={inputMode === 'desktop'} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
+      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={penModeActive && inputMode !== 'desktop' ? <PenColors color={color} onColor={selectColor} /> : undefined} />
       <ContextPanel
         desktop={inputMode === 'desktop'}
         showDisplayMode={shapeTool === null}
@@ -4087,7 +4121,8 @@ function App() {
           : null}
       />
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
-      <ZoomControls zoomPercent={zoomPercent} locked={navigationSettings.zoomLocked} onToggleLock={() => updateNavigationSettings({ zoomLocked: !navigationSettings.zoomLocked })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
+      {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
+      <ZoomControls desktop={inputMode === 'desktop'} onResetZoom={zoomToActualSize} zoomPercent={zoomPercent} locked={zoomLockActive} onToggleLock={() => updateNavigationSettings({ zoomLocked: !zoomLockActive })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
         desktop={inputMode === 'desktop'}
         dockRef={toolbarRef}

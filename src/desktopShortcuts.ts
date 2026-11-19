@@ -1,0 +1,63 @@
+import type { KeyInput } from './desktopInput'
+
+/**
+ * The one table behind the Desktop shortcut help dialog. Add a row here and it shows up in the dialog.
+ * `input` is the key press that does it through `keyCommand` (a test checks that it maps to a command); leave it out for
+ * shortcuts that are not keyboard commands (mouse gestures, Shift while dragging, and so on).
+ */
+export type ShortcutGroup = 'Tools' | 'Edit' | 'View' | 'Arrange' | 'Pages'
+export type ShortcutEntry = { group: ShortcutGroup; label: string; keys: string; input?: Partial<KeyInput> }
+
+export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ['Tools', 'Edit', 'View', 'Arrange', 'Pages']
+
+const ctrl = { ctrlKey: true }
+const shift = { shiftKey: true }
+
+export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
+  { group: 'Tools', label: 'Select', keys: 'V', input: { key: 'v' } },
+  { group: 'Tools', label: 'Pen', keys: 'P', input: { key: 'p' } },
+  { group: 'Tools', label: 'Eraser', keys: 'E', input: { key: 'e' } },
+  { group: 'Tools', label: 'Lasso', keys: 'L', input: { key: 'l' } },
+  { group: 'Tools', label: 'Text', keys: 'T', input: { key: 't' } },
+  { group: 'Tools', label: 'Code block', keys: 'K', input: { key: 'k' } },
+  { group: 'Tools', label: 'Connector', keys: 'C', input: { key: 'c' } },
+  { group: 'Tools', label: 'Class box', keys: 'B', input: { key: 'b' } },
+  { group: 'Tools', label: 'Rectangle', keys: 'R', input: { key: 'r' } },
+  { group: 'Tools', label: 'Diamond', keys: 'D', input: { key: 'd' } },
+  { group: 'Tools', label: 'Ellipse', keys: 'O', input: { key: 'o' } },
+  { group: 'Tools', label: 'Arrow', keys: 'A', input: { key: 'a' } },
+  { group: 'Tools', label: 'Line', keys: 'I', input: { key: 'i' } },
+  { group: 'Edit', label: 'Undo', keys: 'Ctrl+Z', input: { key: 'z', ...ctrl } },
+  { group: 'Edit', label: 'Redo', keys: 'Ctrl+Y or Ctrl+Shift+Z', input: { key: 'y', ...ctrl } },
+  { group: 'Edit', label: 'Copy', keys: 'Ctrl+C', input: { key: 'c', ...ctrl } },
+  { group: 'Edit', label: 'Cut', keys: 'Ctrl+X', input: { key: 'x', ...ctrl } },
+  { group: 'Edit', label: 'Paste', keys: 'Ctrl+V', input: { key: 'v', ...ctrl } },
+  { group: 'Edit', label: 'Duplicate', keys: 'Ctrl+D', input: { key: 'd', ...ctrl } },
+  { group: 'Edit', label: 'Select all', keys: 'Ctrl+A', input: { key: 'a', ...ctrl } },
+  { group: 'Edit', label: 'Edit the selected text or label', keys: 'Enter', input: { key: 'Enter' } },
+  { group: 'Edit', label: 'Delete the selection', keys: 'Delete or Backspace', input: { key: 'Delete' } },
+  { group: 'Edit', label: 'Deselect, or cancel a drag', keys: 'Esc', input: { key: 'Escape' } },
+  { group: 'View', label: 'Zoom in', keys: 'Ctrl++', input: { key: '=', ...ctrl } },
+  { group: 'View', label: 'Zoom out', keys: 'Ctrl+-', input: { key: '-', ...ctrl } },
+  { group: 'View', label: 'Zoom to 100%', keys: 'Ctrl+0', input: { key: '0', ...ctrl } },
+  { group: 'View', label: 'Zoom to fit the drawing', keys: 'Shift+1', input: { key: '!', code: 'Digit1', ...shift } },
+  { group: 'View', label: 'Zoom to the selection', keys: 'Shift+2', input: { key: '@', code: 'Digit2', ...shift } },
+  { group: 'View', label: 'Pan', keys: 'Space + drag, or middle mouse drag' },
+  { group: 'View', label: 'Zoom around the pointer', keys: 'Ctrl + wheel' },
+  { group: 'View', label: 'Show this list', keys: '?', input: { key: '?', ...shift } },
+  { group: 'Arrange', label: 'Nudge the selection', keys: 'Arrow keys', input: { key: 'ArrowRight' } },
+  { group: 'Arrange', label: 'Nudge by 10', keys: 'Shift+Arrow keys', input: { key: 'ArrowRight', ...shift } },
+  { group: 'Arrange', label: 'Square or circle while drawing a shape', keys: 'Hold Shift' },
+  { group: 'Pages', label: 'Previous page', keys: 'Page Up', input: { key: 'PageUp' } },
+  { group: 'Pages', label: 'Next page', keys: 'Page Down', input: { key: 'PageDown' } },
+]
+
+export function shortcutsInGroup(group: ShortcutGroup): ShortcutEntry[] {
+  return DESKTOP_SHORTCUTS.filter((entry) => entry.group === group)
+}
+
+/** A full key event for a table entry, with every flag filled in, ready for `keyCommand`. */
+export function shortcutKeyInput(entry: ShortcutEntry): KeyInput | null {
+  if (!entry.input || entry.input.key === undefined) return null
+  return { key: entry.input.key, code: entry.input.code, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, ...entry.input }
+}

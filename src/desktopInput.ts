@@ -134,7 +134,7 @@ export function spaceIsPanKey(key: string, targetTag: string, isEditable: boolea
 /**
  * Step 4: keyboard shortcuts (Desktop mode only).
  * - Ctrl/Cmd + Z undoes; Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y redoes.
- * - Ctrl/Cmd + "+" / "-" / 0 zoom in, zoom out and reset the view.
+ * - Ctrl/Cmd + "+" / "-" / 0 zoom in, zoom out and go to 100%; Shift+1 fits the drawing, Shift+2 the selection; PageUp/PageDown change page; "?" opens the shortcut help.
  * - Escape deselects (it never cancels a stroke or closes anything).
  * - Delete or Backspace deletes the selection; Ctrl/Cmd + A selects everything on the page (step 5).
  * - A plain letter picks a tool, and picking the tool already active leaves it active ("set", not "toggle"):
@@ -147,6 +147,11 @@ export type KeyCommand =
   | { kind: 'zoomIn' }
   | { kind: 'zoomOut' }
   | { kind: 'zoomReset' }
+  | { kind: 'zoomFit' }
+  | { kind: 'zoomSelection' }
+  | { kind: 'pagePrev' }
+  | { kind: 'pageNext' }
+  | { kind: 'help' }
   | { kind: 'deselect' }
   | { kind: 'deleteSelection' }
   | { kind: 'selectAll' }
@@ -162,7 +167,7 @@ export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'e
 
 const ARROW_KEYS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
 
-export type KeyInput = { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; repeat: boolean }
+export type KeyInput = { key: string; /** Physical key (KeyboardEvent.code); Shift+1 and Shift+2 use it because their `key` depends on the layout. */ code?: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; repeat: boolean }
 
 export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null {
   if (mode !== 'desktop') return null
@@ -183,6 +188,13 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     }
     return null
   }
+  // Shift+1 fits the drawing, Shift+2 zooms to the selection. `key` is "!" or "@" on a US layout and something else elsewhere, so the physical key decides.
+  if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    if (event.code === 'Digit1' || event.code === 'Numpad1') return event.repeat ? null : { kind: 'zoomFit' }
+    if (event.code === 'Digit2' || event.code === 'Numpad2') return event.repeat ? null : { kind: 'zoomSelection' }
+    // "?" (Shift + /) opens the shortcut help.
+    if (key === '?') return event.repeat ? null : { kind: 'help' }
+  }
   // Arrow keys nudge the selection (Shift = 10 units); holding the key repeats on purpose. Other modifiers belong to the browser.
   const arrow = ARROW_KEYS[key]
   if (arrow && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -194,6 +206,8 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
   if (key === 'Escape') return event.repeat ? null : { kind: 'deselect' }
   if (key === 'Delete' || key === 'Backspace') return event.repeat ? null : { kind: 'deleteSelection' }
   if (key === 'Enter') return event.repeat ? null : { kind: 'edit' }
+  if (key === 'PageUp') return event.repeat ? null : { kind: 'pagePrev' }
+  if (key === 'PageDown') return event.repeat ? null : { kind: 'pageNext' }
   if (event.repeat) return null
   const tool = TOOL_KEYS[key]
   return tool ? { kind: 'tool', tool } : null
