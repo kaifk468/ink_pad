@@ -206,7 +206,7 @@ test('App wiring: one history step for paste, cut deletes through deleteSelectio
   const pasteFn = app.slice(app.indexOf('const pasteClipboard = ('), app.indexOf('// Duplicate = copy + paste'))
   assert.equal((pasteFn.match(/saveHistory\(\)/g) ?? []).length, 1)
   assert.doesNotMatch(app, /navigator\.clipboard|execCommand\(['"](copy|paste|cut)/)
-  assert.match(app, /case 'copy': return copySelection\(\)\n\s*case 'cut': return cutSelection\(\)\n\s*case 'paste': return pasteClipboard\(inputModeRef[^\n]*\n\s*case 'duplicate': return duplicateSelection\(\)/)
+  assert.match(app, /case 'copy': return copyWithToast\(\)\n\s*case 'cut': return cutWithToast\(\)\n\s*case 'copyPng': return copyAsPng\(\)\n\s*case 'paste': return pasteWithToast\(inputModeRef[^\n]*\n\s*case 'duplicate': return duplicateWithToast\(\)/)
   assert.match(app, /canCopy=\{selectedItemCount > 0 \|\| hasSelectedRectangle\}\n\s*canPaste=\{clipboardCount > 0\}/)
   // the panel shows Copy and Duplicate with a selection and Paste with a non-empty clipboard, next to Delete
   assert.match(panel, /props\.canCopy && <button[^>]*aria-label="Copy selection"/)
@@ -266,7 +266,7 @@ test('paste without a cursor point (toolbar, tablet) keeps the offset behaviour'
 
 test('App wiring: keyboard paste uses the mouse point, duplicate and toolbar do not', () => {
   assert.match(app, /pasteClipboard = \(at\?: Point \| null\)/)
-  assert.match(app, /case 'paste': return pasteClipboard\(inputModeRef\.current === 'desktop' && cursorPointRef\.current/)
+  assert.match(app, /case 'paste': return pasteWithToast\(inputModeRef\.current === 'desktop' && cursorPointRef\.current/)
   assert.match(app, /const duplicateSelection = \(\): boolean => \{[^]*?insertPasted\(pasteItems\(copied/)
   assert.match(app, /onPaste=\{\(\) => \{ pasteClipboard\(\) \}\}/)
   assert.match(app, /cursorPointRef\.current = null/)

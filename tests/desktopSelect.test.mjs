@@ -265,10 +265,10 @@ test('Enter edits only a single selected label or class box', () => {
 
 test('the menu lists Cut, Copy, Paste, Duplicate, Delete, Select all and disables what does not apply', () => {
   const entries = (...args) => Object.fromEntries(input.contextMenuEntries(...args).map((e) => [e.action, e.enabled]))
-  assert.deepEqual(input.contextMenuEntries(false, false, false).map((e) => e.label), ['Cut', 'Copy', 'Paste', 'Duplicate', 'Delete', 'Bring to front', 'Send to back', 'Select all'])
-  assert.deepEqual(entries(false, false, false), { cut: false, copy: false, paste: false, duplicate: false, delete: false, bringToFront: false, sendToBack: false, selectAll: false })
-  assert.deepEqual(entries(true, false, true), { cut: true, copy: true, paste: false, duplicate: true, delete: true, bringToFront: true, sendToBack: true, selectAll: true })
-  assert.deepEqual(entries(false, true, true), { cut: false, copy: false, paste: true, duplicate: false, delete: false, bringToFront: false, sendToBack: false, selectAll: true })
+  assert.deepEqual(input.contextMenuEntries(false, false, false).map((e) => e.label), ['Cut', 'Copy', 'Paste', 'Duplicate', 'Delete', 'Bring to front', 'Send to back', 'Select all', 'Copy as PNG'])
+  assert.deepEqual(entries(false, false, false), { cut: false, copy: false, paste: false, duplicate: false, delete: false, bringToFront: false, sendToBack: false, selectAll: false, copyPng: false })
+  assert.deepEqual(entries(true, false, true), { cut: true, copy: true, paste: false, duplicate: true, delete: true, bringToFront: true, sendToBack: true, selectAll: true, copyPng: true, exportPng: true, exportSvg: true })
+  assert.deepEqual(entries(false, true, true), { cut: false, copy: false, paste: true, duplicate: false, delete: false, bringToFront: false, sendToBack: false, selectAll: true, copyPng: true })
 })
 
 test('the menu stays on screen', () => {

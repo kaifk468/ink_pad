@@ -180,6 +180,7 @@ export type KeyCommand =
   | { kind: 'cut' }
   | { kind: 'paste' }
   | { kind: 'duplicate' }
+  | { kind: 'copyPng' }
   | { kind: 'edit' }
   | { kind: 'quickCreate'; direction: 'right' | 'left' | 'up' | 'down' }
   | { kind: 'layer'; move: 'forward' | 'backward' | 'front' | 'back' }
@@ -212,6 +213,8 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if (key === '-' || key === '_') return { kind: 'zoomOut' }
     if (key === '0') return { kind: 'zoomReset' }
     if (key === 'a' && !event.shiftKey) return { kind: 'selectAll' }
+    // Ctrl+Shift+C copies the selection (or the page) as a PNG. The physical key decides, as Shift changes `key`.
+    if (event.code === 'KeyC' && event.shiftKey) return event.repeat ? null : { kind: 'copyPng' }
     if (!event.shiftKey && !event.repeat) {
       if (key === 'c') return { kind: 'copy' }
       if (key === 'x') return { kind: 'cut' }
@@ -462,7 +465,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
   return item.kind === 'rectangle' && item.classBox && !item.inkBox && !item.ellipse && !item.diamond ? { kind: 'classBox', id: item.id } : null
 }
 
-export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack'
+export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'exportPng' | 'exportSvg'
 export type ContextMenuEntry = { action: ContextMenuAction; label: string; enabled: boolean }
 
 /** The right-click menu: entries that do not apply are disabled, never hidden. */
@@ -476,10 +479,19 @@ export function contextMenuEntries(hasSelection: boolean, clipboardHasItems: boo
     { action: 'bringToFront', label: 'Bring to front', enabled: hasSelection },
     { action: 'sendToBack', label: 'Send to back', enabled: hasSelection },
     { action: 'selectAll', label: 'Select all', enabled: pageHasItems },
+    { action: 'copyPng', label: 'Copy as PNG', enabled: hasSelection || pageHasItems },
+    // Only offered when something is selected.
+    ...(hasSelection ? [
+      { action: 'exportPng' as const, label: 'Export selection as PNG', enabled: true },
+      { action: 'exportSvg' as const, label: 'Export selection as SVG', enabled: true },
+    ] : []),
   ]
 }
 
 /** Keeps the menu fully on screen: opens at the pointer, shifted back when it would run past the right or bottom edge. */
+/** Height of the right-click menu for a number of entries (38 px each), for clampMenuPosition. */
+export const contextMenuHeight = (entryCount: number): number => entryCount * 38
+
 export function clampMenuPosition(x: number, y: number, width: number, height: number, viewWidth: number, viewHeight: number): { x: number; y: number } {
   return { x: Math.max(0, Math.min(x, viewWidth - width)), y: Math.max(0, Math.min(y, viewHeight - height)) }
 }

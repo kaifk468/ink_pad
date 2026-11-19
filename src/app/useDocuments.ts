@@ -17,6 +17,8 @@ import type { SaveStatus } from '../FilePanel'
 import { PAGE_BACKGROUND_COLORS } from '../pageBackground'
 import { buildSheetSvg, cropSvg, getContentBounds, svgToPngBlob } from '../sheetExport'
 import { SHEET_HEIGHT, SHEET_WIDTH } from '../viewport'
+import { COPY_IMAGE_FAILED, exportBaseName, isSelectionExport, itemsForExport, readTransparentExport, usesExcalifont, writeTransparentExport } from '../exportOptions'
+import { loadExcalifontCss } from '../fontEmbed'
 import { readLastPage } from '../pages'
 import { acquireTabLock, createIndexedDbSafetyStore, createLocalStorageEmergency, createLocalStoragePointer, createSafetyKeeper, type RestoredCopy, type SafetyKeeper } from '../safetyCopy'
 
@@ -585,9 +587,20 @@ export function useDocuments(host: DocumentHost) {
     }
   }
 
+  /** "Transparent background" in the export panel (remembered in this browser; off by default). */
+  const [transparentExport, setTransparentExportState] = useState(() => readTransparentExport(typeof localStorage === 'undefined' ? null : localStorage))
+  const transparentExportRef = useRef(transparentExport)
+  transparentExportRef.current = transparentExport
+  const setTransparentExport = (value: boolean) => {
+    setTransparentExportState(value)
+    writeTransparentExport(typeof localStorage === 'undefined' ? null : localStorage, value)
+  }
+
+  type ImageExportOptions = { keys?: ReadonlySet<string> | null; transparent?: boolean; fontCss?: string }
   /** The picture of one page: the one on screen for exports, the first page for the Library picture. */
-  const getImageExport = (which: 'current' | 'first' = 'current') => {
-    const items = which === 'first' ? (hostRef.current.getPageItems()[0] ?? []) : hostRef.current.getItems()
+  const getImageExport = (which: 'current' | 'first' = 'current', options: ImageExportOptions = {}) => {
+    const all = which === 'first' ? (hostRef.current.getPageItems()[0] ?? []) : hostRef.current.getItems()
+    const items = itemsForExport(all, options.keys)
     const page = hostRef.current.getPage()
     const sheetHeight = page.sheetHeight ?? SHEET_HEIGHT
     const bounds = getContentBounds(items, { width: SHEET_WIDTH, height: sheetHeight })
@@ -599,8 +612,18 @@ export function useDocuments(host: DocumentHost) {
       spacing: page.spacing,
       backgroundColor: PAGE_BACKGROUND_COLORS[page.background],
       ...(page.sketchy ? { sketchy: true } : {}),
+      ...(options.transparent ? { transparent: true } : {}),
+      ...(options.fontCss ? { embeddedFontCss: options.fontCss } : {}),
     }), bounds)
-    return { svg, bounds, baseName: documentFileName(docMetaRef.current.title).replace(/\.inkpad$/, '') }
+    const baseName = exportBaseName(documentFileName(docMetaRef.current.title).replace(/\.inkpad$/, ''), isSelectionExport(options.keys))
+    return { svg, bounds, baseName, usesFont: usesExcalifont(items) }
+  }
+  /** Export for people: honours the transparent choice, and embeds Excalifont when an exported label uses it (never fails because of the font). */
+  const getUserImageExport = async (keys?: ReadonlySet<string> | null) => {
+    const options: ImageExportOptions = { keys, transparent: transparentExportRef.current }
+    const probe = getImageExport('current', options)
+    if (!probe || !probe.usesFont) return probe
+    try { return getImageExport('current', { ...options, fontCss: await loadExcalifontCss() }) } catch { return probe }
   }
 
   /**
@@ -638,21 +661,48 @@ export function useDocuments(host: DocumentHost) {
     } catch { /* the card keeps its icon or older picture */ }
   }
 
-  const exportSvgFile = () => {
-    const exported = getImageExport()
-    if (!exported) return
+  /** Returns an error message, or null when it worked. `keys`: export only that selection. */
+  const exportSvgFile = async (keys?: ReadonlySet<string> | null): Promise<string | null> => {
+    const exported = await getUserImageExport(keys)
+    if (!exported) return 'Nothing to export'
     downloadBlob(new Blob([exported.svg], { type: 'image/svg+xml' }), `${exported.baseName}.svg`)
+    return null
   }
 
-  const exportPngFile = async (scale: 1 | 2) => {
-    const exported = getImageExport()
-    if (!exported) return
+  const exportPngFile = async (scale: 1 | 2, keys?: ReadonlySet<string> | null): Promise<string | null> => {
+    const exported = await getUserImageExport(keys)
+    if (!exported) return 'Nothing to export'
     try {
       const blob = await svgToPngBlob(exported.svg, exported.bounds.width, exported.bounds.height, scale)
       downloadBlob(blob, `${exported.baseName}${scale === 2 ? '@2x' : ''}.png`)
       setFileNotice(null)
+      return null
     } catch (error) {
-      setFileNotice(error instanceof Error ? error.message : 'PNG export failed.')
+      const message = error instanceof Error ? error.message : 'PNG export failed.'
+      setFileNotice(message)
+      return message
+    }
+  }
+
+  /**
+   * Copies the selection (or the whole page) to the system clipboard as a 2x PNG. The clipboard item gets a promise so the
+   * browser keeps the click or key press as the permission gesture while the picture is made. Returns an error message or null.
+   */
+  const copyPngToClipboard = async (keys?: ReadonlySet<string> | null): Promise<string | null> => {
+    const options: ImageExportOptions = { keys, transparent: transparentExportRef.current }
+    if (!getImageExport('current', options)) return 'Nothing to copy'
+    const Item = typeof window === 'undefined' ? undefined : (window as unknown as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem
+    if (!Item || !navigator.clipboard?.write) return COPY_IMAGE_FAILED
+    try {
+      const blobPromise = (async () => {
+        const exported = await getUserImageExport(keys)
+        if (!exported) throw new Error('Nothing to copy')
+        return svgToPngBlob(exported.svg, exported.bounds.width, exported.bounds.height, 2)
+      })()
+      await navigator.clipboard.write([new Item({ 'image/png': blobPromise })])
+      return null
+    } catch {
+      return COPY_IMAGE_FAILED
     }
   }
 
@@ -1002,6 +1052,6 @@ export function useDocuments(host: DocumentHost) {
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
-    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, exportToNotebookLm, exportBusy,
+    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   }
 }

@@ -21,6 +21,8 @@ export type SheetExportOptions = {
   transparent?: boolean
   /** Hand-drawn style (the diagram's own setting). */
   sketchy?: boolean
+  /** CSS (an @font-face with the font as a data URL) put into the SVG so labels look the same outside the app. Omitted: output is unchanged. */
+  embeddedFontCss?: string
 }
 
 /** Set by buildSheetSvg for the duration of one build. */
@@ -303,6 +305,7 @@ function buildSheetSvgInner(rawItems: CanvasItem[], options: SheetExportOptions)
   }
   const sheet = options.transparent ? '' : `<rect width="${width}" height="${height}" fill="${esc(options.backgroundColor)}"/>`
   const templateRect = template !== 'blank' ? `<rect width="${width}" height="${height}" fill="url(#template)"/>` : ''
+  if (options.embeddedFontCss) defs.unshift(`<style>${options.embeddedFontCss}</style>`)
   const defsBlock = defs.length ? `<defs>${defs.join('')}</defs>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${defsBlock}${sheet}${templateRect}${body}</svg>`
 }

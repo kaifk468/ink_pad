@@ -65,9 +65,11 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, canvasCursor, clampMenuPosition, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
+/** How long a toast stays on screen. */
+const TOAST_MS = 1800
 const DOUBLE_TAP_MS = 400
 /** The eraser circle hides this long after the last pen event (lifting the pen away sends none). */
 const ERASER_CURSOR_QUIET_MS = 350
@@ -292,6 +294,15 @@ function App() {
   const contextMenuRef = useRef(contextMenu)
   contextMenuRef.current = contextMenu
   const contextMenuElementRef = useRef<HTMLDivElement>(null)
+  // A small message at the bottom centre (Desktop mode only; the tablet UI stays quiet). It is always position: fixed, so it never shifts the layout.
+  const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
+  const toastTimerRef = useRef<number | null>(null)
+  const showToast = (text: string) => {
+    if (inputModeRef.current !== 'desktop') return
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
+    setToast((current) => ({ id: (current?.id ?? 0) + 1, text }))
+    toastTimerRef.current = window.setTimeout(() => { toastTimerRef.current = null; setToast(null) }, TOAST_MS)
+  }
   const edgeHoldRef = useRef<{ pointerId: number; boxId: number; start: Point; startedAt: number; timer: number } | null>(null)
   // Step 12: snap and alignment guides while dragging boxes and labels. The setting is per device (default on) and works in both input modes.
   const [snapping, setSnapping] = useState(() => loadSnapping())
@@ -350,7 +361,7 @@ function App() {
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
     scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
-    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, exportToNotebookLm, exportBusy,
+    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   } = useDocuments({
     getItems: () => strokesRef.current,
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
@@ -3671,6 +3682,28 @@ function App() {
     setClipboardCount(copied.length)
     return true
   }
+  // Desktop wrappers: the same actions, with a toast.
+  const copyWithToast = (): boolean => { const done = copySelection(); if (done) showToast('Copied'); return done }
+  const cutWithToast = (): boolean => { const done = cutSelection(); if (done) showToast('Cut'); return done }
+  const pasteWithToast = (at?: Point | null): boolean => {
+    const empty = clipboardRef.current.length === 0
+    const done = pasteClipboard(at)
+    if (done) showToast('Pasted')
+    else if (empty) showToast('Nothing to paste')
+    return done
+  }
+  const duplicateWithToast = (): boolean => { const done = duplicateSelection(); if (done) showToast('Duplicated'); return done }
+  // Copy as PNG: the selection, or the whole page when nothing is selected. Called straight from the key or click so the clipboard write keeps the gesture.
+  const copyAsPng = (): boolean => {
+    const keys = selectionKeysWithBox()
+    void copyPngToClipboard(keys.size > 0 ? keys : null).then((error) => showToast(error ?? 'Copied as PNG'))
+    return true
+  }
+  const exportSelectionAs = (kind: 'png' | 'svg') => {
+    const keys = selectionKeysWithBox()
+    if (keys.size === 0) return
+    void (kind === 'png' ? exportPngFile(2, keys) : exportSvgFile(keys)).then((error) => { if (error) showToast(error) })
+  }
   // Cut = copy + delete: one undo step (deleteSelection records it).
   const cutSelection = (): boolean => copySelection() && deleteSelection()
   // Adds fresh clones (new ids, +24 units per consecutive paste, kept inside the workspace) as one undo step and selects them.
@@ -3883,10 +3916,13 @@ function App() {
   const runContextMenuAction = (action: ContextMenuAction) => {
     setContextMenu(null)
     switch (action) {
-      case 'cut': cutSelection(); break
-      case 'copy': copySelection(); break
-      case 'paste': pasteClipboard(inputModeRef.current === 'desktop' ? contextMenuPointRef.current : null); break
-      case 'duplicate': duplicateSelection(); break
+      case 'cut': cutWithToast(); break
+      case 'copy': copyWithToast(); break
+      case 'paste': pasteWithToast(inputModeRef.current === 'desktop' ? contextMenuPointRef.current : null); break
+      case 'duplicate': duplicateWithToast(); break
+      case 'copyPng': copyAsPng(); break
+      case 'exportPng': exportSelectionAs('png'); break
+      case 'exportSvg': exportSelectionAs('svg'); break
       case 'delete': deleteSelection(); break
       case 'selectAll': selectAllItems(); break
       case 'bringToFront': moveSelectionLayer('front'); break
@@ -3968,10 +4004,11 @@ function App() {
       case 'quickCreate': return quickCreateShape(command.direction)
       case 'nudge': return nudgeSelection(command.dx, command.dy)
       case 'edit': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); return target ? openEditTarget(target) : false }
-      case 'copy': return copySelection()
-      case 'cut': return cutSelection()
-      case 'paste': return pasteClipboard(inputModeRef.current === 'desktop' && cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null)
-      case 'duplicate': return duplicateSelection()
+      case 'copy': return copyWithToast()
+      case 'cut': return cutWithToast()
+      case 'copyPng': return copyAsPng()
+      case 'paste': return pasteWithToast(inputModeRef.current === 'desktop' && cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null)
+      case 'duplicate': return duplicateWithToast()
       case 'deleteSelection': return deleteSelection()
       case 'selectAll': return selectAllItems()
       case 'layer': return moveSelectionLayer(command.move)
@@ -4030,15 +4067,17 @@ function App() {
           onPointerLeave={onPointerLeave}
         />
         {contextMenu && inputMode === 'desktop' && (() => {
-          const position = clampMenuPosition(contextMenu.x, contextMenu.y, 184, 304, window.innerWidth, window.innerHeight)
+          const entries = contextMenuEntries(selectedItemCount > 0 || hasSelectedRectangle, clipboardCount > 0, hasInk)
+          const position = clampMenuPosition(contextMenu.x, contextMenu.y, 184, contextMenuHeight(entries.length), window.innerWidth, window.innerHeight)
           return (
             <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y }} onContextMenu={(event) => event.preventDefault()}>
-              {contextMenuEntries(selectedItemCount > 0 || hasSelectedRectangle, clipboardCount > 0, hasInk).map((entry) => (
+              {entries.map((entry) => (
                 <button key={entry.action} type="button" role="menuitem" disabled={!entry.enabled} onClick={() => runContextMenuAction(entry.action)}>{entry.label}</button>
               ))}
             </div>
           )
         })()}
+        <div className={`app-toast${toast ? ' app-toast-visible' : ''}`} role="status" aria-live="polite">{toast?.text ?? ''}</div>
         {DRAW_READOUT_ENABLED && (
           <div className="draw-readouts" aria-hidden="true">
             <div className="draw-readout">{DRAW_FLAGS_TEXT}</div>
@@ -4358,8 +4397,10 @@ function App() {
         onNew={() => void newDiagram()}
         onExportDocument={exportDocumentFile}
         onImportFile={(file) => void importDocumentFile(file)}
-        onExportSvg={exportSvgFile}
+        onExportSvg={() => void exportSvgFile()}
         onExportPng={(scale) => void exportPngFile(scale)}
+        transparent={transparentExport}
+        onTransparentChange={setTransparentExport}
         onExportNotebookLm={() => void exportToNotebookLm()}
         exportBusy={exportBusy}
       />}

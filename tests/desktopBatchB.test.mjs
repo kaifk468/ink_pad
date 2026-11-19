@@ -344,7 +344,7 @@ test('wiring: width, dash, arrowheads, layer and arrange are desktop only and ea
   assert.match(app, /case 'layer': return moveSelectionLayer\(command\.move\)/)
   assert.match(app, /case 'bringToFront': moveSelectionLayer\('front'\)/)
   assert.match(app, /case 'sendToBack': moveSelectionLayer\('back'\)/)
-  assert.match(app, /clampMenuPosition\(contextMenu\.x, contextMenu\.y, 184, 304,/)
+  assert.match(app, /clampMenuPosition\(contextMenu\.x, contextMenu\.y, 184, contextMenuHeight\(entries\.length\),/)
 })
 
 test('wiring: new shapes, lines and arrows from the desktop shape tools take the default line style', () => {

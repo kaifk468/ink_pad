@@ -14,6 +14,9 @@ type FilePanelProps = {
   onImportFile: (file: File) => void
   onExportSvg: () => void
   onExportPng: (scale: 1 | 2) => void
+  /** Export and Copy as PNG leave out the sheet colour and page style. */
+  transparent: boolean
+  onTransparentChange: (value: boolean) => void
   /** Puts the diagram into Google Drive as one PDF that NotebookLM can import. */
   onExportNotebookLm: () => void
   exportBusy: boolean
@@ -106,7 +109,8 @@ export function FilePanel(props: FilePanelProps) {
           <button type="button" disabled={!props.canExport} onClick={() => props.onExportPng(1)}>PNG</button>
           <button type="button" disabled={!props.canExport} onClick={() => props.onExportPng(2)}>PNG @2x</button>
         </div>
-        <p className="file-panel-hint">Images are cropped to your drawing and include the sheet color and page style.</p>
+        <label className="file-panel-check"><input type="checkbox" checked={props.transparent} onChange={(event) => props.onTransparentChange(event.target.checked)} /> Transparent background</label>
+        <p className="file-panel-hint">Images are cropped to your drawing and include the sheet color and page style, unless Transparent background is on (it also applies to Copy as PNG).</p>
 
         <h3>NotebookLM</h3>
         <div className="file-panel-actions">
