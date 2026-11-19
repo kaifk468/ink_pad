@@ -38,7 +38,7 @@ test('Shift+1, Shift+2, Ctrl+0, PageUp, PageDown and ? map to their commands', (
 })
 
 test('wiring: zoom and page commands, help dialog, hidden tablet-only controls and tooltips', () => {
-  assert.match(app, /case 'zoomFit': fitDrawingView\(\)/)
+  assert.match(app, /case 'zoomFit': zoomToFitDesktop\(\)/)
   assert.match(app, /case 'zoomSelection': zoomToSelection\(\)/)
   assert.match(app, /case 'zoomReset': zoomToActualSize\(\)/)
   assert.match(app, /case 'pagePrev': goToPage\(pageIndexRef\.current - 1\)/)

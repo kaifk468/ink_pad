@@ -233,9 +233,9 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
   if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
     if (event.code === 'Digit1' || event.code === 'Numpad1') return event.repeat ? null : { kind: 'zoomFit' }
     if (event.code === 'Digit2' || event.code === 'Numpad2') return event.repeat ? null : { kind: 'zoomSelection' }
-    // "?" (Shift + /) opens the shortcut help.
-    if (key === '?') return event.repeat ? null : { kind: 'help' }
   }
+  // "?" opens the shortcut help (Shift + / on most layouts; some keyboards send "?" without Shift).
+  if (key === '?' && !event.ctrlKey && !event.metaKey && !event.altKey) return event.repeat ? null : { kind: 'help' }
   // Arrow keys nudge the selection (Shift = 10 units); holding the key repeats on purpose. Other modifiers belong to the browser.
   const arrow = ARROW_KEYS[key]
   if (arrow && !event.ctrlKey && !event.metaKey && !event.altKey) {

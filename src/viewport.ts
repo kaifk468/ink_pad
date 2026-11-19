@@ -85,6 +85,35 @@ export function fitViewportToBounds(
   }
 }
 
+export type ViewInsets = { left: number; top: number; right: number; bottom: number }
+
+/** Desktop screen space covered by the left panel, top bar and bottom dock; fits keep the drawing clear of them. */
+export const DESKTOP_FIT_INSETS: ViewInsets = { left: 260, top: 88, right: 64, bottom: 120 }
+
+/**
+ * Fit bounds into the part of the viewport not covered by UI (insets), centred in that free area.
+ * maxScale caps the zoom (zoom to fit stays at or below 100% so a small drawing is not blown up).
+ * Falls back to fitViewportToBounds when the free area is too small.
+ */
+export function fitViewportToBoundsInset(
+  bounds: ViewBounds,
+  viewportWidth: number,
+  viewportHeight: number,
+  insets: ViewInsets,
+  maxScale = MAX_ZOOM,
+  minScale = MIN_ZOOM,
+): Viewport {
+  const freeWidth = viewportWidth - insets.left - insets.right
+  const freeHeight = viewportHeight - insets.top - insets.bottom
+  if (freeWidth < 120 || freeHeight < 120) return fitViewportToBounds(bounds, viewportWidth, viewportHeight, 32, minScale, maxScale)
+  const scale = Math.max(minScale, Math.min(maxScale, freeWidth / Math.max(1, bounds.width), freeHeight / Math.max(1, bounds.height)))
+  return {
+    scale,
+    offsetX: insets.left + (freeWidth - bounds.width * scale) / 2 - bounds.x * scale,
+    offsetY: insets.top + (freeHeight - bounds.height * scale) / 2 - bounds.y * scale,
+  }
+}
+
 export function getMinimapGeometry(
   width: number,
   height: number,

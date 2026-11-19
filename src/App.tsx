@@ -58,7 +58,7 @@ import { loadTextFont } from './textFonts'
 import type { TextFontId } from './canvasModel'
 import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
-import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
+import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, fitViewportToBoundsInset, DESKTOP_FIT_INSETS, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
 import { MAX_PAGES, canAddPage, clampPageIndex, insertPageAfter, insertPageAt, removePageAt, writeLastPage } from './pages'
 import { PageControls, PageUndoBar } from './app/PageControls'
@@ -2435,8 +2435,21 @@ function App() {
     if (keys.size === 0) return false
     const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), keys)
     if (!bounds) return false
-    applyViewport(fitViewportToBounds(bounds, rect.width, rect.height, 64))
+    applyViewport(fitViewportToBoundsInset(bounds, rect.width, rect.height, DESKTOP_FIT_INSETS, 2))
     return true
+  }
+
+  /** Desktop Shift+1: fit the whole drawing into the area clear of the panel and dock, never above 100%. */
+  const zoomToFitDesktop = () => {
+    if (navigationSettingsRef.current.zoomLocked) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
+    if (!bounds) {
+      fitCanvasView()
+      return
+    }
+    applyViewport(fitViewportToBoundsInset(bounds, rect.width, rect.height, DESKTOP_FIT_INSETS, 1))
   }
 
   /** Desktop Ctrl+0 and the % readout: 100% zoom around the centre of the current view. */
@@ -4044,7 +4057,7 @@ function App() {
       case 'zoomIn': if (!navigationSettingsRef.current.zoomLocked) zoomBy(ZOOM_STEP); return true
       case 'zoomOut': if (!navigationSettingsRef.current.zoomLocked) zoomBy(1 / ZOOM_STEP); return true
       case 'zoomReset': zoomToActualSize(); return true
-      case 'zoomFit': fitDrawingView(); return true
+      case 'zoomFit': zoomToFitDesktop(); return true
       case 'zoomSelection': zoomToSelection(); return true
       case 'pagePrev': goToPage(pageIndexRef.current - 1); return true
       case 'pageNext': goToPage(pageIndexRef.current + 1); return true
@@ -4168,7 +4181,7 @@ function App() {
         {!hasInk && <div className="canvas-hint" aria-hidden="true">{inputMode === 'desktop' ? 'Draw here with your mouse' : 'Draw here with your S Pen'}</div>}
         <aside
           ref={umlToolboxRef}
-          className={`uml-toolbox${umlToolboxMinimized ? ' minimized' : ''}`}
+          className={`uml-toolbox${umlToolboxMinimized ? ' minimized' : ''}${inputMode === 'desktop' ? ' desktop' : ''}`}
           aria-label="UML connector tools"
           style={umlToolboxPosition ? { left: umlToolboxPosition.left, top: umlToolboxPosition.top, transform: 'none' } : undefined}
         >
