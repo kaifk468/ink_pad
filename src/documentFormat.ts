@@ -289,7 +289,7 @@ function sanitizeInkBox(value: unknown, y: number, height: number): InkBoxConten
   if (!isRecord(value) || !isNum(value.top) || !isNum(value.mid) || !Array.isArray(value.ink)) return undefined
   const ink: Stroke[] = []
   for (const raw of value.ink.slice(0, MAX_INK_BOX_STROKES)) {
-    const item = sanitizeItem(raw)
+    const item = sanitizeItemFields(raw)
     if (item && item.kind === 'stroke') ink.push(item)
   }
   // Keep both dividers inside the box with room for each section, even if the file was edited by hand (same limits as canvasModel's clampInkBoxDividers).
@@ -306,7 +306,14 @@ function sanitizeAttachment(value: unknown): ConnectorAttachment | undefined {
   return { rectangleId: value.rectangleId, offsetX: value.offsetX, offsetY: value.offsetY }
 }
 
+/** Reads one item; the optional `locked: true` is kept on canvas items only (never on eraser marks or unknown items; any other value is dropped). */
 function sanitizeItem(value: unknown): CanvasItem | null {
+  const item = sanitizeItemFields(value)
+  if (item && item.kind !== 'opaque' && isRecord(value) && value.locked === true && !(item.kind === 'stroke' && item.erase)) return { ...item, locked: true }
+  return item
+}
+
+function sanitizeItemFields(value: unknown): CanvasItem | null {
   if (!isRecord(value) || !isId(value.id)) return null
   if (value.kind === 'stroke') {
     if (!Array.isArray(value.points) || !isColor(value.color) || !isNum(value.width) || value.width <= 0) return null

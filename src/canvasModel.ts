@@ -6,19 +6,19 @@ export type Point = { x: number; y: number; pressure: number }
 export type LineDash = 'dashed' | 'dotted'
 /** Which ends of an arrow/line stroke carry an arrowhead. Missing = the default for the shape (arrow: end, line: none). */
 export type Arrowheads = 'none' | 'end' | 'start' | 'both'
-export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line'; dash?: LineDash; arrowheads?: Arrowheads }
+export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line'; dash?: LineDash; arrowheads?: Arrowheads; /** Desktop lock: drawn normally, but never selected, edited or erased. Only ever `true`. */ locked?: true }
 /** Ink class box: three bands (name, variables, methods) divided at the canvas heights `top` and `mid`, holding its own pen strokes (canvas coordinates). */
 export type InkBoxContent = { top: number; mid: number; ink: Stroke[] }
 export type ClassBoxContent = { name: string; attributes: string; methods: string }
 /** HLD shape kinds: Database (cylinder), Queue, Service. A rectangle with one of these is an ink box drawn as that shape. */
 export const HLD_SHAPES = ['database', 'queue', 'service'] as const
 export type HldShape = (typeof HLD_SHAPES)[number]
-export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; angle?: number; /** Hand-drawn style random seed (integer), written only by diagrams that use the sketchy style. */ seed?: number; /** Optional fill colour under the outline (not on service, typed or ink class boxes). */ fillColor?: string; dash?: LineDash }
+export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; angle?: number; /** Hand-drawn style random seed (integer), written only by diagrams that use the sketchy style. */ seed?: number; /** Optional fill colour under the outline (not on service, typed or ink class boxes). */ fillColor?: string; dash?: LineDash; locked?: true }
 /** The fixed list of label fonts. A saved label without `fontFamily` is the original clean sans. */
 export const TEXT_FONT_IDS = ['excalifont', 'sans', 'serif', 'mono'] as const
 export type TextFontId = (typeof TEXT_FONT_IDS)[number]
 /** `fit` (Desktop auto-fit): 'off' = the size was picked by hand, no auto-fit; 'wrap' = at the minimum size and word-wrapped to `width`. Missing = plain label. */
-export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId; angle?: number; fit?: 'off' | 'wrap' }
+export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId; angle?: number; fit?: 'off' | 'wrap'; locked?: true }
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
 export type ConnectorRouting = 'straight' | 'elbow'
@@ -39,11 +39,13 @@ export type ConnectorObject = {
   routing?: ConnectorRouting
   /** Own line style: wins over the dash of the relationship type. Missing = the relationship type decides. */
   dash?: LineDash
+  /** Desktop lock: drawn normally, never selected, edited or erased. Only ever `true`. */
+  locked?: true
   /** The right-angle path worked out for an elbow connector. Derived while drawing, never saved: only on copies made by routeConnectors. */
   routedPath?: Point[]
 }
 /** A code block: monospaced, syntax coloured, with line numbers. `theme` and `fontSize` are written only when not the default (light, 13). */
-export type CodeObject = { kind: 'code'; id: number; x: number; y: number; width: number; height: number; text: string; language: string; theme?: 'dark'; fontSize?: number }
+export type CodeObject = { kind: 'code'; id: number; x: number; y: number; width: number; height: number; text: string; language: string; theme?: 'dark'; fontSize?: number; locked?: true }
 /**
  * An item of a kind this InkPad does not know (saved by a newer copy). It is kept as read and written back unchanged (`raw`), and shown as a grey box.
  * `box` is its saved position and size when it had a usable one. It is never edited, selected or moved.
@@ -184,6 +186,35 @@ export function getConnectorSymbolGeometry(connector: ConnectorObject, width = c
   }
 }
 
+/** True for an item the Desktop lock has frozen (never selected, edited or erased). */
+export function isItemLocked(item: CanvasItem): boolean {
+  return item.kind !== 'opaque' && item.locked === true
+}
+
+/**
+ * Items with the Desktop lock set or cleared. `keys` null = every item (used to unlock all). Eraser marks and unknown items are never locked.
+ * Returns the same array when nothing changes; items that do not change are reused.
+ */
+export function setItemsLocked(items: CanvasItem[], keys: ReadonlySet<string> | null, locked: boolean): CanvasItem[] {
+  let changed = false
+  const next = items.map((item): CanvasItem => {
+    if (item.kind === 'opaque' || (item.kind === 'stroke' && item.erase)) return item
+    if (keys && !keys.has(canvasItemKey(item))) return item
+    if ((item.locked === true) === locked) return item
+    changed = true
+    if (locked) return { ...item, locked: true }
+    const { locked: _locked, ...rest } = item
+    void _locked
+    return rest as CanvasItem
+  })
+  return changed ? next : items
+}
+
+/** The locked items other than connectors (those are already drawn again after an eraser run), in page order. */
+function lockedNonConnectors(items: readonly CanvasItem[]): CanvasItem[] {
+  return items.filter((item) => item.kind !== 'connector' && item.kind !== 'opaque' && item.locked === true && !(item.kind === 'stroke' && item.erase))
+}
+
 export function canvasItemsForRendering(items: CanvasItem[]): CanvasItem[] {
   const rectangles = new Map(items
     .filter((item): item is RectangleObject => item.kind === 'rectangle')
@@ -191,14 +222,17 @@ export function canvasItemsForRendering(items: CanvasItem[]): CanvasItem[] {
   const renderItems: CanvasItem[] = []
   // The stroke eraser only cuts ink: connectors are drawn again after each run of eraser strokes, so it never leaves a gap in one.
   const connectorsSoFar: ConnectorObject[] = []
+  // Locked items are never erased: they are drawn again over the eraser strokes too (only when something is locked).
+  const lockedSoFar: CanvasItem[] = []
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index]
     renderItems.push(item)
     if (item.kind === 'stroke' && item.erase) {
       const next = items[index + 1]
-      if (!(next && next.kind === 'stroke' && next.erase)) renderItems.push(...connectorsSoFar)
+      if (!(next && next.kind === 'stroke' && next.erase)) renderItems.push(...connectorsSoFar, ...lockedSoFar)
       continue
     }
+    if (item.kind !== 'connector' && item.kind !== 'opaque' && item.locked === true) lockedSoFar.push(item)
     if (item.kind !== 'connector') continue
     connectorsSoFar.push(item)
     const attachedRectangleIds = new Set([item.startAttachment?.rectangleId, item.endAttachment?.rectangleId])
@@ -218,7 +252,7 @@ export function canvasItemsForRendering(items: CanvasItem[]): CanvasItem[] {
 export function appendedItemsForRendering(items: CanvasItem[]): CanvasItem[] {
   const last = items[items.length - 1]
   if (!last) return []
-  if (last.kind === 'stroke' && last.erase) return [last, ...items.filter((item): item is ConnectorObject => item.kind === 'connector')]
+  if (last.kind === 'stroke' && last.erase) return [last, ...items.filter((item): item is ConnectorObject => item.kind === 'connector'), ...lockedNonConnectors(items)]
   if (last.kind !== 'connector') return [last]
   const result: CanvasItem[] = [last]
   for (const rectangleId of new Set([last.startAttachment?.rectangleId, last.endAttachment?.rectangleId])) {
@@ -378,7 +412,7 @@ export function canvasItemKey(item: CanvasItem): string {
 
 /** The keys of every item on the page (select all). */
 export function allCanvasItemKeys(items: readonly CanvasItem[]): string[] {
-  return items.filter((item) => item.kind !== 'opaque').map(canvasItemKey)
+  return items.filter((item) => item.kind !== 'opaque' && item.locked !== true).map(canvasItemKey)
 }
 
 /**

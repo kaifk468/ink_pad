@@ -36,7 +36,7 @@ Goal: make Desktop mode (mouse + keyboard, behind the Tablet/Desktop switch) far
 14. **Duplicate keeps the clipboard** (Ctrl+D no longer overwrites what was copied).
 
 ### Batch D: get diagrams out (medium)
-15. **Copy as PNG** to the system clipboard (Ctrl+Shift+C, context menu): the selection, or the whole page when nothing is selected. Toast "Copied as PNG".
+15. **Copy as PNG** to the system clipboard (Shift+Alt+C, context menu; Ctrl+Shift+C is reserved by Chrome for DevTools): the selection, or the whole page when nothing is selected. Toast "Copied as PNG".
 16. **Export selection**: context menu "Export selection as PNG / SVG".
 17. **Excalifont embedded in SVG export** when a label uses it, so SVG and PNG look like the canvas.
 

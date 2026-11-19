@@ -62,7 +62,7 @@ export function pointInRectangle(rectangle: RectangleBounds, point: Point): bool
 export function findInkBoxAt(items: readonly { kind: string }[], point: Point): RectangleObject | null {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index] as RectangleObject
-    if (item.kind === 'rectangle' && item.inkBox && pointInRectangle(item, point)) return item
+    if (item.kind === 'rectangle' && !item.locked && item.inkBox && pointInRectangle(item, point)) return item
   }
   return null
 }

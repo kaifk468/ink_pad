@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
-import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
@@ -65,7 +65,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -290,7 +290,7 @@ function App() {
   // Step 11: the right-click menu (Desktop only), at the pointer in screen coordinates.
   // The pointer type of the latest canvas press: a double-tap by a finger or pen is not a mouse double-click.
   const lastPointerTypeRef = useRef('')
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; lockedKey: string | null } | null>(null)
   const contextMenuRef = useRef(contextMenu)
   contextMenuRef.current = contextMenu
   const contextMenuElementRef = useRef<HTMLDivElement>(null)
@@ -770,6 +770,7 @@ function App() {
     const routedItems = routeConnectors(strokesRef.current)
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
+      if (isItemLocked(item)) continue // the whole-object eraser never removes a locked item
       if (item.kind === 'text' || item.kind === 'code') {
         if (itemHitTest(item, point, 8 / viewportRef.current.scale)) return index
         continue
@@ -822,7 +823,7 @@ function App() {
   const hitTestRectangle = (point: Point) => {
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
-      if (item.kind !== 'rectangle') continue
+      if (item.kind !== 'rectangle' || item.locked) continue
       const pad = Math.max(8 / viewportRef.current.scale, item.strokeWidth * 2)
       const local = toItemFrame(item, point)
       if (local.x >= item.x - pad && local.x <= item.x + item.width + pad && local.y >= item.y - pad && local.y <= item.y + item.height + pad) return item
@@ -834,7 +835,7 @@ function App() {
     const routedItems = routeConnectors(strokesRef.current)
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
-      if (item.kind === 'connector' && itemHitTest(item, point, Math.max(12 / viewportRef.current.scale, item.strokeWidth * 2))) return strokesRef.current[index] as ConnectorObject
+      if (item.kind === 'connector' && !item.locked && itemHitTest(item, point, Math.max(12 / viewportRef.current.scale, item.strokeWidth * 2))) return strokesRef.current[index] as ConnectorObject
     }
     return null
   }
@@ -843,7 +844,7 @@ function App() {
     const pad = 8 / viewportRef.current.scale
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
-      if (item.kind === 'code' && itemHitTest(item, point, pad)) return item
+      if (item.kind === 'code' && !item.locked && itemHitTest(item, point, pad)) return item
     }
     return null
   }
@@ -852,7 +853,7 @@ function App() {
     const pad = 8 / viewportRef.current.scale
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
-      if (item.kind === 'text' && itemHitTest(item, point, pad)) return item
+      if (item.kind === 'text' && !item.locked && itemHitTest(item, point, pad)) return item
     }
     return null
   }
@@ -1118,6 +1119,32 @@ function App() {
     updateSelectedItems([])
     setSelectedRectangle(null)
     renderAll()
+    return true
+  }
+
+  // Desktop lock (Ctrl+Shift+L, right-click menu): locked items are drawn but never selected, edited or erased. One undo step each.
+  const lockSelection = (): boolean => {
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) return false
+    const next = setItemsLocked(strokesRef.current, keys, true)
+    if (next === strokesRef.current) return false
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    updateSelectedItems([])
+    setSelectedRectangle(null)
+    renderAll()
+    showToast('Locked')
+    return true
+  }
+  const unlockItems = (keys: ReadonlySet<string> | null): boolean => {
+    const next = setItemsLocked(strokesRef.current, keys, false)
+    if (next === strokesRef.current) return false
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    showToast('Unlocked')
     return true
   }
 
@@ -3907,13 +3934,16 @@ function App() {
     if (activePointerRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0) return
     const rect = event.currentTarget.getBoundingClientRect()
     const point = screenToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, viewportRef.current)
-    const target = hitTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
+    const routed = routeConnectors(strokesRef.current)
+    const target = hitTarget(routed, point, viewportRef.current.scale)
     if (target && !selectionKeysWithBox().has(target.key)) selectHitTarget(target)
+    // A locked item cannot be selected; right-clicking it offers Unlock for that item (the hit test here looks through the lock).
+    const lockedKey = target ? null : hitTarget(routed, point, viewportRef.current.scale, false, true)?.key ?? null
     setMouseHover(null)
     contextMenuPointRef.current = point
-    setContextMenu({ x: event.clientX, y: event.clientY })
+    setContextMenu({ x: event.clientX, y: event.clientY, lockedKey })
   }
-  const runContextMenuAction = (action: ContextMenuAction) => {
+  const runContextMenuAction = (action: ContextMenuAction, lockedKey: string | null = null) => {
     setContextMenu(null)
     switch (action) {
       case 'cut': cutWithToast(); break
@@ -3927,8 +3957,30 @@ function App() {
       case 'selectAll': selectAllItems(); break
       case 'bringToFront': moveSelectionLayer('front'); break
       case 'sendToBack': moveSelectionLayer('back'); break
+      case 'editText': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); if (target) openEditTarget(target); break }
+      case 'zoomSelection': zoomToSelection(); break
+      case 'lock': lockSelection(); break
+      case 'unlock': if (lockedKey) unlockItems(new Set([lockedKey])); break
+      case 'unlockAll': unlockItems(null); break
     }
   }
+  // Menu keyboard: arrows (and Home/End) move focus between the enabled rows; Enter runs the focused row (a button click); Escape is handled with the other keys.
+  const onContextMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End']
+    if (!keys.includes(event.key)) return
+    event.preventDefault()
+    event.stopPropagation()
+    const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+    if (buttons.length === 0) return
+    const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : event.key === 'ArrowDown' ? (current + 1) % buttons.length : (current <= 0 ? buttons.length - 1 : current - 1)
+    buttons[next].focus()
+  }
+  // Opening the menu puts focus on its first enabled row so the keyboard works at once.
+  useEffect(() => {
+    if (contextMenu) contextMenuElementRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+  }, [contextMenu])
   // The menu closes on an outside press, scrolling, losing focus, or leaving Desktop mode (Escape is handled with the other keys).
   useEffect(() => {
     if (!contextMenu) return
@@ -4012,6 +4064,7 @@ function App() {
       case 'deleteSelection': return deleteSelection()
       case 'selectAll': return selectAllItems()
       case 'layer': return moveSelectionLayer(command.move)
+      case 'lock': return lockSelection()
       case 'tool':
         setOptionsFor(null)
         switch (command.tool) {
@@ -4067,13 +4120,26 @@ function App() {
           onPointerLeave={onPointerLeave}
         />
         {contextMenu && inputMode === 'desktop' && (() => {
-          const entries = contextMenuEntries(selectedItemCount > 0 || hasSelectedRectangle, clipboardCount > 0, hasInk)
-          const position = clampMenuPosition(contextMenu.x, contextMenu.y, 184, contextMenuHeight(entries.length), window.innerWidth, window.innerHeight)
+          const hasSelection = selectedItemCount > 0 || hasSelectedRectangle
+          const entries = contextMenuEntries({
+            hasSelection,
+            clipboardHasItems: clipboardCount > 0,
+            pageHasItems: hasInk,
+            canEditText: editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current) !== null,
+            lockedTarget: contextMenu.lockedKey !== null,
+            anyLocked: strokesRef.current.some(isItemLocked),
+          })
+          const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight)
           return (
-            <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y }} onContextMenu={(event) => event.preventDefault()}>
-              {entries.map((entry) => (
-                <button key={entry.action} type="button" role="menuitem" disabled={!entry.enabled} onClick={() => runContextMenuAction(entry.action)}>{entry.label}</button>
-              ))}
+            <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y }} onContextMenu={(event) => event.preventDefault()} onKeyDown={onContextMenuKeyDown}>
+              {contextMenuRows(entries).map((row, index) => row.separator
+                ? <div key={`separator-${index}`} className="canvas-context-separator" role="separator" />
+                : (
+                  <button key={row.entry.action} type="button" role="menuitem" disabled={row.entry.disabled} onClick={() => runContextMenuAction(row.entry.action, contextMenu.lockedKey)}>
+                    <span>{row.entry.label}</span>
+                    {row.entry.hint && <kbd className="canvas-context-hint">{row.entry.hint}</kbd>}
+                  </button>
+                ))}
             </div>
           )
         })()}

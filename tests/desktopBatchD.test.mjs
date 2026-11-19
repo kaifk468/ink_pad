@@ -17,6 +17,8 @@ const eraser = { kind: 'stroke', id: 9, color: '#000', width: 10, erase: true, p
 const key = (k, extra = {}) => ({ key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, ...extra })
 const base = { width: 800, height: 600, template: 'lined', backgroundColor: '#fffdf5' }
 
+const menuOf = (hasSelection, clipboardHasItems, pageHasItems, extra = {}) => input.contextMenuEntries({ hasSelection, clipboardHasItems, pageHasItems, canEditText: false, lockedTarget: false, anyLocked: false, ...extra })
+
 test('itemsForExport: no keys exports everything, keys export exactly the selection plus erasers', () => {
   const items = [rect(1), rect(2, 300), conn(1), text(1, 'sans'), eraser]
   assert.equal(exp.itemsForExport(items, null).length, 5)
@@ -66,23 +68,26 @@ test('buildSheetSvg: default output unchanged; embedded font css goes in defs; t
   assert.match(cropped, /^<svg [^>]*width="50"/)
 })
 
-test('keyCommand: Ctrl+Shift+C is copyPng by physical key; plain copy and tablet unchanged', () => {
-  assert.deepEqual(input.keyCommand(key('C', { code: 'KeyC', ctrlKey: true, shiftKey: true }), 'desktop'), { kind: 'copyPng' })
-  assert.deepEqual(input.keyCommand(key('C', { code: 'KeyC', metaKey: true, shiftKey: true }), 'desktop'), { kind: 'copyPng' })
-  assert.equal(input.keyCommand(key('C', { code: 'KeyC', ctrlKey: true, shiftKey: true, repeat: true }), 'desktop'), null)
-  assert.equal(input.keyCommand(key('C', { code: 'KeyC', ctrlKey: true, shiftKey: true }), 'tablet'), null)
+test('keyCommand: Shift+Alt+C is copyPng by physical key; Ctrl+Shift+C (Chrome DevTools) is not; plain copy and tablet unchanged', () => {
+  assert.deepEqual(input.keyCommand(key('C', { code: 'KeyC', altKey: true, shiftKey: true }), 'desktop'), { kind: 'copyPng' })
+  assert.deepEqual(input.keyCommand(key('Ç', { code: 'KeyC', altKey: true, shiftKey: true }), 'desktop'), { kind: 'copyPng' }, 'Mac Alt changes key')
+  assert.equal(input.keyCommand(key('C', { code: 'KeyC', altKey: true, shiftKey: true, repeat: true }), 'desktop'), null)
+  assert.equal(input.keyCommand(key('C', { code: 'KeyC', altKey: true, shiftKey: true }), 'tablet'), null)
+  assert.equal(input.keyCommand(key('C', { code: 'KeyC', ctrlKey: true, shiftKey: true }), 'desktop'), null, 'Chrome reserves Ctrl+Shift+C')
+  assert.equal(input.keyCommand(key('C', { code: 'KeyC', altKey: true, shiftKey: true, ctrlKey: true }), 'desktop'), null)
+  assert.equal(input.keyCommand(key('c', { code: 'KeyC', altKey: true }), 'desktop'), null)
   assert.deepEqual(input.keyCommand(key('c', { code: 'KeyC', ctrlKey: true }), 'desktop'), { kind: 'copy' })
-  assert.ok(shortcuts.DESKTOP_SHORTCUTS.some((row) => row.keys === 'Ctrl+Shift+C' && row.input))
+  assert.ok(shortcuts.DESKTOP_SHORTCUTS.some((row) => row.keys === 'Shift+Alt+C' && row.input))
 })
 
 test('context menu: Copy as PNG always, export entries only with a selection', () => {
-  const none = input.contextMenuEntries(false, false, true)
-  assert.equal(none.find((e) => e.action === 'copyPng').enabled, true)
+  const none = menuOf(false, false, true)
+  assert.equal(none.find((e) => e.action === 'copyPng').disabled, false)
   assert.ok(!none.some((e) => e.action === 'exportPng' || e.action === 'exportSvg'))
-  assert.equal(input.contextMenuEntries(false, false, false).find((e) => e.action === 'copyPng').enabled, false)
-  const some = input.contextMenuEntries(true, false, true)
+  assert.equal(menuOf(false, false, false).find((e) => e.action === 'copyPng').disabled, true)
+  const some = menuOf(true, false, true)
   assert.deepEqual(some.filter((e) => e.action.startsWith('export')).map((e) => e.label), ['Export selection as PNG', 'Export selection as SVG'])
-  assert.equal(input.contextMenuHeight(8), 304)
+  assert.equal(input.contextMenuHeight(some), input.contextMenuHeight(some.filter(() => true)))
 })
 
 test('wiring: copy as PNG, selection export, toasts, font embedding, transparent checkbox', async () => {
@@ -95,7 +100,7 @@ test('wiring: copy as PNG, selection export, toasts, font embedding, transparent
   assert.match(app, /if \(inputModeRef\.current !== 'desktop'\) return\s+if \(toastTimerRef/)
   assert.match(app, /new Item\(\{ 'image\/png': blobPromise \}\)/)
   assert.match(app, /loadExcalifontCss\(\)/)
-  assert.match(app, /clampMenuPosition\(contextMenu\.x, contextMenu\.y, 184, contextMenuHeight\(entries\.length\)/)
+  assert.match(app, /clampMenuPosition\(contextMenu\.x, contextMenu\.y, CONTEXT_MENU_WIDTH, contextMenuHeight\(entries\)/)
   const panel = await readFile(new URL('../src/FilePanel.tsx', import.meta.url), 'utf8')
   assert.match(panel, /Transparent background/)
   const font = await readFile(new URL('../src/fontEmbed.ts', import.meta.url), 'utf8')

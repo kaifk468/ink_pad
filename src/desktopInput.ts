@@ -7,7 +7,7 @@
  * per-device preference, like the navigation settings.
  */
 
-import { canvasItemKey, getCanvasSelectionBounds, toItemFrame, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
+import { canvasItemKey, getCanvasSelectionBounds, isItemLocked, toItemFrame, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
 import { hitInkBoxDivider, hitInkBoxMoveGrip } from './inkClassBox'
 import { itemHitTest } from './lassoSelection'
 import { MAX_ZOOM, MIN_ZOOM, panViewport, zoomViewportAt, type Viewport } from './viewport'
@@ -181,6 +181,7 @@ export type KeyCommand =
   | { kind: 'paste' }
   | { kind: 'duplicate' }
   | { kind: 'copyPng' }
+  | { kind: 'lock' }
   | { kind: 'edit' }
   | { kind: 'quickCreate'; direction: 'right' | 'left' | 'up' | 'down' }
   | { kind: 'layer'; move: 'forward' | 'backward' | 'front' | 'back' }
@@ -213,8 +214,8 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if (key === '-' || key === '_') return { kind: 'zoomOut' }
     if (key === '0') return { kind: 'zoomReset' }
     if (key === 'a' && !event.shiftKey) return { kind: 'selectAll' }
-    // Ctrl+Shift+C copies the selection (or the page) as a PNG. The physical key decides, as Shift changes `key`.
-    if (event.code === 'KeyC' && event.shiftKey) return event.repeat ? null : { kind: 'copyPng' }
+    // Ctrl+Shift+L locks the selection. The physical key decides, as Shift changes `key`.
+    if (event.code === 'KeyL' && event.shiftKey) return event.repeat ? null : { kind: 'lock' }
     if (!event.shiftKey && !event.repeat) {
       if (key === 'c') return { kind: 'copy' }
       if (key === 'x') return { kind: 'cut' }
@@ -223,6 +224,8 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     }
     return null
   }
+  // Shift+Alt+C copies the selection (or the page) as a PNG (Excalidraw's binding; Ctrl+Shift+C is Chrome's inspector). The physical key decides: Alt changes `key` on a Mac.
+  if (event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey && event.code === 'KeyC') return event.repeat ? null : { kind: 'copyPng' }
   // Shift+1 fits the drawing, Shift+2 zooms to the selection. `key` is "!" or "@" on a US layout and something else elsewhere, so the physical key decides.
   if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
     if (event.code === 'Digit1' || event.code === 'Numpad1') return event.repeat ? null : { kind: 'zoomFit' }
@@ -262,10 +265,11 @@ export function isTypingTarget(tag: string, isEditable: boolean): boolean {
 export type HitTarget = { key: string; kind: 'rectangle' | 'connector' | 'text' | 'code' | 'stroke'; id: number }
 
 /** `skipCode`: look through code blocks (Alt + click reaches what lies under a block). */
-export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scale: number, skipCode = false): HitTarget | null {
+export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scale: number, skipCode = false, includeLocked = false): HitTarget | null {
   const pick = (kind: 'rectangle' | 'connector' | 'text' | 'code', test: (item: CanvasItem) => boolean): HitTarget | null => {
     for (let index = routedItems.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
+      if (!includeLocked && isItemLocked(item)) continue // locked items are drawn but never picked (the right-click menu looks through the lock)
       if (item.kind === kind && test(item)) return { key: canvasItemKey(item), kind, id: item.id }
     }
     return null
@@ -386,7 +390,7 @@ export function shiftClickTarget(routedItems: readonly CanvasItem[], point: Poin
   if (target) return target
   for (let index = routedItems.length - 1; index >= 0; index -= 1) {
     const item = routedItems[index]
-    if (item.kind === 'stroke' && !item.erase && itemHitTest(item, point, 12 / scale)) return { key: canvasItemKey(item), kind: 'stroke', id: item.id }
+    if (item.kind === 'stroke' && !item.erase && !item.locked && itemHitTest(item, point, 12 / scale)) return { key: canvasItemKey(item), kind: 'stroke', id: item.id }
   }
   return null
 }
@@ -399,7 +403,7 @@ export function rectFromPoints(a: Point, b: Point): RectangleBounds {
 export function marqueeKeys(routedItems: readonly CanvasItem[], rect: RectangleBounds): string[] {
   const keys: string[] = []
   for (const item of routedItems) {
-    if (item.kind === 'opaque') continue // unknown items are never selected
+    if (item.kind === 'opaque' || isItemLocked(item)) continue // unknown and locked items are never selected
     const key = canvasItemKey(item)
     const bounds = getCanvasSelectionBounds([item], new Set([key]))
     if (!bounds) continue
@@ -466,32 +470,80 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
 }
 
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'exportPng' | 'exportSvg'
-export type ContextMenuEntry = { action: ContextMenuAction; label: string; enabled: boolean }
+  | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll'
+export type ContextMenuSection = 'clipboard' | 'text' | 'arrange' | 'view' | 'lock' | 'export' | 'select'
+/** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
+export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint: string; section: ContextMenuSection; disabled: boolean }
 
-/** The right-click menu: entries that do not apply are disabled, never hidden. */
-export function contextMenuEntries(hasSelection: boolean, clipboardHasItems: boolean, pageHasItems: boolean): ContextMenuEntry[] {
+/** What the menu needs to know about the page when it opens. */
+export type ContextMenuState = {
+  hasSelection: boolean
+  clipboardHasItems: boolean
+  pageHasItems: boolean
+  /** Exactly one text label, code block or class box is selected (Enter would edit it). */
+  canEditText: boolean
+  /** The right-click landed on a locked item (it cannot be selected, so the menu offers Unlock for it). */
+  lockedTarget: boolean
+  /** Some item on the page is locked. */
+  anyLocked: boolean
+}
+
+/**
+ * The right-click menu as data, in display order; entries of one section are shown together with a separator between sections.
+ * Entries that do not apply are disabled, never hidden, except: Edit text (only for one label), Lock / Unlock / Unlock all (only when they apply:
+ * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
+ */
+export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
+  const { hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked } = state
+  const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled })
   return [
-    { action: 'cut', label: 'Cut', enabled: hasSelection },
-    { action: 'copy', label: 'Copy', enabled: hasSelection },
-    { action: 'paste', label: 'Paste', enabled: clipboardHasItems },
-    { action: 'duplicate', label: 'Duplicate', enabled: hasSelection },
-    { action: 'delete', label: 'Delete', enabled: hasSelection },
-    { action: 'bringToFront', label: 'Bring to front', enabled: hasSelection },
-    { action: 'sendToBack', label: 'Send to back', enabled: hasSelection },
-    { action: 'selectAll', label: 'Select all', enabled: pageHasItems },
-    { action: 'copyPng', label: 'Copy as PNG', enabled: hasSelection || pageHasItems },
+    entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
+    entry('copy', 'Copy', 'Ctrl+C', 'clipboard', hasSelection),
+    entry('paste', 'Paste', 'Ctrl+V', 'clipboard', clipboardHasItems),
+    entry('duplicate', 'Duplicate', 'Ctrl+D', 'clipboard', hasSelection),
+    entry('delete', 'Delete', 'Del', 'clipboard', hasSelection),
+    ...(canEditText ? [entry('editText', 'Edit text', 'Enter', 'text', true)] : []),
+    entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection),
+    entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection),
+    entry('zoomSelection', 'Zoom to selection', 'Shift+2', 'view', hasSelection),
+    ...(hasSelection ? [entry('lock', 'Lock', 'Ctrl+Shift+L', 'lock', true)] : []),
+    ...(!hasSelection && lockedTarget ? [entry('unlock', 'Unlock', '', 'lock', true)] : []),
+    ...(!hasSelection && !lockedTarget && anyLocked ? [entry('unlockAll', 'Unlock all', '', 'lock', true)] : []),
+    entry('copyPng', 'Copy as PNG', 'Shift+Alt+C', 'export', hasSelection || pageHasItems),
     // Only offered when something is selected.
-    ...(hasSelection ? [
-      { action: 'exportPng' as const, label: 'Export selection as PNG', enabled: true },
-      { action: 'exportSvg' as const, label: 'Export selection as SVG', enabled: true },
-    ] : []),
+    ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true), entry('exportSvg', 'Export selection as SVG', '', 'export', true)] : []),
+    entry('selectAll', 'Select all', 'Ctrl+A', 'select', pageHasItems),
   ]
 }
 
-/** Keeps the menu fully on screen: opens at the pointer, shifted back when it would run past the right or bottom edge. */
-/** Height of the right-click menu for a number of entries (38 px each), for clampMenuPosition. */
-export const contextMenuHeight = (entryCount: number): number => entryCount * 38
+/** The menu rows with a separator wherever the section changes; the rendered menu maps this one list. */
+export type ContextMenuRow = { separator: true } | { separator?: false; entry: ContextMenuEntry }
 
+export function contextMenuRows(entries: readonly ContextMenuEntry[]): ContextMenuRow[] {
+  const rows: ContextMenuRow[] = []
+  entries.forEach((entry, index) => {
+    if (index > 0 && entries[index - 1].section !== entry.section) rows.push({ separator: true })
+    rows.push({ entry })
+  })
+  return rows
+}
+
+/** Menu geometry in px; the stylesheet uses the same numbers (.canvas-context-menu). */
+export const CONTEXT_MENU_WIDTH = 248
+const MENU_PADDING = 6 + 1 // vertical padding plus border, per side
+const MENU_ENTRY_HEIGHT = 34
+const MENU_GAP = 2
+const MENU_SEPARATOR_HEIGHT = 1 + 4 + 4 // line plus its vertical margin
+
+/** Height of the right-click menu, worked out from its rows (entries and separators), for clampMenuPosition. */
+export function contextMenuHeight(entries: readonly ContextMenuEntry[]): number {
+  const rows = contextMenuRows(entries)
+  const separators = rows.filter((row) => row.separator).length
+  const items = rows.length - separators
+  return MENU_PADDING * 2 + items * MENU_ENTRY_HEIGHT + separators * MENU_SEPARATOR_HEIGHT + Math.max(0, rows.length - 1) * MENU_GAP
+}
+
+/** Keeps the menu fully on screen: opens at the pointer, shifted back when it would run past the right or bottom edge. */
 export function clampMenuPosition(x: number, y: number, width: number, height: number, viewWidth: number, viewHeight: number): { x: number; y: number } {
   return { x: Math.max(0, Math.min(x, viewWidth - width)), y: Math.max(0, Math.min(y, viewHeight - height)) }
 }

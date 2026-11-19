@@ -12,6 +12,8 @@ const connector = (id, x1, y1, x2, y2) => ({ kind: 'connector', id, start: { x: 
 const pt = (x, y) => ({ x, y, pressure: 1 })
 const inkBox = () => ({ top: 30, mid: 70, ink: [] })
 
+const menuOf = (hasSelection, clipboardHasItems, pageHasItems, extra = {}) => input.contextMenuEntries({ hasSelection, clipboardHasItems, pageHasItems, canEditText: false, lockedTarget: false, anyLocked: false, ...extra })
+
 test('hitTarget picks text, then a box, then a connector, topmost first, and ignores empty space', () => {
   const items = [rect(1, 0, 0, 100, 100), rect(2, 20, 20, 100, 100), text(3, 30, 30), connector(4, 300, 300, 400, 300)]
   assert.deepEqual(input.hitTarget(items, pt(40, 38), 1), { key: 'text:3', kind: 'text', id: 3 })
@@ -263,12 +265,12 @@ test('Enter edits only a single selected label or class box', () => {
   assert.equal(input.keyCommand(keyEvent('Enter', { ctrlKey: true }), 'desktop'), null)
 })
 
-test('the menu lists Cut, Copy, Paste, Duplicate, Delete, Select all and disables what does not apply', () => {
-  const entries = (...args) => Object.fromEntries(input.contextMenuEntries(...args).map((e) => [e.action, e.enabled]))
-  assert.deepEqual(input.contextMenuEntries(false, false, false).map((e) => e.label), ['Cut', 'Copy', 'Paste', 'Duplicate', 'Delete', 'Bring to front', 'Send to back', 'Select all', 'Copy as PNG'])
-  assert.deepEqual(entries(false, false, false), { cut: false, copy: false, paste: false, duplicate: false, delete: false, bringToFront: false, sendToBack: false, selectAll: false, copyPng: false })
-  assert.deepEqual(entries(true, false, true), { cut: true, copy: true, paste: false, duplicate: true, delete: true, bringToFront: true, sendToBack: true, selectAll: true, copyPng: true, exportPng: true, exportSvg: true })
-  assert.deepEqual(entries(false, true, true), { cut: false, copy: false, paste: true, duplicate: false, delete: false, bringToFront: false, sendToBack: false, selectAll: true, copyPng: true })
+test('the menu lists the clipboard, arrange, view, export and select entries and disables what does not apply', () => {
+  const entries = (...args) => Object.fromEntries(menuOf(...args).map((e) => [e.action, !e.disabled]))
+  assert.deepEqual(menuOf(false, false, false).map((e) => e.label), ['Cut', 'Copy', 'Paste', 'Duplicate', 'Delete', 'Bring to front', 'Send to back', 'Zoom to selection', 'Copy as PNG', 'Select all'])
+  assert.deepEqual(entries(false, false, false), { cut: false, copy: false, paste: false, duplicate: false, delete: false, bringToFront: false, sendToBack: false, zoomSelection: false, copyPng: false, selectAll: false })
+  assert.deepEqual(entries(true, false, true), { cut: true, copy: true, paste: false, duplicate: true, delete: true, bringToFront: true, sendToBack: true, zoomSelection: true, lock: true, copyPng: true, exportPng: true, exportSvg: true, selectAll: true })
+  assert.deepEqual(entries(false, true, true), { cut: false, copy: false, paste: true, duplicate: false, delete: false, bringToFront: false, sendToBack: false, zoomSelection: false, copyPng: true, selectAll: true })
 })
 
 test('the menu stays on screen', () => {

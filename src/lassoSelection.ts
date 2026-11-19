@@ -138,6 +138,7 @@ export function selectItemsByLasso(items: CanvasItem[], polygon: Point[]): strin
   if (polygon.length < 3) return []
   const selected: string[] = []
   for (const item of items) {
+    if (item.kind !== 'opaque' && item.locked === true) continue // locked items are never lasso-selected
     if (item.kind === 'connector') {
       // Connectors are atomic and must be almost entirely enclosed. This avoids selecting
       // a relationship just because a lasso loop crosses its path.

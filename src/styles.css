@@ -656,10 +656,13 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
   .home-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 }
 
-.canvas-context-menu { position: fixed; z-index: 30; width: 184px; padding: 6px; display: flex; flex-direction: column; gap: 2px; border: 1px solid rgba(36, 42, 52, .12); border-radius: 12px; background: #fff; box-shadow: 0 8px 28px rgba(31, 39, 52, .22); }
-.canvas-context-menu button { min-height: 34px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #202124; font: inherit; text-align: left; cursor: pointer; }
+.canvas-context-menu { position: fixed; z-index: 30; box-sizing: border-box; width: 248px; padding: 6px; display: flex; flex-direction: column; gap: 2px; border: 1px solid rgba(36, 42, 52, .12); border-radius: 12px; background: #fff; box-shadow: 0 8px 28px rgba(31, 39, 52, .22); }
+.canvas-context-menu button { display: flex; align-items: center; justify-content: space-between; gap: 16px; box-sizing: border-box; min-height: 34px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #202124; font: inherit; text-align: left; cursor: pointer; }
 .canvas-context-menu button:hover:not(:disabled), .canvas-context-menu button:focus-visible { background: #eef1fc; outline: none; }
 .canvas-context-menu button:disabled { color: #a0a6b2; cursor: default; }
+.canvas-context-separator { height: 1px; margin: 4px 6px; background: rgba(36, 42, 52, .12); }
+.canvas-context-hint { font: 12px 'DM Sans', sans-serif; color: #7a8190; white-space: nowrap; }
+.canvas-context-menu button:disabled .canvas-context-hint { color: #b9beca; }
 
 .text-font-group { gap: 4px; }
 .context-panel .text-font-button { flex: 1 1 calc(50% - 4px); min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 2px 6px; border: 1px solid #e0e4ec; border-radius: 10px; background: #fff; color: #202124; font-size: 20px; line-height: 1.1; cursor: pointer; }

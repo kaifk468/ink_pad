@@ -26,6 +26,8 @@ const code = (id) => ({ kind: 'code', id, x: 0, y: 0, width: 100, height: 50, te
 const keys = (...items) => new Set(items.map(model.canvasItemKey))
 
 // ---- 6: stroke width ----
+const menuOf = (hasSelection, clipboardHasItems, pageHasItems, extra = {}) => input.contextMenuEntries({ hasSelection, clipboardHasItems, pageHasItems, canEditText: false, lockedTarget: false, anyLocked: false, ...extra })
+
 test('restrokeItems changes strokes, plain and HLD shapes and connectors, and skips eraser, class boxes, text and code', () => {
   const items = [pen(1), eraser(2), box(1, 0, 0), hld(2), klass(3), inkClass(4), conn(1), text(1), code(1)]
   const out = model.restrokeItems(items, keys(...items), 9)
@@ -245,9 +247,9 @@ test('the shortcut table lists the four layer keys and the context menu offers B
     assert.ok(entry, label)
     assert.equal(input.keyCommand(shortcuts.shortcutKeyInput(entry), 'desktop').kind, 'layer')
   }
-  const entries = input.contextMenuEntries(true, false, true)
+  const entries = menuOf(true, false, true)
   assert.deepEqual(entries.filter((e) => /front|back/.test(e.label)).map((e) => e.action), ['bringToFront', 'sendToBack'])
-  assert.equal(input.contextMenuEntries(false, false, true).find((e) => e.action === 'sendToBack').enabled, false)
+  assert.equal(menuOf(false, false, true).find((e) => e.action === 'sendToBack').disabled, true)
 })
 
 // ---- 10: align and distribute ----
@@ -344,7 +346,7 @@ test('wiring: width, dash, arrowheads, layer and arrange are desktop only and ea
   assert.match(app, /case 'layer': return moveSelectionLayer\(command\.move\)/)
   assert.match(app, /case 'bringToFront': moveSelectionLayer\('front'\)/)
   assert.match(app, /case 'sendToBack': moveSelectionLayer\('back'\)/)
-  assert.match(app, /clampMenuPosition\(contextMenu\.x, contextMenu\.y, 184, contextMenuHeight\(entries\.length\),/)
+  assert.match(app, /clampMenuPosition\(contextMenu\.x, contextMenu\.y, CONTEXT_MENU_WIDTH, contextMenuHeight\(entries\),/)
 })
 
 test('wiring: new shapes, lines and arrows from the desktop shape tools take the default line style', () => {

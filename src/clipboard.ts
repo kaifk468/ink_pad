@@ -44,7 +44,13 @@ export type PasteResult = { items: CanvasItem[]; keys: string[]; counters: IdCou
  */
 export function pasteItems(clip: readonly CanvasItem[], counters: IdCounters, offset: number, workspace: ViewBounds, at?: { x: number; y: number } | null): PasteResult | null {
   if (clip.length === 0) return null
-  const source = cloneCanvasItems([...clip])
+  // A pasted copy is never locked.
+  const source = cloneCanvasItems([...clip]).map((item) => {
+    if (item.kind === 'opaque' || item.locked === undefined) return item
+    const { locked: _locked, ...unlocked } = item
+    void _locked
+    return unlocked as CanvasItem
+  })
   const bounds = getCanvasSelectionBounds(source, new Set(source.map(canvasItemKey)))
   const { dx, dy } = bounds ? pasteTranslation(bounds, offset, workspace, at) : { dx: offset, dy: offset }
   const next = { ...counters }
