@@ -1,4 +1,4 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry } from './canvasModel'
+import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, strokeHeadGeometry } from './canvasModel'
 import type { ConnectorObject, Point, RectangleObject, Stroke } from './canvasModel'
 
 /**
@@ -248,16 +248,21 @@ function roughClosed(points: Array<{ x: number; y: number }>, rng: Rng): string 
 
 /** Path data of a straight line or arrow stroke, in the hand-drawn style. Null for any other stroke. */
 export function sketchyStrokePath(stroke: Stroke): string | null {
+  const parts = sketchyStrokeParts(stroke)
+  return parts ? parts.line + parts.heads : null
+}
+
+/** The hand-drawn shaft of an arrow/line stroke and, separately, its arrowheads (so a dash can apply to the shaft only). */
+export function sketchyStrokeParts(stroke: Stroke): { line: string; heads: string } | null {
   if ((stroke.shape !== 'arrow' && stroke.shape !== 'line') || stroke.points.length < 2 || stroke.erase) return null
   const rng = mulberry32(seedFromId(`stroke-${stroke.shape}`, stroke.id))
   const [start, end] = stroke.points
-  let d = roughPolyline([start, end], rng)
-  if (stroke.shape === 'arrow') {
-    const angle = Math.atan2(end.y - start.y, end.x - start.x)
-    const head = Math.max(12, stroke.width * 3.5)
-    for (const turn of [-Math.PI / 6, Math.PI / 6]) d += roughLine(end.x, end.y, end.x - head * Math.cos(angle + turn), end.y - head * Math.sin(angle + turn), rng, 0.5)
+  const line = roughPolyline([start, end], rng)
+  let heads = ''
+  for (const head of strokeHeadGeometry(stroke)) {
+    for (const wing of [head.wingA, head.wingB]) heads += roughLine(head.tip.x, head.tip.y, wing.x, wing.y, rng, 0.5)
   }
-  return d
+  return { line, heads }
 }
 
 export type SketchyConnector = {

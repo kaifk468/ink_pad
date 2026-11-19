@@ -1,7 +1,7 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, itemAngle, itemCenter, rotatedItemBounds } from './canvasModel'
+import { connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, getConnectorSymbolGeometry, strokeHeadGeometry, itemAngle, itemCenter, rotatedItemBounds } from './canvasModel'
 import { routeConnectors } from './connectorRoute'
 import { hldOutlinePath } from './hldShapes'
-import { isSketchyRectangle, plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokePath } from './sketchy'
+import { isSketchyRectangle, plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokeParts } from './sketchy'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 import { getClassBoxGeometry, type ClassBoxCompartment } from './classBoxLayout'
 import { CODE_FONT_FAMILY, codeColors, codeGeometry } from './codeBlock'
@@ -35,6 +35,9 @@ const n = (value: number) => String(Math.round(value * 100) / 100)
 const esc = (value: string) => value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string)
 const pressureScale = (pressure: number) => (pressure > 0 ? 0.35 + pressure * 0.9 : 1)
 
+/** The stroke-dasharray attribute (with its leading space) for a dash pattern; empty for solid. */
+const dashAttr = (pattern: number[]) => (pattern.length ? ` stroke-dasharray="${pattern.map(n).join(' ')}"` : '')
+
 function strokeElement(stroke: Stroke): string {
   const color = esc(stroke.color)
   const common = `stroke="${color}" stroke-linecap="round" stroke-linejoin="round" fill="none"`
@@ -42,17 +45,14 @@ function strokeElement(stroke: Stroke): string {
   if (!points.length) return ''
   if ((stroke.shape === 'line' || stroke.shape === 'arrow') && points.length >= 2) {
     const [start, end] = points
-    const rough = sketchyExport ? sketchyStrokePath(stroke) : null
-    if (rough) return `<path d="${rough}" ${common} stroke-width="${n(stroke.width)}"/>`
-    let d = `M${n(start.x)} ${n(start.y)}L${n(end.x)} ${n(end.y)}`
-    if (stroke.shape === 'arrow') {
-      const angle = Math.atan2(end.y - start.y, end.x - start.x)
-      const head = Math.max(12, stroke.width * 3.5)
-      for (const turn of [-Math.PI / 6, Math.PI / 6]) {
-        d += `M${n(end.x)} ${n(end.y)}L${n(end.x - head * Math.cos(angle + turn))} ${n(end.y - head * Math.sin(angle + turn))}`
-      }
-    }
-    return `<path d="${d}" ${common} stroke-width="${n(stroke.width)}"/>`
+    const rough = sketchyExport ? sketchyStrokeParts(stroke) : null
+    const dash = dashAttr(dashPattern(stroke.dash, stroke.width))
+    const heads = strokeHeadGeometry(stroke)
+    // Heads are always solid; the dash belongs to the shaft only.
+    const headPath = rough ? rough.heads : heads.map((head) => `M${n(head.tip.x)} ${n(head.tip.y)}L${n(head.wingA.x)} ${n(head.wingA.y)}M${n(head.tip.x)} ${n(head.tip.y)}L${n(head.wingB.x)} ${n(head.wingB.y)}`).join('')
+    const shaft = rough ? rough.line : `M${n(start.x)} ${n(start.y)}L${n(end.x)} ${n(end.y)}`
+    if (!dash) return `<path d="${shaft}${headPath}" ${common} stroke-width="${n(stroke.width)}"/>`
+    return `<path d="${shaft}" ${common} stroke-width="${n(stroke.width)}"${dash}/>` + (headPath ? `<path d="${headPath}" ${common} stroke-width="${n(stroke.width)}"/>` : '')
   }
   if (points.length === 1) {
     return `<circle cx="${n(points[0].x)}" cy="${n(points[0].y)}" r="${n((stroke.width * pressureScale(points[0].pressure)) / 2)}" fill="${color}"/>`
@@ -117,7 +117,7 @@ function rectangleElement(rectangle: RectangleObject): string {
   const sketchy = sketchyExport && isSketchyRectangle(rectangle)
   const fill = color ? `<path d="${sketchy ? sketchyRectangleShape(rectangle).fill : plainFillPath(rectangle)}" fill="${esc(color)}" stroke="none"/>` : ''
   if (sketchy) {
-    const outline = `<path d="${sketchyRectangleShape(rectangle).outline}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"/>`
+    const outline = `<path d="${sketchyRectangleShape(rectangle).outline}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
     return fill + (rectangle.inkBox ? inkBoxInkElement(rectangle) : '') + outline
   }
   return fill + plainRectangleElement(rectangle)
@@ -125,18 +125,18 @@ function rectangleElement(rectangle: RectangleObject): string {
 
 function plainRectangleElement(rectangle: RectangleObject): string {
   if (rectangle.hldShape) {
-    return inkBoxInkElement(rectangle) + `<path d="${hldOutlinePath(rectangle, rectangle.hldShape)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"/>`
+    return inkBoxInkElement(rectangle) + `<path d="${hldOutlinePath(rectangle, rectangle.hldShape)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
   }
   if (rectangle.diamond) {
     const cx = rectangle.x + rectangle.width / 2
     const cy = rectangle.y + rectangle.height / 2
-    return `<polygon points="${n(cx)},${n(rectangle.y)} ${n(rectangle.x + rectangle.width)},${n(cy)} ${n(cx)},${n(rectangle.y + rectangle.height)} ${n(rectangle.x)},${n(cy)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"/>`
+    return `<polygon points="${n(cx)},${n(rectangle.y)} ${n(rectangle.x + rectangle.width)},${n(cy)} ${n(cx)},${n(rectangle.y + rectangle.height)} ${n(rectangle.x)},${n(cy)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
   }
   if (rectangle.ellipse) {
-    return `<ellipse cx="${n(rectangle.x + rectangle.width / 2)}" cy="${n(rectangle.y + rectangle.height / 2)}" rx="${n(rectangle.width / 2)}" ry="${n(rectangle.height / 2)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}"/>`
+    return `<ellipse cx="${n(rectangle.x + rectangle.width / 2)}" cy="${n(rectangle.y + rectangle.height / 2)}" rx="${n(rectangle.width / 2)}" ry="${n(rectangle.height / 2)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
   }
   const rounded = rectangle.inkBox ? ' rx="14" ry="14"' : ''
-  return classBoxElement(rectangle) + inkBoxInkElement(rectangle) + inkBoxLinesElement(rectangle) + `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}"${rounded} fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"/>`
+  return classBoxElement(rectangle) + inkBoxInkElement(rectangle) + inkBoxLinesElement(rectangle) + `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}"${rounded} fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
 }
 
 const pt = (p: Point) => `${n(p.x)} ${n(p.y)}`
@@ -149,10 +149,9 @@ function connectorPathData(connector: ConnectorObject, atStart: boolean, replace
 }
 
 function sketchyConnectorElement(connector: ConnectorObject): string {
-  const spec = getConnectorRenderSpec(connector)
   const shape = sketchyConnectorShape(connector)
   const color = esc(connector.strokeColor)
-  const dash = spec.lineStyle === 'dashed' ? ` stroke-dasharray="${n(Math.max(6, connector.strokeWidth * 2.5))} ${n(Math.max(4, connector.strokeWidth * 1.8))}"` : ''
+  const dash = dashAttr(connectorDashPattern(connector))
   const base = `stroke="${color}" stroke-width="${n(connector.strokeWidth)}" stroke-linecap="round" stroke-linejoin="round"`
   const head = shape.head ? `<path d="${shape.head}" fill="${shape.headClosed && shape.headFill ? (shape.headFill === 'color' ? color : '#ffffff') : 'none'}" ${base}/>` : ''
   return `<path d="${shape.line}" fill="none" ${base}${dash}/>${head}`
@@ -164,7 +163,7 @@ function connectorElement(connector: ConnectorObject): string {
   const geometry = getConnectorSymbolGeometry(connector)
   const color = esc(connector.strokeColor)
   const width = n(connector.strokeWidth)
-  const dash = spec.lineStyle === 'dashed' ? ` stroke-dasharray="${n(Math.max(6, connector.strokeWidth * 2.5))} ${n(Math.max(4, connector.strokeWidth * 1.8))}"` : ''
+  const dash = dashAttr(connectorDashPattern(connector))
   const base = `stroke="${color}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"`
   const parts: string[] = []
   const tip = geometry?.tip

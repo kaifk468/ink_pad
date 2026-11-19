@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
-import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
+import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { PASTE_OFFSET, copyItems, pasteItems } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
@@ -63,7 +64,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, canvasCursor, clampMenuPosition, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, canvasCursor, clampMenuPosition, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 const DOUBLE_TAP_MS = 400
@@ -527,6 +528,11 @@ function App() {
   const shapeToolRef = useRef<ShapeKind | 'arrow' | 'line' | null>(null)
   shapeToolRef.current = shapeTool
   const recolorSessionRef = useRef(false)
+  const widthSessionRef = useRef(false)
+  /** Desktop shape tools: the line style new shapes, lines and arrows get ('solid' = none stored). */
+  const [lineDashDefault, setLineDashDefaultState] = useState<'solid' | LineDash>(() => loadLineDashDefault())
+  const lineDashDefaultRef = useRef(lineDashDefault)
+  lineDashDefaultRef.current = lineDashDefault
   const [, bumpSelectionColor] = useState(0)
   const [selectionMode, setSelectionMode] = useState(false)
   const [textMode, setTextMode] = useState(false)
@@ -1321,6 +1327,65 @@ function App() {
     }
     if (commit) recolorSessionRef.current = false
   }
+  /** Sets the outline width of the selection; one undo step per slider drag or preset click (`commit` or `endWidthChange` closes it). */
+  const changeSelectionWidth = (value: number, commit: boolean) => {
+    const next = restrokeItems(strokesRef.current, currentSelectionKeys(), value)
+    if (next !== strokesRef.current) {
+      if (!widthSessionRef.current) { saveHistory(); widthSessionRef.current = true }
+      strokesRef.current = next
+      renderAll()
+      bumpSelectionColor((n) => n + 1)
+    }
+    if (commit) widthSessionRef.current = false
+  }
+  const endWidthChange = () => { widthSessionRef.current = false }
+  /** Line style of the selection (solid / dashed / dotted), or the default for new shapes when nothing is selected. */
+  const changeLineDash = (dash: 'solid' | LineDash) => {
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) {
+      setLineDashDefaultState(dash)
+      saveLineDashDefault(dash)
+      return
+    }
+    const next = setLineDash(strokesRef.current, keys, dash === 'solid' ? null : dash)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+  }
+  const changeArrowheads = (heads: Arrowheads) => {
+    const next = setArrowheads(strokesRef.current, currentSelectionKeys(), heads)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+  }
+  /** Layer order of the selection (array order is paint order). One undo step; the saved picture of the page is dropped because it assumes items only get added on top. */
+  const moveSelectionLayer = (move: LayerMove): boolean => {
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) return false
+    const next = reorderItems(strokesRef.current, keys, move)
+    if (next === strokesRef.current) return true
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    return true
+  }
+  /** Aligns or distributes the selection; connectors attached to moved boxes follow. One undo step. */
+  const arrangeSelection = (moves: ReturnType<typeof alignMoves>) => {
+    if (moves.length === 0) return
+    saveHistory()
+    strokesRef.current = applyMoves(strokesRef.current, moves)
+    historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+  }
+  const alignSelection = (op: AlignOp) => arrangeSelection(alignMoves(strokesRef.current, currentSelectionKeys(), op))
+  const distributeSelection = (op: DistributeOp) => arrangeSelection(distributeMoves(strokesRef.current, currentSelectionKeys(), op))
   /** Turns the hand-drawn style on or off for the whole diagram. Turning it on gives every shape that lacks one a stored seed, in the same undo step. */
   const toggleSketchy = () => {
     const turningOn = !sketchyRef.current
@@ -2432,7 +2497,7 @@ function App() {
         // Straight line or arrow from the press point to the release point; a click without a drag adds nothing.
         const first = stroke.points[0]
         const last = stroke.points[stroke.points.length - 1]
-        stroke = Math.hypot(last.x - first.x, last.y - first.y) < 4 ? { ...stroke, points: [first] } : { ...stroke, shape: lineTool, points: [first, last] }
+        stroke = Math.hypot(last.x - first.x, last.y - first.y) < 4 ? { ...stroke, points: [first] } : { ...stroke, shape: lineTool, points: [first, last], ...(lineDashDefaultRef.current !== 'solid' ? { dash: lineDashDefaultRef.current } : {}) }
       } else if (stroke.kind === 'stroke' && STROKE_THINNING_ENABLED) stroke = thinStroke(stroke)
       const targetBox = inkBoxId !== null && stroke.kind === 'stroke'
         ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === inkBoxId && item.inkBox !== undefined)
@@ -2589,7 +2654,9 @@ function App() {
       // Press where the shape starts and drag to size it (Shift keeps it square); a plain click makes a default-sized shape.
       event.currentTarget.setPointerCapture(event.pointerId)
       saveHistory()
-      const box = sketchyRef.current ? withSketchSeed(createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)) : createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)
+      const plainBox = createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)
+      const dashedBox = lineDashDefaultRef.current !== 'solid' ? { ...plainBox, dash: lineDashDefaultRef.current } : plainBox
+      const box = sketchyRef.current ? withSketchSeed(dashedBox) : dashedBox
       strokesRef.current.push(box)
       setHasInk(true)
       activeResizeRef.current = {
@@ -3758,6 +3825,8 @@ function App() {
       case 'duplicate': duplicateSelection(); break
       case 'delete': deleteSelection(); break
       case 'selectAll': selectAllItems(); break
+      case 'bringToFront': moveSelectionLayer('front'); break
+      case 'sendToBack': moveSelectionLayer('back'); break
     }
   }
   // The menu closes on an outside press, scrolling, losing focus, or leaving Desktop mode (Escape is handled with the other keys).
@@ -3840,6 +3909,7 @@ function App() {
       case 'duplicate': return duplicateSelection()
       case 'deleteSelection': return deleteSelection()
       case 'selectAll': return selectAllItems()
+      case 'layer': return moveSelectionLayer(command.move)
       case 'tool':
         setOptionsFor(null)
         switch (command.tool) {
@@ -3895,7 +3965,7 @@ function App() {
           onPointerLeave={onPointerLeave}
         />
         {contextMenu && inputMode === 'desktop' && (() => {
-          const position = clampMenuPosition(contextMenu.x, contextMenu.y, 184, 236, window.innerWidth, window.innerHeight)
+          const position = clampMenuPosition(contextMenu.x, contextMenu.y, 184, 304, window.innerWidth, window.innerHeight)
           return (
             <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y }} onContextMenu={(event) => event.preventDefault()}>
               {contextMenuEntries(selectedItemCount > 0 || hasSelectedRectangle, clipboardCount > 0, hasInk).map((entry) => (
@@ -4086,6 +4156,21 @@ function App() {
           ? { color: selectionFillColor(strokesRef.current, currentSelectionKeys()), onFill: fillSelection, onMatchOutline: (hex) => recolorSelection(hex, true), outlineFor: matchingOutline }
           : null}
         showEraser={inputMode === 'desktop' && eraser}
+        selectionWidth={inputMode === 'desktop' && selectionHasOutlineWidth(strokesRef.current, currentSelectionKeys())
+          ? { value: selectionStrokeWidth(strokesRef.current, currentSelectionKeys()), onChange: changeSelectionWidth, onEnd: endWidthChange }
+          : null}
+        lineStyle={inputMode === 'desktop'
+          ? (currentSelectionKeys().size > 0
+            ? (strokesRef.current.some((item) => currentSelectionKeys().has(canvasItemKey(item)) && hasLineDash(item)) ? { value: selectionDash(strokesRef.current, currentSelectionKeys()), label: 'Line style', onChange: changeLineDash } : null)
+            : (shapeTool !== null ? { value: lineDashDefault, label: 'Line style for new shapes', onChange: changeLineDash } : null))
+          : null}
+        arrowheads={inputMode === 'desktop' && selectionHasArrowheads(strokesRef.current, currentSelectionKeys())
+          ? { value: selectionArrowheads(strokesRef.current, currentSelectionKeys()), onChange: changeArrowheads }
+          : null}
+        layer={inputMode === 'desktop' && (selectedItemCount > 0 || hasSelectedRectangle) ? { onMove: (move) => { moveSelectionLayer(move) } } : null}
+        arrange={inputMode === 'desktop' && canAlign(strokesRef.current, currentSelectionKeys())
+          ? { canAlign: true, canDistribute: canDistribute(strokesRef.current, currentSelectionKeys()), onAlign: alignSelection, onDistribute: distributeSelection }
+          : null}
         rotation={rotationPanel}
         code={codePanel}
         objectEraser={objectEraser}

@@ -2,14 +2,18 @@
 const MIN_CODE_WIDTH = 96
 const MIN_CODE_HEIGHT = 48
 export type Point = { x: number; y: number; pressure: number }
-export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line' }
+/** Line style other than solid (missing = solid). Only on arrow/line strokes, plain and HLD shapes and connectors. */
+export type LineDash = 'dashed' | 'dotted'
+/** Which ends of an arrow/line stroke carry an arrowhead. Missing = the default for the shape (arrow: end, line: none). */
+export type Arrowheads = 'none' | 'end' | 'start' | 'both'
+export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line'; dash?: LineDash; arrowheads?: Arrowheads }
 /** Ink class box: three bands (name, variables, methods) divided at the canvas heights `top` and `mid`, holding its own pen strokes (canvas coordinates). */
 export type InkBoxContent = { top: number; mid: number; ink: Stroke[] }
 export type ClassBoxContent = { name: string; attributes: string; methods: string }
 /** HLD shape kinds: Database (cylinder), Queue, Service. A rectangle with one of these is an ink box drawn as that shape. */
 export const HLD_SHAPES = ['database', 'queue', 'service'] as const
 export type HldShape = (typeof HLD_SHAPES)[number]
-export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; angle?: number; /** Hand-drawn style random seed (integer), written only by diagrams that use the sketchy style. */ seed?: number; /** Optional fill colour under the outline (not on service, typed or ink class boxes). */ fillColor?: string }
+export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; angle?: number; /** Hand-drawn style random seed (integer), written only by diagrams that use the sketchy style. */ seed?: number; /** Optional fill colour under the outline (not on service, typed or ink class boxes). */ fillColor?: string; dash?: LineDash }
 /** The fixed list of label fonts. A saved label without `fontFamily` is the original clean sans. */
 export const TEXT_FONT_IDS = ['excalifont', 'sans', 'serif', 'mono'] as const
 export type TextFontId = (typeof TEXT_FONT_IDS)[number]
@@ -33,6 +37,8 @@ export type ConnectorObject = {
   endAttachment?: ConnectorAttachment
   /** Line shape: straight (default when missing) or elbow (right angles). Saved. */
   routing?: ConnectorRouting
+  /** Own line style: wins over the dash of the relationship type. Missing = the relationship type decides. */
+  dash?: LineDash
   /** The right-angle path worked out for an elbow connector. Derived while drawing, never saved: only on copies made by routeConnectors. */
   routedPath?: Point[]
 }
@@ -94,6 +100,44 @@ export function getConnectorRenderSpec(connector: ConnectorObject): ConnectorRen
     default:
       return { lineStyle: 'solid', symbol: 'none', endpoint: null }
   }
+}
+
+/** The canvas/SVG dash pattern for a line style at a stroke width ([] = solid). Dots are zero-length dashes, drawn round by the round line cap. */
+export function dashPattern(dash: LineDash | undefined, width: number): number[] {
+  if (dash === 'dashed') return [Math.max(6, width * 2.5), Math.max(4, width * 1.8)]
+  if (dash === 'dotted') return [0.01, Math.max(4, width * 2)]
+  return []
+}
+
+/** A connector's dash pattern: its own style when it has one, otherwise the dashes of its relationship type. */
+export function connectorDashPattern(connector: ConnectorObject, width = connector.strokeWidth): number[] {
+  if (connector.dash) return dashPattern(connector.dash, width)
+  return getConnectorRenderSpec(connector).lineStyle === 'dashed' ? dashPattern('dashed', width) : []
+}
+
+/** The arrowheads a line or arrow stroke shows: its own choice, or the default of its shape (arrow: end, line: none). */
+export function strokeArrowheads(stroke: Stroke): Arrowheads {
+  return stroke.arrowheads ?? (stroke.shape === 'arrow' ? 'end' : 'none')
+}
+
+export type ArrowheadGeometry = { tip: Point; wingA: Point; wingB: Point }
+
+/** The head(s) of an arrow/line stroke: tip and the two wing ends (wingA is turned -30 degrees, wingB +30), start head first. */
+export function strokeHeadGeometry(stroke: Stroke): ArrowheadGeometry[] {
+  if ((stroke.shape !== 'arrow' && stroke.shape !== 'line') || stroke.points.length < 2) return []
+  const heads = strokeArrowheads(stroke)
+  if (heads === 'none') return []
+  const [start, end] = stroke.points
+  const length = Math.max(12, stroke.width * 3.5)
+  const make = (tip: Point, from: Point): ArrowheadGeometry => {
+    const angle = Math.atan2(tip.y - from.y, tip.x - from.x)
+    const wing = (turn: number): Point => ({ x: tip.x - length * Math.cos(angle + turn), y: tip.y - length * Math.sin(angle + turn), pressure: tip.pressure })
+    return { tip, wingA: wing(-Math.PI / 6), wingB: wing(Math.PI / 6) }
+  }
+  const result: ArrowheadGeometry[] = []
+  if (heads === 'start' || heads === 'both') result.push(make(start, end))
+  if (heads === 'end' || heads === 'both') result.push(make(end, start))
+  return result
 }
 
 export type ConnectorSymbolGeometry = {
@@ -489,12 +533,9 @@ export function getCanvasSelectionBounds(items: CanvasItem[], selectedKeys: Read
       }
     } else if (!item.erase) {
       for (const point of item.points) include(point.x, point.y, item.width / 2)
-      if (item.shape === 'arrow' && item.points.length >= 2) {
-        const [start, end] = item.points
-        const angle = Math.atan2(end.y - start.y, end.x - start.x)
-        const headLength = Math.max(12, item.width * 3.5)
-        include(end.x - headLength * Math.cos(angle - Math.PI / 6), end.y - headLength * Math.sin(angle - Math.PI / 6), item.width / 2)
-        include(end.x - headLength * Math.cos(angle + Math.PI / 6), end.y - headLength * Math.sin(angle + Math.PI / 6), item.width / 2)
+      for (const head of strokeHeadGeometry(item)) {
+        include(head.wingA.x, head.wingA.y, item.width / 2)
+        include(head.wingB.x, head.wingB.y, item.width / 2)
       }
     }
   }
@@ -1027,4 +1068,163 @@ export function constrainInkBoxBounds(rectangle: RectangleObject, bounds: Rectan
   if (width < min.width) width = min.width
   if (height < min.height) height = min.height
   return coverInkBounds({ x, y, width, height }, box)
+}
+
+// ---- Desktop: line style of a selection (width, dash, arrowheads) and layer order ----
+
+/** Widest outline the panel offers (same number as MAX_STROKE_WIDTH in app/appConfig.ts). */
+const MAX_OUTLINE_WIDTH = 24
+
+/** A plain or HLD shape: not a class box and not an ink class box (a rectangle with ink but no HLD shape). */
+function isStyleableBox(item: RectangleObject): boolean {
+  return !item.classBox && (!item.inkBox || item.hldShape !== undefined)
+}
+
+/** True when the item has an outline width the panel may change: pen/shape strokes (not eraser), plain and HLD shapes, connectors. */
+export function hasOutlineWidth(item: CanvasItem): boolean {
+  if (item.kind === 'stroke') return !item.erase
+  if (item.kind === 'rectangle') return isStyleableBox(item)
+  return item.kind === 'connector'
+}
+
+/** True when the item can carry a dash: arrow/line strokes, plain and HLD shapes, connectors. */
+export function hasLineDash(item: CanvasItem): boolean {
+  if (item.kind === 'stroke') return !item.erase && (item.shape === 'arrow' || item.shape === 'line')
+  if (item.kind === 'rectangle') return isStyleableBox(item)
+  return item.kind === 'connector'
+}
+
+const outlineWidthOf = (item: CanvasItem): number => (item.kind === 'stroke' ? item.width : item.kind === 'rectangle' || item.kind === 'connector' ? item.strokeWidth : 0)
+
+/** The width shared by every selected item that has one, or null when they differ or none has one. */
+export function selectionStrokeWidth(items: readonly CanvasItem[], keys: ReadonlySet<string>): number | null {
+  let found: number | null = null
+  for (const item of items) {
+    if (!keys.has(canvasItemKey(item)) || !hasOutlineWidth(item)) continue
+    const width = outlineWidthOf(item)
+    if (found === null) found = width
+    else if (found !== width) return null
+  }
+  return found
+}
+
+/** True when the selection holds at least one item whose width can change. */
+export function selectionHasOutlineWidth(items: readonly CanvasItem[], keys: ReadonlySet<string>): boolean {
+  return items.some((item) => keys.has(canvasItemKey(item)) && hasOutlineWidth(item))
+}
+
+/**
+ * Items with the outline width of the selected strokes, plain/HLD shapes and connectors set to `width` (1 to 24).
+ * Text, code, class boxes and unknown items are left alone. Returns the same array when nothing changes.
+ */
+export function restrokeItems(items: CanvasItem[], keys: ReadonlySet<string>, width: number): CanvasItem[] {
+  if (keys.size === 0 || !Number.isFinite(width)) return items
+  const next = Math.min(MAX_OUTLINE_WIDTH, Math.max(1, Math.round(width)))
+  let changed = false
+  const result = items.map((item): CanvasItem => {
+    if (!keys.has(canvasItemKey(item)) || !hasOutlineWidth(item) || outlineWidthOf(item) === next) return item
+    changed = true
+    return item.kind === 'stroke' ? { ...item, width: next } : { ...(item as RectangleObject | ConnectorObject), strokeWidth: next }
+  })
+  return changed ? result : items
+}
+
+/** The line style the selection shares ('solid' when none is set), or null when it is mixed or nothing in it can be dashed. A connector with the dash of its relationship type counts as dashed. */
+export function selectionDash(items: readonly CanvasItem[], keys: ReadonlySet<string>): LineDash | 'solid' | null {
+  let found: LineDash | 'solid' | null | undefined
+  for (const item of items) {
+    if (!keys.has(canvasItemKey(item)) || !hasLineDash(item)) continue
+    const dash: LineDash | 'solid' = item.kind === 'connector'
+      ? (item.dash ?? (getConnectorRenderSpec(item).lineStyle === 'dashed' ? 'dashed' : 'solid'))
+      : (item as Stroke | RectangleObject).dash ?? 'solid'
+    if (found === undefined) found = dash
+    else if (found !== dash) return null
+  }
+  return found ?? null
+}
+
+/** Sets the line style (null = solid) of the selected arrow/line strokes, plain/HLD shapes and connectors. Same array when nothing changes. */
+export function setLineDash(items: CanvasItem[], keys: ReadonlySet<string>, dash: LineDash | null): CanvasItem[] {
+  if (keys.size === 0) return items
+  let changed = false
+  const result = items.map((item): CanvasItem => {
+    if (!keys.has(canvasItemKey(item)) || !hasLineDash(item)) return item
+    if (item.kind === 'connector') {
+      // A connector whose relationship type is already dashed keeps drawing dashed when its own dash is removed.
+      if (item.dash === (dash ?? undefined)) return item
+      changed = true
+      const { dash: _old, ...rest } = item as ConnectorObject
+      return dash ? { ...rest, dash } : rest
+    }
+    const current = (item as Stroke | RectangleObject).dash
+    if (current === (dash ?? undefined)) return item
+    changed = true
+    const { dash: _old, ...rest } = item as Stroke | RectangleObject
+    return (dash ? { ...rest, dash } : rest) as CanvasItem
+  })
+  return changed ? result : items
+}
+
+/** True for a selected arrow/line stroke (the only items that have arrowheads to choose). */
+export function selectionHasArrowheads(items: readonly CanvasItem[], keys: ReadonlySet<string>): boolean {
+  return items.some((item) => item.kind === 'stroke' && !item.erase && keys.has(canvasItemKey(item)) && (item.shape === 'arrow' || item.shape === 'line'))
+}
+
+/** The arrowheads the selected arrow/line strokes share, or null when they differ or there are none. */
+export function selectionArrowheads(items: readonly CanvasItem[], keys: ReadonlySet<string>): Arrowheads | null {
+  let found: Arrowheads | null = null
+  for (const item of items) {
+    if (item.kind !== 'stroke' || item.erase || !keys.has(canvasItemKey(item)) || (item.shape !== 'arrow' && item.shape !== 'line')) continue
+    const heads = strokeArrowheads(item)
+    if (found === null) found = heads
+    else if (found !== heads) return null
+  }
+  return found
+}
+
+/** Sets the arrowheads of the selected arrow/line strokes. A choice equal to the shape's default is stored as "missing", so old files and defaults stay identical. */
+export function setArrowheads(items: CanvasItem[], keys: ReadonlySet<string>, heads: Arrowheads): CanvasItem[] {
+  if (keys.size === 0) return items
+  let changed = false
+  const result = items.map((item): CanvasItem => {
+    if (item.kind !== 'stroke' || item.erase || !keys.has(canvasItemKey(item)) || (item.shape !== 'arrow' && item.shape !== 'line')) return item
+    if (strokeArrowheads(item) === heads) return item
+    changed = true
+    const { arrowheads: _old, ...rest } = item
+    const isDefault = heads === (item.shape === 'arrow' ? 'end' : 'none')
+    return isDefault ? rest : { ...rest, arrowheads: heads }
+  })
+  return changed ? result : items
+}
+
+export type LayerMove = 'forward' | 'backward' | 'front' | 'back'
+
+/**
+ * Paint order is array order, so layer order is the order of the array. Moves the items whose keys are given
+ * one step toward the front (forward: each passes the next item that is not selected), one step toward the back,
+ * or all the way to the front/back. The selected items keep their order among themselves. Opaque items never move.
+ * Returns the same array when nothing changes.
+ */
+export function reorderItems(items: CanvasItem[], keys: ReadonlySet<string>, move: LayerMove): CanvasItem[] {
+  if (keys.size === 0) return items
+  const selected = (item: CanvasItem) => item.kind !== 'opaque' && keys.has(canvasItemKey(item))
+  let result: CanvasItem[]
+  if (move === 'front' || move === 'back') {
+    const picked = items.filter(selected)
+    if (picked.length === 0) return items
+    const rest = items.filter((item) => !selected(item))
+    result = move === 'front' ? [...rest, ...picked] : [...picked, ...rest]
+  } else {
+    result = items.slice()
+    if (move === 'forward') {
+      for (let index = result.length - 2; index >= 0; index -= 1) {
+        if (selected(result[index]) && !selected(result[index + 1]) && result[index + 1].kind !== 'opaque') [result[index], result[index + 1]] = [result[index + 1], result[index]]
+      }
+    } else {
+      for (let index = 1; index < result.length; index += 1) {
+        if (selected(result[index]) && !selected(result[index - 1]) && result[index - 1].kind !== 'opaque') [result[index], result[index - 1]] = [result[index - 1], result[index]]
+      }
+    }
+  }
+  return result.every((item, index) => item === items[index]) ? items : result
 }

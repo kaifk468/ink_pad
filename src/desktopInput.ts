@@ -36,6 +36,26 @@ export function saveInputMode(mode: InputMode, storage?: Pick<Storage, 'setItem'
   }
 }
 
+const LINE_DASH_KEY = 'inkpad.lineDash'
+
+/** The line style new shapes, lines and arrows get from the Desktop shape tools ('solid' when never chosen). */
+export function loadLineDashDefault(storage?: Pick<Storage, 'getItem'>): 'solid' | 'dashed' | 'dotted' {
+  try {
+    const value = (storage ?? window.localStorage).getItem(LINE_DASH_KEY)
+    return value === 'dashed' || value === 'dotted' ? value : 'solid'
+  } catch {
+    return 'solid'
+  }
+}
+
+export function saveLineDashDefault(value: 'solid' | 'dashed' | 'dotted', storage?: Pick<Storage, 'setItem'>): void {
+  try {
+    (storage ?? window.localStorage).setItem(LINE_DASH_KEY, value)
+  } catch {
+    /* storage unavailable: the choice lasts for this session only */
+  }
+}
+
 /**
  * The pressure stored for every point of a mouse stroke. A mouse reports no real pressure (browsers give
  * 0.5 while a button is down, 0 otherwise), so mouse points get one fixed value: 0.5 draws at 0.8 of the
@@ -161,6 +181,7 @@ export type KeyCommand =
   | { kind: 'paste' }
   | { kind: 'duplicate' }
   | { kind: 'edit' }
+  | { kind: 'layer'; move: 'forward' | 'backward' | 'front' | 'back' }
   | { kind: 'tool'; tool: KeyTool }
 
 export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', k: 'code', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
@@ -174,6 +195,12 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
   const command = event.ctrlKey || event.metaKey
   if (command && !event.altKey) {
+    // Layer order: Ctrl+] / Ctrl+[ one step, with Shift all the way. The physical key decides (Shift changes `key` to } or {).
+    if (event.code === 'BracketRight' || event.code === 'BracketLeft') {
+      if (event.repeat) return null
+      const forward = event.code === 'BracketRight'
+      return { kind: 'layer', move: event.shiftKey ? (forward ? 'front' : 'back') : (forward ? 'forward' : 'backward') }
+    }
     if (key === 'z') return event.shiftKey ? { kind: 'redo' } : { kind: 'undo' }
     if (key === 'y' && !event.shiftKey) return { kind: 'redo' }
     if (key === '=' || key === '+') return { kind: 'zoomIn' }
@@ -430,7 +457,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
   return item.kind === 'rectangle' && item.classBox && !item.inkBox && !item.ellipse && !item.diamond ? { kind: 'classBox', id: item.id } : null
 }
 
-export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll'
+export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack'
 export type ContextMenuEntry = { action: ContextMenuAction; label: string; enabled: boolean }
 
 /** The right-click menu: entries that do not apply are disabled, never hidden. */
@@ -441,6 +468,8 @@ export function contextMenuEntries(hasSelection: boolean, clipboardHasItems: boo
     { action: 'paste', label: 'Paste', enabled: clipboardHasItems },
     { action: 'duplicate', label: 'Duplicate', enabled: hasSelection },
     { action: 'delete', label: 'Delete', enabled: hasSelection },
+    { action: 'bringToFront', label: 'Bring to front', enabled: hasSelection },
+    { action: 'sendToBack', label: 'Send to back', enabled: hasSelection },
     { action: 'selectAll', label: 'Select all', enabled: pageHasItems },
   ]
 }

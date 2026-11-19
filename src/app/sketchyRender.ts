@@ -1,6 +1,6 @@
-import { connectorPoints } from '../canvasModel'
+import { connectorPoints, strokeArrowheads } from '../canvasModel'
 import type { ConnectorObject, RectangleObject, Stroke } from '../canvasModel'
-import { plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokePath, type SketchyConnector, type SketchyShape } from '../sketchy'
+import { plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokeParts, type SketchyConnector, type SketchyShape } from '../sketchy'
 
 /**
  * Canvas side of the hand-drawn style. Outlines are generated once per item and kept (items are immutable, so a WeakMap
@@ -37,7 +37,7 @@ function makeCache<T>() {
 type PathPair = { outline: Path2D; fill: Path2D }
 const shapeCache = makeCache<PathPair & { text: SketchyShape }>()
 const plainFillCache = makeCache<Path2D>()
-const strokeCache = makeCache<Path2D | null>()
+const strokeCache = makeCache<{ line: Path2D; heads: Path2D | null } | null>()
 const connectorCache = makeCache<{ line: Path2D; head: Path2D | null; spec: SketchyConnector }>()
 
 const flag = (rectangle: RectangleObject) => (rectangle.hldShape === 'database' ? 1 : rectangle.hldShape === 'queue' ? 2 : 0) + (rectangle.ellipse ? 4 : 0) + (rectangle.diamond ? 8 : 0)
@@ -69,16 +69,21 @@ export function fillRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
   ctx.restore()
 }
 
-/** Strokes a straight line or arrow stroke in the hand-drawn style; false when the stroke is not one. */
+/** Strokes a straight line or arrow stroke in the hand-drawn style; false when the stroke is not one. The caller's dash applies to the shaft only, never the heads. */
 export function strokeSketchyStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): boolean {
-  const key = [stroke.width, stroke.points[0]?.x ?? 0, stroke.points[0]?.y ?? 0, stroke.points[1]?.x ?? 0, stroke.points[1]?.y ?? 0, stroke.shape === 'arrow' ? 1 : 0]
-  const path = strokeCache(stroke, `s${stroke.id}`, key, () => {
-    const d = sketchyStrokePath(stroke)
-    return d ? new Path2D(d) : null
+  const headCode = strokeArrowheads(stroke) === 'none' ? 0 : strokeArrowheads(stroke) === 'end' ? 1 : strokeArrowheads(stroke) === 'start' ? 2 : 3
+  const key = [stroke.width, stroke.points[0]?.x ?? 0, stroke.points[0]?.y ?? 0, stroke.points[1]?.x ?? 0, stroke.points[1]?.y ?? 0, headCode]
+  const paths = strokeCache(stroke, `s${stroke.id}`, key, () => {
+    const parts = sketchyStrokeParts(stroke)
+    return parts ? { line: new Path2D(parts.line), heads: parts.heads ? new Path2D(parts.heads) : null } : null
   })
-  if (!path) return false
+  if (!paths) return false
   ctx.lineWidth = stroke.width
-  ctx.stroke(path)
+  ctx.stroke(paths.line)
+  if (paths.heads) {
+    ctx.setLineDash([])
+    ctx.stroke(paths.heads)
+  }
   return true
 }
 

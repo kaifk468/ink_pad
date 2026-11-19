@@ -6,7 +6,7 @@ import { loadModule } from './helpers/loadModule.mjs'
 const doc = await loadModule('documentFormat.ts')
 
 const p = (x, y, pressure = 0.5) => ({ x, y, pressure })
-const NEW_KEYS = ['sketchy', 'seed', 'fillColor', 'fit', 'code', 'theme']
+const NEW_KEYS = ['sketchy', 'seed', 'fillColor', 'fit', 'code', 'theme', 'dash', 'arrowheads']
 
 /** Every key used anywhere in a value (objects and arrays, any depth). */
 function allKeys(value, found = new Set()) {
@@ -207,4 +207,39 @@ test('(d) a document built with createDocument from loaded items survives the sa
   const loaded = doc.parseDocument(JSON.stringify(file)).document
   const built = doc.createDocument({ title: loaded.title, template: loaded.page.template, background: loaded.page.background, sketchy: loaded.page.sketchy, items: loaded.items, createdAt: loaded.createdAt, updatedAt: loaded.updatedAt })
   assert.deepEqual(JSON.parse(doc.stringifyDocument(doc.parseDocument(doc.stringifyDocument(built)).document)), file)
+})
+
+test('(b) dash and arrowheads round-trip on the items that can carry them and unknown values are dropped', () => {
+  const file = {
+    format: 'inkpad-document', version: 1, title: 'Lines', createdAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-02-02T00:00:00.000Z',
+    page: { template: 'blank', background: 'white' },
+    items: [
+      { kind: 'stroke', id: 1, points: [p(0, 0), p(50, 50)], color: '#c00', width: 4, erase: false, shape: 'arrow', dash: 'dashed', arrowheads: 'both' },
+      { kind: 'stroke', id: 2, points: [p(0, 80), p(90, 80)], color: '#00c', width: 2, erase: false, shape: 'line', dash: 'dotted', arrowheads: 'start' },
+      { kind: 'stroke', id: 3, points: [p(0, 90), p(90, 90)], color: '#00c', width: 2, erase: false, shape: 'line', arrowheads: 'none' },
+      { kind: 'rectangle', id: 1, x: 10, y: 20, width: 100, height: 60, strokeColor: '#111', strokeWidth: 2, dash: 'dashed' },
+      { kind: 'rectangle', id: 2, x: 400, y: 200, width: 120, height: 100, strokeColor: '#222', strokeWidth: 2, hldShape: 'queue', inkBox: { top: 230, mid: 270, ink: [] }, dash: 'dotted' },
+      { kind: 'connector', id: 1, start: p(110, 50, 0), end: p(150, 50, 0), strokeColor: '#111', strokeWidth: 2, relationshipType: 'dependency', reversed: false, dash: 'dotted' },
+    ],
+  }
+  const { out } = roundTrip(JSON.stringify(file))
+  assert.deepEqual(JSON.parse(out), file)
+  assert.equal(roundTrip(out).out, out)
+})
+
+test('(b) dash and arrowheads with unknown values, or on items that cannot carry them, are dropped', () => {
+  const file = oldFile(false)
+  const items = [
+    { kind: 'stroke', id: 1, points: [p(0, 0), p(50, 50)], color: '#c00', width: 4, erase: false, shape: 'arrow', dash: 'wavy', arrowheads: 'middle' },
+    { kind: 'stroke', id: 2, points: [p(0, 0), p(5, 9), p(50, 50)], color: '#c00', width: 4, erase: false, dash: 'dashed', arrowheads: 'both' },
+    { kind: 'rectangle', id: 1, x: 10, y: 20, width: 100, height: 60, strokeColor: '#111', strokeWidth: 2, dash: 'dashes' },
+    { kind: 'rectangle', id: 2, x: 10, y: 20, width: 100, height: 60, strokeColor: '#111', strokeWidth: 2, classBox: { name: 'A', attributes: '', methods: '' }, dash: 'dashed' },
+    { kind: 'rectangle', id: 3, x: 10, y: 20, width: 100, height: 60, strokeColor: '#111', strokeWidth: 2, inkBox: { top: 40, mid: 60, ink: [] }, dash: 'dashed' },
+    { kind: 'connector', id: 1, start: p(1, 1, 0), end: p(9, 9, 0), strokeColor: '#111', strokeWidth: 2, relationshipType: 'association', reversed: false, dash: 'solid' },
+  ]
+  const { result } = roundTrip(JSON.stringify({ ...file, items }))
+  for (const item of result.document.items) {
+    assert.equal('dash' in item, false, `${item.kind}:${item.id}`)
+    assert.equal('arrowheads' in item, false, `${item.kind}:${item.id}`)
+  }
 })

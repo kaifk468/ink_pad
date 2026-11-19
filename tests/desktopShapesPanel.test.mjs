@@ -34,7 +34,7 @@ test('App: a rectangle, diamond or ellipse is created by drag (Shift = square), 
 
 test('App: line and arrow are straight from the press point; a click without a drag adds nothing; no recognition or ink-box capture', () => {
   assert.match(app, /if \(shapeToolRef\.current === 'line' \|\| shapeToolRef\.current === 'arrow'\) stroke\.points = \[stroke\.points\[0\], clippedPoint\]/)
-  assert.match(app, /\{ \.\.\.stroke, shape: lineTool, points: \[first, last\] \}/)
+  assert.match(app, /\{ \.\.\.stroke, shape: lineTool, points: \[first, last\], \.\.\.\(lineDashDefaultRef/)
   assert.match(app, /< 4 \? \{ \.\.\.stroke, points: \[first\] \}/)
   assert.match(app, /shapeToolRef\.current !== null\) return\n    const anchor = holdAnchorRef\.current/)
   assert.match(app, /activeStrokeBoxRef\.current = shapeMode \|\| shapeTool !== null \? null/)

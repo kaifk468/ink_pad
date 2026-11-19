@@ -318,7 +318,12 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     }
     if (!points.length) return null
     const stroke: Stroke = { kind: 'stroke', id: value.id, points, color: value.color, width: value.width, erase: value.erase === true }
-    if (value.shape === 'arrow' || value.shape === 'line') stroke.shape = value.shape
+    if (value.shape === 'arrow' || value.shape === 'line') {
+      stroke.shape = value.shape
+      // Line style and arrowheads exist on straight arrow/line strokes only.
+      if (value.dash === 'dashed' || value.dash === 'dotted') stroke.dash = value.dash
+      if (value.arrowheads === 'none' || value.arrowheads === 'start' || value.arrowheads === 'both' || value.arrowheads === 'end') stroke.arrowheads = value.arrowheads
+    }
     return stroke
   }
   if (value.kind === 'rectangle') {
@@ -332,6 +337,8 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     const sketchable = !classBox && (!inkBox || value.hldShape === 'database' || value.hldShape === 'queue')
     if (sketchable && typeof value.seed === 'number' && Number.isInteger(value.seed) && value.seed >= 0 && value.seed <= 4294967295) rectangle.seed = value.seed
     if (sketchable && isColor(value.fillColor)) rectangle.fillColor = value.fillColor
+    // Line style: plain and HLD shapes only (not class boxes or ink class boxes).
+    if (!classBox && (!inkBox || rectangle.hldShape) && (value.dash === 'dashed' || value.dash === 'dotted')) rectangle.dash = value.dash
     return rectangle
   }
   if (value.kind === 'text') {
@@ -361,6 +368,7 @@ function sanitizeItem(value: unknown): CanvasItem | null {
       kind: 'connector', id: value.id, start, end, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth,
       relationshipType, reversed: value.reversed === true,
       ...(value.routing === 'elbow' ? { routing: 'elbow' as const } : {}),
+      ...(value.dash === 'dashed' || value.dash === 'dotted' ? { dash: value.dash } : {}),
       ...(startAttachment ? { startAttachment } : {}),
       ...(endAttachment ? { endAttachment } : {}),
     }

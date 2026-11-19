@@ -1,7 +1,8 @@
 import { useState, type CSSProperties } from 'react'
 import { ColorPicker } from './ColorPicker'
 import { ERASER_SIZES } from './appConfig'
-import type { ConnectorRelationshipType } from '../canvasModel'
+import type { Arrowheads, ConnectorRelationshipType, LayerMove } from '../canvasModel'
+import type { AlignOp, DistributeOp } from '../arrange'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import type { TextFontId } from '../canvasModel'
 import { TEXT_FONTS, TEXT_FONT_SIZES } from '../textLayout'
@@ -63,6 +64,16 @@ type ContextPanelProps = {
   rotation?: { degrees: number; onAlign: () => void; onReset: () => void } | null
   /** Desktop: the one selected code block's language, light/dark choice and text size. */
   code?: { language: string; dark: boolean; fontSize: number; canSmaller: boolean; canLarger: boolean; onLanguage: (id: string) => void; onTheme: (dark: boolean) => void; onFontSize: (direction: 1 | -1) => void; onEdit: () => void } | null
+  /** Desktop: outline width of the selection (null = mixed). `onChange(width, commit)`: commit is false while the slider is dragged; `onEnd` closes the one undo step. */
+  selectionWidth?: { value: number | null; onChange: (width: number, commit: boolean) => void; onEnd: () => void } | null
+  /** Desktop: line style of the selection, or the default for new shapes/lines/arrows (null value = mixed). */
+  lineStyle?: { value: 'solid' | 'dashed' | 'dotted' | null; label: string; onChange: (dash: 'solid' | 'dashed' | 'dotted') => void } | null
+  /** Desktop: arrowheads of the selected line/arrow strokes (null value = mixed). */
+  arrowheads?: { value: Arrowheads | null; onChange: (heads: Arrowheads) => void } | null
+  /** Desktop: layer order buttons for the selection. */
+  layer?: { onMove: (move: LayerMove) => void } | null
+  /** Desktop: align (2+ items) and distribute (3+ items). */
+  arrange?: { canAlign: boolean; canDistribute: boolean; onAlign: (op: AlignOp) => void; onDistribute: (op: DistributeOp) => void } | null
   objectEraser?: boolean
   eraserSize?: number
   onEraserMode?: (whole: boolean) => void
@@ -106,7 +117,7 @@ function ColorChoices({ value, label, onChange }: { value: string; label: string
 /** Settings that only appear when the active tool or selection needs them. */
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -151,6 +162,82 @@ export function ContextPanel(props: ContextPanelProps) {
           </button>
         </div>}
       </>}
+      {props.selectionWidth && <div className="selection-width" role="group" aria-label="Outline width of the selection">
+        <span className="panel-label">Width of this object</span>
+        <div className="tool-group thickness-group">
+          {WIDTHS.map((size) => (
+            <button
+              className={`thickness-button${props.selectionWidth?.value === size ? ' selected' : ''}`}
+              key={size}
+              type="button"
+              title={`${size}px`}
+              aria-label={`Set width to ${size} pixels`}
+              aria-pressed={props.selectionWidth?.value === size}
+              onClick={() => { props.selectionWidth?.onChange(size, true); props.selectionWidth?.onEnd() }}
+            ><span style={{ width: Math.min(size * 2.2, 20), height: Math.min(size * 2.2, 20) }} /></button>
+          ))}
+        </div>
+        <div className="stroke-width-slider">
+          <label className="popover-label" htmlFor="selection-width-range">Width</label>
+          <input
+            id="selection-width-range"
+            className="stroke-width-range"
+            aria-label="Width of the selection"
+            type="range"
+            min={MIN_STROKE_WIDTH}
+            max={MAX_STROKE_WIDTH}
+            step="1"
+            value={props.selectionWidth.value ?? MIN_STROKE_WIDTH}
+            onChange={(event) => props.selectionWidth?.onChange(Number(event.target.value), false)}
+            onPointerUp={() => props.selectionWidth?.onEnd()}
+            onKeyUp={() => props.selectionWidth?.onEnd()}
+            onBlur={() => props.selectionWidth?.onEnd()}
+          />
+          <output htmlFor="selection-width-range">{props.selectionWidth.value === null ? 'mixed' : `${props.selectionWidth.value} px`}</output>
+        </div>
+      </div>}
+      {props.lineStyle && <div className="line-style-controls" role="group" aria-label={props.lineStyle.label}>
+        <span className="panel-label">{props.lineStyle.label}</span>
+        <div className="routing-toggle" role="group" aria-label="Line style">
+          {(['solid', 'dashed', 'dotted'] as const).map((dash) => (
+            <button key={dash} type="button" className={props.lineStyle?.value === dash ? 'active' : ''} aria-pressed={props.lineStyle?.value === dash} aria-label={`${dash} line`} title={`${dash[0].toUpperCase()}${dash.slice(1)} line`} onClick={() => props.lineStyle?.onChange(dash)}>
+              <svg viewBox="0 0 28 8" width="28" height="8" aria-hidden="true"><path d="M2 4h24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeDasharray={dash === 'dashed' ? '6 4' : dash === 'dotted' ? '0.1 5' : undefined} /></svg>
+            </button>
+          ))}
+        </div>
+      </div>}
+      {props.arrowheads && <div className="arrowhead-controls" role="group" aria-label="Arrowheads">
+        <span className="panel-label">Arrowheads</span>
+        <div className="routing-toggle" role="group" aria-label="Arrowhead ends">
+          {([['none', 'None', 'M3 6h22'], ['end', 'End', 'M3 6h22m-5-4 5 4-5 4'], ['start', 'Start', 'M3 6h22M8 2 3 6l5 4'], ['both', 'Both', 'M3 6h22m-5-4 5 4-5 4M8 2 3 6l5 4']] as const).map(([id, label, d]) => (
+            <button key={id} type="button" className={props.arrowheads?.value === id ? 'active' : ''} aria-pressed={props.arrowheads?.value === id} aria-label={`Arrowheads: ${label}`} title={`Arrowheads: ${label.toLowerCase()}`} onClick={() => props.arrowheads?.onChange(id)}>
+              <svg viewBox="0 0 28 12" width="28" height="12" aria-hidden="true"><path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+          ))}
+        </div>
+      </div>}
+      {props.layer && <div className="layer-controls" role="group" aria-label="Layer order">
+        <span className="panel-label">Layer</span>
+        <div className="selection-actions">
+          <button className="clear-selection-button" type="button" aria-label="Bring to front" title="Bring to front (Ctrl+Shift+])" onClick={() => props.layer?.onMove('front')}>To front</button>
+          <button className="clear-selection-button" type="button" aria-label="Bring forward" title="Bring forward (Ctrl+])" onClick={() => props.layer?.onMove('forward')}>Forward</button>
+          <button className="clear-selection-button" type="button" aria-label="Send backward" title="Send backward (Ctrl+[)" onClick={() => props.layer?.onMove('backward')}>Backward</button>
+          <button className="clear-selection-button" type="button" aria-label="Send to back" title="Send to back (Ctrl+Shift+[)" onClick={() => props.layer?.onMove('back')}>To back</button>
+        </div>
+      </div>}
+      {props.arrange && <div className="arrange-controls" role="group" aria-label="Align and distribute">
+        <span className="panel-label">Align</span>
+        <div className="selection-actions">
+          {([['left', 'Left'], ['center', 'Centre'], ['right', 'Right'], ['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']] as const).map(([op, label]) => (
+            <button key={op} className="clear-selection-button" type="button" disabled={!props.arrange?.canAlign} aria-label={`Align ${label.toLowerCase()}`} title={`Align ${label.toLowerCase()}`} onClick={() => props.arrange?.onAlign(op)}>{label}</button>
+          ))}
+        </div>
+        <span className="panel-label">Distribute</span>
+        <div className="selection-actions">
+          <button className="clear-selection-button" type="button" disabled={!props.arrange.canDistribute} aria-label="Distribute horizontally" title="Equal gaps left to right (3 or more items)" onClick={() => props.arrange?.onDistribute('horizontal')}>Horizontally</button>
+          <button className="clear-selection-button" type="button" disabled={!props.arrange.canDistribute} aria-label="Distribute vertically" title="Equal gaps top to bottom (3 or more items)" onClick={() => props.arrange?.onDistribute('vertical')}>Vertically</button>
+        </div>
+      </div>}
       {props.showSelectionColor && !props.code && props.onSelectionColor && <div className="selection-color">
         <span className="panel-label">Colour of this object</span>
         <ColorChoices value={props.selectionColor ?? '#202124'} label="Object colour" onChange={props.onSelectionColor} />

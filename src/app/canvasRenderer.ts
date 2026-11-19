@@ -1,4 +1,4 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, itemAngle, rotatedItemBounds } from '../canvasModel'
+import { connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, strokeHeadGeometry, getConnectorSymbolGeometry, itemAngle, rotatedItemBounds } from '../canvasModel'
 import { hldOutlinePath } from '../hldShapes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextFontId, TextObject } from '../canvasModel'
 import { filterDisplayPoints } from '../oneEuroFilter'
@@ -126,32 +126,31 @@ export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, stroke
   ctx.fillStyle = stroke.color
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
+  ctx.setLineDash(dashPattern(stroke.dash, stroke.width))
   if (sketchy && (stroke.shape === 'arrow' || stroke.shape === 'line') && points.length >= 2 && strokeSketchyStroke(ctx, stroke)) {
     ctx.restore()
     return
   }
-  if (stroke.shape === 'arrow' && points.length >= 2) {
-    const [start, end] = points
-    const angle = Math.atan2(end.y - start.y, end.x - start.x)
-    const headLength = Math.max(12, stroke.width * 3.5)
+  if ((stroke.shape === 'arrow' || stroke.shape === 'line') && points.length >= 2) {
     ctx.lineWidth = stroke.width
-    ctx.beginPath()
-    ctx.moveTo(start.x, start.y)
-    ctx.lineTo(end.x, end.y)
-    ctx.moveTo(end.x, end.y)
-    ctx.lineTo(end.x - headLength * Math.cos(angle - Math.PI / 6), end.y - headLength * Math.sin(angle - Math.PI / 6))
-    ctx.moveTo(end.x, end.y)
-    ctx.lineTo(end.x - headLength * Math.cos(angle + Math.PI / 6), end.y - headLength * Math.sin(angle + Math.PI / 6))
-    ctx.stroke()
-    ctx.restore()
-    return
-  }
-  if (stroke.shape === 'line' && points.length >= 2) {
-    ctx.lineWidth = stroke.width
+    ctx.setLineDash(dashPattern(stroke.dash, stroke.width))
     ctx.beginPath()
     ctx.moveTo(points[0].x, points[0].y)
     ctx.lineTo(points[1].x, points[1].y)
     ctx.stroke()
+    // Arrowheads are always solid, whatever the dash of the shaft.
+    const heads = strokeHeadGeometry({ ...stroke, points })
+    if (heads.length) {
+      ctx.setLineDash([])
+      ctx.beginPath()
+      for (const head of heads) {
+        ctx.moveTo(head.tip.x, head.tip.y)
+        ctx.lineTo(head.wingA.x, head.wingA.y)
+        ctx.moveTo(head.tip.x, head.tip.y)
+        ctx.lineTo(head.wingB.x, head.wingB.y)
+      }
+      ctx.stroke()
+    }
     ctx.restore()
     return
   }
@@ -284,6 +283,7 @@ export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
   ctx.lineWidth = rectangle.strokeWidth
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
+  ctx.setLineDash(dashPattern(rectangle.dash, rectangle.strokeWidth))
   const angle = itemAngle(rectangle)
   if (angle !== 0) {
     const cx = rectangle.x + rectangle.width / 2
@@ -338,7 +338,7 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
   ctx.lineWidth = width
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  ctx.setLineDash(spec.lineStyle === 'dashed' ? [Math.max(6, width * 2.5), Math.max(4, width * 1.8)] : [])
+  ctx.setLineDash(connectorDashPattern(connector, width))
 
   if (sketchy) {
     drawSketchyConnector(ctx, connector, color, width)
