@@ -181,11 +181,13 @@ export type KeyCommand =
   | { kind: 'paste' }
   | { kind: 'duplicate' }
   | { kind: 'edit' }
+  | { kind: 'quickCreate'; direction: 'right' | 'left' | 'up' | 'down' }
   | { kind: 'layer'; move: 'forward' | 'backward' | 'front' | 'back' }
   | { kind: 'tool'; tool: KeyTool }
 
 export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', k: 'code', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
 
+const QUICK_CREATE_KEYS: Record<string, 'right' | 'left' | 'up' | 'down'> = { ArrowRight: 'right', ArrowLeft: 'left', ArrowUp: 'up', ArrowDown: 'down' }
 const ARROW_KEYS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
 
 export type KeyInput = { key: string; /** Physical key (KeyboardEvent.code); Shift+1 and Shift+2 use it because their `key` depends on the layout. */ code?: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; repeat: boolean }
@@ -201,6 +203,9 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
       const forward = event.code === 'BracketRight'
       return { kind: 'layer', move: event.shiftKey ? (forward ? 'front' : 'back') : (forward ? 'forward' : 'backward') }
     }
+    // Ctrl+Arrow: a new connected shape next to the selected shape (Ctrl+Shift+Arrow and held repeats do nothing).
+    const flow = QUICK_CREATE_KEYS[key]
+    if (flow) return event.shiftKey || event.repeat ? null : { kind: 'quickCreate', direction: flow }
     if (key === 'z') return event.shiftKey ? { kind: 'redo' } : { kind: 'undo' }
     if (key === 'y' && !event.shiftKey) return { kind: 'redo' }
     if (key === '=' || key === '+') return { kind: 'zoomIn' }

@@ -201,7 +201,7 @@ test('keys: Ctrl/Cmd + C, X, V, D in Desktop mode only; Shift, Alt and auto-repe
 
 test('App wiring: one history step for paste, cut deletes through deleteSelection, the system clipboard is never used, tablet gets buttons', () => {
   assert.match(app, /const cutSelection = \(\): boolean => copySelection\(\) && deleteSelection\(\)/)
-  assert.match(app, /const duplicateSelection = \(\): boolean => copySelection\(\) && pasteClipboard\(\)/)
+  assert.match(app, /const duplicateSelection = \(\): boolean => \{[^]*?insertPasted\(pasteItems\(copied/)
   assert.match(app, /pasteItems\(clip, \{ stroke: nextStrokeIdRef\.current, rectangle: nextRectangleIdRef\.current, connector: nextConnectorIdRef\.current, text: nextTextIdRef\.current \}, PASTE_OFFSET \* \(pasteCountRef\.current \+ 1\), workspaceBoundsRef\.current, at\)/)
   const pasteFn = app.slice(app.indexOf('const pasteClipboard = ('), app.indexOf('// Duplicate = copy + paste'))
   assert.equal((pasteFn.match(/saveHistory\(\)/g) ?? []).length, 1)
@@ -267,7 +267,7 @@ test('paste without a cursor point (toolbar, tablet) keeps the offset behaviour'
 test('App wiring: keyboard paste uses the mouse point, duplicate and toolbar do not', () => {
   assert.match(app, /pasteClipboard = \(at\?: Point \| null\)/)
   assert.match(app, /case 'paste': return pasteClipboard\(inputModeRef\.current === 'desktop' && cursorPointRef\.current/)
-  assert.match(app, /const duplicateSelection = \(\): boolean => copySelection\(\) && pasteClipboard\(\)/)
+  assert.match(app, /const duplicateSelection = \(\): boolean => \{[^]*?insertPasted\(pasteItems\(copied/)
   assert.match(app, /onPaste=\{\(\) => \{ pasteClipboard\(\) \}\}/)
   assert.match(app, /cursorPointRef\.current = null/)
   assert.match(app, /if \(!at\) pasteCountRef\.current \+= 1/)

@@ -18,6 +18,8 @@ export type TextEditorState = {
   fitArea?: FitEditorState['fitArea']
   pickedSize?: number
   fitOff?: boolean
+  /** Desktop: a new label typed inside a shape is centred on this point (while typing and when saved). */
+  centerOn?: { x: number; y: number }
 }
 
 type TextEditorOverlayProps = {
@@ -38,6 +40,8 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
   const fontSize = fit ? fit.fontSize : editor.fontSize
   const size = fit ?? measureTextSize(value, fontSize, measure(fontSize, editor.fontFamily))
   const padding = 6
+  const boxWidth = fit?.wrap ? size.width * scale + padding * 2 : Math.max(size.width * scale + padding * 2 + 8, fontSize * scale * 4)
+  const boxHeight = size.height * scale + padding * 2
 
   useLayoutEffect(() => {
     const field = fieldRef.current
@@ -58,10 +62,11 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
       rows={1}
       wrap={fit?.wrap ? 'soft' : 'off'}
       style={{
-        left: editor.x * scale + viewport.offsetX - padding,
-        top: editor.y * scale + viewport.offsetY - padding,
-        width: fit?.wrap ? size.width * scale + padding * 2 : Math.max(size.width * scale + padding * 2 + 8, fontSize * scale * 4),
-        height: size.height * scale + padding * 2,
+        left: editor.centerOn ? editor.centerOn.x * scale + viewport.offsetX - boxWidth / 2 : editor.x * scale + viewport.offsetX - padding,
+        top: editor.centerOn ? editor.centerOn.y * scale + viewport.offsetY - boxHeight / 2 : editor.y * scale + viewport.offsetY - padding,
+        width: boxWidth,
+        height: boxHeight,
+        ...(editor.centerOn ? { textAlign: 'center' as const } : {}),
         padding,
         fontFamily: textFontFamily(editor.fontFamily),
         fontSize: fontSize * scale,

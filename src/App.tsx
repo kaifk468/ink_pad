@@ -5,7 +5,7 @@ import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from '
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
 import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
-import { PASTE_OFFSET, copyItems, pasteItems } from './clipboard'
+import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
 import { HLD_DEFAULT_SIZE, createHldShape, type HldShape } from './hldShapes'
@@ -52,6 +52,7 @@ import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
+import { arrowToolConnector, centreLabelOn, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
 import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
 import type { TextFontId } from './canvasModel'
@@ -263,6 +264,8 @@ function App() {
   }
   // True while the current canvas gesture was started by a mouse (hold-to-snap is off for it, unless the Shapes tool is on).
   const mouseGestureRef = useRef(false)
+  // Set every render: selects the arrow connector the Arrow tool just made (finishStroke is memoised and must not close over render state).
+  const selectNewConnectorRef = useRef<(key: string) => void>(() => {})
   // Desktop pan: a middle-button or Space + left drag moves the view (Desktop mode only).
   const mousePanRef = useRef<{ pointerId: number; start: Point; startViewport: Viewport } | null>(null)
   const spaceHeldRef = useRef(false)
@@ -865,7 +868,8 @@ function App() {
       if (!isBlankText(value)) {
         saveHistory()
         const created = createTextObject(nextTextIdRef.current++, editor.x, editor.y, value, editor.color, editor.fontSize, createTextMeasure(editor.fontSize, editor.fontFamily), editor.fontFamily)
-        strokesRef.current.push(editor.fitArea || editor.fitOff ? buildEditedLabel(created, value, editor, createTextMeasure) : created)
+        const label = editor.fitArea || editor.fitOff ? buildEditedLabel(created, value, editor, createTextMeasure) : created
+        strokesRef.current.push(editor.centerOn ? centreLabelOn(label, editor.centerOn) : label)
         setHasInk(true)
       }
     } else {
@@ -1166,6 +1170,13 @@ function App() {
   const startGroupDrag = (event: React.PointerEvent<HTMLCanvasElement>, point: Point) => {
     event.currentTarget.setPointerCapture(event.pointerId)
     lassoDragRef.current = { pointerId: event.pointerId, start: point, keys: new Set(selectedKeysRef.current), originalItems: strokesRef.current.slice(), moved: false }
+  }
+
+  // Desktop mouse drag of plain or HLD shapes: text labels lying fully inside a dragged shape travel with it. Pen and touch drags are unchanged.
+  const withCarriedLabels = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], keys: Set<string>): Set<string> => {
+    if (inputModeRef.current !== 'desktop' || event.pointerType !== 'mouse') return keys
+    const carried = labelsInside(originalItems, keys)
+    return carried.length === 0 ? keys : new Set([...keys, ...carried])
   }
 
   // The guides and snap state end with the drag, however it ends; the canvas is repainted only when a guide was showing.
@@ -2493,7 +2504,19 @@ function App() {
           : heldLongEnough ? recognizeLine(heldStroke) : heldStroke
       }
       const lineTool = shapeToolRef.current === 'line' || shapeToolRef.current === 'arrow' ? shapeToolRef.current : null
-      if (lineTool && stroke.kind === 'stroke' && !stroke.erase) {
+      // Desktop Arrow tool with a mouse: a drag that starts or ends on a plain or HLD shape makes an attached arrow connector instead of a stroke.
+      let arrowConnector: ConnectorObject | null = null
+      if (lineTool === 'arrow' && inputModeRef.current === 'desktop' && mouseGestureRef.current && stroke.kind === 'stroke' && !stroke.erase && stroke.points.length >= 2) {
+        const first = stroke.points[0]
+        const last = stroke.points[stroke.points.length - 1]
+        if (Math.hypot(last.x - first.x, last.y - first.y) >= 4) {
+          arrowConnector = arrowToolConnector(strokesRef.current, first, last, { id: nextConnectorIdRef.current, color: stroke.color, width: stroke.width, dash: lineDashDefaultRef.current === 'solid' ? undefined : lineDashDefaultRef.current }, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale)
+          if (arrowConnector) nextConnectorIdRef.current += 1
+        }
+      }
+      if (arrowConnector) {
+        // handled below: the connector replaces the stroke
+      } else if (lineTool && stroke.kind === 'stroke' && !stroke.erase) {
         // Straight line or arrow from the press point to the release point; a click without a drag adds nothing.
         const first = stroke.points[0]
         const last = stroke.points[stroke.points.length - 1]
@@ -2507,6 +2530,9 @@ function App() {
         const grown = addStrokeToInkBox(targetBox, stroke)
         // The box just written in comes to the front, so its grown area and ink are never hidden under a neighbouring box.
         strokesRef.current = [...strokesRef.current.filter((item) => item !== targetBox), grown]
+      } else if (arrowConnector) {
+        strokesRef.current.push(arrowConnector)
+        selectNewConnectorRef.current(canvasItemKey(arrowConnector))
       } else {
         strokesRef.current.push(stroke)
         if (stroke.kind === 'stroke' && stroke.erase) strokesRef.current = compactAfterErase(strokesRef.current, () => nextStrokeIdRef.current++)
@@ -3065,8 +3091,9 @@ function App() {
       const deltaX = point.x - lassoDrag.start.x
       const deltaY = point.y - lassoDrag.start.y
       if (!lassoDrag.moved && Math.hypot(deltaX, deltaY) < 2) return
-      const lassoSnap = snapDragDelta(event, lassoDrag.originalItems, lassoDrag.keys, deltaX, deltaY)
-      const nextItems = translateWithinWorkspace(lassoDrag.originalItems, lassoDrag.keys, lassoSnap.dx, lassoSnap.dy)
+      const lassoKeys = withCarriedLabels(event, lassoDrag.originalItems, lassoDrag.keys)
+      const lassoSnap = snapDragDelta(event, lassoDrag.originalItems, lassoKeys, deltaX, deltaY)
+      const nextItems = translateWithinWorkspace(lassoDrag.originalItems, lassoKeys, lassoSnap.dx, lassoSnap.dy)
       if (!lassoDrag.moved && nextItems.every((item, index) => item === lassoDrag.originalItems[index])) return
       if (!lassoDrag.moved) {
         saveHistory()
@@ -3103,7 +3130,7 @@ function App() {
       const deltaX = point.x - drag.start.x
       const deltaY = point.y - drag.start.y
       if (!drag.moved && Math.hypot(deltaX, deltaY) < 2) return
-      const dragKeys = new Set([drag.itemKey])
+      const dragKeys = withCarriedLabels(event, drag.originalItems, new Set([drag.itemKey]))
       const dragSnap = snapDragDelta(event, drag.originalItems, dragKeys, deltaX, deltaY)
       const nextItems = translateWithinWorkspace(drag.originalItems, dragKeys, dragSnap.dx, dragSnap.dy)
       if (!drag.moved && nextItems.every((item, index) => item === drag.originalItems[index])) return
@@ -3543,6 +3570,7 @@ function App() {
     setOptionsFor(null); setShapeMode(false); setTextMode(false); setClassMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false)
     if (next) { clearLassoSelection(); setSelectedRectangle(null) }
   }
+  selectNewConnectorRef.current = (key) => { toggleSelectTool(); setSelectedRectangle(null); updateSelectedItems([key]) }
   const toggleSelectTool = () => { const next = !selectionMode; setSelectionMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setShapeTool(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
   const openTextOptions = () => { setTextMode(true); setClassMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); clearLassoSelection(); setOptionsFor('text') }
   const toggleTextTool = () => { const next = !textMode; setTextMode(next); setClassMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
@@ -3652,6 +3680,10 @@ function App() {
     const result = pasteItems(clip, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET * (pasteCountRef.current + 1), workspaceBoundsRef.current, at)
     if (!result) return false
     if (!at) pasteCountRef.current += 1
+    return insertPasted(result)
+  }
+  const insertPasted = (result: PasteResult | null): boolean => {
+    if (!result) return false
     saveHistory()
     nextStrokeIdRef.current = result.counters.stroke
     nextRectangleIdRef.current = result.counters.rectangle
@@ -3665,7 +3697,30 @@ function App() {
     return true
   }
   // Duplicate = copy + paste at +24 in one step.
-  const duplicateSelection = (): boolean => copySelection() && pasteClipboard()
+  // Duplicate = paste the selection straight away at +24 without touching the in-app clipboard.
+  const duplicateSelection = (): boolean => {
+    const copied = copyItems(strokesRef.current, selectionKeysWithBox())
+    return copied.length > 0 && insertPasted(pasteItems(copied, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET, workspaceBoundsRef.current, null))
+  }
+
+  // Ctrl+Arrow with one plain or HLD shape selected: a new empty shape of the same kind in that direction, joined by an arrow. One undo step.
+  const quickCreateShape = (direction: FlowDirection): boolean => {
+    const keys = selectionKeysWithBox()
+    if (keys.size !== 1) return false
+    const source = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && keys.has(canvasItemKey(item)))
+    if (!source || !isFlowBox(source)) return false
+    const made = quickCreateConnected(strokesRef.current, source, direction, workspaceBoundsRef.current, { rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current }, newInkBoxContent)
+    if (!made) return true
+    saveHistory()
+    nextRectangleIdRef.current += 1
+    nextConnectorIdRef.current += 1
+    strokesRef.current = [...strokesRef.current, sketchyRef.current ? withSketchSeed(made.box) : made.box, made.connector]
+    setHasInk(true)
+    setSelectedRectangle(made.box.id)
+    updateSelectedItems([])
+    renderAll()
+    return true
+  }
 
   // Arrow keys: move the selection 1 unit (Shift 10) inside the workspace; connectors follow their boxes. A burst of presses is one undo step.
   const nudgeSelection = (dx: number, dy: number): boolean => {
@@ -3778,6 +3833,15 @@ function App() {
     clickPairRef.current = null
     clickBeforeRef.current = null
     if (target) { openEditTarget(target); return }
+    // Select tool on a plain or HLD shape: edit the label already inside it, or start a new one centred in the shape (auto-fit as for any label inside a shape).
+    const shapeHit = selectionMode ? hitTarget(routed, point, viewportRef.current.scale) : null
+    const shapeAction = shapeHit?.kind === 'rectangle' ? shapeDoubleClick(strokesRef.current, shapeHit.id) : null
+    if (shapeAction) {
+      clickPairRef.current = null
+      if (shapeAction.kind === 'editLabel') openEditTarget({ kind: 'text', id: shapeAction.id })
+      else openTextEditor({ itemId: null, x: shapeAction.centre.x, y: shapeAction.centre.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: { x: shapeAction.centre.x, y: shapeAction.centre.y } })
+      return
+    }
     const anyGesture = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0
     if (anyGesture || !before || before.owner !== historyRef.current || !isPointWithinBounds(point, sheetBoundsRef.current)) return
     // Empty canvas, any tool: a new label, as one undo step (the label) or nothing. The two single clicks already ran through the tool.
@@ -3901,6 +3965,7 @@ function App() {
         if (selectedKeysRef.current.size === 0 && selectedRectangleIdRef.current === null) return false
         clearLassoSelection()
         return true
+      case 'quickCreate': return quickCreateShape(command.direction)
       case 'nudge': return nudgeSelection(command.dx, command.dy)
       case 'edit': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); return target ? openEditTarget(target) : false }
       case 'copy': return copySelection()

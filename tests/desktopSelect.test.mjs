@@ -184,7 +184,8 @@ test('arrow keys nudge by 1, Shift by 10, in Desktop mode only, and other modifi
   assert.deepEqual(input.keyCommand(key('ArrowDown', { shiftKey: true }), 'desktop'), { kind: 'nudge', dx: 0, dy: 10 })
   assert.deepEqual(input.keyCommand(key('ArrowDown', { repeat: true }), 'desktop'), { kind: 'nudge', dx: 0, dy: 1 })
   assert.equal(input.keyCommand(key('ArrowLeft'), 'tablet'), null)
-  for (const extra of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) assert.equal(input.keyCommand(key('ArrowLeft', extra), 'desktop'), null)
+  assert.deepEqual(input.keyCommand(key('ArrowLeft', { ctrlKey: true }), 'desktop'), { kind: 'quickCreate', direction: 'left' }) // Ctrl+Arrow makes a connected shape (batch C)
+  for (const extra of [{ altKey: true }]) assert.equal(input.keyCommand(key('ArrowLeft', extra), 'desktop'), null)
 })
 
 test('a burst of nudges is one undo step: only the first press after a 500 ms pause starts a step', () => {

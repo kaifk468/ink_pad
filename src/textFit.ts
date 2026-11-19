@@ -42,7 +42,7 @@ function isFitShape(item: CanvasItem): item is RectangleObject {
   return !item.inkBox
 }
 
-function contains(shape: RectangleObject, point: { x: number; y: number }): boolean {
+export function contains(shape: RectangleObject, point: { x: number; y: number }): boolean {
   const local = toItemFrame(shape, { ...point, pressure: 1 })
   const w = shape.width
   const h = shape.height
