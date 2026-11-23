@@ -4,6 +4,7 @@ import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
 import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, hitConnectorHandle, moveConnectorEndpoint, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
@@ -231,6 +232,8 @@ function App() {
   const activeResizeRef = useRef<{ pointerId: number; rectangleId: number | null; selectedKeys: Set<string> | null; handle: RectangleResizeHandle; start: Point; originalBounds: RectangleBounds; originalItems: CanvasItem[]; moved: boolean; created?: boolean } | null>(null)
   /** A rotate-handle drag on the single selected label or plain shape. */
   const activeRotateRef = useRef<{ pointerId: number; key: string; originalItems: CanvasItem[]; moved: boolean } | null>(null)
+  /** A drag or click on a handle of the single selected connector: `which` is an end, or the middle dot (a click toggles straight/elbow). `saved` = its one history step was recorded. `target` = box highlighted as the snap target. */
+  const activeEndpointRef = useRef<{ pointerId: number; id: number; which: ConnectorHandleKind; startScreen: Point; originalItems: CanvasItem[]; dragged: boolean; saved: boolean; target: number | null } | null>(null)
   const activeLassoRef = useRef<{ pointerId: number; points: Point[] } | null>(null)
   const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean } | null>(null)
   const selectedKeysRef = useRef<Set<string>>(new Set())
@@ -408,6 +411,7 @@ function App() {
     activeConnectorRef.current = null
     activeResizeRef.current = null
     activeRotateRef.current = null
+    activeEndpointRef.current = null
     activeDividerRef.current = null
     activeStrokeBoxRef.current = null
     shapePreviewRef.current = null
@@ -1335,6 +1339,64 @@ function App() {
     const item = strokesRef.current.find((candidate) => canvasItemKey(candidate) === key)
     return item && (item.kind === 'text' || item.kind === 'rectangle') && isRotatable(item) ? item : null
   }
+  /** The routed copy of the one selected connector when it shows endpoint handles (Select / lasso only; null otherwise). */
+  const soleConnectorWithHandles = (): ConnectorObject | null => {
+    if (!selectionMode && !lassoMode) return null
+    const keys = currentSelectionKeys()
+    if (keys.size !== 1 || ![...keys][0].startsWith('connector:')) return null
+    return soleSelectedConnector(routeConnectors(strokesRef.current), keys)
+  }
+  /** Starts a handle gesture when `point` is on a handle of the selected connector. Returns true when it did. */
+  const startConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>, point: Point): boolean => {
+    const connector = soleConnectorWithHandles()
+    if (!connector) return false
+    const which = hitConnectorHandle(connector, point, viewportRef.current.scale, event.pointerType)
+    if (!which) return false
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    activeEndpointRef.current = { pointerId: event.pointerId, id: connector.id, which, startScreen: getScreenPoint(event), originalItems: strokesRef.current.slice(), dragged: false, saved: false, target: null }
+    return true
+  }
+  const moveConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const gesture = activeEndpointRef.current
+    if (!gesture) return
+    event.preventDefault()
+    const now = getScreenPoint(event)
+    if (!gesture.dragged && Math.hypot(now.x - gesture.startScreen.x, now.y - gesture.startScreen.y) < CONNECTOR_CLICK_SLOP_PX) return
+    gesture.dragged = true
+    if (gesture.which === 'middle') return
+    const point = getBoundedPoint(event)
+    const snapped = snapEndpointTarget(point, gesture.originalItems, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale, (p) => isPointWithinBounds(p, workspaceBoundsRef.current))
+    if (!gesture.saved) { saveHistory(); gesture.saved = true }
+    strokesRef.current = moveConnectorEndpoint(gesture.originalItems, gesture.id, gesture.which, snapped?.point ?? point, snapped)
+    gesture.target = snapped?.attachment.rectangleId ?? null
+    renderAll()
+  }
+  const finishConnectorHandleGesture = () => {
+    const gesture = activeEndpointRef.current
+    activeEndpointRef.current = null
+    if (!gesture) return
+    if (gesture.which === 'middle' && !gesture.dragged) {
+      saveHistory()
+      strokesRef.current = toggleConnectorRouting(gesture.originalItems, gesture.id)
+      scheduleAutosave()
+    } else if (gesture.saved) scheduleAutosave()
+    renderAll()
+  }
+  /** Escape or pointercancel mid-gesture: put the original items back and forget the history step the drag recorded. */
+  const cancelConnectorHandleGesture = () => {
+    const gesture = activeEndpointRef.current
+    activeEndpointRef.current = null
+    if (!gesture) return
+    if (gesture.saved) {
+      strokesRef.current = gesture.originalItems
+      historyRef.current.discardLast()
+      setCanUndo(historyRef.current.canUndo)
+      setCanRedo(historyRef.current.canRedo)
+      scheduleAutosave()
+    }
+    renderAll()
+  }
   const setSelectedItemAngle = (radians: number) => {
     const item = soleRotatable()
     if (!item) return
@@ -1801,6 +1863,30 @@ function App() {
         ctx.restore()
       }
     }
+    const handleConnector = soleConnectorWithHandles()
+    if (handleConnector) {
+      // Excalidraw-style connector handles: a dot on each end, a smaller one mid-path (all a constant size on screen); the box an end would attach to is outlined.
+      const scale = viewportRef.current.scale
+      const handles = connectorHandlePositions(handleConnector)
+      const target = activeEndpointRef.current?.target
+      const box = target === null || target === undefined ? undefined : strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === target)
+      ctx.save()
+      if (box) {
+        ctx.strokeStyle = '#5269df'
+        ctx.lineWidth = 3 / scale
+        ctx.strokeRect(box.x - 4 / scale, box.y - 4 / scale, box.width + 8 / scale, box.height + 8 / scale)
+      }
+      ctx.strokeStyle = '#5269df'
+      ctx.fillStyle = '#ffffff'
+      ctx.lineWidth = 2 / scale
+      for (const [dot, radius] of [[handles.start, 6], [handles.end, 6], [handles.middle, 4]] as const) {
+        ctx.beginPath()
+        ctx.arc(dot.x, dot.y, radius / scale, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
     const rotatableSelected = (selectionMode || lassoMode) ? soleRotatable() : null
     const rotatedSelected = rotatableSelected !== null && itemAngle(rotatableSelected) !== 0
     const selected = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === selectedRectangleIdRef.current)
@@ -2098,7 +2184,7 @@ function App() {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const anyGestureBusy = () => activeMarqueeRef.current !== null || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || mousePanRef.current !== null
+    const anyGestureBusy = () => activeMarqueeRef.current !== null || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || mousePanRef.current !== null
     const setPanCursor = () => applyCursorRef.current()
     const onWheel = (event: WheelEvent) => {
       if (inputModeRef.current !== 'desktop') return
@@ -2666,11 +2752,13 @@ function App() {
     if (event.pointerType === 'pen') touchNav.penDown()
     if (event.pointerType === 'touch') {
       event.preventDefault()
+      // A single finger on a handle of the selected connector drags it (Select / lasso); every other touch is navigation.
+      if (touchNav.touchCount() === 0 && activeEndpointRef.current === null && startConnectorHandleGesture(event, getPoint(event))) return
       event.currentTarget.setPointerCapture(event.pointerId)
       touchNav.down(event.pointerId, getScreenPoint(event), performance.now())
       return
     }
-    const penGestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null
+    const penGestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null
     const anyGestureActive = penGestureActive || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null
     if (startsMousePan(event.pointerType, event.button, inputModeRef.current, spaceHeldRef.current)) {
       // Middle button, or Space + left button: drag the view instead of using a tool. Refused while any other gesture or finger is active.
@@ -2704,6 +2792,7 @@ function App() {
       if (!continued) clickBeforeRef.current = { items: strokesRef.current.slice(), history: historyRef.current.capture(), owner: historyRef.current }
     }
     if (event.pointerType === 'mouse') setMouseHover(null)
+    if ((selectionMode || lassoMode) && (event.pointerType !== 'mouse' || event.button === 0) && startConnectorHandleGesture(event, point)) return
     if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') {
       if (event.shiftKey && !eraser) {
         // Shift + click adds or removes one item (a stroke too) without starting anything else.
@@ -3037,6 +3126,7 @@ function App() {
       applyViewport(panViewport(mousePan.startViewport, now.x - mousePan.start.x, now.y - mousePan.start.y), true)
       return
     }
+    if (activeEndpointRef.current?.pointerId === event.pointerId) { moveConnectorHandleGesture(event); return }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       event.preventDefault()
       updateTouchPoint(event)
@@ -3239,6 +3329,7 @@ function App() {
       applyCanvasCursor()
       return
     }
+    if (activeEndpointRef.current?.pointerId === event.pointerId) { finishConnectorHandleGesture(); return }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
@@ -3402,6 +3493,7 @@ function App() {
       applyCanvasCursor()
       return
     }
+    if (activeEndpointRef.current?.pointerId === event.pointerId) { cancelConnectorHandleGesture(); return }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
@@ -3680,6 +3772,7 @@ function App() {
     if (divider) { activeDividerRef.current = null; handled = true; if (divider.moved) { restored = divider.originalItems; discardStep = true } }
     const rotate = activeRotateRef.current
     if (rotate) { activeRotateRef.current = null; handled = true; if (rotate.moved) { restored = rotate.originalItems; discardStep = true } }
+    if (activeEndpointRef.current) { cancelConnectorHandleGesture(); handled = true }
     const resize = activeResizeRef.current
     if (resize) {
       activeResizeRef.current = null
@@ -3916,7 +4009,7 @@ function App() {
       else openTextEditor({ itemId: null, x: shapeAction.centre.x, y: shapeAction.centre.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: { x: shapeAction.centre.x, y: shapeAction.centre.y } })
       return
     }
-    const anyGesture = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0
+    const anyGesture = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0
     if (anyGesture || !before || before.owner !== historyRef.current || !isPointWithinBounds(point, sheetBoundsRef.current)) return
     // Empty canvas, any tool: a new label, as one undo step (the label) or nothing. The two single clicks already ran through the tool.
     const itemsChanged = !clickItemsUnchanged(before.items, strokesRef.current)
@@ -3945,7 +4038,7 @@ function App() {
     const native = event.nativeEvent as MouseEvent & { pointerType?: string }
     if (inputModeRef.current !== 'desktop' || native.pointerType === 'touch' || native.pointerType === 'pen') return
     if (textEditorRef.current || classBoxEditor) return
-    if (activePointerRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0) return
+    if (activePointerRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0) return
     const rect = event.currentTarget.getBoundingClientRect()
     const point = screenToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, viewportRef.current)
     const routed = routeConnectors(strokesRef.current)
@@ -4044,13 +4137,13 @@ function App() {
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (shortcutHelpOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
     if (codeEditor && liveCodeEditor()) return false
-    const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
+    const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
     if (contextMenuRef.current) {
       // While the menu is open Escape closes it and no other shortcut runs.
       if (command.kind === 'deselect') { closeContextMenu(); return true }
       return false
     }
-    const cancelableGesture = activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null
+    const cancelableGesture = activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null
     if (command.kind === 'deselect') {
       const action = escapeAction({ cancelableGesture, anyGesture: gestureActive || touchNav.touchCount() > 0, hasSelection: selectedKeysRef.current.size > 0 || selectedRectangleIdRef.current !== null })
       if (action === 'cancelGesture') return cancelActiveGesture()
