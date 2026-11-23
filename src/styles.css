@@ -253,6 +253,9 @@ button { font: inherit; }
 .dock-divider { width: 1px; height: 30px; margin: 0 4px; background: #e3e6ec; }
 .insert-control { position: relative; display: flex; align-items: center; }
 .insert-tray { position: absolute; z-index: 4; right: 0; bottom: calc(100% + 14px); display: flex; flex-direction: column; width: 272px; padding: 8px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 16px; background: rgba(255, 255, 255, .98); box-shadow: 0 10px 32px rgba(31, 39, 52, .22); white-space: normal; }
+.insert-shape-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.insert-shape-grid > button { min-height: 46px; gap: 8px; padding: 0 8px; font-size: 13px; }
+.more-shapes-tray { width: 288px; }
 .insert-tray-heading { padding: 8px 10px 4px; color: #6a707c; font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .insert-entry { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: #343944; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
 .insert-entry svg { flex: 0 0 22px; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }

@@ -1,5 +1,6 @@
 import { toItemFrame } from './canvasModel'
 import type { CanvasItem, RectangleObject, TextFontId, TextObject } from './canvasModel'
+import { balancerMark, browserBar, cacheBolt, hldMobileMargins } from './hldShapes'
 import { getTextLineHeight, measureTextSize, updateTextObject, wrapTextLines, type TextMeasure } from './textLayout'
 
 /**
@@ -32,7 +33,13 @@ export function shapeInnerArea(shape: RectangleObject): FitArea {
   } else if (shape.hldShape === 'service') {
     const inset = Math.min(Math.min(w, h) * 0.28, 44) * 0.3
     area = { width: w - 2 * inset, height: h - 2 * inset }
-  } else area = { width: w, height: h }
+  } else if (shape.hldShape === 'user') area = { width: w * 0.84, height: h * 0.44 }
+  else if (shape.hldShape === 'browser') area = { width: w, height: h - browserBar(h) }
+  else if (shape.hldShape === 'mobile') area = { width: w, height: h - hldMobileMargins.top - hldMobileMargins.bottom }
+  else if (shape.hldShape === 'cache') area = { width: w, height: h - cacheBolt(w, h) - 12 }
+  else if (shape.hldShape === 'loadBalancer') area = { width: w, height: h - balancerMark(h) - 16 }
+  else if (shape.hldShape === 'cdn') area = { width: w * 0.6, height: h * 0.45 }
+  else area = { width: w, height: h }
   return { width: Math.max(0, area.width - PAD * 2), height: Math.max(0, area.height - PAD * 2) }
 }
 

@@ -66,7 +66,7 @@ const BACKGROUNDS: DocumentPageBackground[] = ['white', 'warm', 'blue', 'yellow'
 /** Same kinds as HLD_SHAPES in canvasModel.ts (not imported: this file only takes types from there). */
 /** Kept in step with TEXT_FONT_IDS in canvasModel.ts (a test checks it); this module stays free of value imports. */
 const TEXT_FONT_KINDS: string[] = ['excalifont', 'sans', 'serif', 'mono']
-const HLD_SHAPE_KINDS: string[] = ['database', 'queue', 'service']
+const HLD_SHAPE_KINDS: string[] = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn']
 const RELATIONSHIPS: ConnectorRelationshipType[] = ['association', 'directed-association', 'inheritance', 'realization', 'dependency', 'aggregation', 'composition']
 const KNOWN_KINDS = ['stroke', 'rectangle', 'text', 'connector', 'code']
 const MAX_TITLE_LENGTH = 120

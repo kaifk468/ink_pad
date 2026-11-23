@@ -20,6 +20,16 @@ export const HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint: stri
   { shape: 'service', hint: 'a rounded box', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="5"/></svg> },
 ]
 
+/** Six more HLD shapes: a grid in the tablet Insert tray and the desktop "More shapes" popover (the desktop dock stays short). */
+export const MORE_HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint: string }> = [
+  { shape: 'user', hint: 'a person or client', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3.5"/><path d="M4.5 21v-4c0-3 3.4-4.5 7.5-4.5s7.5 1.5 7.5 4.5v4z"/></svg> },
+  { shape: 'browser', hint: 'a browser window', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18M6.5 6.8h.01M9 6.8h.01M11.5 6.8h.01"/></svg> },
+  { shape: 'mobile', hint: 'a phone', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10.5 5h3M12 18.5h.01"/></svg> },
+  { shape: 'cache', hint: 'a cache box', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M9 7.5 6.5 11h2.8L8.6 14.5 13 10.2h-3z"/></svg> },
+  { shape: 'loadBalancer', hint: 'a load balancer', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3.5"/><path d="M12 7v2.5M12 9.5 8 13.5M12 9.5v4M12 9.5l4 4"/></svg> },
+  { shape: 'cdn', hint: 'a cloud', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5h10.2a3.8 3.8 0 0 0 .6-7.5 5.5 5.5 0 0 0-10.6-1A4.6 4.6 0 0 0 7 18.5z"/></svg> },
+]
+
 /** The Insert button and the tray that opens upward from the bottom dock. Entries reuse the existing tool handlers. */
 export function InsertTray({ textActive, classActive, shapeActive, hldActive, onHldShape, onText, onTextOptions, onClass, onShapes }: InsertTrayProps) {
   const [open, setOpen] = useState(false)
@@ -79,6 +89,13 @@ export function InsertTray({ textActive, classActive, shapeActive, hldActive, on
             {icon}<span>{HLD_SHAPE_LABELS[shape]}</span>
           </button>
         ))}
+        <div className="insert-shape-grid" role="group" aria-label="More HLD shapes">
+          {MORE_HLD_ENTRIES.map(({ shape, icon, hint }) => (
+            <button className={`insert-entry${hldActive === shape ? ' selected' : ''}`} type="button" key={shape} aria-label={HLD_SHAPE_LABELS[shape]} aria-pressed={hldActive === shape} title={`Tap or drag with the S Pen to add ${hint} you write in`} onClick={choose(() => onHldShape(shape))}>
+              {icon}<span>{HLD_SHAPE_LABELS[shape]}</span>
+            </button>
+          ))}
+        </div>
       </div>}
     </div>
   )

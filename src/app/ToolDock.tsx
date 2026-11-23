@@ -2,6 +2,7 @@ import type { RefObject } from 'react'
 import type { HldShape } from '../hldShapes'
 import { HLD_SHAPE_LABELS } from '../hldShapes'
 import { HLD_ENTRIES, InsertTray } from './InsertTray'
+import { MoreShapesTray } from './MoreShapesTray'
 import { MoreTray } from './MoreTray'
 
 type ToolDockProps = {
@@ -107,6 +108,7 @@ export function ToolDock(props: ToolDockProps) {
             {icon}<span>{HLD_SHAPE_LABELS[shape]}</span>
           </button>
         ))}
+        <MoreShapesTray hldActive={props.hldShapeActive} onHldShape={props.onHldShape} />
         {divider}
         {inkClass}
         {divider}
