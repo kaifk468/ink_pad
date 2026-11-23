@@ -56,16 +56,20 @@ button { font: inherit; }
 .drawing-canvas.selecting { cursor: grab; }
 .drawing-canvas.selecting:active { cursor: grabbing; }
 
-.canvas-hint {
+.empty-canvas-hint {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  width: min(460px, calc(100% - 48px));
   pointer-events: none;
-  color: #d0d3d8;
-  font-size: 14px;
-  letter-spacing: .015em;
+  user-select: none;
+  text-align: center;
+  color: #b4b9c2;
 }
+.empty-canvas-hint p { margin: 0; }
+.empty-canvas-hint .empty-canvas-title { margin-bottom: 10px; font-family: 'Manrope', 'DM Sans', sans-serif; font-size: 26px; font-weight: 700; letter-spacing: .01em; color: #c3c7ce; }
+.empty-canvas-line { font-size: 14px; line-height: 1.7; letter-spacing: .015em; }
 
 .uml-toolbox {
   position: absolute;

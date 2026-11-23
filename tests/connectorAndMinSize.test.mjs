@@ -57,7 +57,7 @@ test('desktop dock: bottom bar with direct shape tools, Text, Connector, HLD sha
   assert.ok(tablet.indexOf('{penEraser}') < tablet.indexOf('{selectLasso}') && tablet.indexOf('{selectLasso}') < tablet.indexOf('{connector}'))
   const app = await read('src/App.tsx')
   assert.match(app, /<ToolDock\s+desktop=\{inputMode === 'desktop'\}/)
-  assert.match(app, /inputMode === 'desktop' \? 'Draw here with your mouse'/)
+  assert.match(app, /<EmptyCanvasHint desktop=\{inputMode === 'desktop'\} \/>/)
   const css = await read('src/styles.css')
   assert.equal(css.includes('desktop-rail'), false)
   assert.match(css, /\.tool-dock \{\s*position: absolute;[^}]*bottom: max\(16px/)

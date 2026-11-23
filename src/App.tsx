@@ -47,6 +47,7 @@ import { TopLeftBar } from './app/TopLeftBar'
 import { HomeScreen } from './app/HomeScreen'
 import { storageLabel } from './StoragePanel'
 import { ZoomControls } from './app/ZoomControls'
+import { EmptyCanvasHint } from './app/EmptyCanvasHint'
 import { ShortcutHelp } from './app/ShortcutHelp'
 import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
@@ -4178,7 +4179,7 @@ function App() {
           const block = strokesRef.current.find((candidate) => candidate.kind === 'code' && candidate.id === codeEditor.id)
           return block?.kind === 'code' ? <CodeEditorOverlay key={codeEditor.id} item={block} viewport={viewportRef.current} onChange={(value) => { codeEditorValueRef.current = value }} onCommit={commitCodeEditor} /> : null
         })()}
-        {!hasInk && <div className="canvas-hint" aria-hidden="true">{inputMode === 'desktop' ? 'Draw here with your mouse' : 'Draw here with your S Pen'}</div>}
+        {!hasInk && !textEditor && !codeEditor && !classBoxEditor && !libraryOpen && !filePanelOpen && !storagePanelOpen && !shortcutHelpOpen && <EmptyCanvasHint desktop={inputMode === 'desktop'} />}
         <aside
           ref={umlToolboxRef}
           className={`uml-toolbox${umlToolboxMinimized ? ' minimized' : ''}${inputMode === 'desktop' ? ' desktop' : ''}`}
