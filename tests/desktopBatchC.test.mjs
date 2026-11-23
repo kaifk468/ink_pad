@@ -187,3 +187,23 @@ test('duplicate no longer writes the in-app clipboard', () => {
   const r = clip.pasteItems(copied, { stroke: 1, rectangle: 2, connector: 1, text: 1 }, clip.PASTE_OFFSET, WS, null)
   assert.equal(r.items[0].x, 24)
 })
+
+// Labels follow a single box resize
+test('followResizeLabels: centre keeps its relative place, size unchanged', () => {
+  const items = [box(1, 100, 100, 200, 100), label(2, 190, 140, 20, 20)]
+  const out = flow.followResizeLabels(items, 1, { x: 100, y: 100, width: 200, height: 100 }, { x: 100, y: 100, width: 400, height: 50 }, ['text:2'])
+  assert.deepEqual([out[1].x, out[1].y, out[1].width, out[1].height], [290, 115, 20, 20])
+  assert.equal(out[0], items[0])
+})
+test('followResizeLabels: no labels or no change returns the same array', () => {
+  const items = [box(1, 0, 0, 100, 100), label(2, 40, 40)]
+  const b = { x: 0, y: 0, width: 100, height: 100 }
+  assert.equal(flow.followResizeLabels(items, 1, b, b, []), items)
+  assert.equal(flow.followResizeLabels(items, 1, b, b, ['text:2']), items)
+})
+test('resize wiring: labels decided at start, desktop mouse flow boxes only, same history step', () => {
+  assert.match(app, /labelKeys\?: string\[\]/)
+  assert.match(app, /const resizeLabelKeys = [\s\S]{0,200}inputModeRef\.current !== 'desktop' \|\| event\.pointerType !== 'mouse' \|\| !isFlowBox\(box\)/)
+  assert.equal((app.match(/labelKeys: resizeLabelKeys\(/g) ?? []).length, 2)
+  assert.match(app, /followResizeLabels\(resized, activeResize\.rectangleId, original, bounds, activeResize\.labelKeys\)/)
+})

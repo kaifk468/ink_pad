@@ -55,7 +55,7 @@ import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
-import { arrowToolConnector, centreLabelOn, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
+import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
 import { CONNECTOR_LABEL_FONT_SIZE, pointOnConnectorLabel, setConnectorLabel } from './connectorLabel'
 import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
@@ -231,7 +231,7 @@ function App() {
   /** The ink class box the current pen/eraser stroke started inside: the stroke is stored in the box. */
   const activeStrokeBoxRef = useRef<number | null>(null)
   const activeDividerRef = useRef<{ pointerId: number; rectangleId: number; which: InkBoxDivider; originalItems: CanvasItem[]; moved: boolean } | null>(null)
-  const activeResizeRef = useRef<{ pointerId: number; rectangleId: number | null; selectedKeys: Set<string> | null; handle: RectangleResizeHandle; start: Point; originalBounds: RectangleBounds; originalItems: CanvasItem[]; moved: boolean; created?: boolean } | null>(null)
+  const activeResizeRef = useRef<{ pointerId: number; rectangleId: number | null; selectedKeys: Set<string> | null; handle: RectangleResizeHandle; start: Point; originalBounds: RectangleBounds; originalItems: CanvasItem[]; moved: boolean; created?: boolean; labelKeys?: string[] } | null>(null)
   /** A rotate-handle drag on the single selected label or plain shape. */
   const activeRotateRef = useRef<{ pointerId: number; key: string; originalItems: CanvasItem[]; moved: boolean } | null>(null)
   /** A drag or click on a handle of the single selected connector: `which` is an end, or the middle dot (a click toggles straight/elbow). `saved` = its one history step was recorded. `target` = box highlighted as the snap target. */
@@ -1245,6 +1245,13 @@ function App() {
     if (inputModeRef.current !== 'desktop' || event.pointerType !== 'mouse') return keys
     const carried = labelsInside(originalItems, keys)
     return carried.length === 0 ? keys : new Set([...keys, ...carried])
+  }
+
+  // Desktop mouse resize of one plain or HLD shape: the labels inside it at the start follow the resize (decided once, here).
+  const resizeLabelKeys = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], box: RectangleObject): string[] | undefined => {
+    if (inputModeRef.current !== 'desktop' || event.pointerType !== 'mouse' || !isFlowBox(box)) return undefined
+    const keys = labelsInside(originalItems, new Set([canvasItemKey(box)]))
+    return keys.length > 0 ? keys : undefined
   }
 
   // The guides and snap state end with the drag, however it ends; the canvas is repainted only when a guide was showing.
@@ -3013,6 +3020,7 @@ function App() {
           originalBounds: { x: currentlySelectedRectangle.x, y: currentlySelectedRectangle.y, width: currentlySelectedRectangle.width, height: currentlySelectedRectangle.height },
           originalItems: strokesRef.current.slice(),
           moved: false,
+          labelKeys: resizeLabelKeys(event, strokesRef.current, currentlySelectedRectangle),
         }
         return
       }
@@ -3075,6 +3083,7 @@ function App() {
             originalBounds: { x: selectedBox.x, y: selectedBox.y, width: selectedBox.width, height: selectedBox.height },
             originalItems: strokesRef.current.slice(),
             moved: false,
+            labelKeys: resizeLabelKeys(event, strokesRef.current, selectedBox),
           }
           return
         }
@@ -3239,7 +3248,10 @@ function App() {
         && bounds.width === original.width && bounds.height === original.height
       if (!activeResize.moved && unchanged) return
       const nextItems = activeResize.rectangleId !== null
-        ? resizeRectangleItems(activeResize.originalItems, activeResize.rectangleId, bounds)
+        ? (() => {
+          const resized = resizeRectangleItems(activeResize.originalItems, activeResize.rectangleId, bounds)
+          return activeResize.labelKeys ? followResizeLabels(resized, activeResize.rectangleId, original, bounds, activeResize.labelKeys) : resized
+        })()
         : activeResize.selectedKeys?.size === 1 && [...activeResize.selectedKeys][0].startsWith('text:')
           ? resizeTextItem(activeResize.originalItems, Number([...activeResize.selectedKeys][0].slice('text:'.length)), original, bounds, activeResize.handle)
           : resizeSelectedItems(activeResize.originalItems, activeResize.selectedKeys ?? new Set(), bounds)

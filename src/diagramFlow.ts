@@ -126,6 +126,27 @@ export function labelsInside(items: readonly CanvasItem[], boxKeys: ReadonlySet<
   return result
 }
 
+/**
+ * After a single box is resized from `oldBounds` to `newBounds`: the labels in `labelKeys` (decided once at resize start) keep the same
+ * relative position of their centre inside the box. Label size and font are unchanged. Returns `items` itself when nothing moves.
+ */
+export function followResizeLabels(items: CanvasItem[], _boxId: number, oldBounds: RectangleBounds, newBounds: RectangleBounds, labelKeys: readonly string[]): CanvasItem[] {
+  if (labelKeys.length === 0 || oldBounds.width <= 0 || oldBounds.height <= 0) return items
+  const keys = new Set(labelKeys)
+  let changed = false
+  const next = items.map((item) => {
+    if (item.kind !== 'text' || !keys.has(canvasItemKey(item))) return item
+    const rx = (item.x + item.width / 2 - oldBounds.x) / oldBounds.width
+    const ry = (item.y + item.height / 2 - oldBounds.y) / oldBounds.height
+    const x = newBounds.x + rx * newBounds.width - item.width / 2
+    const y = newBounds.y + ry * newBounds.height - item.height / 2
+    if (x === item.x && y === item.y) return item
+    changed = true
+    return { ...item, x, y }
+  })
+  return changed ? next : items
+}
+
 /** True when all four corners of the label lie inside the box's outline (diamond and ellipse use their real outline). */
 export function labelInsideBox(label: TextObject, box: RectangleObject): boolean {
   if (label.width <= 0 || label.height <= 0) return false
