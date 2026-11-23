@@ -33,6 +33,7 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'Edit', label: 'Cut', keys: 'Ctrl+X', input: { key: 'x', ...ctrl } },
   { group: 'Edit', label: 'Paste', keys: 'Ctrl+V', input: { key: 'v', ...ctrl } },
   { group: 'Edit', label: 'Duplicate', keys: 'Ctrl+D', input: { key: 'd', ...ctrl } },
+  { group: 'Edit', label: 'Duplicate while dragging', keys: 'Ctrl + drag' },
   { group: 'Edit', label: 'Copy as PNG (selection, or the whole page)', keys: 'Shift+Alt+C', input: { key: 'C', code: 'KeyC', altKey: true, ...shift } },
   { group: 'Edit', label: 'Copy style of the selected item', keys: 'Ctrl+Alt+C', input: { key: 'c', code: 'KeyC', altKey: true, ...ctrl } },
   { group: 'Edit', label: 'Paste style onto the selection', keys: 'Ctrl+Alt+V', input: { key: 'v', code: 'KeyV', altKey: true, ...ctrl } },

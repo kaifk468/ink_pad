@@ -6,6 +6,7 @@ import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type 
 import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, hitConnectorHandle, moveConnectorEndpoint, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
+import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
@@ -174,6 +175,8 @@ function getDirtyRect(points: Point[], strokeWidth: number, viewport: Viewport, 
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
 }
 
+type DragDup = DragDuplicate & { before: SelectionState; selected?: boolean }
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const inkLayerRef = useRef<HTMLCanvasElement | null>(null)
@@ -222,7 +225,7 @@ function App() {
   } | null>(null)
   const shapePreviewRef = useRef<CanvasItem | null>(null)
   const selectedRectangleIdRef = useRef<number | null>(null)
-  const activeDragRef = useRef<{ pointerId: number; itemKey: string; start: Point; originalItems: CanvasItem[]; moved: boolean; editTextId?: number | null; editClassBoxId?: number | null } | null>(null)
+  const activeDragRef = useRef<{ pointerId: number; itemKey: string; start: Point; originalItems: CanvasItem[]; moved: boolean; editTextId?: number | null; editClassBoxId?: number | null; duplicate?: boolean; dup?: DragDup } | null>(null)
   const textTapRef = useRef<{ pointerId: number; point: Point } | null>(null)
   // Desktop double-click on empty canvas: the two clicks so far, and the items and history from before the first one.
   const clickPairRef = useRef<ClickPair | null>(null)
@@ -237,7 +240,7 @@ function App() {
   /** A drag or click on a handle of the single selected connector: `which` is an end, or the middle dot (a click toggles straight/elbow). `saved` = its one history step was recorded. `target` = box highlighted as the snap target. */
   const activeEndpointRef = useRef<{ pointerId: number; id: number; which: ConnectorHandleKind; startScreen: Point; originalItems: CanvasItem[]; dragged: boolean; saved: boolean; target: number | null } | null>(null)
   const activeLassoRef = useRef<{ pointerId: number; points: Point[] } | null>(null)
-  const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean } | null>(null)
+  const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean; duplicate?: boolean; dup?: DragDup } | null>(null)
   const selectedKeysRef = useRef<Set<string>>(new Set())
   const nextRectangleIdRef = useRef(1)
   const nextStrokeIdRef = useRef(1)
@@ -1237,7 +1240,22 @@ function App() {
   // Starts dragging the whole group selection (the lasso's move, reused).
   const startGroupDrag = (event: React.PointerEvent<HTMLCanvasElement>, point: Point) => {
     event.currentTarget.setPointerCapture(event.pointerId)
-    lassoDragRef.current = { pointerId: event.pointerId, start: point, keys: new Set(selectedKeysRef.current), originalItems: strokesRef.current.slice(), moved: false }
+    lassoDragRef.current = { pointerId: event.pointerId, start: point, keys: new Set(selectedKeysRef.current), originalItems: strokesRef.current.slice(), moved: false, ...(duplicatePress(event) ? { duplicate: true } : {}) }
+  }
+  // Ctrl (Cmd) + mouse press with the Select tool in Desktop mode: if it turns into a drag, a copy moves instead of the originals.
+  const duplicatePress = (event: React.PointerEvent<HTMLCanvasElement>): boolean => selectionMode && !lassoMode && isDuplicateDragPress(inputModeRef.current, event.pointerType, event.button, event.ctrlKey, event.metaKey)
+  // The copy for a duplicating drag, made at the first move past the threshold: originals stay, the copies get the moving keys.
+  const beginDuplicate = (holder: { dup?: DragDup }, originalItems: CanvasItem[], dragged: Set<string>, event: React.PointerEvent<HTMLCanvasElement>): DragDup | null => {
+    if (holder.dup) return holder.dup
+    const carried = withCarriedLabels(event, originalItems, dragged)
+    const result = duplicateForDrag(originalItems, dragged, [...carried].filter((key) => !dragged.has(key)), { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, workspaceBoundsRef.current)
+    if (!result) return null
+    nextStrokeIdRef.current = result.counters.stroke
+    nextRectangleIdRef.current = result.counters.rectangle
+    nextConnectorIdRef.current = result.counters.connector
+    nextTextIdRef.current = result.counters.text
+    holder.dup = { ...result, before: normalizeSelection(selectionKeysWithBox()) }
+    return holder.dup
   }
 
   // Desktop mouse drag of plain or HLD shapes: text labels lying fully inside a dragged shape travel with it. Pen and touch drags are unchanged.
@@ -2844,7 +2862,7 @@ function App() {
       const clickedItem = clicked ? selectHitTarget(clicked) : null
       if (clicked && clickedItem) {
         event.currentTarget.setPointerCapture(event.pointerId)
-        activeDragRef.current = { pointerId: event.pointerId, itemKey: clicked.key, start: point, originalItems: strokesRef.current.slice(), moved: false, editTextId: null, editClassBoxId: null }
+        activeDragRef.current = { pointerId: event.pointerId, itemKey: clicked.key, start: point, originalItems: strokesRef.current.slice(), moved: false, editTextId: null, editClassBoxId: null, ...(duplicatePress(event) ? { duplicate: true } : {}) }
         return
       }
     }
@@ -3058,6 +3076,7 @@ function App() {
         // Tapping already-selected text (without dragging) edits it.
         editTextId: textWasSelected && textHit ? textHit.id : null,
         editClassBoxId: rectangle?.classBox && previouslySelectedRectangleId === rectangle.id ? rectangle.id : null,
+        ...(duplicatePress(event) ? { duplicate: true } : {}),
       }
       return
     }
@@ -3270,15 +3289,18 @@ function App() {
       const deltaX = point.x - lassoDrag.start.x
       const deltaY = point.y - lassoDrag.start.y
       if (!lassoDrag.moved && Math.hypot(deltaX, deltaY) < 2) return
-      const lassoKeys = withCarriedLabels(event, lassoDrag.originalItems, lassoDrag.keys)
-      const lassoSnap = snapDragDelta(event, lassoDrag.originalItems, lassoKeys, deltaX, deltaY)
-      const nextItems = translateWithinWorkspace(lassoDrag.originalItems, lassoKeys, lassoSnap.dx, lassoSnap.dy)
-      if (!lassoDrag.moved && nextItems.every((item, index) => item === lassoDrag.originalItems[index])) return
+      const lassoDup = lassoDrag.duplicate ? beginDuplicate(lassoDrag, lassoDrag.originalItems, lassoDrag.keys, event) : null
+      const lassoBase = lassoDup?.items ?? lassoDrag.originalItems
+      const lassoKeys = lassoDup ? lassoDup.copyKeys : withCarriedLabels(event, lassoDrag.originalItems, lassoDrag.keys)
+      const lassoSnap = snapDragDelta(event, lassoBase, lassoKeys, deltaX, deltaY)
+      const nextItems = translateWithinWorkspace(lassoBase, lassoKeys, lassoSnap.dx, lassoSnap.dy)
+      if (!lassoDrag.moved && nextItems.every((item, index) => item === lassoBase[index])) return
       if (!lassoDrag.moved) {
         saveHistory()
         lassoDrag.moved = true
       }
       strokesRef.current = nextItems
+      if (lassoDup && !lassoDup.selected) { lassoDup.selected = true; applySelectionState(normalizeSelection(lassoDup.selectedKeys)) }
       renderAll()
       return
     }
@@ -3309,15 +3331,18 @@ function App() {
       const deltaX = point.x - drag.start.x
       const deltaY = point.y - drag.start.y
       if (!drag.moved && Math.hypot(deltaX, deltaY) < 2) return
-      const dragKeys = withCarriedLabels(event, drag.originalItems, new Set([drag.itemKey]))
-      const dragSnap = snapDragDelta(event, drag.originalItems, dragKeys, deltaX, deltaY)
-      const nextItems = translateWithinWorkspace(drag.originalItems, dragKeys, dragSnap.dx, dragSnap.dy)
-      if (!drag.moved && nextItems.every((item, index) => item === drag.originalItems[index])) return
+      const dragDup = drag.duplicate ? beginDuplicate(drag, drag.originalItems, new Set([drag.itemKey]), event) : null
+      const dragBase = dragDup?.items ?? drag.originalItems
+      const dragKeys = dragDup ? dragDup.copyKeys : withCarriedLabels(event, drag.originalItems, new Set([drag.itemKey]))
+      const dragSnap = snapDragDelta(event, dragBase, dragKeys, deltaX, deltaY)
+      const nextItems = translateWithinWorkspace(dragBase, dragKeys, dragSnap.dx, dragSnap.dy)
+      if (!drag.moved && nextItems.every((item, index) => item === dragBase[index])) return
       if (!drag.moved) {
         saveHistory()
         drag.moved = true
       }
       strokesRef.current = nextItems
+      if (dragDup && !dragDup.selected) { dragDup.selected = true; applySelectionState(normalizeSelection(dragDup.selectedKeys)) }
       renderAll()
       return
     }
@@ -3492,13 +3517,13 @@ function App() {
     if (lassoDragRef.current?.pointerId === event.pointerId) {
       const lassoDrag = lassoDragRef.current
       lassoDragRef.current = null
-      if (lassoDrag.moved) switchConnectorSides(lassoDrag.keys)
+      if (lassoDrag.moved) switchConnectorSides(lassoDrag.dup ? lassoDrag.dup.copyKeys : lassoDrag.keys)
       return
     }
     if (activeDragRef.current?.pointerId === event.pointerId) {
       const drag = activeDragRef.current
       activeDragRef.current = null
-      if (drag.moved) switchConnectorSides(new Set([drag.itemKey]))
+      if (drag.moved) switchConnectorSides(drag.dup ? drag.dup.copyKeys : new Set([drag.itemKey]))
       if (!drag.moved && drag.editTextId != null) {
         const tapped = strokesRef.current.find((item): item is TextObject => item.kind === 'text' && item.id === drag.editTextId)
         if (tapped) editTextItem(tapped)
@@ -3801,10 +3826,11 @@ function App() {
     let restored: CanvasItem[] | null = null
     let discardStep = false
     let handled = false
+    let restoredSelection: SelectionState | null = null
     const drag = activeDragRef.current
-    if (drag) { activeDragRef.current = null; handled = true; if (drag.moved) { restored = drag.originalItems; discardStep = true } }
+    if (drag) { activeDragRef.current = null; handled = true; if (drag.moved) { restored = drag.originalItems; discardStep = true; restoredSelection = drag.dup?.before ?? null } }
     const lassoDrag = lassoDragRef.current
-    if (lassoDrag) { lassoDragRef.current = null; handled = true; if (lassoDrag.moved) { restored = lassoDrag.originalItems; discardStep = true } }
+    if (lassoDrag) { lassoDragRef.current = null; handled = true; if (lassoDrag.moved) { restored = lassoDrag.originalItems; discardStep = true; restoredSelection = lassoDrag.dup?.before ?? null } }
     const divider = activeDividerRef.current
     if (divider) { activeDividerRef.current = null; handled = true; if (divider.moved) { restored = divider.originalItems; discardStep = true } }
     const rotate = activeRotateRef.current
@@ -3831,6 +3857,8 @@ function App() {
     if (!handled) return false
     clearSnapGuides(false)
     if (restored) strokesRef.current = restored
+    // A duplicating drag put the selection on the copies: Escape removes them and selects the originals again.
+    if (restoredSelection) applySelectionState(restoredSelection)
     if (discardStep) {
       historyRef.current.discardLast()
       setCanUndo(historyRef.current.canUndo)

@@ -161,8 +161,8 @@ test('App wiring: the setting gates the snap call, Alt is Desktop mouse only, gu
   assert.match(app, /saveSnapping\(on\)/)
   assert.match(app, /const altWithMouse = event\.altKey && event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop'\n\s*if \(!snappingRef\.current \|\| altWithMouse\) \{\n\s*guidesRef\.current = \[\]\n\s*return \{ dx, dy \}/)
   // both drag paths snap through the same helper, before the workspace clamp
-  assert.match(app, /snapDragDelta\(event, lassoDrag\.originalItems, lassoKeys, deltaX, deltaY\)/)
-  assert.match(app, /snapDragDelta\(event, drag\.originalItems, dragKeys, deltaX, deltaY\)/)
+  assert.match(app, /snapDragDelta\(event, lassoBase, lassoKeys, deltaX, deltaY\)/)
+  assert.match(app, /snapDragDelta\(event, dragBase, dragKeys, deltaX, deltaY\)/)
   assert.doesNotMatch(app, /snapDragDelta\([^)]*\)[\s\S]{0,40}(activeConnectorRef|activeStrokeRef)/)
   // cleared on pointer up, cancel/lost capture, Escape cancel and page or document reset
   assert.equal((app.match(/if \(snapStateRef\.current\?\.pointerId === event\.pointerId\) clearSnapGuides\(\)/g) ?? []).length, 2)
