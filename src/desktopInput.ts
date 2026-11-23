@@ -10,6 +10,8 @@
 import { canvasItemKey, getCanvasSelectionBounds, isItemLocked, toItemFrame, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
 import { hitInkBoxDivider, hitInkBoxMoveGrip } from './inkClassBox'
 import { itemHitTest } from './lassoSelection'
+import { CONNECTOR_LABEL_FONT_SIZE, pointOnConnectorLabel } from './connectorLabel'
+import { DEFAULT_TEXT_FONT, getCachedTextMeasure } from './textLayout'
 import { MAX_ZOOM, MIN_ZOOM, panViewport, zoomViewportAt, type Viewport } from './viewport'
 
 export type InputMode = 'tablet' | 'desktop'
@@ -290,7 +292,7 @@ export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scal
       const local = toItemFrame(item, point)
       return local.x >= item.x - pad && local.x <= item.x + item.width + pad && local.y >= item.y - pad && local.y <= item.y + item.height + pad
     })
-    ?? pick('connector', (item) => item.kind === 'connector' && itemHitTest(item, point, Math.max(12 / scale, item.strokeWidth * 2)))
+    ?? pick('connector', (item) => item.kind === 'connector' && (itemHitTest(item, point, Math.max(12 / scale, item.strokeWidth * 2)) || pointOnConnectorLabel(item, point, getCachedTextMeasure(CONNECTOR_LABEL_FONT_SIZE, DEFAULT_TEXT_FONT))))
 }
 
 export type ClickTool = 'pen' | 'shape' | 'shapeDraw' | 'text' | 'connector' | 'lasso' | 'classBox' | 'select' | 'eraser'
@@ -453,13 +455,13 @@ export function escapeAction(state: { cancelableGesture: boolean; anyGesture: bo
 /**
  * Step 11: right-click menu, double-click and Enter to edit, and the cursor per tool (Desktop mode only).
  */
-export type EditTarget = { kind: 'text' | 'classBox' | 'code'; id: number }
+export type EditTarget = { kind: 'text' | 'classBox' | 'code' | 'connector'; id: number }
 
 /** What a double-click on the target edits: a text label, or a class box (not an ink box, which is written in, nor an oval). */
 export function doubleClickTarget(routedItems: readonly CanvasItem[], point: Point, scale: number): EditTarget | null {
   const target = hitTarget(routedItems, point, scale)
   if (!target) return null
-  if (target.kind === 'text' || target.kind === 'code') return { kind: target.kind, id: target.id }
+  if (target.kind === 'text' || target.kind === 'code' || target.kind === 'connector') return { kind: target.kind, id: target.id }
   if (target.kind !== 'rectangle') return null
   const box = routedItems.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === target.id)
   return box?.classBox && !box.inkBox && !box.ellipse && !box.diamond ? { kind: 'classBox', id: box.id } : null
@@ -473,7 +475,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
   const [key] = [...all]
   const item = items.find((candidate) => canvasItemKey(candidate) === key)
   if (!item) return null
-  if (item.kind === 'text' || item.kind === 'code') return { kind: item.kind, id: item.id }
+  if (item.kind === 'text' || item.kind === 'code' || item.kind === 'connector') return { kind: item.kind, id: item.id }
   return item.kind === 'rectangle' && item.classBox && !item.inkBox && !item.ellipse && !item.diamond ? { kind: 'classBox', id: item.id } : null
 }
 

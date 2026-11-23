@@ -14,6 +14,8 @@ type RelationshipProps = {
   type: ConnectorRelationshipType
   reversed: boolean
   elbow: boolean
+  hasLabel: boolean
+  onEditLabel: () => void
   onChange: (type: ConnectorRelationshipType) => void
   onReverse: () => void
   onElbow: (elbow: boolean) => void
@@ -361,6 +363,9 @@ export function ContextPanel(props: ContextPanelProps) {
           <button type="button" className={relationship.elbow ? '' : 'active'} aria-pressed={!relationship.elbow} onClick={() => relationship.onElbow(false)}>Straight</button>
           <button type="button" className={relationship.elbow ? 'active' : ''} aria-pressed={relationship.elbow} onClick={() => relationship.onElbow(true)}>Elbow</button>
         </div>
+        <button type="button" className="relationship-reverse" aria-label={relationship.hasLabel ? 'Edit connector label' : 'Add connector label'} title="Text drawn on the middle of the connector (double-click it, or press Enter)" onClick={relationship.onEditLabel}>
+          <span>{relationship.hasLabel ? 'Edit label' : 'Add label'}</span>
+        </button>
       </div>}
     </aside>
   )

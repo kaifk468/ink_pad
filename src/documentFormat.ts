@@ -1,4 +1,5 @@
 import { clampCodeFontSize, cleanCodeLanguage, DEFAULT_CODE_FONT_SIZE, MAX_CODE_LENGTH, normalizeCodeText } from './codeBlock'
+import { cleanConnectorLabel } from './connectorLabel'
 import type { CodeObject, OpaqueObject, TextFontId, HldShape, CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 
 /**
@@ -378,6 +379,7 @@ function sanitizeItemFields(value: unknown): CanvasItem | null {
       ...(value.dash === 'dashed' || value.dash === 'dotted' || value.dash === 'solid' ? { dash: value.dash } : {}),
       ...(startAttachment ? { startAttachment } : {}),
       ...(endAttachment ? { endAttachment } : {}),
+      ...(cleanConnectorLabel(value.label) !== undefined ? { label: cleanConnectorLabel(value.label) } : {}),
     }
     return connector
   }

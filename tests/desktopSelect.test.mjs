@@ -246,7 +246,7 @@ test('double-click edits a text label or a class box, and nothing else', () => {
   assert.equal(input.doubleClickTarget(items, pt(550, 30), 1), null)
   assert.equal(input.doubleClickTarget(items, pt(750, 30), 1), null)
   assert.deepEqual(input.doubleClickTarget(items, pt(30, 210), 1), { kind: 'text', id: 5 })
-  assert.equal(input.doubleClickTarget(items, pt(50, 401), 1), null)
+  assert.deepEqual(input.doubleClickTarget(items, pt(50, 401), 1), { kind: 'connector', id: 6 })
   assert.equal(input.doubleClickTarget(items, pt(900, 900), 1), null)
 })
 

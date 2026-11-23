@@ -7,7 +7,8 @@ import { getClassBoxGeometry, type ClassBoxCompartment } from './classBoxLayout'
 import { CODE_FONT_FAMILY, codeColors, codeGeometry } from './codeBlock'
 import { getCodeLines } from './codeHighlight'
 import type { CodeObject, OpaqueObject } from './canvasModel'
-import { getTextBaselines, labelLines, TEXT_FONT_FAMILY, textFontFamily } from './textLayout'
+import { getTextBaselines, labelLines, TEXT_FONT_FAMILY, textFontFamily, getCachedTextMeasure, DEFAULT_TEXT_FONT } from './textLayout'
+import { CONNECTOR_LABEL_FONT_SIZE, connectorLabelLayout } from './connectorLabel'
 
 export type ExportTemplate = 'blank' | 'lined' | 'dotted'
 export type SheetExportOptions = {
@@ -27,6 +28,7 @@ export type SheetExportOptions = {
 
 /** Set by buildSheetSvg for the duration of one build. */
 let sketchyExport = false
+let labelBackground = '#ffffff'
 
 const SPACING = 32
 const LINE_COLOR = '#aebfd8'
@@ -159,7 +161,22 @@ function sketchyConnectorElement(connector: ConnectorObject): string {
   return `<path d="${shape.line}" fill="none" ${base}${dash}/>${head}`
 }
 
+function connectorLabelElement(connector: ConnectorObject): string {
+  const layout = connectorLabelLayout(connector, getCachedTextMeasure(CONNECTOR_LABEL_FONT_SIZE, DEFAULT_TEXT_FONT))
+  if (!layout) return ''
+  const family = esc(textFontFamily(DEFAULT_TEXT_FONT))
+  const pad = `<rect x="${n(layout.box.x)}" y="${n(layout.box.y)}" width="${n(layout.box.width)}" height="${n(layout.box.height)}" fill="${esc(labelBackground)}"/>`
+  const text = layout.lines
+    .map((line, index) => (line.length === 0 ? '' : `<text x="${n(layout.lineX[index])}" y="${n(layout.baselines[index])}" font-family="${family}" font-size="${n(layout.fontSize)}" fill="${esc(connector.strokeColor)}" xml:space="preserve">${esc(line)}</text>`))
+    .join('')
+  return pad + text
+}
+
 function connectorElement(connector: ConnectorObject): string {
+  return connectorLineElement(connector) + connectorLabelElement(connector)
+}
+
+function connectorLineElement(connector: ConnectorObject): string {
   if (sketchyExport) return sketchyConnectorElement(connector)
   const spec = getConnectorRenderSpec(connector)
   const geometry = getConnectorSymbolGeometry(connector)
@@ -250,6 +267,7 @@ function itemElement(item: CanvasItem): string {
  */
 export function buildSheetSvg(rawItems: CanvasItem[], options: SheetExportOptions): string {
   sketchyExport = options.sketchy === true
+  labelBackground = options.transparent ? '#ffffff' : options.backgroundColor
   try {
     return buildSheetSvgInner(rawItems, options)
   } finally {
@@ -335,6 +353,8 @@ export function getContentBounds(rawItems: CanvasItem[], sheet: { width: number;
       include(box.x + box.width, box.y + box.height, item.strokeWidth)
     } else {
       for (const p of connectorPoints(item)) include(p.x, p.y, item.strokeWidth + 16)
+      const labelLayout = connectorLabelLayout(item, getCachedTextMeasure(CONNECTOR_LABEL_FONT_SIZE, DEFAULT_TEXT_FONT))
+      if (labelLayout) { include(labelLayout.box.x, labelLayout.box.y, 0); include(labelLayout.box.x + labelLayout.box.width, labelLayout.box.y + labelLayout.box.height, 0) }
     }
   }
   if (!Number.isFinite(minX)) return null

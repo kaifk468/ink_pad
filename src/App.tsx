@@ -29,7 +29,7 @@ import { createTestInk, isTestInk } from './testInk'
 import { createFrameRecorder, createRedrawTracker, formatDrawFlags, formatFrameSummary, formatRedrawSummary } from './app/frameRecorder'
 import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
 import { chooseDrawMode, countVisiblePoints, DEFAULT_DIRECT_MAX_VISIBLE_POINTS, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
-import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, layerCanvasOptions, rawDrawingOptions } from './app/canvasRenderer'
+import { setConnectorLabelBackground, createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, layerCanvasOptions, rawDrawingOptions } from './app/canvasRenderer'
 import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
 import { UmlConnectorIcon } from './app/UmlConnectorIcon'
 import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
@@ -55,6 +55,7 @@ import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
 import { arrowToolConnector, centreLabelOn, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
+import { CONNECTOR_LABEL_FONT_SIZE, pointOnConnectorLabel, setConnectorLabel } from './connectorLabel'
 import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
 import type { TextFontId } from './canvasModel'
@@ -579,6 +580,7 @@ function App() {
   const [selectedConnectorType, setSelectedConnectorType] = useState<ConnectorRelationshipType | null>(null)
   const [selectedConnectorReversed, setSelectedConnectorReversed] = useState(false)
   const [selectedConnectorElbow, setSelectedConnectorElbow] = useState(false)
+  const [selectedConnectorLabel, setSelectedConnectorLabel] = useState(false)
   // The eraser mode and size used last are remembered (saved), so holding the S Pen button erases the way the person last chose.
   const [savedEraser] = useState(() => loadEraserPrefs())
   const [eraserSize, setEraserSize] = useState(savedEraser.size)
@@ -617,6 +619,7 @@ function App() {
     setSelectedConnectorType(connector?.relationshipType ?? null)
     setSelectedConnectorReversed(connector?.reversed ?? false)
     setSelectedConnectorElbow(connector?.routing === 'elbow')
+    setSelectedConnectorLabel(!!connector?.label)
   }
 
   const reconcileSelectedItems = () => {
@@ -840,7 +843,7 @@ function App() {
     const routedItems = routeConnectors(strokesRef.current)
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
-      if (item.kind === 'connector' && !item.locked && itemHitTest(item, point, Math.max(12 / viewportRef.current.scale, item.strokeWidth * 2))) return strokesRef.current[index] as ConnectorObject
+      if (item.kind === 'connector' && !item.locked && (itemHitTest(item, point, Math.max(12 / viewportRef.current.scale, item.strokeWidth * 2)) || pointOnConnectorLabel(item, point, createTextMeasure(CONNECTOR_LABEL_FONT_SIZE, DEFAULT_TEXT_FONT)))) return strokesRef.current[index] as ConnectorObject
     }
     return null
   }
@@ -866,7 +869,7 @@ function App() {
   const openTextEditor = (rawEditor: TextEditorState) => {
     if (textEditorRef.current) commitTextEditor()
     // Desktop auto-fit: find the shape the label sits in (none on the tablet or on plain canvas).
-    const editor = prepareEditorFit(rawEditor, strokesRef.current, inputModeRef.current === 'desktop')
+    const editor = rawEditor.connectorId !== undefined ? rawEditor : prepareEditorFit(rawEditor, strokesRef.current, inputModeRef.current === 'desktop')
     textEditorRef.current = editor
     textEditorValueRef.current = editor.initialText
     setTextEditor(editor)
@@ -881,6 +884,17 @@ function App() {
     textEditorRef.current = null
     setTextEditor(null)
     const value = normalizeText(textEditorValueRef.current)
+    if (editor.connectorId !== undefined) {
+      const next = setConnectorLabel(strokesRef.current, editor.connectorId, value)
+      if (next !== strokesRef.current) {
+        saveHistory()
+        strokesRef.current = next
+        setSelectedConnectorLabel(strokesRef.current.some((item) => item.kind === 'connector' && item.id === editor.connectorId && !!item.label))
+        setHasInk(true)
+      }
+      renderAll()
+      return
+    }
     if (editor.itemId === null) {
       if (!isBlankText(value)) {
         saveHistory()
@@ -922,6 +936,15 @@ function App() {
   const openNewTextEditorAt = (point: Point) => openTextEditor({ itemId: null, x: point.x, y: point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
 
   const editTextItem = (item: TextObject) => openTextEditor({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text })
+
+  // Edits the label of a connector in the text overlay, centred on the middle of its drawn path; committing writes connector.label (one undo step).
+  const editConnectorLabel = (connectorId: number): boolean => {
+    const connector = routeConnectors(strokesRef.current).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
+    if (!connector || connector.locked) return false
+    const centre = connectorHandlePositions(connector).middle
+    openTextEditor({ itemId: null, connectorId, x: centre.x, y: centre.y, fontSize: CONNECTOR_LABEL_FONT_SIZE, fontFamily: DEFAULT_TEXT_FONT, color: connector.strokeColor, initialText: connector.label ?? '', centerOn: { x: centre.x, y: centre.y } })
+    return true
+  }
 
   const openClassBoxEditor = (editor: { rectangleId: number | null; x: number; y: number; content: ClassBoxContent }) => {
     if (textEditorRef.current) commitTextEditor()
@@ -1014,6 +1037,7 @@ function App() {
 
   const drawStroke = useCallback((ctx: CanvasRenderingContext2D, stroke: Stroke) => drawStrokeToCanvas(ctx, stroke, strokeDisplayMode), [strokeDisplayMode])
 
+  setConnectorLabelBackground(PAGE_BACKGROUND_COLORS[pageBackground])
   const drawItem = useCallback((ctx: CanvasRenderingContext2D, item: CanvasItem) => {
     drawItemToCanvas(ctx, item, strokeDisplayMode, sketchy)
   }, [strokeDisplayMode, sketchy])
@@ -3982,7 +4006,8 @@ function App() {
   } : null
 
   // Opens the editor of a text label or class box: the same editors and commit rules as a tap in the select tool.
-  const openEditTarget = (target: { kind: 'text' | 'classBox' | 'code'; id: number }): boolean => {
+  const openEditTarget = (target: { kind: 'text' | 'classBox' | 'code' | 'connector'; id: number }): boolean => {
+    if (target.kind === 'connector') return editConnectorLabel(target.id)
     if (target.kind === 'code') return openCodeEditor(target.id)
     const item = strokesRef.current.find((candidate) => candidate.kind === (target.kind === 'text' ? 'text' : 'rectangle') && candidate.id === target.id)
     if (item?.kind === 'text') { editTextItem(item); return true }
@@ -4482,7 +4507,7 @@ function App() {
         onPaste={() => { pasteClipboard() }}
         onDuplicate={() => { duplicateSelection() }}
         relationship={selectedConnectorId !== null && selectedConnectorType !== null
-          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
+          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, hasLabel: selectedConnectorLabel, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
           : null}
       />
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}

@@ -116,7 +116,7 @@ test('the stroke eraser leaves locked ink alone and locked items are drawn after
 test('whole-object eraser, rectangle/text/code/connector hit helpers skip locked items (wiring)', () => {
   assert.match(app, /const hitTestObject = [^]*?if \(isItemLocked\(item\)\) continue/)
   assert.match(app, /item\.kind !== 'rectangle' \|\| item\.locked\) continue/)
-  assert.match(app, /item\.kind === 'connector' && !item\.locked && itemHitTest/)
+  assert.match(app, /item\.kind === 'connector' && !item\.locked && \(itemHitTest/)
   assert.match(app, /item\.kind === 'code' && !item\.locked && itemHitTest/)
   assert.match(app, /item\.kind === 'text' && !item\.locked && itemHitTest/)
 })

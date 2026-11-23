@@ -5,7 +5,8 @@ import { filterDisplayPoints } from '../oneEuroFilter'
 import { buildInterpolatingCurve, buildMidpointCurve, type InterpolatingStrokeSegment } from '../strokeCurves'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import { classBoxFont, getClassBoxGeometry, type ClassBoxCompartment, type FontMeasure } from '../classBoxLayout'
-import { getCachedTextMeasure, getTextBaselines, labelLines, textFont, type TextMeasure } from '../textLayout'
+import { CONNECTOR_LABEL_FONT_SIZE, connectorLabelLayout } from '../connectorLabel'
+import { DEFAULT_TEXT_FONT, getCachedTextMeasure, getTextBaselines, labelLines, textFont, type TextMeasure } from '../textLayout'
 import type { MinimapGeometry } from '../viewport'
 import { isSketchyRectangle } from '../sketchy'
 import { drawSketchyConnector, fillRectangle, strokeSketchyRectangle, strokeSketchyStroke } from './sketchyRender'
@@ -408,10 +409,29 @@ export function drawText(ctx: CanvasRenderingContext2D, text: TextObject): void 
   ctx.restore()
 }
 
+let connectorLabelBackground = '#ffffff'
+/** The sheet colour that the pad behind a connector label is filled with (set by the app when the page background changes). */
+export function setConnectorLabelBackground(color: string): void { connectorLabelBackground = color }
+
+/** A connector's label: text centred on the middle of the drawn path over a pad that hides the line. Same for plain and sketchy. */
+export function drawConnectorLabel(ctx: CanvasRenderingContext2D, connector: ConnectorObject): void {
+  if (!connector.label) return
+  const layout = connectorLabelLayout(connector, createTextMeasure(CONNECTOR_LABEL_FONT_SIZE, DEFAULT_TEXT_FONT))
+  if (!layout) return
+  ctx.save()
+  ctx.fillStyle = connectorLabelBackground
+  ctx.fillRect(layout.box.x, layout.box.y, layout.box.width, layout.box.height)
+  ctx.font = textFont(layout.fontSize, DEFAULT_TEXT_FONT)
+  ctx.fillStyle = connector.strokeColor
+  ctx.textBaseline = 'alphabetic'
+  layout.lines.forEach((line, index) => ctx.fillText(line, layout.lineX[index], layout.baselines[index]))
+  ctx.restore()
+}
+
 export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, strokeDisplayMode: StrokeDisplayMode, sketchy = false): void {
   if (item.kind === 'rectangle') drawRectangle(ctx, item, strokeDisplayMode, sketchy)
   else if (item.kind === 'text') drawText(ctx, item)
-  else if (item.kind === 'connector') drawConnector(ctx, item, item.strokeColor, item.strokeWidth, sketchy)
+  else if (item.kind === 'connector') { drawConnector(ctx, item, item.strokeColor, item.strokeWidth, sketchy); drawConnectorLabel(ctx, item) }
   else if (item.kind === 'code') drawCode(ctx, item)
   else if (item.kind === 'opaque') drawOpaque(ctx, item)
   else drawStroke(ctx, item, strokeDisplayMode, sketchy)

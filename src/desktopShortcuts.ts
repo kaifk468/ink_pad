@@ -36,7 +36,7 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'Edit', label: 'Copy as PNG (selection, or the whole page)', keys: 'Shift+Alt+C', input: { key: 'C', code: 'KeyC', altKey: true, ...shift } },
   { group: 'Edit', label: 'Lock the selection (right-click a locked item to unlock)', keys: 'Ctrl+Shift+L', input: { key: 'L', code: 'KeyL', ...ctrl, ...shift } },
   { group: 'Edit', label: 'Select all', keys: 'Ctrl+A', input: { key: 'a', ...ctrl } },
-  { group: 'Edit', label: 'Edit the selected text or label', keys: 'Enter', input: { key: 'Enter' } },
+  { group: 'Edit', label: 'Edit the selected text, label or connector label', keys: 'Enter', input: { key: 'Enter' } },
   { group: 'Edit', label: 'Delete the selection', keys: 'Delete or Backspace', input: { key: 'Delete' } },
   { group: 'Edit', label: 'Deselect, or cancel a drag', keys: 'Esc', input: { key: 'Escape' } },
   { group: 'View', label: 'Zoom in', keys: 'Ctrl++', input: { key: '=', ...ctrl } },

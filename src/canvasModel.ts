@@ -39,6 +39,8 @@ export type ConnectorObject = {
   routing?: ConnectorRouting
   /** Own line style: wins over the dash of the relationship type ('solid' = draw solid although the relationship type is dashed). Missing = the relationship type decides. */
   dash?: LineDash | 'solid'
+  /** Text drawn centred on the middle of the path, over a background-coloured pad. Non-empty, at most 500 characters. Saved. */
+  label?: string
   /** Desktop lock: drawn normally, never selected, edited or erased. Only ever `true`. */
   locked?: true
   /** The right-angle path worked out for an elbow connector. Derived while drawing, never saved: only on copies made by routeConnectors. */

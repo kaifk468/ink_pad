@@ -20,6 +20,8 @@ export type TextEditorState = {
   fitOff?: boolean
   /** Desktop: a new label typed inside a shape is centred on this point (while typing and when saved). */
   centerOn?: { x: number; y: number }
+  /** Editing the label of this connector (Enter commits, Shift+Enter is a new line; committing writes connector.label). */
+  connectorId?: number
 }
 
 type TextEditorOverlayProps = {
@@ -79,7 +81,7 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
         if (event.key === 'Escape') { event.preventDefault(); onCancel() }
-        else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); onCommit() }
+        else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey || (editor.connectorId !== undefined && !event.shiftKey))) { event.preventDefault(); onCommit() }
       }}
     />
   )
