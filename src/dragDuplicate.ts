@@ -34,7 +34,7 @@ export function duplicateForDrag(items: readonly CanvasItem[], dragged: Readonly
     if (item.kind === 'connector' && item.startAttachment && item.endAttachment && boxIds.has(item.startAttachment.rectangleId) && boxIds.has(item.endAttachment.rectangleId)) all.add(canvasItemKey(item))
   }
   const sourceKeys = items.filter((item) => item.kind !== 'opaque' && all.has(canvasItemKey(item))).map(canvasItemKey)
-  const pasted = pasteItems(copyItems(items, all), counters, 0, workspace, null)
+  const pasted = pasteItems(copyItems(items, all), counters, 0, workspace, null, items)
   if (!pasted || pasted.keys.length !== sourceKeys.length) return null
   const selectedKeys = pasted.keys.filter((_, index) => dragged.has(sourceKeys[index]))
   return { items: [...items, ...pasted.items], copyKeys: new Set(pasted.keys), selectedKeys, counters: pasted.counters }

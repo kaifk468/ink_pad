@@ -202,7 +202,7 @@ test('keys: Ctrl/Cmd + C, X, V, D in Desktop mode only; Shift, Alt and auto-repe
 test('App wiring: one history step for paste, cut deletes through deleteSelection, the system clipboard is never used, tablet gets buttons', () => {
   assert.match(app, /const cutSelection = \(\): boolean => copySelection\(\) && deleteSelection\(\)/)
   assert.match(app, /const duplicateSelection = \(\): boolean => \{[^]*?insertPasted\(pasteItems\(copied/)
-  assert.match(app, /pasteItems\(clip, \{ stroke: nextStrokeIdRef\.current, rectangle: nextRectangleIdRef\.current, connector: nextConnectorIdRef\.current, text: nextTextIdRef\.current \}, PASTE_OFFSET \* \(pasteCountRef\.current \+ 1\), workspaceBoundsRef\.current, at\)/)
+  assert.match(app, /pasteItems\(clip, \{ stroke: nextStrokeIdRef\.current, rectangle: nextRectangleIdRef\.current, connector: nextConnectorIdRef\.current, text: nextTextIdRef\.current \}, PASTE_OFFSET \* \(pasteCountRef\.current \+ 1\), workspaceBoundsRef\.current, at, strokesRef\.current\)/)
   const pasteFn = app.slice(app.indexOf('const pasteClipboard = ('), app.indexOf('// Duplicate = copy + paste'))
   assert.equal((pasteFn.match(/saveHistory\(\)/g) ?? []).length, 1)
   assert.doesNotMatch(app, /navigator\.clipboard|execCommand\(['"](copy|paste|cut)/)

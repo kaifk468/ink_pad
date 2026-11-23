@@ -6,6 +6,7 @@
  */
 
 import { canvasItemKey, cloneCanvasItems, getCanvasSelectionBounds, type CanvasItem, type ConnectorObject, type RectangleObject, type Stroke, type TextObject } from './canvasModel'
+import { remapGroupsForPaste } from './grouping'
 import { clampTranslationToBounds, type ViewBounds } from './viewport'
 
 /** How far each consecutive paste moves from the original, in canvas units. */
@@ -42,7 +43,7 @@ export type PasteResult = { items: CanvasItem[]; keys: string[]; counters: IdCou
  * as one so its layout is kept). Connectors: an end attached to a copied box is re-pointed at the new box; an end attached to a
  * box that was not copied is detached (it stays where it was drawn, offset with the rest). Returns null for an empty clipboard.
  */
-export function pasteItems(clip: readonly CanvasItem[], counters: IdCounters, offset: number, workspace: ViewBounds, at?: { x: number; y: number } | null): PasteResult | null {
+export function pasteItems(clip: readonly CanvasItem[], counters: IdCounters, offset: number, workspace: ViewBounds, at?: { x: number; y: number } | null, existing: readonly CanvasItem[] = []): PasteResult | null {
   if (clip.length === 0) return null
   // A pasted copy is never locked.
   const source = cloneCanvasItems([...clip]).map((item) => {
@@ -57,7 +58,7 @@ export function pasteItems(clip: readonly CanvasItem[], counters: IdCounters, of
   const newRectangleIds = new Map<number, number>()
   for (const item of source) if (item.kind === 'rectangle') newRectangleIds.set(item.id, next.rectangle++)
   const moveStroke = (stroke: Stroke): Stroke => ({ ...stroke, id: next.stroke++, points: stroke.points.map((point) => ({ ...point, x: point.x + dx, y: point.y + dy })) })
-  const items: CanvasItem[] = source.map((item): CanvasItem => {
+  const moved: CanvasItem[] = source.map((item): CanvasItem => {
     if (item.kind === 'rectangle') {
       const copy: RectangleObject = { ...item, id: newRectangleIds.get(item.id) as number, x: item.x + dx, y: item.y + dy }
       if (item.inkBox) copy.inkBox = { top: item.inkBox.top + dy, mid: item.inkBox.mid + dy, ink: item.inkBox.ink.map(moveStroke) }
@@ -85,5 +86,7 @@ export function pasteItems(clip: readonly CanvasItem[], counters: IdCounters, of
     }
     return moveStroke(item)
   })
+  // A pasted group is a new group of its own (copies never join the original).
+  const items = remapGroupsForPaste(moved, existing)
   return { items, keys: items.map(canvasItemKey), counters: next, dx, dy }
 }

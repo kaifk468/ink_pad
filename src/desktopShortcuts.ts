@@ -58,6 +58,8 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'Arrange', label: 'Send backward', keys: 'Ctrl+[', input: { key: '[', code: 'BracketLeft', ...ctrl } },
   { group: 'Arrange', label: 'Bring to front', keys: 'Ctrl+Shift+]', input: { key: '}', code: 'BracketRight', ...ctrl, ...shift } },
   { group: 'Arrange', label: 'Send to back', keys: 'Ctrl+Shift+[', input: { key: '{', code: 'BracketLeft', ...ctrl, ...shift } },
+  { group: 'Arrange', label: 'Group the selected items (click any member to select all)', keys: 'Ctrl+G', input: { key: 'g', code: 'KeyG', ...ctrl } },
+  { group: 'Arrange', label: 'Ungroup', keys: 'Ctrl+Shift+G', input: { key: 'G', code: 'KeyG', ...ctrl, ...shift } },
   { group: 'Arrange', label: 'Type inside a shape', keys: 'Double-click the shape (Select tool)' },
   { group: 'Arrange', label: 'Arrow that sticks to shapes', keys: 'Arrow tool (A): start or end on a shape' },
   { group: 'Arrange', label: 'Square or circle while drawing a shape', keys: 'Hold Shift' },

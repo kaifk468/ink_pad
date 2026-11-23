@@ -7,6 +7,7 @@ import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectio
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, hitConnectorHandle, moveConnectorEndpoint, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
+import { canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
@@ -70,7 +71,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -1170,6 +1171,35 @@ function App() {
     showToast('Locked')
     return true
   }
+  // Group / Ungroup (Ctrl+G / Ctrl+Shift+G, menu, panel): one undo step each; the selection stays and now covers the whole group.
+  const groupSelection = (): boolean => {
+    const keys = currentSelectionKeys()
+    const next = groupItems(strokesRef.current, keys)
+    if (next === strokesRef.current) return false
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    applySelectionState(normalizeSelection(expandToGroups(next, keys)))
+    showToast('Grouped')
+    return true
+  }
+  const ungroupSelection = (): boolean => {
+    const next = ungroupItems(strokesRef.current, currentSelectionKeys())
+    if (next === strokesRef.current) return false
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    showToast('Ungrouped')
+    return true
+  }
+  // A selection state widened to every member of the groups it touches (a no-op when nothing on the page is grouped).
+  const expandSelectionState = (state: SelectionState): SelectionState => {
+    if (!strokesRef.current.some((item) => item.kind !== 'opaque' && item.group !== undefined)) return state
+    const keys = new Set(state.keys)
+    if (state.rectangleId !== null) keys.add(`rectangle:${state.rectangleId}`)
+    return normalizeSelection(expandToGroups(strokesRef.current, keys))
+  }
   const unlockItems = (keys: ReadonlySet<string> | null): boolean => {
     const next = setItemsLocked(strokesRef.current, keys, false)
     if (next === strokesRef.current) return false
@@ -1204,6 +1234,13 @@ function App() {
     const item = strokesRef.current.find((candidate) => canvasItemKey(candidate) === target.key)
     if (!item) return null
     hoverKeyRef.current = null
+    // A member of a group selects the whole group (and the select tool, whose handles move it).
+    const groupState = expandSelectionState({ keys: [target.key], rectangleId: null })
+    if (groupState.keys.length > 1) {
+      if (!selectionMode && !lassoMode) toggleSelectTool()
+      applySelectionState(groupState)
+      return item
+    }
     if (item.kind === 'rectangle' && !lassoMode) {
       if (!item.inkBox && !selectionMode) toggleSelectTool()
       setSelectedRectangle(item.id)
@@ -2848,7 +2885,7 @@ function App() {
         // Shift + click adds or removes one item (a stroke too) without starting anything else.
         const shiftHit = shiftClickTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
         if (shiftHit) {
-          applySelectionState(toggleSelectionKey(selectedKeysRef.current, selectedRectangleIdRef.current, shiftHit.key))
+          applySelectionState(normalizeSelection(toggleGroupKeys(strokesRef.current, selectionKeysWithBox(), shiftHit.key)))
           return
         }
       }
@@ -2860,6 +2897,11 @@ function App() {
         return
       }
       const clickedItem = clicked ? selectHitTarget(clicked) : null
+      if (clicked && clickedItem && selectedKeysRef.current.size > 1 && selectedKeysRef.current.has(clicked.key)) {
+        // The click selected a whole group: dragging it moves every member.
+        startGroupDrag(event, point)
+        return
+      }
       if (clicked && clickedItem) {
         event.currentTarget.setPointerCapture(event.pointerId)
         activeDragRef.current = { pointerId: event.pointerId, itemKey: clicked.key, start: point, originalItems: strokesRef.current.slice(), moved: false, editTextId: null, editClassBoxId: null, ...(duplicatePress(event) ? { duplicate: true } : {}) }
@@ -3422,7 +3464,7 @@ function App() {
       marquee.current = getBoundedPoint(event)
       const box = rectFromPoints(marquee.start, marquee.current)
       // A bare click (no real drag) just leaves the selection as the press set it.
-      if (Math.max(box.width, box.height) * viewportRef.current.scale >= 4) applySelectionState(marqueeSelection(routeConnectors(strokesRef.current), box, marquee.base, marquee.shift))
+      if (Math.max(box.width, box.height) * viewportRef.current.scale >= 4) applySelectionState(expandSelectionState(marqueeSelection(routeConnectors(strokesRef.current), box, marquee.base, marquee.shift)))
       else renderAll()
       return
     }
@@ -3509,7 +3551,7 @@ function App() {
       const previous = activeLasso.points[activeLasso.points.length - 1]
       if (Math.hypot(finalPoint.x - previous.x, finalPoint.y - previous.y) >= 1.5) activeLasso.points.push(finalPoint)
       activeLassoRef.current = null
-      updateSelectedItems(selectItemsByLasso(routeConnectors(strokesRef.current), activeLasso.points))
+      updateSelectedItems([...expandToGroups(strokesRef.current, selectItemsByLasso(routeConnectors(strokesRef.current), activeLasso.points))])
       setSelectedRectangle(null)
       renderAll()
       return
@@ -3945,7 +3987,7 @@ function App() {
   const pasteClipboard = (at?: Point | null): boolean => {
     const clip = clipboardRef.current
     if (clip.length === 0) return false
-    const result = pasteItems(clip, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET * (pasteCountRef.current + 1), workspaceBoundsRef.current, at)
+    const result = pasteItems(clip, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET * (pasteCountRef.current + 1), workspaceBoundsRef.current, at, strokesRef.current)
     if (!result) return false
     if (!at) pasteCountRef.current += 1
     return insertPasted(result)
@@ -3968,7 +4010,7 @@ function App() {
   // Duplicate = paste the selection straight away at +24 without touching the in-app clipboard.
   const duplicateSelection = (): boolean => {
     const copied = copyItems(strokesRef.current, selectionKeysWithBox())
-    return copied.length > 0 && insertPasted(pasteItems(copied, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET, workspaceBoundsRef.current, null))
+    return copied.length > 0 && insertPasted(pasteItems(copied, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET, workspaceBoundsRef.current, null, strokesRef.current))
   }
 
   // Ctrl+Arrow with one plain or HLD shape selected: a new empty shape of the same kind in that direction, joined by an arrow. One undo step.
@@ -4171,6 +4213,8 @@ function App() {
       case 'editText': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); if (target) openEditTarget(target); break }
       case 'zoomSelection': zoomToSelection(); break
       case 'lock': lockSelection(); break
+      case 'group': groupSelection(); break
+      case 'ungroup': ungroupSelection(); break
       case 'unlock': if (lockedKey) unlockItems(new Set([lockedKey])); break
       case 'unlockAll': unlockItems(null); break
     }
@@ -4285,6 +4329,8 @@ function App() {
       case 'selectAll': return selectAllItems()
       case 'layer': return moveSelectionLayer(command.move)
       case 'lock': return lockSelection()
+      case 'group': return groupSelection()
+      case 'ungroup': return ungroupSelection()
       case 'tool':
         setOptionsFor(null)
         switch (command.tool) {
@@ -4351,6 +4397,8 @@ function App() {
             canEditText: editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current) !== null,
             lockedTarget: contextMenu.lockedKey !== null,
             anyLocked: strokesRef.current.some(isItemLocked),
+            canGroup: canGroup(strokesRef.current, currentSelectionKeys()),
+            canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()),
           })
           const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight)
           return (
@@ -4559,6 +4607,9 @@ function App() {
         layer={inputMode === 'desktop' && (selectedItemCount > 0 || hasSelectedRectangle) ? { onMove: (move) => { moveSelectionLayer(move) } } : null}
         arrange={inputMode === 'desktop' && canAlign(strokesRef.current, currentSelectionKeys())
           ? { canAlign: true, canDistribute: canDistribute(strokesRef.current, currentSelectionKeys()), onAlign: alignSelection, onDistribute: distributeSelection }
+          : null}
+        group={inputMode === 'desktop' && (canGroup(strokesRef.current, currentSelectionKeys()) || canUngroup(strokesRef.current, currentSelectionKeys()))
+          ? { canGroup: canGroup(strokesRef.current, currentSelectionKeys()), canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()), onGroup: () => { groupSelection() }, onUngroup: () => { ungroupSelection() } }
           : null}
         rotation={rotationPanel}
         code={codePanel}

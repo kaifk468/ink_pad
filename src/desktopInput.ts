@@ -187,6 +187,8 @@ export type KeyCommand =
   | { kind: 'copyStyle' }
   | { kind: 'pasteStyle' }
   | { kind: 'lock' }
+  | { kind: 'group' }
+  | { kind: 'ungroup' }
   | { kind: 'edit' }
   | { kind: 'quickCreate'; direction: 'right' | 'left' | 'up' | 'down' }
   | { kind: 'layer'; move: 'forward' | 'backward' | 'front' | 'back' }
@@ -231,6 +233,8 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if (key === '-' || key === '_') return { kind: 'zoomOut' }
     if (key === '0') return { kind: 'zoomReset' }
     if (key === 'a' && !event.shiftKey) return { kind: 'selectAll' }
+    // Ctrl+G groups the selection, Ctrl+Shift+G ungroups it (the physical key decides, as Shift changes `key`).
+    if (event.shiftKey ? event.code === 'KeyG' : (event.code ? event.code === 'KeyG' : key === 'g')) return event.repeat ? null : { kind: event.shiftKey ? 'ungroup' : 'group' }
     // Ctrl+Shift+L locks the selection. The physical key decides, as Shift changes `key`.
     if (event.code === 'KeyL' && event.shiftKey) return event.repeat ? null : { kind: 'lock' }
     if (key === 'o' && !event.shiftKey && !event.repeat) return { kind: 'library' }
@@ -488,7 +492,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
 }
 
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'exportPng' | 'exportSvg'
-  | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll'
+  | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup'
 export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'arrange' | 'view' | 'lock' | 'export' | 'select'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
 export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint: string; section: ContextMenuSection; disabled: boolean }
@@ -508,6 +512,10 @@ export type ContextMenuState = {
   lockedTarget: boolean
   /** Some item on the page is locked. */
   anyLocked: boolean
+  /** Two or more items are selected (Group is offered). */
+  canGroup?: boolean
+  /** A selected item belongs to a group (Ungroup is offered). */
+  canUngroup?: boolean
 }
 
 /**
@@ -516,7 +524,7 @@ export type ContextMenuState = {
  * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
-  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked } = state
+  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false } = state
   const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
@@ -529,6 +537,8 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'style', canPasteStyle),
     entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection),
     entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection),
+    ...(canGroup ? [entry('group', 'Group', 'Ctrl+G', 'arrange', true)] : []),
+    ...(canUngroup ? [entry('ungroup', 'Ungroup', 'Ctrl+Shift+G', 'arrange', true)] : []),
     entry('zoomSelection', 'Zoom to selection', 'Shift+2', 'view', hasSelection),
     ...(hasSelection && !lockedTarget ? [entry('lock', 'Lock', 'Ctrl+Shift+L', 'lock', true)] : []),
     ...(lockedTarget ? [entry('unlock', 'Unlock', '', 'lock', true)] : []),

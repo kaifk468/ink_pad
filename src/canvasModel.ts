@@ -6,19 +6,19 @@ export type Point = { x: number; y: number; pressure: number }
 export type LineDash = 'dashed' | 'dotted'
 /** Which ends of an arrow/line stroke carry an arrowhead. Missing = the default for the shape (arrow: end, line: none). */
 export type Arrowheads = 'none' | 'end' | 'start' | 'both'
-export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line'; dash?: LineDash; arrowheads?: Arrowheads; /** Desktop lock: drawn normally, but never selected, edited or erased. Only ever `true`. */ locked?: true }
+export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line'; dash?: LineDash; arrowheads?: Arrowheads; /** Desktop lock: drawn normally, but never selected, edited or erased. Only ever `true`. */ locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
 /** Ink class box: three bands (name, variables, methods) divided at the canvas heights `top` and `mid`, holding its own pen strokes (canvas coordinates). */
 export type InkBoxContent = { top: number; mid: number; ink: Stroke[] }
 export type ClassBoxContent = { name: string; attributes: string; methods: string }
 /** HLD shape kinds: Database (cylinder), Queue, Service. A rectangle with one of these is an ink box drawn as that shape. */
 export const HLD_SHAPES = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn'] as const
 export type HldShape = (typeof HLD_SHAPES)[number]
-export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; angle?: number; /** Hand-drawn style random seed (integer), written only by diagrams that use the sketchy style. */ seed?: number; /** Optional fill colour under the outline (not on service, typed or ink class boxes). */ fillColor?: string; dash?: LineDash; locked?: true }
+export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; angle?: number; /** Hand-drawn style random seed (integer), written only by diagrams that use the sketchy style. */ seed?: number; /** Optional fill colour under the outline (not on service, typed or ink class boxes). */ fillColor?: string; dash?: LineDash; locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
 /** The fixed list of label fonts. A saved label without `fontFamily` is the original clean sans. */
 export const TEXT_FONT_IDS = ['excalifont', 'sans', 'serif', 'mono'] as const
 export type TextFontId = (typeof TEXT_FONT_IDS)[number]
 /** `fit` (Desktop auto-fit): 'off' = the size was picked by hand, no auto-fit; 'wrap' = at the minimum size and word-wrapped to `width`. Missing = plain label. */
-export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId; angle?: number; fit?: 'off' | 'wrap'; locked?: true }
+export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId; angle?: number; fit?: 'off' | 'wrap'; locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
 export type ConnectorRouting = 'straight' | 'elbow'
@@ -43,11 +43,13 @@ export type ConnectorObject = {
   label?: string
   /** Desktop lock: drawn normally, never selected, edited or erased. Only ever `true`. */
   locked?: true
+  /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */
+  group?: number
   /** The right-angle path worked out for an elbow connector. Derived while drawing, never saved: only on copies made by routeConnectors. */
   routedPath?: Point[]
 }
 /** A code block: monospaced, syntax coloured, with line numbers. `theme` and `fontSize` are written only when not the default (light, 13). */
-export type CodeObject = { kind: 'code'; id: number; x: number; y: number; width: number; height: number; text: string; language: string; theme?: 'dark'; fontSize?: number; locked?: true }
+export type CodeObject = { kind: 'code'; id: number; x: number; y: number; width: number; height: number; text: string; language: string; theme?: 'dark'; fontSize?: number; locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
 /**
  * An item of a kind this InkPad does not know (saved by a newer copy). It is kept as read and written back unchanged (`raw`), and shown as a grey box.
  * `box` is its saved position and size when it had a usable one. It is never edited, selected or moved.

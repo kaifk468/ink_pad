@@ -75,6 +75,7 @@ type ContextPanelProps = {
   /** Desktop: layer order buttons for the selection. */
   layer?: { onMove: (move: LayerMove) => void } | null
   /** Desktop: align (2+ items) and distribute (3+ items). */
+  group?: { canGroup: boolean; canUngroup: boolean; onGroup: () => void; onUngroup: () => void } | null
   arrange?: { canAlign: boolean; canDistribute: boolean; onAlign: (op: AlignOp) => void; onDistribute: (op: DistributeOp) => void } | null
   objectEraser?: boolean
   eraserSize?: number
@@ -226,6 +227,10 @@ export function ContextPanel(props: ContextPanelProps) {
           <button className="clear-selection-button" type="button" aria-label="Send backward" title="Send backward (Ctrl+[)" onClick={() => props.layer?.onMove('backward')}>Backward</button>
           <button className="clear-selection-button" type="button" aria-label="Send to back" title="Send to back (Ctrl+Shift+[)" onClick={() => props.layer?.onMove('back')}>To back</button>
         </div>
+      </div>}
+      {props.group && (props.group.canGroup || props.group.canUngroup) && <div className="selection-actions" role="group" aria-label="Group">
+        {props.group.canGroup && <button className="clear-selection-button" type="button" aria-label="Group selection" title="Group the selected items so they select and move together (Ctrl+G)" onClick={props.group.onGroup}>Group</button>}
+        {props.group.canUngroup && <button className="clear-selection-button" type="button" aria-label="Ungroup selection" title="Take the selected items out of their group (Ctrl+Shift+G)" onClick={props.group.onUngroup}>Ungroup</button>}
       </div>}
       {props.arrange && <div className="arrange-controls" role="group" aria-label="Align and distribute">
         <span className="panel-label">Align</span>
