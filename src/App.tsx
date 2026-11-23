@@ -7,11 +7,11 @@ import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectio
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, hitConnectorHandle, moveConnectorEndpoint, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
-import { canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
+import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
-import { HLD_DEFAULT_SIZE, createHldShape, type HldShape } from './hldShapes'
+import { HLD_DEFAULT_SIZE, createHldShape, isHldTapCreate, type HldShape } from './hldShapes'
 import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
 import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, hitInkBoxMoveGrip, inkBoxMoveGrip, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
 import type { CanvasItem, ClassBoxContent, CodeObject, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
@@ -71,7 +71,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -239,7 +239,7 @@ function App() {
   /** A rotate-handle drag on the single selected label or plain shape. */
   const activeRotateRef = useRef<{ pointerId: number; key: string; originalItems: CanvasItem[]; moved: boolean } | null>(null)
   /** A drag or click on a handle of the single selected connector: `which` is an end, or the middle dot (a click toggles straight/elbow). `saved` = its one history step was recorded. `target` = box highlighted as the snap target. */
-  const activeEndpointRef = useRef<{ pointerId: number; id: number; which: ConnectorHandleKind; startScreen: Point; originalItems: CanvasItem[]; dragged: boolean; saved: boolean; target: number | null } | null>(null)
+  const activeEndpointRef = useRef<{ pointerId: number; pointerType: string; id: number; which: ConnectorHandleKind; startScreen: Point; originalItems: CanvasItem[]; dragged: boolean; saved: boolean; target: number | null } | null>(null)
   const activeLassoRef = useRef<{ pointerId: number; points: Point[] } | null>(null)
   const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean; duplicate?: boolean; dup?: DragDup } | null>(null)
   const selectedKeysRef = useRef<Set<string>>(new Set())
@@ -1441,7 +1441,7 @@ function App() {
     if (!which) return false
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
-    activeEndpointRef.current = { pointerId: event.pointerId, id: connector.id, which, startScreen: getScreenPoint(event), originalItems: strokesRef.current.slice(), dragged: false, saved: false, target: null }
+    activeEndpointRef.current = { pointerId: event.pointerId, pointerType: event.pointerType, id: connector.id, which, startScreen: getScreenPoint(event), originalItems: strokesRef.current.slice(), dragged: false, saved: false, target: null }
     return true
   }
   const moveConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -2836,11 +2836,22 @@ function App() {
     // A pen landing ends a mouse marquee still being dragged (the pen always wins over the mouse).
     if (event.pointerType === 'pen' && activeMarqueeRef.current) { activeMarqueeRef.current = null; renderAll() }
     moveEraserCursor(event)
+    // A pen landing cancels a connector handle gesture a finger owns (palm rejection: the pen wins).
+    if (event.pointerType === 'pen' && activeEndpointRef.current?.pointerType === 'touch') cancelConnectorHandleGesture()
     if (event.pointerType === 'pen') touchNav.penDown()
     if (event.pointerType === 'touch') {
       event.preventDefault()
-      // A single finger on a handle of the selected connector drags it (Select / lasso); every other touch is navigation.
-      if (touchNav.touchCount() === 0 && activeEndpointRef.current === null && startConnectorHandleGesture(event, getPoint(event))) return
+      const touchHandle = activeEndpointRef.current?.pointerType === 'touch' ? activeEndpointRef.current : null
+      if (touchHandle) {
+        // A second finger ends the handle drag (originals restored, no history step) and both fingers go to navigation (pinch, three-finger pan).
+        const firstId = touchHandle.pointerId
+        const firstStart = touchHandle.startScreen
+        cancelConnectorHandleGesture()
+        touchNav.down(firstId, firstStart, performance.now())
+      } else if (touchNav.touchCount() === 0 && activeEndpointRef.current === null && !touchNav.penNear(performance.now()) && startConnectorHandleGesture(event, getPoint(event))) {
+        // A single finger on a handle of the selected connector drags it (Select / lasso) when no pen is near or down; every other touch is navigation.
+        return
+      }
       event.currentTarget.setPointerCapture(event.pointerId)
       touchNav.down(event.pointerId, getScreenPoint(event), performance.now())
       return
@@ -3108,6 +3119,13 @@ function App() {
       renderAll()
       const selectedItem = textHit ?? codeHit ?? rectangle ?? connector
       if (!selectedItem) return
+      // A member of a group selects the whole group and a drag moves every member (mouse, pen and touch alike).
+      const pressedGroup = expandSelectionState({ keys: [canvasItemKey(selectedItem)], rectangleId: null })
+      if (pressedGroup.keys.length > 1) {
+        applySelectionState(pressedGroup)
+        startGroupDrag(event, point)
+        return
+      }
       event.currentTarget.setPointerCapture(event.pointerId)
       activeDragRef.current = {
         pointerId: event.pointerId,
@@ -3526,8 +3544,9 @@ function App() {
           renderAll()
           return
         }
-        if (!finished.moved) {
-          const createdShape = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === finished.rectangleId)?.hldShape
+        const createdNow = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === finished.rectangleId)
+        if (!finished.moved || (createdNow?.hldShape && isHldTapCreate(finished.originalBounds, createdNow, viewportRef.current.scale))) {
+          const createdShape = createdNow?.hldShape
           const size = createdShape ? HLD_DEFAULT_SIZE[createdShape] : { width: INK_BOX_DEFAULT_WIDTH, height: INK_BOX_DEFAULT_HEIGHT }
           const x = Math.min(finished.originalBounds.x, workspaceBoundsRef.current.x + workspaceBoundsRef.current.width - size.width)
           const y = Math.min(finished.originalBounds.y, workspaceBoundsRef.current.y + workspaceBoundsRef.current.height - size.height)
@@ -3939,8 +3958,9 @@ function App() {
   const copiedStyleRef = useRef<StyleSnapshot | null>(null)
   const soleStyleSource = (): CanvasItem | null => {
     const keys = currentSelectionKeys()
-    if (keys.size !== 1) return null
-    return strokesRef.current.find((item) => keys.has(canvasItemKey(item))) ?? null
+    if (keys.size === 0) return null
+    if (keys.size === 1) return strokesRef.current.find((item) => keys.has(canvasItemKey(item))) ?? null
+    return groupStyleSource(strokesRef.current, keys)
   }
   const copyStyleWithToast = (): boolean => {
     const item = soleStyleSource()
@@ -3955,7 +3975,10 @@ function App() {
     if (!style) { showToast('Copy a style first'); return true }
     const keys = currentSelectionKeys()
     if (keys.size === 0) return false
+    const pageAtPress = pageIndexRef.current
     const run = () => {
+      // The font may take a moment: do nothing if a gesture started or the page changed meanwhile.
+      if (pageIndexRef.current !== pageAtPress || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || mousePanRef.current !== null || touchNav.touchCount() > 0) return
       const next = applyStyle(strokesRef.current, keys, style, { measureFor: createTextMeasure })
       if (next === strokesRef.current) { showToast('Style pasted'); return }
       saveHistory()
@@ -4143,7 +4166,20 @@ function App() {
     const before = clickBeforeRef.current
     clickPairRef.current = null
     clickBeforeRef.current = null
-    if (target) { openEditTarget(target); return }
+    if (target) {
+      // The two clicks of a double-click on a connector's middle dot toggled its routing: put back what they did and their history steps, then edit the label.
+      if (target.kind === 'connector' && before && before.owner === historyRef.current && !clickItemsUnchanged(before.items, strokesRef.current)) {
+        historyRef.current.restore(before.history)
+        setCanUndo(historyRef.current.canUndo)
+        setCanRedo(historyRef.current.canRedo)
+        strokesRef.current = before.items
+        reconcileSelectedItems()
+        scheduleAutosave()
+        renderAll()
+      }
+      openEditTarget(target)
+      return
+    }
     // Select tool on a plain or HLD shape: edit the label already inside it, or start a new one centred in the shape (auto-fit as for any label inside a shape).
     const shapeHit = selectionMode ? hitTarget(routed, point, viewportRef.current.scale) : null
     const shapeAction = shapeHit?.kind === 'rectangle' ? shapeDoubleClick(strokesRef.current, shapeHit.id) : null
@@ -4359,7 +4395,9 @@ function App() {
       if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) return
       // Enter on a focused button or link activates it: only a canvas-level Enter edits.
       if (command.kind === 'edit' && ['BUTTON', 'A'].includes((target?.tagName ?? '').toUpperCase())) return
-      if (keyActionsRef.current(command)) event.preventDefault()
+      const handled = keyActionsRef.current(command)
+      // Group, Ungroup, Library and the style shortcuts never fall through to the browser (Ctrl+G opens Chrome's find bar), even when they do nothing.
+      if (handled || alwaysPreventsDefault(command, inputModeRef.current)) event.preventDefault()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)

@@ -7,9 +7,16 @@ import type { ViewBounds } from './viewport'
  * Pure helpers, no DOM; the id remapping is the clipboard's (`copyItems` / `pasteItems`) with a zero offset.
  */
 
-/** True for a left mouse press with Ctrl or Cmd held in Desktop mode (Alt and Shift keep their own meanings). */
-export function isDuplicateDragPress(inputMode: string, pointerType: string, button: number, ctrlKey: boolean, metaKey: boolean): boolean {
-  return inputMode === 'desktop' && pointerType === 'mouse' && button === 0 && (ctrlKey || metaKey)
+/** True on a Mac (navigator.userAgentData.platform or navigator.platform contains "Mac"). */
+export function isMacPlatform(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } }
+  return /mac/i.test(nav.userAgentData?.platform ?? nav.platform ?? '')
+}
+
+/** True for a left mouse press with Ctrl (Cmd on a Mac, where Ctrl+click is a context click) held in Desktop mode (Alt and Shift keep their own meanings). */
+export function isDuplicateDragPress(inputMode: string, pointerType: string, button: number, ctrlKey: boolean, metaKey: boolean, mac: boolean = isMacPlatform()): boolean {
+  return inputMode === 'desktop' && pointerType === 'mouse' && button === 0 && (mac ? metaKey : (ctrlKey || metaKey))
 }
 
 export type DragDuplicate = {

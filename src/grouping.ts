@@ -97,3 +97,17 @@ export function remapGroupsForPaste(pasted: readonly CanvasItem[], existing: rea
     return rest as CanvasItem
   })
 }
+
+/**
+ * The item whose style Copy style takes when the selection is exactly one group: its topmost shape (last in draw order) that is neither a
+ * connector nor a text label, else the first member. Null when the keys are not exactly the members of a single group.
+ */
+export function groupStyleSource(items: readonly CanvasItem[], keys: ReadonlySet<string>): CanvasItem | null {
+  const members = items.filter((item) => keys.has(canvasItemKey(item)))
+  if (members.length < 2 || members.length !== keys.size) return null
+  const group = groupOf(members[0])
+  if (group === undefined || members.some((item) => groupOf(item) !== group)) return null
+  if (items.some((item) => groupOf(item) === group && item.kind !== 'opaque' && item.locked !== true && !keys.has(canvasItemKey(item)))) return null
+  const shapes = members.filter((item) => item.kind !== 'connector' && item.kind !== 'text')
+  return shapes.length > 0 ? shapes[shapes.length - 1] : members[0]
+}

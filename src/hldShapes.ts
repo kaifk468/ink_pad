@@ -27,6 +27,12 @@ export const HLD_DEFAULT_SIZE: Record<HldShape, { width: number; height: number 
   cdn: { width: 320, height: 190 },
 }
 
+/** A finger tap moves a pixel or two, which counts as a drag and left the shape at its minimum size: growing less than this many screen pixels is still a tap. */
+export const HLD_TAP_SLOP_PX = 10
+export function isHldTapCreate(original: { width: number; height: number }, final: { width: number; height: number }, scale: number): boolean {
+  return Math.max(Math.abs(final.width - original.width), Math.abs(final.height - original.height)) * scale < HLD_TAP_SLOP_PX
+}
+
 export function createHldShape(id: number, x: number, y: number, width: number, height: number, strokeColor: string, strokeWidth: number, shape: HldShape): RectangleObject {
   return { ...createInkClassBox(id, x, y, width, height, strokeColor, strokeWidth), hldShape: shape }
 }

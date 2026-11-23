@@ -579,7 +579,16 @@ export function contextMenuHeight(entries: readonly ContextMenuEntry[]): number 
 
 /** Keeps the menu fully on screen: opens at the pointer, shifted back when it would run past the right or bottom edge. */
 export function clampMenuPosition(x: number, y: number, width: number, height: number, viewWidth: number, viewHeight: number): { x: number; y: number } {
-  return { x: Math.max(0, Math.min(x, viewWidth - width)), y: Math.max(0, Math.min(y, viewHeight - height)) }
+  const clampedX = Math.max(0, Math.min(x, viewWidth - width))
+  // A menu taller than the window (the CSS caps it to the window minus 8px each side and scrolls) sits at the top margin.
+  if (height > viewHeight - 16) return { x: clampedX, y: 8 }
+  return { x: clampedX, y: Math.max(0, Math.min(y, viewHeight - height)) }
+}
+
+/** Commands whose browser default (Chrome's find bar for Ctrl+G, the open-file dialog, Ctrl+Alt shortcuts) is always cancelled in Desktop mode, even when the action does nothing. */
+export const ALWAYS_PREVENT_DEFAULT_COMMANDS: ReadonlySet<KeyCommand['kind']> = new Set(['group', 'ungroup', 'library', 'copyStyle', 'pasteStyle'])
+export function alwaysPreventsDefault(command: KeyCommand, mode: InputMode): boolean {
+  return mode === 'desktop' && ALWAYS_PREVENT_DEFAULT_COMMANDS.has(command.kind)
 }
 
 export type CursorState = { mode: InputMode; tool: ClickTool; hover: 'none' | 'item' | 'selected'; panning: boolean; spaceHeld: boolean }
