@@ -287,7 +287,7 @@ export function HomeScreen(props: HomeScreenProps) {
                       ? <img src={props.thumbnails[entry.id]} alt="" draggable={false} />
                       : <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>}
                   </span>
-                  {renamingDiagramId !== entry.id && <span className="home-card-title">{entry.title || 'Untitled diagram'}</span>}
+                  <span className="home-card-title">{entry.title || 'Untitled diagram'}</span>
                   <span className="home-card-folder">{where || 'No folder'}</span>
                   <span className="home-card-meta">{entry.id === props.currentId ? 'Open now · ' : ''}Edited {describeEdited(entry.updatedAt) || 'earlier'} · {entry.itemCount} item{entry.itemCount === 1 ? '' : 's'}{entry.pageCount && entry.pageCount > 1 ? ` · ${entry.pageCount} pages` : ''}</span>
                 </button>
@@ -298,13 +298,13 @@ export function HomeScreen(props: HomeScreenProps) {
                   <input type="text" aria-label="Diagram name" autoFocus maxLength={80} value={diagramDraft} onChange={(event) => setDiagramDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') submitDiagramRename(entry.id); if (event.key === 'Escape') { event.stopPropagation(); setRenamingDiagramId(null) } }} />
                   <button type="button" onClick={() => submitDiagramRename(entry.id)}>Save</button>
                 </div>}
-                <span className="home-card-actions">
+                {renamingDiagramId !== entry.id && <span className="home-card-actions">
                   <button type="button" aria-label={`Rename ${entry.title || 'Untitled diagram'}`} onClick={() => { setRenamingDiagramId(entry.id); setDiagramDraft(entry.title || '') }}>Rename</button>
                   <button type="button" aria-label={`Move ${entry.title || 'Untitled diagram'}`} onClick={() => setMovingId(entry.id)}>Move</button>
                   {confirmDiagramId === entry.id
                     ? <button type="button" className="home-danger" onClick={() => { setConfirmDiagramId(null); void act(() => props.onDeleteDiagram(entry.id), `Deleted “${entry.title || 'Untitled diagram'}”`) }}>Delete?</button>
                     : <button type="button" aria-label={`Delete ${entry.title || 'Untitled diagram'}`} onClick={() => setConfirmDiagramId(entry.id)}>Delete</button>}
-                </span>
+                </span>}
               </li>
             )
           })}

@@ -4277,15 +4277,17 @@ function App() {
     if (!contextMenu) return
     const onPointerDown = (event: PointerEvent) => { if (!contextMenuElementRef.current?.contains(event.target as Node)) setContextMenu(null) }
     const close = () => setContextMenu(null)
+    // Scrolling inside a tall menu (short windows) must not close it.
+    const closeOutside = (event: Event) => { if (!contextMenuElementRef.current?.contains(event.target as Node)) setContextMenu(null) }
     window.addEventListener('pointerdown', onPointerDown, true)
-    window.addEventListener('wheel', close, true)
-    window.addEventListener('scroll', close, true)
+    window.addEventListener('wheel', closeOutside, true)
+    window.addEventListener('scroll', closeOutside, true)
     window.addEventListener('blur', close)
     window.addEventListener('resize', close)
     return () => {
       window.removeEventListener('pointerdown', onPointerDown, true)
-      window.removeEventListener('wheel', close, true)
-      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('wheel', closeOutside, true)
+      window.removeEventListener('scroll', closeOutside, true)
       window.removeEventListener('blur', close)
       window.removeEventListener('resize', close)
     }
