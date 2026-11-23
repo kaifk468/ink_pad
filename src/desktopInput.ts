@@ -184,6 +184,8 @@ export type KeyCommand =
   | { kind: 'paste' }
   | { kind: 'duplicate' }
   | { kind: 'copyPng' }
+  | { kind: 'copyStyle' }
+  | { kind: 'pasteStyle' }
   | { kind: 'lock' }
   | { kind: 'edit' }
   | { kind: 'quickCreate'; direction: 'right' | 'left' | 'up' | 'down' }
@@ -204,6 +206,12 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
   if (mode !== 'desktop') return null
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
   const command = event.ctrlKey || event.metaKey
+  // Ctrl/Cmd+Alt+C copies the style of the selected item, Ctrl/Cmd+Alt+V pastes it (Excalidraw's bindings). The physical key decides: Alt changes `key` on a Mac,
+  // and AltGr sends ctrl+alt on some layouts, so only the matching `code` counts (and never with Shift).
+  if (command && event.altKey && !event.shiftKey && (event.code === 'KeyC' || event.code === 'KeyV')) {
+    if (event.repeat) return null
+    return { kind: event.code === 'KeyC' ? 'copyStyle' : 'pasteStyle' }
+  }
   if (command && !event.altKey) {
     // Layer order: Ctrl+] / Ctrl+[ one step, with Shift all the way. The physical key decides (Shift changes `key` to } or {).
     // Zoom keys are checked by `key` first: on a German layout Ctrl+'+' is the physical BracketRight key. The bracket `code` counts only when `key` is a bracket or not a single printable character.
@@ -479,9 +487,9 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
   return item.kind === 'rectangle' && item.classBox && !item.inkBox && !item.ellipse && !item.diamond ? { kind: 'classBox', id: item.id } : null
 }
 
-export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'exportPng' | 'exportSvg'
+export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'exportPng' | 'exportSvg'
   | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll'
-export type ContextMenuSection = 'clipboard' | 'text' | 'arrange' | 'view' | 'lock' | 'export' | 'select'
+export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'arrange' | 'view' | 'lock' | 'export' | 'select'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
 export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint: string; section: ContextMenuSection; disabled: boolean }
 
@@ -490,6 +498,10 @@ export type ContextMenuState = {
   hasSelection: boolean
   clipboardHasItems: boolean
   pageHasItems: boolean
+  /** Exactly one item is selected and it has a style to copy. */
+  canCopyStyle?: boolean
+  /** A style is stored and something is selected. */
+  canPasteStyle?: boolean
   /** Exactly one text label, code block or class box is selected (Enter would edit it). */
   canEditText: boolean
   /** The right-click landed on a locked item (it cannot be selected, so the menu offers Unlock for it). */
@@ -504,7 +516,7 @@ export type ContextMenuState = {
  * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
-  const { hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked } = state
+  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked } = state
   const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
@@ -513,6 +525,8 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('duplicate', 'Duplicate', 'Ctrl+D', 'clipboard', hasSelection),
     entry('delete', 'Delete', 'Del', 'clipboard', hasSelection),
     ...(canEditText ? [entry('editText', 'Edit text', 'Enter', 'text', true)] : []),
+    entry('copyStyle', 'Copy style', 'Ctrl+Alt+C', 'style', canCopyStyle),
+    entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'style', canPasteStyle),
     entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection),
     entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection),
     entry('zoomSelection', 'Zoom to selection', 'Shift+2', 'view', hasSelection),

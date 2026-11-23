@@ -40,6 +40,7 @@ import { onCodeHighlighterReady } from './codeHighlight'
 import { ClassBoxDialog } from './ClassBoxDialog'
 import { AccountButton } from './app/AccountButton'
 import { ContextPanel } from './app/ContextPanel'
+import { applyStyle, captureStyle, type StyleSnapshot } from './styleClipboard'
 import { selectionFillColor, selectionHasFillable, setFillColor, matchingOutline } from './shapeFill'
 import { withSketchSeed, withSketchSeeds } from './sketchy'
 import { HistoryBar } from './app/HistoryBar'
@@ -3852,6 +3853,42 @@ function App() {
   }
   const duplicateWithToast = (): boolean => { const done = duplicateSelection(); if (done) showToast('Duplicated'); return done }
   // Copy as PNG: the selection, or the whole page when nothing is selected. Called straight from the key or click so the clipboard write keeps the gesture.
+  // Copy style / Paste style (Ctrl+Alt+C / Ctrl+Alt+V, right-click menu): the stored style is session memory only.
+  const copiedStyleRef = useRef<StyleSnapshot | null>(null)
+  const soleStyleSource = (): CanvasItem | null => {
+    const keys = currentSelectionKeys()
+    if (keys.size !== 1) return null
+    return strokesRef.current.find((item) => keys.has(canvasItemKey(item))) ?? null
+  }
+  const copyStyleWithToast = (): boolean => {
+    const item = soleStyleSource()
+    const style = item ? captureStyle(item) : null
+    if (!style) return false
+    copiedStyleRef.current = style
+    showToast('Style copied')
+    return true
+  }
+  const pasteStyleWithToast = (): boolean => {
+    const style = copiedStyleRef.current
+    if (!style) { showToast('Copy a style first'); return true }
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) return false
+    const run = () => {
+      const next = applyStyle(strokesRef.current, keys, style, { measureFor: createTextMeasure })
+      if (next === strokesRef.current) { showToast('Style pasted'); return }
+      saveHistory()
+      strokesRef.current = next
+      historyCacheRef.current = null
+      renderAll()
+      bumpSelectionColor((n) => n + 1)
+      showToast('Style pasted')
+    }
+    // A label font is loaded before its text is measured.
+    if (style.fontFamily) void loadTextFont(style.fontFamily).then(run, run)
+    else run()
+    return true
+  }
+
   const copyAsPng = (): boolean => {
     const keys = selectionKeysWithBox()
     void copyPngToClipboard(keys.size > 0 ? keys : null).then((error) => showToast(error ?? 'Copied as PNG'))
@@ -4083,6 +4120,8 @@ function App() {
       case 'paste': pasteWithToast(inputModeRef.current === 'desktop' ? contextMenuPointRef.current : null); break
       case 'duplicate': duplicateWithToast(); break
       case 'copyPng': copyAsPng(); break
+      case 'copyStyle': copyStyleWithToast(); break
+      case 'pasteStyle': pasteStyleWithToast(); break
       case 'exportPng': exportSelectionAs('png'); break
       case 'exportSvg': exportSelectionAs('svg'); break
       case 'delete': deleteSelection(); break
@@ -4198,6 +4237,8 @@ function App() {
       case 'copy': return copyWithToast()
       case 'cut': return cutWithToast()
       case 'copyPng': return copyAsPng()
+      case 'copyStyle': return copyStyleWithToast()
+      case 'pasteStyle': return pasteStyleWithToast()
       case 'paste': return pasteWithToast(inputModeRef.current === 'desktop' && cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null)
       case 'duplicate': return duplicateWithToast()
       case 'deleteSelection': return deleteSelection()
@@ -4260,7 +4301,10 @@ function App() {
         />
         {contextMenu && inputMode === 'desktop' && (() => {
           const hasSelection = selectedItemCount > 0 || hasSelectedRectangle
+          const styleSource = soleStyleSource()
           const entries = contextMenuEntries({
+            canCopyStyle: styleSource !== null && captureStyle(styleSource) !== null,
+            canPasteStyle: copiedStyleRef.current !== null && hasSelection,
             hasSelection,
             clipboardHasItems: clipboardCount > 0,
             pageHasItems: hasInk,

@@ -206,7 +206,7 @@ test('App wiring: one history step for paste, cut deletes through deleteSelectio
   const pasteFn = app.slice(app.indexOf('const pasteClipboard = ('), app.indexOf('// Duplicate = copy + paste'))
   assert.equal((pasteFn.match(/saveHistory\(\)/g) ?? []).length, 1)
   assert.doesNotMatch(app, /navigator\.clipboard|execCommand\(['"](copy|paste|cut)/)
-  assert.match(app, /case 'copy': return copyWithToast\(\)\n\s*case 'cut': return cutWithToast\(\)\n\s*case 'copyPng': return copyAsPng\(\)\n\s*case 'paste': return pasteWithToast\(inputModeRef[^\n]*\n\s*case 'duplicate': return duplicateWithToast\(\)/)
+  assert.match(app, /case 'copy': return copyWithToast\(\)\n\s*case 'cut': return cutWithToast\(\)\n\s*case 'copyPng': return copyAsPng\(\)\n\s*(?:case '(?:copy|paste)Style': return [^\n]*\n\s*)*case 'paste': return pasteWithToast\(inputModeRef[^\n]*\n\s*case 'duplicate': return duplicateWithToast\(\)/)
   assert.match(app, /canCopy=\{selectedItemCount > 0 \|\| hasSelectedRectangle\}\n\s*canPaste=\{clipboardCount > 0\}/)
   // the panel shows Copy and Duplicate with a selection and Paste with a non-empty clipboard, next to Delete
   assert.match(panel, /props\.canCopy && <button[^>]*aria-label="Copy selection"/)

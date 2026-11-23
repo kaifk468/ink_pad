@@ -267,10 +267,10 @@ test('Enter edits only a single selected label or class box', () => {
 
 test('the menu lists the clipboard, arrange, view, export and select entries and disables what does not apply', () => {
   const entries = (...args) => Object.fromEntries(menuOf(...args).map((e) => [e.action, !e.disabled]))
-  assert.deepEqual(menuOf(false, false, false).map((e) => e.label), ['Cut', 'Copy', 'Paste', 'Duplicate', 'Delete', 'Bring to front', 'Send to back', 'Zoom to selection', 'Copy as PNG', 'Select all'])
-  assert.deepEqual(entries(false, false, false), { cut: false, copy: false, paste: false, duplicate: false, delete: false, bringToFront: false, sendToBack: false, zoomSelection: false, copyPng: false, selectAll: false })
-  assert.deepEqual(entries(true, false, true), { cut: true, copy: true, paste: false, duplicate: true, delete: true, bringToFront: true, sendToBack: true, zoomSelection: true, lock: true, copyPng: true, exportPng: true, exportSvg: true, selectAll: true })
-  assert.deepEqual(entries(false, true, true), { cut: false, copy: false, paste: true, duplicate: false, delete: false, bringToFront: false, sendToBack: false, zoomSelection: false, copyPng: true, selectAll: true })
+  assert.deepEqual(menuOf(false, false, false).map((e) => e.label), ['Cut', 'Copy', 'Paste', 'Duplicate', 'Delete', 'Copy style', 'Paste style', 'Bring to front', 'Send to back', 'Zoom to selection', 'Copy as PNG', 'Select all'])
+  assert.deepEqual(entries(false, false, false), { cut: false, copy: false, paste: false, duplicate: false, delete: false, copyStyle: false, pasteStyle: false, bringToFront: false, sendToBack: false, zoomSelection: false, copyPng: false, selectAll: false })
+  assert.deepEqual(entries(true, false, true), { cut: true, copy: true, paste: false, duplicate: true, delete: true, copyStyle: false, pasteStyle: false, bringToFront: true, sendToBack: true, zoomSelection: true, lock: true, copyPng: true, exportPng: true, exportSvg: true, selectAll: true })
+  assert.deepEqual(entries(false, true, true), { cut: false, copy: false, paste: true, duplicate: false, delete: false, copyStyle: false, pasteStyle: false, bringToFront: false, sendToBack: false, zoomSelection: false, copyPng: true, selectAll: true })
 })
 
 test('the menu stays on screen', () => {

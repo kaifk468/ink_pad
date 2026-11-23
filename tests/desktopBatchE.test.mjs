@@ -22,10 +22,10 @@ const state = (extra = {}) => ({ hasSelection: false, clipboardHasItems: false, 
 const menu = (extra) => input.contextMenuEntries(state(extra))
 
 test('menu entries: sections, shortcut hints, disabled instead of hidden', () => {
-  const entries = menu({ hasSelection: true, clipboardHasItems: true, canEditText: true })
+  const entries = menu({ hasSelection: true, clipboardHasItems: true, canEditText: true, canCopyStyle: true, canPasteStyle: true })
   const hints = Object.fromEntries(entries.map((e) => [e.action, e.hint]))
-  assert.deepEqual(hints, { cut: 'Ctrl+X', copy: 'Ctrl+C', paste: 'Ctrl+V', duplicate: 'Ctrl+D', delete: 'Del', editText: 'Enter', bringToFront: 'Ctrl+Shift+]', sendToBack: 'Ctrl+Shift+[', zoomSelection: 'Shift+2', lock: 'Ctrl+Shift+L', copyPng: 'Shift+Alt+C', exportPng: '', exportSvg: '', selectAll: 'Ctrl+A' })
-  assert.deepEqual([...new Set(entries.map((e) => e.section))], ['clipboard', 'text', 'arrange', 'view', 'lock', 'export', 'select'])
+  assert.deepEqual(hints, { cut: 'Ctrl+X', copy: 'Ctrl+C', paste: 'Ctrl+V', duplicate: 'Ctrl+D', delete: 'Del', editText: 'Enter', copyStyle: 'Ctrl+Alt+C', pasteStyle: 'Ctrl+Alt+V', bringToFront: 'Ctrl+Shift+]', sendToBack: 'Ctrl+Shift+[', zoomSelection: 'Shift+2', lock: 'Ctrl+Shift+L', copyPng: 'Shift+Alt+C', exportPng: '', exportSvg: '', selectAll: 'Ctrl+A' })
+  assert.deepEqual([...new Set(entries.map((e) => e.section))], ['clipboard', 'text', 'style', 'arrange', 'view', 'lock', 'export', 'select'])
   for (const e of entries) assert.equal(e.disabled, false, e.action)
   const empty = menu({ pageHasItems: false })
   assert.ok(empty.find((e) => e.action === 'paste').disabled)
