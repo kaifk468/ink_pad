@@ -469,11 +469,15 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 
 /* Desktop mode: the same bottom dock with more one-click tools (text, shapes, HLD shapes, typed class); labels drop when it would not fit. */
 .tool-dock.desktop-dock { gap: 2px; }
-.desktop-dock .tool-button { min-width: 58px; }
+.desktop-dock .tool-button { min-width: 58px; position: relative; }
+/* Number-key badge, bottom-right like Excalidraw: tiny and muted; it never takes pointer events. */
+.desktop-dock .dock-key { position: absolute; right: 4px; bottom: 3px; font-family: inherit; font-size: 8px; font-weight: 600; line-height: 1; color: #9aa0ab; pointer-events: none; }
+.desktop-dock .tool-button.selected .dock-key { color: #6c7fd6; }
 @media (max-width: 1100px) {
   .desktop-dock .tool-button { min-width: 44px; height: 50px; }
   .desktop-dock .tool-button span { display: none; }
   .desktop-dock .tool-button svg { width: 22px; height: 22px; }
+  .desktop-dock .dock-key { right: 3px; bottom: 2px; }
   /* The wider desktop dock would cover the zoom control on a narrow window, so the zoom control sits above it. */
   .app-shell:has(.desktop-dock) .zoom-controls { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); }
 }

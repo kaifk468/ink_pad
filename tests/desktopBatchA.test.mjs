@@ -26,7 +26,7 @@ test('Shift+1, Shift+2, Ctrl+0, PageUp, PageDown and ? map to their commands', (
   assert.deepEqual(input.keyCommand(key('!', { code: 'Digit1', shiftKey: true }), 'desktop'), { kind: 'zoomFit' })
   assert.deepEqual(input.keyCommand(key('@', { code: 'Digit2', shiftKey: true }), 'desktop'), { kind: 'zoomSelection' })
   assert.deepEqual(input.keyCommand(key('&', { code: 'Digit1', shiftKey: true }), 'desktop'), { kind: 'zoomFit' }, 'other layouts')
-  assert.equal(input.keyCommand(key('1', { code: 'Digit1' }), 'desktop'), null)
+  assert.deepEqual(input.keyCommand(key('1', { code: 'Digit1' }), 'desktop'), { kind: 'tool', tool: 'select' }, 'a bare 1 is now the Select tool')
   assert.equal(input.keyCommand(key('!', { code: 'Digit1', shiftKey: true, ctrlKey: true }), 'desktop'), null)
   assert.deepEqual(input.keyCommand(key('0', { ctrlKey: true }), 'desktop'), { kind: 'zoomReset' })
   assert.deepEqual(input.keyCommand(key('PageUp'), 'desktop'), { kind: 'pagePrev' })

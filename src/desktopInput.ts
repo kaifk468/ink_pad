@@ -189,6 +189,9 @@ export type KeyCommand =
 
 export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', k: 'code', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
 
+/** Excalidraw-style number keys (bare digits, also on the numpad). Lasso, HLD shapes, class box and code keep letters only. */
+export const NUMBER_TOOL_KEYS: Record<string, KeyTool> = { '1': 'select', '2': 'rectangle', '3': 'diamond', '4': 'ellipse', '5': 'arrow', '6': 'line', '7': 'pen', '8': 'text', '9': 'connector', '0': 'eraser' }
+
 const QUICK_CREATE_KEYS: Record<string, 'right' | 'left' | 'up' | 'down'> = { ArrowRight: 'right', ArrowLeft: 'left', ArrowUp: 'up', ArrowDown: 'down' }
 const ARROW_KEYS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
 
@@ -250,7 +253,7 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
   if (key === 'PageUp') return event.repeat ? null : { kind: 'pagePrev' }
   if (key === 'PageDown') return event.repeat ? null : { kind: 'pageNext' }
   if (event.repeat) return null
-  const tool = TOOL_KEYS[key]
+  const tool = TOOL_KEYS[key] ?? NUMBER_TOOL_KEYS[key]
   return tool ? { kind: 'tool', tool } : null
 }
 

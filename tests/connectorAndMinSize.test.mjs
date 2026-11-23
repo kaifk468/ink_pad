@@ -41,7 +41,7 @@ const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
 test('desktop dock: bottom bar with direct shape tools, Text, Connector, HLD shapes and Class box, no Insert tray', async () => {
   const dock = await read('src/app/ToolDock.tsx')
   assert.match(dock, /className=\{`tool-dock\$\{props\.desktop \? ' desktop-dock' : ''\}`\}/)
-  for (const key of ['P', 'E', 'V', 'L', 'C', 'B']) assert.match(dock, new RegExp(`', '${key}'\\)\\}`), key)
+  for (const key of ['P', 'E', 'V', 'L', 'C', 'B']) assert.match(dock, new RegExp(`', '${key}'(, '\\d')?\\)\\}`), key)
   for (const kind of ['rectangle', 'diamond', 'ellipse', 'arrow', 'line']) assert.match(dock, new RegExp(`kind: '${kind}'`), kind)
   const desktop = dock.slice(dock.indexOf('if (props.desktop) {'), dock.lastIndexOf('  return ('))
   const tablet = dock.slice(dock.lastIndexOf('  return ('))

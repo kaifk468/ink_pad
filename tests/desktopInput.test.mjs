@@ -282,7 +282,37 @@ test('plain letters pick tools (any case), and only with no modifier and no auto
     assert.equal(input.keyCommand(key(k, { altKey: true }), 'desktop'), null)
     assert.equal(input.keyCommand(key(k, { shiftKey: true }), 'desktop') !== null, false, 'Shift+letter is not a tool key')
   }
-  for (const k of ['x', '1', ' ']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
+  for (const k of ['x', 'q', ' ']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
+})
+
+test('bare number keys pick tools like Excalidraw; Shift+1/2 still zoom; modifiers, repeat and Tablet mode ignore them', async () => {
+  const tools = { 1: 'select', 2: 'rectangle', 3: 'diamond', 4: 'ellipse', 5: 'arrow', 6: 'line', 7: 'pen', 8: 'text', 9: 'connector', 0: 'eraser' }
+  for (const [k, tool] of Object.entries(tools)) {
+    assert.deepEqual(input.keyCommand(key(k, { code: `Digit${k}` }), 'desktop'), { kind: 'tool', tool })
+    assert.deepEqual(input.keyCommand(key(k, { code: `Numpad${k}` }), 'desktop'), { kind: 'tool', tool }, 'numpad digit')
+    assert.equal(input.keyCommand(key(k), 'tablet'), null, 'tablet mode')
+    assert.equal(input.keyCommand(key(k, { repeat: true }), 'desktop'), null)
+    assert.equal(input.keyCommand(key(k, { altKey: true }), 'desktop'), null)
+    assert.equal(input.keyCommand(key(k, { shiftKey: true }), 'desktop') !== null && k !== '1' && k !== '2', false, 'Shift+digit is not a tool key')
+  }
+  assert.deepEqual(input.keyCommand(key('!', { code: 'Digit1', shiftKey: true }), 'desktop'), { kind: 'zoomFit' })
+  assert.deepEqual(input.keyCommand(key('@', { code: 'Digit2', shiftKey: true }), 'desktop'), { kind: 'zoomSelection' })
+  assert.deepEqual(input.keyCommand(key('1', { code: 'Digit1', shiftKey: true }), 'desktop'), { kind: 'zoomFit' })
+  assert.deepEqual(input.keyCommand(key('0', { ctrlKey: true }), 'desktop'), { kind: 'zoomReset' }, 'Ctrl+0 stays zoom reset')
+  assert.equal(input.keyCommand(key('2', { ctrlKey: true }), 'desktop'), null)
+  assert.equal(input.keyCommand(key('2', { metaKey: true }), 'desktop'), null)
+  // the dock shows each number as a corner badge and names both keys in the tooltip; the help table lists them
+  const dock = await readFile(new URL('../src/app/ToolDock.tsx', import.meta.url), 'utf8')
+  assert.match(dock, /<kbd className="dock-key" aria-hidden="true">\{num\}<\/kbd>/)
+  for (const n of ['0', '1', '7', '8', '9']) assert.match(dock, new RegExp(`badge\\('${n}'\\)`))
+  assert.match(dock, /\$\{label\} \(\$\{key\} or \$\{num\}\)/)
+  assert.match(dock, /\(\$\{key\}\$\{num \? ` or \$\{num\}` : ''\}\)/)
+  const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
+  assert.match(css, /\.desktop-dock \.dock-key \{[^}]*pointer-events: none/)
+  assert.match(css, /max-width: 1100px\) \{[^@]*\.desktop-dock \.dock-key/)
+  const shortcuts = await readFile(new URL('../src/desktopShortcuts.ts', import.meta.url), 'utf8')
+  assert.match(shortcuts, /keys: 'R or 2'/)
+  assert.match(shortcuts, /keys: 'E or 0'/)
 })
 
 test('Escape only deselects; with a modifier or held down it does nothing', () => {
