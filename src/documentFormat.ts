@@ -177,6 +177,15 @@ export function documentFileName(title: string): string {
 /** Version migrations: migrations[n] upgrades a version-n payload to n + 1. */
 const migrations: Record<number, (raw: Record<string, unknown>) => Record<string, unknown>> = {}
 
+const KNOWN_DOCUMENT_KEYS = new Set(['format', 'version', 'title', 'createdAt', 'updatedAt', 'page', 'items', 'pages'])
+const KNOWN_PAGE_KEYS = new Set(['template', 'background', 'spacing', 'sheetHeight', 'sketchy'])
+const lossyParses = new WeakSet<object>()
+
+/** True when the document came from parseDocument and the parse dropped damaged items or fields this version does not know, so saving it again would lose data. */
+export function isLossyParse(document: InkPadDocument): boolean {
+  return lossyParses.has(document)
+}
+
 export function parseDocument(text: string): ParseResult {
   let raw: unknown
   try {
@@ -213,11 +222,8 @@ export function parseDocument(text: string): ParseResult {
   }
 
   const now = new Date().toISOString()
-  return {
-    ok: true,
-    droppedItems,
-    migratedFrom: version < DOCUMENT_VERSION ? version : null,
-    document: {
+  const unknownFields = Object.keys(current).some((key) => !KNOWN_DOCUMENT_KEYS.has(key)) || Object.keys(page).some((key) => !KNOWN_PAGE_KEYS.has(key))
+  const parsed: InkPadDocument = {
       format: DOCUMENT_FORMAT,
       version: extraPages.length > 0 ? MULTI_PAGE_VERSION : DOCUMENT_VERSION,
       title: cleanTitle(current.title),
@@ -232,8 +238,9 @@ export function parseDocument(text: string): ParseResult {
       },
       items: finalItems,
       ...(extraPages.length > 0 ? { pages: extraPages } : {}),
-    },
   }
+  if (droppedItems > 0 || unknownFields) lossyParses.add(parsed)
+  return { ok: true, droppedItems, migratedFrom: version < DOCUMENT_VERSION ? version : null, document: parsed }
 }
 
 function cleanItems(candidates: unknown[]): { items: CanvasItem[]; dropped: number } {

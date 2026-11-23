@@ -19,6 +19,8 @@ export type StorageBackend = {
    * check for a newer version in the background; if there is one it calls onFresher with it (return false when it was not used).
    */
   load(id: string, onFresher?: (document: InkPadDocument) => boolean | void): Promise<InkPadDocument | null>
+  /** Only on backends that answer load() from a browser copy (Google Drive): loads the current stored version, never the copy. */
+  loadFresh?(id: string): Promise<InkPadDocument | null>
   /** The folder and diagram list from the last time it was fetched, for showing something instantly while the new one loads. */
   listCached?(): Promise<{ documents: DocumentSummary[]; folders: FolderRecord[] } | null>
   /** Saves a diagram. id null = new diagram in folderId. Returns the id, which can change when the title or location changes. */

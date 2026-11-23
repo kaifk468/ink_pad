@@ -81,7 +81,7 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
         if (event.key === 'Escape') { event.preventDefault(); onCancel() }
-        else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey || (editor.connectorId !== undefined && !event.shiftKey))) { event.preventDefault(); onCommit() }
+        else if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229 && (event.ctrlKey || event.metaKey || (editor.connectorId !== undefined && !event.shiftKey))) { event.preventDefault(); onCommit() }
       }}
     />
   )

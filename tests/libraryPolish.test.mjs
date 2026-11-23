@@ -46,6 +46,6 @@ test('Library wiring: recent row, rename, breadcrumb, status, empty folder, keys
   assert.match(app, /command\.kind === 'library' && libraryOpen\) return true/)
   const docs = read('../src/app/useDocuments.ts')
   assert.match(docs, /const renameStoredDiagram = async/)
-  assert.match(docs, /if \(docIdRef\.current === id\) \{ renameDiagram\(title\)/)
-  assert.match(docs, /backend\.save\(id, \{ \.\.\.stored, title: cleanTitle\(title\) \}, null\)/)
+  assert.match(docs, /if \(docIdRef\.current === id\) return renameOpen\(\)/)
+  assert.match(docs, /backend\.save\(id, \{ \.\.\.stored, title: cleaned \}, null\)/)
 })

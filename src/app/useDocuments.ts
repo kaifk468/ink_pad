@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CanvasItem } from '../canvasModel'
-import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
+import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, isLossyParse, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
 import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
 import { THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
 import { moveStarred, readStarred, starsToUpload, toggleStarred, writeStarred } from '../starred'
@@ -570,40 +570,61 @@ export function useDocuments(host: DocumentHost) {
   }
 
   /**
-   * Renames a diagram from the Library. The open diagram uses the same path as the in-canvas title edit. Any other diagram is loaded,
-   * given the new title and saved through the storage's own save (the same call autosave makes), so Drive, device folder and browser
-   * storage all rename it as they do for a title edit. Returns false (with a notice) when it could not be done.
+   * Renames a diagram from the Library. The open diagram uses the same path as the in-canvas title edit. Any other diagram is loaded
+   * (fresh from the storage where it keeps a browser copy), given the new title and saved through the storage's own save (the same call
+   * autosave makes). The whole thing runs inside the save chain so it can never overlap an autosave or another rename, and it checks again
+   * inside the chain whether the diagram has meanwhile become the open one. A diagram whose file has damaged items or fields this version
+   * does not know is not rewritten (open it first). Returns false (with a notice) when it could not be done, 'unchanged' when the storage
+   * kept the old name.
    */
-  const renameStoredDiagram = async (id: string, title: string): Promise<boolean> => {
+  const renameStoredDiagram = async (id: string, title: string): Promise<boolean | 'unchanged'> => {
     setFileNotice(null)
-    if (docIdRef.current === id) { renameDiagram(title); void refreshLibrary(); return true }
-    let ok = true
-    try {
-      await persistNow()
-      const backend = backendRef.current
-      if (await keeper.recordFor(backend.kind, id)) throw new Error('That diagram has changes that are not saved yet. Open it first, then rename it.')
-      const stored = await backend.load(id)
-      if (!stored) throw new Error('That diagram no longer exists.')
-      const newId = await backend.save(id, { ...stored, title: cleanTitle(title) }, null)
-      if (backendRef.current === backend && newId !== id) {
-        void keeper.rekey(backend.kind, id, newId)
-        changeLocalStars((ids) => moveStarred(ids, id, newId))
-        void deleteThumbnail(id).catch(() => undefined)
-        setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
-      }
-    } catch (error) {
-      setFileNotice(errorText(error, 'Could not rename that diagram.'))
-      ok = false
+    const cleaned = cleanTitle(title)
+    const renameOpen = async (): Promise<boolean> => {
+      await renameDiagram(title)
+      await refreshLibrary()
+      return true
     }
-    void refreshLibrary()
-    return ok
+    if (docIdRef.current === id) return renameOpen()
+    let outcome = true as boolean | 'unchanged' | 'open'
+    const body = async () => {
+      try {
+        if (docIdRef.current === id) { outcome = 'open'; return }
+        const backend = backendRef.current
+        if (await keeper.recordFor(backend.kind, id)) throw new Error('That diagram has changes that are not saved yet. Open it first, then rename it.')
+        const stored = await (backend.loadFresh ? backend.loadFresh(id) : backend.load(id))
+        if (!stored) throw new Error('That diagram no longer exists.')
+        if (isLossyParse(stored)) throw new Error('Open this diagram first, then rename it.')
+        if (docIdRef.current === id) { outcome = 'open'; return }
+        const newId = await backend.save(id, { ...stored, title: cleaned }, null)
+        if (backendRef.current === backend && newId !== id) {
+          void keeper.rekey(backend.kind, id, newId)
+          changeLocalStars((ids) => moveStarred(ids, id, newId))
+          void deleteThumbnail(id).catch(() => undefined)
+          setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
+        } else if (backend.kind === 'device' && newId === id && stored.title !== cleaned) {
+          // the file name already stands for this title (copy suffix rule, "X (2)" and "X"): nothing changed
+          outcome = 'unchanged'
+          setFileNotice(`The name stays “${stored.title}” because this folder already has another “${cleaned}”.`)
+        }
+      } catch (error) {
+        setFileNotice(errorText(error, 'Could not rename that diagram.'))
+        outcome = false
+      }
+    }
+    const run = saveChainRef.current.then(body, body)
+    saveChainRef.current = run
+    await run
+    if (outcome === 'open') return renameOpen()
+    await refreshLibrary()
+    return outcome
   }
 
-  const renameDiagram = (title: string) => {
+  const renameDiagram = (title: string): Promise<void> => {
     const cleaned = cleanTitle(title)
     docMetaRef.current = { ...docMetaRef.current, title: cleaned }
     setDocTitle(cleaned)
-    if (docIdRef.current || hasAnyItems()) void persistNow()
+    return docIdRef.current || hasAnyItems() ? persistNow() : Promise.resolve()
   }
 
   const exportDocumentFile = () => {

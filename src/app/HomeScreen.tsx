@@ -25,7 +25,7 @@ type HomeScreenProps = {
   onImportFile: (file: File) => void
   onCreateFolder: (name: string, parentId: string | null) => Promise<boolean> | void
   onRenameFolder: (id: string, name: string) => Promise<boolean> | void
-  onRenameDiagram: (id: string, title: string) => Promise<boolean> | void
+  onRenameDiagram: (id: string, title: string) => Promise<boolean | 'unchanged'> | void
   onDeleteFolder: (id: string) => Promise<boolean> | void
   onMoveDiagram: (docId: string, folderId: string | null) => Promise<boolean> | void
   onDeleteDiagram: (id: string) => Promise<boolean> | void
@@ -66,11 +66,15 @@ export function HomeScreen(props: HomeScreenProps) {
     if (statusTimer.current !== null) window.clearTimeout(statusTimer.current)
     statusTimer.current = window.setTimeout(() => { statusTimer.current = null; setStatus(null) }, STATUS_MS)
   }
+  const clearStatus = () => {
+    if (statusTimer.current !== null) { window.clearTimeout(statusTimer.current); statusTimer.current = null }
+    setStatus(null)
+  }
   useEffect(() => () => { if (statusTimer.current !== null) window.clearTimeout(statusTimer.current) }, [])
   /** Runs a library action and shows the message only when it worked (failures show the alert notice instead). */
-  const act = async (run: () => Promise<boolean> | void, message: string) => {
+  const act = async (run: () => Promise<boolean | 'unchanged'> | void, message: string) => {
     const result = await run()
-    if (result !== false) showStatus(message)
+    if (result !== false && result !== 'unchanged') showStatus(message)
   }
   const titleOf = (id: string) => library.find((entry) => entry.id === id)?.title || 'Untitled diagram'
 
@@ -147,18 +151,18 @@ export function HomeScreen(props: HomeScreenProps) {
     <div className="home-screen" role="dialog" aria-modal="true" aria-label="Library">
       <aside className="home-side" aria-label="Folders">
         <div className="home-brand"><span className="brand-mark" aria-hidden="true"><span /></span><strong>Ink Pad</strong></div>
-        <button type="button" className={`home-nav${view === 'all' && here === null ? ' selected' : ''}`} onClick={() => { setView('all'); setSelected(null); setRenaming(false) }}>
+        <button type="button" className={`home-nav${view === 'all' && here === null ? ' selected' : ''}`} onClick={() => { setView('all'); setSelected(null); setRenaming(false); clearStatus() }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
           <span className="home-nav-name">All diagrams</span><span className="home-count">{library.length}</span>
         </button>
-        <button type="button" className={`home-nav${view === 'starred' ? ' selected' : ''}`} onClick={() => { setView('starred'); setRenaming(false) }}>
+        <button type="button" className={`home-nav${view === 'starred' ? ' selected' : ''}`} onClick={() => { setView('starred'); setRenaming(false); clearStatus() }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l2.4 5 5.4.7-4 3.8 1 5.4-4.8-2.7-4.8 2.7 1-5.4-4-3.8 5.4-.7z"/></svg>
           <span className="home-nav-name">Starred</span><span className="home-count">{starredCount}</span>
         </button>
         <div className="home-side-title">Folders</div>
         <nav className="home-tree" aria-label="Folder tree">
           {tree.map(({ folder, depth }) => (
-            <button key={folder.id} type="button" className={`home-nav${here === folder.id ? ' selected' : ''}`} style={{ paddingLeft: 12 + depth * 18 }} onClick={() => { setView('all'); setSelected(folder.id); setRenaming(false) }}>
+            <button key={folder.id} type="button" className={`home-nav${here === folder.id ? ' selected' : ''}`} style={{ paddingLeft: 12 + depth * 18 }} onClick={() => { setView('all'); setSelected(folder.id); setRenaming(false); clearStatus() }}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
               <span className="home-nav-name">{folder.name}</span><span className="home-count">{countInFolder(library, folders, folder.id)}</span>
             </button>
@@ -239,7 +243,7 @@ export function HomeScreen(props: HomeScreenProps) {
             </div>
             : <h2>{trail.length > 1 && view === 'all'
               ? <>{trail.map((folder, index) => index < trail.length - 1
-                ? <span key={folder.id}><button type="button" className="home-crumb" onClick={() => { setSelected(folder.id); setRenaming(false) }}>{folder.name}</button><span className="home-crumb-sep" aria-hidden="true"> › </span></span>
+                ? <span key={folder.id}><button type="button" className="home-crumb" onClick={() => { setSelected(folder.id); setRenaming(false); clearStatus() }}>{folder.name}</button><span className="home-crumb-sep" aria-hidden="true"> › </span></span>
                 : <span key={folder.id}>{folder.name}</span>)}</>
               : heading} <span className="home-heading-count">({shown.length})</span></h2>}
           {hereFolder && !renaming && <span className="home-folder-actions">

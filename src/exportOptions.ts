@@ -1,4 +1,5 @@
 import { canvasItemKey, type CanvasItem } from './canvasModel'
+import { cleanConnectorLabel } from './connectorLabel'
 
 /**
  * Pure helpers for image export: which items go into the picture, whether the hand-drawn font must be embedded,
@@ -21,7 +22,8 @@ export function isSelectionExport(keys: ReadonlySet<string> | null | undefined):
 
 /** True when some exported label is set in Excalifont (the only bundled web font, so the only one worth embedding). */
 export function usesExcalifont(items: readonly CanvasItem[]): boolean {
-  return items.some((item) => item.kind === 'text' && item.fontFamily === 'excalifont' && item.text.trim().length > 0)
+  return items.some((item) => (item.kind === 'text' && item.fontFamily === 'excalifont' && item.text.trim().length > 0)
+    || (item.kind === 'connector' && cleanConnectorLabel(item.label) !== undefined))
 }
 
 /** The @font-face rule that carries the bundled Excalifont inside an SVG. */

@@ -264,6 +264,9 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
       }
       return (await download(id))?.document ?? null
     },
+    async loadFresh(id) {
+      return (await download(id))?.document ?? null
+    },
     async save(id, document: InkPadDocument, folderId) {
       const content = stringifyDocument(document)
       if (!id) {
