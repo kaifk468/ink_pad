@@ -74,7 +74,7 @@ test('choosing a preset starts a blank diagram with that page style in the chose
   const [home, app, hook] = await Promise.all([read('app/HomeScreen.tsx'), read('App.tsx'), read('app/useDocuments.ts')])
   assert.match(home, /props\.onNewDiagram\(here, preset\.template\)/)
   assert.match(home, /role="menu" aria-label="New diagram"/)
-  assert.match(home, /if \(newMenuOpenRef\.current\) setNewMenuOpen\(false\)\s+else closeRef\.current\(\)/)
+  assert.match(home, /if \(newMenuOpenRef\.current\) setNewMenuOpen\(false\)\s+else if [^/]*else closeRef\.current\(\)/)
   assert.match(app, /onNewDiagram=\{\(folderId, template\) => \{ setLibraryOpen\(false\); void newDiagramIn\(folderId, template\) \}\}/)
   assert.match(hook, /const newDiagramIn = async \(folderId: string \| null, template\?: DocumentPageTemplate\) => \{\s+await newDiagram\(template\)/)
   assert.match(hook, /template: template \?\? page\.template/)

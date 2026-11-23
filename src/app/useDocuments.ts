@@ -471,7 +471,8 @@ export function useDocuments(host: DocumentHost) {
     }
   }
 
-  const deleteStoredDiagram = async (id: string) => {
+  const deleteStoredDiagram = async (id: string): Promise<boolean> => {
+    let ok = true
     try {
       await backendRef.current.remove(id)
       void keeper.forget(backendRef.current.kind, id)
@@ -481,8 +482,10 @@ export function useDocuments(host: DocumentHost) {
       setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
     } catch {
       setFileNotice('Could not delete that diagram.')
+      ok = false
     }
     void refreshLibrary()
+    return ok
   }
 
   /** Start a blank diagram that will be saved inside the given folder (null = top level). */
@@ -491,18 +494,22 @@ export function useDocuments(host: DocumentHost) {
     pendingFolderRef.current = folderId
   }
 
-  const createFolder = async (name: string, parentId: string | null) => {
+  const createFolder = async (name: string, parentId: string | null): Promise<boolean> => {
     setFileNotice(null)
+    let ok = true
     try {
       await backendRef.current.createFolder(name, parentId)
     } catch (error) {
       setFileNotice(errorText(error, 'Could not create that folder.'))
+      ok = false
     }
     void refreshLibrary()
+    return ok
   }
 
-  const renameFolder = async (id: string, name: string) => {
+  const renameFolder = async (id: string, name: string): Promise<boolean> => {
     setFileNotice(null)
+    let ok = true
     try {
       const moved = await backendRef.current.renameFolder(id, name)
       if (moved) {
@@ -518,13 +525,16 @@ export function useDocuments(host: DocumentHost) {
       }
     } catch (error) {
       setFileNotice(errorText(error, 'Could not rename that folder.'))
+      ok = false
     }
     void refreshLibrary()
+    return ok
   }
 
   /** Deletes the folder, its subfolders and every diagram inside them. The UI asks for confirmation first. */
-  const deleteFolder = async (id: string) => {
+  const deleteFolder = async (id: string): Promise<boolean> => {
     setFileNotice(null)
+    let ok = true
     try {
       const ids = new Set(folderAndDescendantIds(folders, id))
       const deleted = await backendRef.current.deleteFolder(id)
@@ -533,12 +543,15 @@ export function useDocuments(host: DocumentHost) {
       if (pendingFolderRef.current && ids.has(pendingFolderRef.current)) pendingFolderRef.current = null
     } catch (error) {
       setFileNotice(errorText(error, 'Could not delete that folder.'))
+      ok = false
     }
     void refreshLibrary()
+    return ok
   }
 
-  const moveDiagram = async (docId: string, folderId: string | null) => {
+  const moveDiagram = async (docId: string, folderId: string | null): Promise<boolean> => {
     setFileNotice(null)
+    let ok = true
     try {
       await persistNow()
       const newId = await backendRef.current.move(docId, folderId)
@@ -550,8 +563,40 @@ export function useDocuments(host: DocumentHost) {
       }
     } catch (error) {
       setFileNotice(errorText(error, 'Could not move that diagram.'))
+      ok = false
     }
     void refreshLibrary()
+    return ok
+  }
+
+  /**
+   * Renames a diagram from the Library. The open diagram uses the same path as the in-canvas title edit. Any other diagram is loaded,
+   * given the new title and saved through the storage's own save (the same call autosave makes), so Drive, device folder and browser
+   * storage all rename it as they do for a title edit. Returns false (with a notice) when it could not be done.
+   */
+  const renameStoredDiagram = async (id: string, title: string): Promise<boolean> => {
+    setFileNotice(null)
+    if (docIdRef.current === id) { renameDiagram(title); void refreshLibrary(); return true }
+    let ok = true
+    try {
+      await persistNow()
+      const backend = backendRef.current
+      if (await keeper.recordFor(backend.kind, id)) throw new Error('That diagram has changes that are not saved yet. Open it first, then rename it.')
+      const stored = await backend.load(id)
+      if (!stored) throw new Error('That diagram no longer exists.')
+      const newId = await backend.save(id, { ...stored, title: cleanTitle(title) }, null)
+      if (backendRef.current === backend && newId !== id) {
+        void keeper.rekey(backend.kind, id, newId)
+        changeLocalStars((ids) => moveStarred(ids, id, newId))
+        void deleteThumbnail(id).catch(() => undefined)
+        setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
+      }
+    } catch (error) {
+      setFileNotice(errorText(error, 'Could not rename that diagram.'))
+      ok = false
+    }
+    void refreshLibrary()
+    return ok
   }
 
   const renameDiagram = (title: string) => {
@@ -1051,7 +1096,7 @@ export function useDocuments(host: DocumentHost) {
     filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
-    scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
+    scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   }
 }

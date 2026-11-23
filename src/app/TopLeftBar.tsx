@@ -208,7 +208,7 @@ export function TopLeftBar(props: TopLeftBarProps) {
           </>}
         </div>}
       </div>
-      <button className={`top-icon-button library-toggle${props.libraryOpen ? ' selected' : ''}`} type="button" aria-label="Library" aria-pressed={props.libraryOpen} title="Library: all diagrams and folders" onClick={props.onOpenLibrary}>
+      <button className={`top-icon-button library-toggle${props.libraryOpen ? ' selected' : ''}`} type="button" aria-label="Library" aria-pressed={props.libraryOpen} title="Library: all diagrams and folders (Ctrl+O on a computer)" onClick={props.onOpenLibrary}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
       </button>
       {editingTitle

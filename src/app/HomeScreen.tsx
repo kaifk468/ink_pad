@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DocumentSummary, FolderRecord } from '../documentStore'
-import { flattenFolders } from '../folderTree'
-import { NEW_DIAGRAM_PRESETS, countInFolder, describeEdited, folderLabel, searchLibrary, type LibraryLayout } from '../libraryView'
+import { cleanFolderName, flattenFolders, folderPath } from '../folderTree'
+import { NEW_DIAGRAM_PRESETS, RECENT_COUNT, RECENT_MIN_LIBRARY, countInFolder, describeEdited, folderLabel, recentDiagrams, searchLibrary, type LibraryLayout } from '../libraryView'
 import type { PageTemplate } from '../pageTemplates'
 
 type HomeScreenProps = {
@@ -23,14 +23,16 @@ type HomeScreenProps = {
   onOpenDiagram: (id: string) => void
   onNewDiagram: (folderId: string | null, template: PageTemplate) => void
   onImportFile: (file: File) => void
-  onCreateFolder: (name: string, parentId: string | null) => void
-  onRenameFolder: (id: string, name: string) => void
-  onDeleteFolder: (id: string) => void
-  onMoveDiagram: (docId: string, folderId: string | null) => void
-  onDeleteDiagram: (id: string) => void
+  onCreateFolder: (name: string, parentId: string | null) => Promise<boolean> | void
+  onRenameFolder: (id: string, name: string) => Promise<boolean> | void
+  onRenameDiagram: (id: string, title: string) => Promise<boolean> | void
+  onDeleteFolder: (id: string) => Promise<boolean> | void
+  onMoveDiagram: (docId: string, folderId: string | null) => Promise<boolean> | void
+  onDeleteDiagram: (id: string) => Promise<boolean> | void
   onChangeStorage: () => void
 }
 
+const STATUS_MS = 3000
 const LAYOUT_KEY = 'inkpad.libraryLayout'
 
 function readLayout(): LibraryLayout {
@@ -54,6 +56,23 @@ export function HomeScreen(props: HomeScreenProps) {
   const [movingId, setMovingId] = useState<string | null>(null)
   const [newMenuOpen, setNewMenuOpen] = useState(false)
   const newMenuRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const [renamingDiagramId, setRenamingDiagramId] = useState<string | null>(null)
+  const [diagramDraft, setDiagramDraft] = useState('')
+  const [status, setStatus] = useState<string | null>(null)
+  const statusTimer = useRef<number | null>(null)
+  const showStatus = (text: string) => {
+    setStatus(text)
+    if (statusTimer.current !== null) window.clearTimeout(statusTimer.current)
+    statusTimer.current = window.setTimeout(() => { statusTimer.current = null; setStatus(null) }, STATUS_MS)
+  }
+  useEffect(() => () => { if (statusTimer.current !== null) window.clearTimeout(statusTimer.current) }, [])
+  /** Runs a library action and shows the message only when it worked (failures show the alert notice instead). */
+  const act = async (run: () => Promise<boolean> | void, message: string) => {
+    const result = await run()
+    if (result !== false) showStatus(message)
+  }
+  const titleOf = (id: string) => library.find((entry) => entry.id === id)?.title || 'Untitled diagram'
 
   // If the chosen folder disappears (deleted), fall back to all diagrams.
   const here = view === 'all' && selected && folders.some((folder) => folder.id === selected) ? selected : null
@@ -72,8 +91,16 @@ export function HomeScreen(props: HomeScreenProps) {
   useEffect(() => {
     // Escape closes the New menu first, then the Library.
     const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const typing = Boolean(target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)))
+      if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault()
+        searchRef.current?.focus()
+        return
+      }
       if (event.key !== 'Escape') return
       if (newMenuOpenRef.current) setNewMenuOpen(false)
+      else if (target === searchRef.current && searchRef.current?.value) { setQuery(''); event.preventDefault() }
       else closeRef.current()
     }
     window.addEventListener('keydown', onKey)
@@ -92,8 +119,28 @@ export function HomeScreen(props: HomeScreenProps) {
     setLayout(value)
     try { window.localStorage.setItem(LAYOUT_KEY, value) } catch { /* per-viewer convenience only */ }
   }
-  const submitCreate = () => { props.onCreateFolder(draftName, here); setCreating(false); setDraftName('') }
-  const submitRename = () => { if (here) props.onRenameFolder(here, draftName); setRenaming(false); setDraftName('') }
+  const submitCreate = () => {
+    const name = cleanFolderName(draftName)
+    void act(() => props.onCreateFolder(draftName, here), `Folder “${name}” created`)
+    setCreating(false); setDraftName('')
+  }
+  const submitDiagramRename = (id: string) => {
+    const title = diagramDraft.replace(/\s+/g, ' ').trim()
+    setRenamingDiagramId(null)
+    if (!title || title === titleOf(id)) return
+    void act(() => props.onRenameDiagram(id, title), `Renamed to “${title.slice(0, 80)}”`)
+  }
+  const moveTo = (entry: DocumentSummary, folderId: string | null) => {
+    setMovingId(null)
+    void act(() => props.onMoveDiagram(entry.id, folderId), `Moved “${entry.title || 'Untitled diagram'}” to ${folderId ? folders.find((folder) => folder.id === folderId)?.name ?? 'folder' : 'All diagrams'}`)
+  }
+  const showRecent = view === 'all' && here === null && !query.trim() && library.length > RECENT_MIN_LIBRARY
+  const recent = useMemo(() => (showRecent ? recentDiagrams(library, RECENT_COUNT) : []), [library, showRecent])
+  const trail = folderPath(folders, here)
+  const submitRename = () => {
+    if (here) { const name = cleanFolderName(draftName); void act(() => props.onRenameFolder(here, draftName), `Renamed to “${name}”`) }
+    setRenaming(false); setDraftName('')
+  }
   const heading = view === 'starred' ? 'Starred' : hereFolder ? hereFolder.name : 'All diagrams'
 
   return (
@@ -141,7 +188,7 @@ export function HomeScreen(props: HomeScreenProps) {
           </button>
           <label className="home-search">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/></svg>
-            <input type="search" aria-label="Search diagrams" placeholder="Search diagrams or folders" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <input ref={searchRef} type="search" aria-label="Search diagrams" placeholder="Search diagrams or folders (press /)" value={query} onChange={(event) => setQuery(event.target.value)} />
           </label>
           <button type="button" className="home-secondary" onClick={() => importRef.current?.click()}>Import .inkpad</button>
           <div ref={newMenuRef} className="home-new">
@@ -163,11 +210,12 @@ export function HomeScreen(props: HomeScreenProps) {
         </header>
 
         {props.notice && <p className="home-notice" role="alert">{props.notice}</p>}
+        {status && <p className="home-status" role="status">{status}</p>}
 
         {confirmFolder && <div className="home-confirm" role="alertdialog" aria-label="Delete folder">
           <p>Delete “{confirmFolder.name}” and everything inside it? This removes {countInFolder(library, folders, confirmFolder.id)} diagram{countInFolder(library, folders, confirmFolder.id) === 1 ? '' : 's'} and any subfolders. It cannot be undone.</p>
           <div className="home-confirm-actions">
-            <button type="button" className="home-danger" onClick={() => { props.onDeleteFolder(confirmFolder.id); setConfirmFolderId(null) }}>Delete folder</button>
+            <button type="button" className="home-danger" onClick={() => { const gone = confirmFolder; setConfirmFolderId(null); void act(() => props.onDeleteFolder(gone.id), `Deleted “${gone.name}”`) }}>Delete folder</button>
             <button type="button" onClick={() => setConfirmFolderId(null)}>Cancel</button>
           </div>
         </div>}
@@ -175,9 +223,9 @@ export function HomeScreen(props: HomeScreenProps) {
         {moveTarget && <div className="home-confirm" role="dialog" aria-label={`Move ${moveTarget.title}`}>
           <p>Move “{moveTarget.title || 'Untitled diagram'}” to:</p>
           <ul className="home-move-list">
-            <li><button type="button" className={moveTarget.folderId === null ? 'selected' : undefined} onClick={() => { props.onMoveDiagram(moveTarget.id, null); setMovingId(null) }}>All diagrams (top level)</button></li>
+            <li><button type="button" className={moveTarget.folderId === null ? 'selected' : undefined} onClick={() => moveTo(moveTarget, null)}>All diagrams (top level)</button></li>
             {tree.map(({ folder, depth }) => (
-              <li key={folder.id}><button type="button" style={{ paddingLeft: 12 + depth * 18 }} className={moveTarget.folderId === folder.id ? 'selected' : undefined} onClick={() => { props.onMoveDiagram(moveTarget.id, folder.id); setMovingId(null) }}>{folder.name}</button></li>
+              <li key={folder.id}><button type="button" style={{ paddingLeft: 12 + depth * 18 }} className={moveTarget.folderId === folder.id ? 'selected' : undefined} onClick={() => moveTo(moveTarget, folder.id)}>{folder.name}</button></li>
             ))}
           </ul>
           <div className="home-confirm-actions"><button type="button" onClick={() => setMovingId(null)}>Cancel</button></div>
@@ -189,7 +237,11 @@ export function HomeScreen(props: HomeScreenProps) {
               <input type="text" aria-label="Folder name" autoFocus maxLength={60} value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') submitRename(); if (event.key === 'Escape') { event.stopPropagation(); setRenaming(false) } }} />
               <button type="button" onClick={submitRename}>Save</button>
             </div>
-            : <h2>{heading} <span className="home-heading-count">({shown.length})</span></h2>}
+            : <h2>{trail.length > 1 && view === 'all'
+              ? <>{trail.map((folder, index) => index < trail.length - 1
+                ? <span key={folder.id}><button type="button" className="home-crumb" onClick={() => { setSelected(folder.id); setRenaming(false) }}>{folder.name}</button><span className="home-crumb-sep" aria-hidden="true"> › </span></span>
+                : <span key={folder.id}>{folder.name}</span>)}</>
+              : heading} <span className="home-heading-count">({shown.length})</span></h2>}
           {hereFolder && !renaming && <span className="home-folder-actions">
             <button type="button" onClick={() => { setRenaming(true); setDraftName(hereFolder.name) }}>Rename folder</button>
             <button type="button" onClick={() => setConfirmFolderId(hereFolder.id)}>Delete folder</button>
@@ -204,6 +256,21 @@ export function HomeScreen(props: HomeScreenProps) {
           </span>
         </div>
 
+        {showRecent && <section className="home-recent" aria-label="Recent">
+          <h3>Recent</h3>
+          <ul>
+            {recent.map((entry) => (
+              <li key={entry.id}>
+                <button type="button" aria-label={`Open recent ${entry.title || 'Untitled diagram'}`} onClick={() => props.onOpenDiagram(entry.id)}>
+                  <span className="home-recent-preview" aria-hidden="true">{props.thumbnails[entry.id] ? <img src={props.thumbnails[entry.id]} alt="" draggable={false} /> : <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>}</span>
+                  <span className="home-card-title">{entry.title || 'Untitled diagram'}</span>
+                  <span className="home-card-meta">{describeEdited(entry.updatedAt) || 'earlier'}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>}
+
         <ul className={`home-cards home-${layout}`} aria-label="Diagrams">
           {shown.map((entry) => {
             const isStarred = starredSet.has(entry.id)
@@ -216,24 +283,33 @@ export function HomeScreen(props: HomeScreenProps) {
                       ? <img src={props.thumbnails[entry.id]} alt="" draggable={false} />
                       : <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>}
                   </span>
-                  <span className="home-card-title">{entry.title || 'Untitled diagram'}</span>
+                  {renamingDiagramId !== entry.id && <span className="home-card-title">{entry.title || 'Untitled diagram'}</span>}
                   <span className="home-card-folder">{where || 'No folder'}</span>
                   <span className="home-card-meta">{entry.id === props.currentId ? 'Open now · ' : ''}Edited {describeEdited(entry.updatedAt) || 'earlier'} · {entry.itemCount} item{entry.itemCount === 1 ? '' : 's'}{entry.pageCount && entry.pageCount > 1 ? ` · ${entry.pageCount} pages` : ''}</span>
                 </button>
                 <button type="button" className={`home-star${isStarred ? ' on' : ''}`} aria-pressed={isStarred} aria-label={`${isStarred ? 'Unstar' : 'Star'} ${entry.title || 'Untitled diagram'}`} onClick={() => props.onToggleStar(entry.id)}>
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l2.4 5 5.4.7-4 3.8 1 5.4-4.8-2.7-4.8 2.7 1-5.4-4-3.8 5.4-.7z"/></svg>
                 </button>
+                {renamingDiagramId === entry.id && <div className="home-inline-edit home-card-rename">
+                  <input type="text" aria-label="Diagram name" autoFocus maxLength={80} value={diagramDraft} onChange={(event) => setDiagramDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') submitDiagramRename(entry.id); if (event.key === 'Escape') { event.stopPropagation(); setRenamingDiagramId(null) } }} />
+                  <button type="button" onClick={() => submitDiagramRename(entry.id)}>Save</button>
+                </div>}
                 <span className="home-card-actions">
+                  <button type="button" aria-label={`Rename ${entry.title || 'Untitled diagram'}`} onClick={() => { setRenamingDiagramId(entry.id); setDiagramDraft(entry.title || '') }}>Rename</button>
                   <button type="button" aria-label={`Move ${entry.title || 'Untitled diagram'}`} onClick={() => setMovingId(entry.id)}>Move</button>
                   {confirmDiagramId === entry.id
-                    ? <button type="button" className="home-danger" onClick={() => { setConfirmDiagramId(null); props.onDeleteDiagram(entry.id) }}>Delete?</button>
+                    ? <button type="button" className="home-danger" onClick={() => { setConfirmDiagramId(null); void act(() => props.onDeleteDiagram(entry.id), `Deleted “${entry.title || 'Untitled diagram'}”`) }}>Delete?</button>
                     : <button type="button" aria-label={`Delete ${entry.title || 'Untitled diagram'}`} onClick={() => setConfirmDiagramId(entry.id)}>Delete</button>}
                 </span>
               </li>
             )
           })}
         </ul>
-        {shown.length === 0 && <p className="home-empty">{query.trim() ? 'No diagram matches your search.' : view === 'starred' ? `No starred diagrams yet. Tap the star on a diagram to keep it here${props.starsSync ? ' (stars sync through Google Drive)' : ' (stars stay on this device)'}.` : here ? 'This folder is empty.' : 'Nothing saved yet. Tap “New diagram”, pick a sheet and start writing; it saves by itself.'}</p>}
+        {shown.length === 0 && here && !query.trim() && view === 'all' && <div className="home-empty">
+          <p>This folder is empty.</p>
+          <button type="button" className="home-primary" onClick={() => props.onNewDiagram(here, NEW_DIAGRAM_PRESETS[0].template)}>New diagram here</button>
+        </div>}
+        {shown.length === 0 && !(here && !query.trim() && view === 'all') && <p className="home-empty">{query.trim() ? 'No diagram matches your search.' : view === 'starred' ? `No starred diagrams yet. Tap the star on a diagram to keep it here${props.starsSync ? ' (stars sync through Google Drive)' : ' (stars stay on this device)'}.` : here ? 'This folder is empty.' : 'Nothing saved yet. Tap “New diagram”, pick a sheet and start writing; it saves by itself.'}</p>}
       </main>
     </div>
   )

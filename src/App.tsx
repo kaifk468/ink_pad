@@ -361,7 +361,7 @@ function App() {
     filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
-    scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
+    scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   } = useDocuments({
     getItems: () => strokesRef.current,
@@ -4033,8 +4033,14 @@ function App() {
   }, [renderAll])
 
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
+  const toggleLibrary = () => {
+    void refreshLibrary()
+    if (!libraryOpen) window.setTimeout(() => void captureThumbnail(), 250) // after the Library has painted
+    setLibraryOpen((open) => !open)
+  }
   const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
   keyActionsRef.current = (command) => {
+    if (command.kind === 'library' && libraryOpen) return true // the Library is already open: only keep the browser's open dialog away
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (shortcutHelpOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
     if (codeEditor && liveCodeEditor()) return false
@@ -4055,6 +4061,7 @@ function App() {
     switch (command.kind) {
       case 'undo': undo(); return true
       case 'redo': redo(); return true
+      case 'library': toggleLibrary(); return true
       case 'zoomIn': if (!navigationSettingsRef.current.zoomLocked) zoomBy(ZOOM_STEP); return true
       case 'zoomOut': if (!navigationSettingsRef.current.zoomLocked) zoomBy(1 / ZOOM_STEP); return true
       case 'zoomReset': zoomToActualSize(); return true
@@ -4318,11 +4325,7 @@ function App() {
           libraryOpen={libraryOpen}
           statusText={statusLabel(saveStatus, storage.kind)}
           statusOk={saveStatus === 'saved'}
-          onOpenLibrary={() => {
-            void refreshLibrary()
-            if (!libraryOpen) window.setTimeout(() => void captureThumbnail(), 250) // after the Library has painted
-            setLibraryOpen((open) => !open)
-          }}
+          onOpenLibrary={toggleLibrary}
           storage={storage}
           onOpenStorage={() => setStoragePanelOpen(true)}
           diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open), onFillTestInk: fillTestInk, onRemoveTestInk: removeTestInk }}
@@ -4459,11 +4462,12 @@ function App() {
         onOpenDiagram={(id) => { setLibraryOpen(false); void openStoredDiagram(id) }}
         onNewDiagram={(folderId, template) => { setLibraryOpen(false); void newDiagramIn(folderId, template) }}
         onImportFile={(file) => void importDocumentFile(file)}
-        onCreateFolder={(name, parentId) => void createFolder(name, parentId)}
-        onRenameFolder={(id, name) => void renameFolder(id, name)}
-        onDeleteFolder={(id) => void deleteFolder(id)}
-        onMoveDiagram={(docId, folderId) => void moveDiagram(docId, folderId)}
-        onDeleteDiagram={(id) => void deleteStoredDiagram(id)}
+        onCreateFolder={(name, parentId) => createFolder(name, parentId)}
+        onRenameFolder={(id, name) => renameFolder(id, name)}
+        onRenameDiagram={(id, title) => renameStoredDiagram(id, title)}
+        onDeleteFolder={(id) => deleteFolder(id)}
+        onMoveDiagram={(docId, folderId) => moveDiagram(docId, folderId)}
+        onDeleteDiagram={(id) => deleteStoredDiagram(id)}
         onChangeStorage={() => { setLibraryOpen(false); setStoragePanelOpen(true) }}
       />}
       {filePanelOpen && <FilePanel

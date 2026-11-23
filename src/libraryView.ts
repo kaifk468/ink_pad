@@ -48,6 +48,15 @@ export function searchLibrary(library: DocumentSummary[], folders: FolderRecord[
     .sort((a, b) => time(b.updatedAt) - time(a.updatedAt))
 }
 
+/** The Recent row appears only when the library has more than this many diagrams. */
+export const RECENT_MIN_LIBRARY = 3
+export const RECENT_COUNT = 6
+
+/** The n most recently edited diagrams (unknown dates last). Never changes the input. */
+export function recentDiagrams(library: DocumentSummary[], n: number = RECENT_COUNT): DocumentSummary[] {
+  return library.slice().sort((a, b) => time(b.updatedAt) - time(a.updatedAt)).slice(0, Math.max(0, n))
+}
+
 /** How many diagrams are in a folder, counting its subfolders. */
 export function countInFolder(library: DocumentSummary[], folders: FolderRecord[], folderId: string): number {
   const ids = new Set(folderAndDescendantIds(folders, folderId))

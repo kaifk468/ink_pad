@@ -164,6 +164,7 @@ export type KeyTool = 'pen' | 'select' | 'eraser' | 'text' | 'code' | 'lasso' | 
 export type KeyCommand =
   | { kind: 'undo' }
   | { kind: 'redo' }
+  | { kind: 'library' }
   | { kind: 'zoomIn' }
   | { kind: 'zoomOut' }
   | { kind: 'zoomReset' }
@@ -222,6 +223,7 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if (key === 'a' && !event.shiftKey) return { kind: 'selectAll' }
     // Ctrl+Shift+L locks the selection. The physical key decides, as Shift changes `key`.
     if (event.code === 'KeyL' && event.shiftKey) return event.repeat ? null : { kind: 'lock' }
+    if (key === 'o' && !event.shiftKey && !event.repeat) return { kind: 'library' }
     if (!event.shiftKey && !event.repeat) {
       if (key === 'c') return { kind: 'copy' }
       if (key === 'x') return { kind: 'cut' }
