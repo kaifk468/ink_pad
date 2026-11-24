@@ -533,7 +533,7 @@ export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete
   | `shape:${string}`
 export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select' | 'flow'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
-export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint: string; section: ContextMenuSection; disabled: boolean; /** Change shape choices only: the short text of the chip (the label is its tooltip and aria-label). */ chip?: string }
+export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint: string; section: ContextMenuSection; disabled: boolean; /** Chip entries only: the short text of the chip (the label is its tooltip and aria-label). */ chip?: string; /** Chip entries only: the caption over the chip block; consecutive chips with the same caption share one block. */ chipGroup?: string }
 
 /** Short chip text for a shape name (the full name stays in the tooltip). */
 export function shortShapeLabel(label: string): string {
@@ -574,7 +574,7 @@ export type ContextMenuState = {
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
   const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], canNumberSteps = false } = state
-  const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean, chip?: string): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled, ...(chip !== undefined ? { chip } : {}) })
+  const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean, chip?: string, chipGroup?: string): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled, ...(chip !== undefined ? { chip, chipGroup: chipGroup ?? 'Change shape' } : {}) })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
     entry('copy', 'Copy', 'Ctrl+C', 'clipboard', hasSelection),
@@ -585,7 +585,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('copyStyle', 'Copy style', 'Ctrl+Alt+C', 'style', canCopyStyle),
     entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'style', canPasteStyle),
     ...changeShapes.map((choice) => entry(`shape:${choice.id}`, `Change shape to ${choice.label}`, '', 'shape', true, shortShapeLabel(choice.label))),
-    ...(canNumberSteps ? [entry('numberSteps', 'Number steps', '', 'flow', true), entry('clearSteps', 'Clear step numbers', '', 'flow', true)] : []),
+    ...(canNumberSteps ? [entry('numberSteps', 'Number steps', '', 'flow', true, 'Number', 'Step numbers'), entry('clearSteps', 'Clear step numbers', '', 'flow', true, 'Clear', 'Step numbers')] : []),
     entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection),
     entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection),
     ...(canGroup ? [entry('group', 'Group', 'Ctrl+G', 'arrange', true)] : []),
@@ -596,7 +596,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     ...(!hasSelection && !lockedTarget && anyLocked ? [entry('unlockAll', 'Unlock all', '', 'lock', true)] : []),
     entry('copyPng', 'Copy as PNG', 'Shift+Alt+C', 'export', hasSelection || pageHasItems),
     // Only offered when something is selected.
-    ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true), entry('exportSvg', 'Export selection as SVG', '', 'export', true), entry('saveTemplate', 'Save selection as template…', '', 'export', true)] : []),
+    ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true, 'PNG', 'Save selection as'), entry('exportSvg', 'Export selection as SVG', '', 'export', true, 'SVG', 'Save selection as'), entry('saveTemplate', 'Save selection as template…', '', 'export', true, 'Template…', 'Save selection as')] : []),
     ...(canSelectSimilar ? [entry('selectSimilar', 'Select similar', '', 'select', true)] : []),
     entry('selectAll', 'Select all', 'Ctrl+A', 'select', pageHasItems),
   ]
@@ -611,7 +611,7 @@ export function contextMenuRows(entries: readonly ContextMenuEntry[]): ContextMe
   entries.forEach((entry, index) => {
     if (index > 0 && entries[index - 1].section !== entry.section) rows.push({ separator: true })
     if (entry.chip !== undefined) {
-      if (chips === null) { chips = []; rows.push({ chips }) }
+      if (chips === null || chips[0].chipGroup !== entry.chipGroup) { chips = []; rows.push({ chips }) }
       chips.push(entry)
       return
     }

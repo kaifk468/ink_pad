@@ -5126,8 +5126,8 @@ function App() {
               {contextMenuRows(entries).map((row, index) => row.separator
                 ? <div key={`separator-${index}`} className="canvas-context-separator" role="separator" />
                 : row.chips ? (
-                  <div key="change-shape" className="canvas-context-chips" role="group" aria-label="Change shape">
-                    <span className="canvas-context-chips-caption">Change shape</span>
+                  <div key={`chips-${row.chips[0].chipGroup}`} className="canvas-context-chips" role="group" aria-label={row.chips[0].chipGroup}>
+                    <span className="canvas-context-chips-caption">{row.chips[0].chipGroup}</span>
                     <div className="canvas-context-chips-row">
                       {row.chips.map((chip) => (
                         <button key={chip.action} type="button" role="menuitem" className="canvas-context-chip" title={chip.label} aria-label={chip.label} onClick={() => runContextMenuAction(chip.action, contextMenu.lockedKey)}>{chip.chip}</button>

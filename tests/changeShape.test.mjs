@@ -110,17 +110,18 @@ test('the change-shape choices form ONE chips row with short names, and the menu
   const base = input.contextMenuEntries(state)
   const withChips = input.contextMenuEntries({ ...state, changeShapes: hld })
   const rows = input.contextMenuRows(withChips)
-  assert.equal(rows.filter((r) => r.chips).length, 1)
-  assert.equal(rows.find((r) => r.chips).chips.length, 9)
-  assert.equal(input.contextMenuRows(base).some((r) => r.chips), false)
+  const shapeRow = (list) => list.find((r) => r.chips && r.chips[0].chipGroup === 'Change shape')
+  assert.equal(rows.filter((r) => r.chips && r.chips[0].chipGroup === 'Change shape').length, 1)
+  assert.equal(shapeRow(rows).chips.length, 9)
+  assert.equal(shapeRow(input.contextMenuRows(base)), undefined)
   const plain = input.contextMenuEntries({ ...state, changeShapes: [{ id: 'rectangle', label: 'Rectangle' }, { id: 'diamond', label: 'Diamond' }] })
-  assert.deepEqual(plain.filter((e) => e.chip).map((e) => e.chip), ['Rect', 'Diamond'])
+  assert.deepEqual(plain.filter((e) => e.chipGroup === 'Change shape').map((e) => e.chip), ['Rect', 'Diamond'])
   // Nine HLD chips wrap onto several lines but stay far below nine full rows (9 x 34).
   const extra = input.contextMenuHeight(withChips) - input.contextMenuHeight(base)
   assert.ok(extra > 60 && extra < 9 * 34 / 2, `extra ${extra}`)
   assert.ok(input.contextMenuHeight(plain) <= 700 - 16, 'plain shapes fit a 1024x700 screen without scrolling: ' + input.contextMenuHeight(plain))
   assert.ok(input.contextMenuHeight(withChips) < input.contextMenuHeight(base) + 9 * 34, 'HLD chips take far less than nine rows')
-  assert.ok(input.chipBlockHeight(rows.find((r) => r.chips).chips) < input.chipBlockHeight([...rows.find((r) => r.chips).chips, ...rows.find((r) => r.chips).chips, ...rows.find((r) => r.chips).chips]))
+  assert.ok(input.chipBlockHeight(shapeRow(rows).chips) < input.chipBlockHeight([...shapeRow(rows).chips, ...shapeRow(rows).chips, ...shapeRow(rows).chips]))
 })
 
 test('wiring: one undo step, menu, panel', () => {

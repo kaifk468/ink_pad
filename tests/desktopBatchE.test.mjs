@@ -51,9 +51,14 @@ test('menu rows put a separator between sections only, and the height follows th
   const rows = input.contextMenuRows(entries)
   const separators = rows.filter((r) => r.separator).length
   assert.equal(separators, new Set(entries.map((e) => e.section)).size - 1)
-  assert.equal(rows.length, entries.length + separators)
+  // The three "Save selection as" entries (PNG, SVG, Template…) share one chip block.
+  const chipRows = rows.filter((r) => r.chips)
+  assert.equal(chipRows.length, 1)
+  assert.deepEqual(chipRows[0].chips.map((e) => e.chip), ['PNG', 'SVG', 'Template…'])
+  const plainEntries = entries.filter((e) => e.chip === undefined).length
+  assert.equal(rows.length, plainEntries + chipRows.length + separators)
   assert.ok(rows[0].entry && rows[rows.length - 1].entry)
-  assert.equal(input.contextMenuHeight(entries), 14 + entries.length * 34 + separators * 9 + (rows.length - 1) * 2)
+  assert.equal(input.contextMenuHeight(entries), 14 + plainEntries * 34 + input.chipBlockHeight(chipRows[0].chips) + separators * 9 + (rows.length - 1) * 2)
   assert.ok(input.contextMenuHeight(menu({ hasSelection: true })) > input.contextMenuHeight(menu({})))
   assert.equal(input.CONTEXT_MENU_WIDTH, 248)
 })
