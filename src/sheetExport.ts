@@ -209,7 +209,7 @@ function textElement(text: TextObject): string {
   return lines
     .map((line, index) => (line.length === 0
       ? ''
-      : `<text x="${n(text.x)}" y="${n(text.y + baselines[index])}" font-family="${family}" font-size="${n(text.fontSize)}" fill="${esc(text.color)}" xml:space="preserve">${esc(line)}</text>`))
+      : `<text x="${n(text.align === 'center' ? text.x + text.width / 2 : text.align === 'right' ? text.x + text.width : text.x)}" y="${n(text.y + baselines[index])}"${text.align === 'center' ? ' text-anchor="middle"' : text.align === 'right' ? ' text-anchor="end"' : ''} font-family="${family}" font-size="${n(text.fontSize)}" fill="${esc(text.color)}" xml:space="preserve">${esc(line)}</text>`))
     .join('')
 }
 

@@ -4,7 +4,7 @@ import { ERASER_SIZES } from './appConfig'
 import type { Arrowheads, ConnectorRelationshipType, LayerMove } from '../canvasModel'
 import type { AlignOp, DistributeOp } from '../arrange'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
-import type { TextFontId } from '../canvasModel'
+import type { TextAlign, TextFontId } from '../canvasModel'
 import { TEXT_FONTS, TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP } from '../textLayout'
 import { FILL_PRESETS } from '../shapeFill'
 import { CODE_LANGUAGES } from '../codeBlock'
@@ -39,6 +39,8 @@ type ContextPanelProps = {
   /** Desktop only: sizes to offer (default TEXT_FONT_SIZES) and the auto-fit toggle for the label being edited or selected. */
   textSizeChoices?: readonly number[]
   /** A lone selected labelled connector: its label size buttons. */
+  /** Selected text labels: Left / Centre / Right buttons (`value` null when the labels differ). */
+  textAlign?: { value: TextAlign | 'left' | null; onPick: (align: TextAlign | 'left') => void }
   connectorLabelSize?: { size: number; onPick: (size: number) => void }
   textFit?: { on: boolean; onToggle: () => void }
   selectedItemCount: number
@@ -122,9 +124,15 @@ function ColorChoices({ value, label, onChange }: { value: string; label: string
 }
 
 /** Settings that only appear when the active tool or selection needs them. */
+const TEXT_ALIGN_OPTIONS: ReadonlyArray<{ id: TextAlign | 'left'; label: string; icon: string }> = [
+  { id: 'left', label: 'left', icon: 'M1 2h14M1 5.5h9M1 9h14M1 12.5h9' },
+  { id: 'center', label: 'centre', icon: 'M1 2h14M3.5 5.5h9M1 9h14M3.5 12.5h9' },
+  { id: 'right', label: 'right', icon: 'M1 2h14M6 5.5h9M1 9h14M6 12.5h9' },
+]
+
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -316,6 +324,21 @@ export function ContextPanel(props: ContextPanelProps) {
             style={{ fontFamily: font.family }}
             onClick={() => props.onTextFont(font.id)}
           >Aa<span>{font.label}</span></button>
+        ))}
+      </div>}
+      {props.textAlign && <div className="tool-group text-align-group" role="group" aria-label="Text alignment" onMouseDown={(event) => event.preventDefault()}>
+        {TEXT_ALIGN_OPTIONS.map((option) => (
+          <button
+            className={`text-size-button text-align-button${props.textAlign?.value === option.id ? ' selected' : ''}`}
+            key={option.id}
+            type="button"
+            aria-label={`Align text ${option.label}`}
+            aria-pressed={props.textAlign?.value === option.id}
+            title={`Align text ${option.label}`}
+            onClick={() => props.textAlign?.onPick(option.id)}
+          >
+            <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true"><path d={option.icon} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+          </button>
         ))}
       </div>}
       {props.connectorLabelSize && <div className="tool-group text-size-group" role="group" aria-label="Arrow label size">

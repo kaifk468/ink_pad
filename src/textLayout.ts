@@ -1,4 +1,4 @@
-import type { TextFontId, TextObject } from './canvasModel'
+import type { CanvasItem, TextAlign, TextFontId, TextObject } from './canvasModel'
 
 /** Shared text geometry: used by the canvas renderer, SVG export, hit-testing and the editor. */
 export const TEXT_FONT_FAMILY = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
@@ -173,4 +173,23 @@ export function updateTextObject(item: TextObject, text: string, fontSize: numbe
   if (item.fit === 'wrap') return { ...item, text: clean, fontSize, height: wrappedHeight(clean, fontSize, item.width, measure) }
   const size = measureTextSize(clean, fontSize, measure)
   return { ...item, text: clean, fontSize, width: size.width, height: size.height }
+}
+
+/** Left edge of one line inside a label box: left (undefined) at `x`, centred or right-aligned within `width`. Never left of the box. */
+export function alignedLineX(x: number, width: number, lineWidth: number, align?: TextAlign): number {
+  if (align === 'center') return x + Math.max(0, (width - lineWidth) / 2)
+  if (align === 'right') return x + Math.max(0, width - lineWidth)
+  return x
+}
+
+/** The text labels whose key is in `keys` (unlocked only) with their alignment set; 'left' removes it. Same array when nothing changes. */
+export function setTextAlign(items: CanvasItem[], keys: ReadonlySet<string>, align: TextAlign | 'left'): CanvasItem[] {
+  let changed = false
+  const next = items.map((item): CanvasItem => {
+    if (item.kind !== 'text' || item.locked || !keys.has(`text:${item.id}`) || (item.align ?? 'left') === align) return item
+    changed = true
+    const { align: _old, ...rest } = item
+    return align === 'left' ? rest : { ...rest, align }
+  })
+  return changed ? next : items
 }

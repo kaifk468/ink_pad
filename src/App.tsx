@@ -73,9 +73,9 @@ import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitCla
 import { buildEditedLabel, prepareEditorFit } from './textFit'
 import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
 import { connectorLabelFontSize, pointOnConnectorLabel, setConnectorLabel, setConnectorLabelFontSize } from './connectorLabel'
-import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, stepFontSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
+import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, stepFontSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
-import type { TextFontId } from './canvasModel'
+import type { TextAlign, TextFontId } from './canvasModel'
 import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, fitViewportToBoundsInset, DESKTOP_FIT_INSETS, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
@@ -1037,7 +1037,7 @@ function App() {
         if (!editor.mergeHistory) saveHistory()
         const created = createTextObject(nextTextIdRef.current++, editor.x, editor.y, value, editor.color, editor.fontSize, createTextMeasure(editor.fontSize, editor.fontFamily), editor.fontFamily)
         const label = editor.fitArea || editor.fitOff ? buildEditedLabel(created, value, editor, createTextMeasure) : created
-        strokesRef.current.push(editor.centerOn ? centreLabelOn(label, editor.centerOn) : label)
+        strokesRef.current.push(editor.centerOn ? { ...centreLabelOn(label, editor.centerOn), align: 'center' as const } : label)
         setHasInk(true)
       }
     } else {
@@ -1072,7 +1072,7 @@ function App() {
   // A new empty label at the point (the Text tool's tap and the Desktop double-click on empty canvas): nothing is made until text is typed.
   const openNewTextEditorAt = (point: Point) => openTextEditor({ itemId: null, x: point.x, y: point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
 
-  const editTextItem = (item: TextObject) => openTextEditor({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text })
+  const editTextItem = (item: TextObject) => openTextEditor({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text, ...(item.align ? { align: item.align } : {}) })
 
   // Edits the label of a connector in the text overlay, centred on the middle of its drawn path; committing writes connector.label (one undo step).
   const editConnectorLabel = (connectorId: number): boolean => {
@@ -1875,6 +1875,31 @@ function App() {
     renderAll()
     scheduleAutosave()
   }
+  /** Text labels the alignment buttons act on: the selected labels plus (Desktop) the labels inside a selected box. */
+  const alignTargetKeys = (): Set<string> => {
+    const selected = currentSelectionKeys()
+    const keys = new Set([...selected].filter((key) => key.startsWith('text:')))
+    if (inputModeRef.current === 'desktop') for (const key of labelsInside(strokesRef.current, selected)) keys.add(key)
+    return keys
+  }
+  /** Left / Centre / Right for every target label; one undo step. */
+  const pickTextAlign = (align: TextAlign | 'left') => {
+    const next = setTextAlign(strokesRef.current, alignTargetKeys(), align)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+  }
+  /** The alignment panel state: the shared alignment of the target labels (null when mixed), or undefined when none are selected. */
+  const textAlignPanel = (() => {
+    const keys = alignTargetKeys()
+    if (keys.size === 0) return undefined
+    const aligns = new Set<TextAlign | 'left'>(strokesRef.current.filter((item): item is TextObject => item.kind === 'text' && keys.has(`text:${item.id}`) && !item.locked).map((item) => item.align ?? 'left'))
+    if (aligns.size === 0) return undefined
+    return { value: aligns.size === 1 ? [...aligns][0] : null, onPick: pickTextAlign }
+  })()
   /** Font size keys with a plain or HLD box selected: the unlocked labels inside it step one size (each from its own size), one undo step. */
   const stepBoxLabelFontSizes = (direction: 1 | -1): boolean => {
     const labelKeys = new Set(labelsInside(strokesRef.current, currentSelectionKeys()))
@@ -4768,6 +4793,7 @@ function App() {
   const paletteExtras = (): Array<PaletteEntry & { run: () => void }> => [
     ...HLD_SHAPES.map((shape) => ({ id: `hld:${shape}`, label: HLD_SHAPE_LABELS[shape], group: 'Shapes', keywords: 'hld system design add', run: () => toggleHldShapeTool(shape) })),
     ...DIAGRAM_TEMPLATES.map((template) => ({ id: `template:${template.id}`, label: `Template: ${template.name}`, group: 'Templates', keywords: `insert starter layout ${template.description}`, run: () => { insertTemplate(template.id) } })),
+    ...(alignTargetKeys().size > 0 ? (['left', 'center', 'right'] as const).map((align) => ({ id: `align:${align}`, label: `Align text ${align === 'center' ? 'centre' : align}`, group: 'Edit', keywords: 'text label alignment justify', run: () => pickTextAlign(align) })) : []),
     { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout', run: () => setTemplateChooserOpen(true) },
     { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2).then((error) => { if (error) showToast(error) }) },
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
@@ -5236,6 +5262,7 @@ function App() {
         textSize={textSize}
         onTextSize={pickTextSize}
         textSizeChoices={inputMode === 'desktop' ? TEXT_FONT_SIZES_DESKTOP : undefined}
+        textAlign={textAlignPanel}
         connectorLabelSize={selectedConnectorLabel && selectedItemCount === 1 && selectedConnectorId !== null ? (() => { const c = selectedLabelledConnector(); return c && !c.locked ? { size: connectorLabelFontSize(c), onPick: pickConnectorLabelSize } : undefined })() : undefined}
         textFit={textFitOn === null ? undefined : { on: textFitOn, onToggle: toggleTextFit }}
         showTextFonts={((optionsFor === 'text' || inputMode === 'desktop') && textMode) || (selectedTextId !== null && selectedItemCount === 1)}

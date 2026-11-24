@@ -18,7 +18,8 @@ export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: num
 export const TEXT_FONT_IDS = ['excalifont', 'sans', 'serif', 'mono'] as const
 export type TextFontId = (typeof TEXT_FONT_IDS)[number]
 /** `fit` (Desktop auto-fit): 'off' = the size was picked by hand, no auto-fit; 'wrap' = at the minimum size and word-wrapped to `width`. Missing = plain label. */
-export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId; angle?: number; fit?: 'off' | 'wrap'; locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
+export type TextAlign = 'center' | 'right'
+export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId; angle?: number; fit?: 'off' | 'wrap'; /** Lines inside the label box: centred or right-aligned. Omitted = left. Saved. */ align?: TextAlign; locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
 export type ConnectorRouting = 'straight' | 'elbow'

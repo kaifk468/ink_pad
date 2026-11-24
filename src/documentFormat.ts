@@ -365,6 +365,7 @@ function sanitizeItemFields(value: unknown): CanvasItem | null {
     const text: TextObject = { kind: 'text', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, text: value.text.replace(/\u0000/g, '').slice(0, MAX_TEXT_LENGTH), fontSize: value.fontSize, color: value.color, ...(TEXT_FONT_KINDS.includes(value.fontFamily as string) ? { fontFamily: value.fontFamily as TextFontId } : {}) }
     const textAngle = sanitizeAngle(value.angle)
     if (textAngle !== undefined) text.angle = textAngle
+    if (value.align === 'center' || value.align === 'right') text.align = value.align
     if (value.fit === 'off' || (value.fit === 'wrap' && value.width > 0)) text.fit = value.fit
     return text
   }
