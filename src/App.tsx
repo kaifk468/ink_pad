@@ -46,6 +46,7 @@ import { ClassBoxDialog } from './ClassBoxDialog'
 import { AccountButton } from './app/AccountButton'
 import { ContextPanel } from './app/ContextPanel'
 import { applyStyle, captureStyle, type StyleSnapshot } from './styleClipboard'
+import { clearSteps, numberSteps, stepTargets } from './flowSteps'
 import { selectionFillColor, selectionHasFillable, setFillColor, matchingOutline } from './shapeFill'
 import { withSketchSeed, withSketchSeeds } from './sketchy'
 import { addLaserPoint, laserOnTouchDown, laserSegments, laserVisible, PEN_TOOL_FLAGS, pruneLaser, toolToRestoreAfterLaser, type LaserPoint, type ToolFlags } from './laserPointer'
@@ -1326,6 +1327,32 @@ function App() {
     scheduleAutosave()
     bumpSelectionColor((n) => n + 1)
     showToast(`Changed to ${shapeChoiceLabel(target as ShapeChoice)}`)
+    return true
+  }
+  // Number steps / Clear step numbers (right-click menu, palette, tablet panel): connector labels; one undo step each.
+  const numberFlowSteps = (): boolean => {
+    const keys = currentSelectionKeys()
+    const count = stepTargets(strokesRef.current, keys).length
+    const next = numberSteps(strokesRef.current, keys)
+    if (count === 0) { showToast('Select connectors to number'); return false }
+    if (!next) { showToast(`Numbered ${count} step${count === 1 ? '' : 's'}`); return true }
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+    showToast(`Numbered ${count} step${count === 1 ? '' : 's'}`)
+    return true
+  }
+  const clearFlowSteps = (): boolean => {
+    const next = clearSteps(strokesRef.current, currentSelectionKeys())
+    if (!next) { showToast('No step numbers to clear'); return false }
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+    showToast('Cleared step numbers')
     return true
   }
   const ungroupSelection = (): boolean => {
@@ -4693,6 +4720,8 @@ function App() {
       case 'delete': deleteSelection(); break
       case 'selectAll': selectAllItems(); break
       case 'selectSimilar': selectSimilarItems(); break
+      case 'numberSteps': numberFlowSteps(); break
+      case 'clearSteps': clearFlowSteps(); break
       case 'bringToFront': moveSelectionLayer('front'); break
       case 'sendToBack': moveSelectionLayer('back'); break
       case 'editText': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); if (target) openEditTarget(target); break }
@@ -4799,6 +4828,10 @@ function App() {
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
+    ...(stepTargets(strokesRef.current, currentSelectionKeys()).length > 0 ? [
+      { id: 'flow:number', label: 'Number steps', group: 'Select', keywords: 'flow order sequence connectors arrows label 1 2 3', run: () => { numberFlowSteps() } },
+      { id: 'flow:clear', label: 'Clear step numbers', group: 'Select', keywords: 'flow order sequence connectors arrows remove', run: () => { clearFlowSteps() } },
+    ] : []),
     { id: 'export:outline-copy', label: 'Copy as text outline', group: 'Export', keywords: 'markdown summary list copy', run: copyOutline },
     { id: 'export:outline-download', label: 'Download outline (.md)', group: 'Export', keywords: 'markdown text summary file', run: downloadOutline },
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
@@ -5022,6 +5055,7 @@ function App() {
             canGroup: canGroup(strokesRef.current, currentSelectionKeys()),
             canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()),
             changeShapes: changeShapeChoices(strokesRef.current, currentSelectionKeys())?.choices ?? [],
+            canNumberSteps: stepTargets(strokesRef.current, currentSelectionKeys()).length > 0,
             canSelectSimilar: (() => { const key = soleSelectedKey(); return key !== null && similarItemKeys(strokesRef.current, key).length > 0 })(),
           })
           const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight)

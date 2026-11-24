@@ -529,9 +529,9 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
 }
 
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'exportPng' | 'exportSvg'
-  | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar'
+  | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps'
   | `shape:${string}`
-export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select'
+export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select' | 'flow'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
 export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint: string; section: ContextMenuSection; disabled: boolean; /** Change shape choices only: the short text of the chip (the label is its tooltip and aria-label). */ chip?: string }
 
@@ -563,6 +563,8 @@ export type ContextMenuState = {
   canSelectSimilar?: boolean
   /** Change shape: the shapes the selected boxes can change to (id is the shape name; the action is `shape:<id>`). */
   changeShapes?: ReadonlyArray<{ id: string; label: string }>
+  /** The selection holds connectors (or boxes joined by them): Number steps / Clear step numbers are offered. */
+  canNumberSteps?: boolean
 }
 
 /**
@@ -571,7 +573,7 @@ export type ContextMenuState = {
  * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
-  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [] } = state
+  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], canNumberSteps = false } = state
   const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean, chip?: string): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled, ...(chip !== undefined ? { chip } : {}) })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
@@ -583,6 +585,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('copyStyle', 'Copy style', 'Ctrl+Alt+C', 'style', canCopyStyle),
     entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'style', canPasteStyle),
     ...changeShapes.map((choice) => entry(`shape:${choice.id}`, `Change shape to ${choice.label}`, '', 'shape', true, shortShapeLabel(choice.label))),
+    ...(canNumberSteps ? [entry('numberSteps', 'Number steps', '', 'flow', true), entry('clearSteps', 'Clear step numbers', '', 'flow', true)] : []),
     entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection),
     entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection),
     ...(canGroup ? [entry('group', 'Group', 'Ctrl+G', 'arrange', true)] : []),
