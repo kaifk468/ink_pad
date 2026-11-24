@@ -219,16 +219,16 @@ Follow-ups found this round (ideas for the next round):
 ### Candidates (problem · who/how often · benefit · risk · size · decision)
 | # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
 |---|---|---|---|---|---|---|---|
-| 82 | Laser returns to the previous tool + dock laser state (round 3 follow-up) | After pointing, the user is dropped into Pen and must re-pick the tool | interviews, every use of the laser | medium | low | S | picked |
-| 83 | Connector label font size (`labelFontSize`, additive) + font keys + panel sizes (round 3 follow-up) | Arrow labels are fixed-size: tiny on large HLDs, font keys skip them | HLD users, every diagram with labels | medium-high | medium (new saved field) | M | picked |
-| 84 | Compact "Change shape" row in the right-click menu (round 3 follow-up) | 8 rows make the HLD menu tall and scroll | desktop, often | medium | low | S | picked |
-| 85 | Outline follow-ups: count ink in HLD boxes, buttons enabled when any page has content | NotebookLM outline misses handwriting; buttons look broken on an empty page | NotebookLM users | low-medium | low | S | picked |
-| 86 | Number flow steps on connectors (#68) | Request-flow order is typed into every arrow label by hand | HLD users, interviews | medium-high | low (labels only) | S-M | picked |
-| 87 | My templates: save the selection as a template, insert it from the chooser (#72/#53) | Own skeletons must be copied from old diagrams | interview prep, weekly | high | low-medium (local storage size) | M | picked |
-| 88 | Page overview: thumbnails of every page, jump, move a page earlier/later (#67 without names) | Many pages are just "2 / 5"; pages cannot be reordered | multi-page users, often | medium-high | medium (page undo history) | M | picked |
-| 89 | Open a diagram from the command palette by name | Switching diagrams always goes through the Library | desktop, daily | medium-high | low | S-M | picked |
-| 90 | Tablet selection panel: Change shape, Select similar, Copy/Paste style | These are desktop right-click only | tablet, often | medium | low (buttons only, no new gestures) | S-M | picked (instead of long-press #70) |
-| 91 | Text alignment (left / centre / right) for text labels; new labels typed inside a shape are centred | Multi-line labels in boxes look ragged | everyone, every multi-line label | medium-high | medium (new saved field `align`) | M | picked |
+| 82 | Laser returns to the previous tool + dock laser state (round 3 follow-up) | After pointing, the user is dropped into Pen and must re-pick the tool | interviews, every use of the laser | medium | low | S | **done** 75495e0 (+X toggles off cad6398) |
+| 83 | Connector label font size (`labelFontSize`, additive) + font keys + panel sizes (round 3 follow-up) | Arrow labels are fixed-size: tiny on large HLDs, font keys skip them | HLD users, every diagram with labels | medium-high | medium (new saved field) | M | **done** 155fbf4 (+f200d5a) |
+| 84 | Compact "Change shape" row in the right-click menu (round 3 follow-up) | 8 rows make the HLD menu tall and scroll | desktop, often | medium | low | S | **done** 1c6cc65 (+ddb6830, cad6398) |
+| 85 | Outline follow-ups: count ink in HLD boxes, buttons enabled when any page has content | NotebookLM outline misses handwriting; buttons look broken on an empty page | NotebookLM users | low-medium | low | S | **done** 4c49ed7 |
+| 86 | Number flow steps on connectors (#68) | Request-flow order is typed into every arrow label by hand | HLD users, interviews | medium-high | low (labels only) | S-M | **done** a5d7d3a (+strict numbers f200d5a) |
+| 87 | My templates: save the selection as a template, insert it from the chooser (#72/#53) | Own skeletons must be copied from old diagrams | interview prep, weekly | high | low-medium (local storage size) | M | **done** f051e99 (+3678d69) |
+| 88 | Page overview: thumbnails of every page, jump, move a page earlier/later (#67 without names) | Many pages are just "2 / 5"; pages cannot be reordered | multi-page users, often | medium-high | medium (page undo history) | M | **done** 150e418 (+3678d69) |
+| 89 | Open a diagram from the command palette by name | Switching diagrams always goes through the Library | desktop, daily | medium-high | low | S-M | **done** 51b7225 (+3678d69) |
+| 90 | Tablet selection panel: Change shape, Select similar, Copy/Paste style | These are desktop right-click only | tablet, often | medium | low (buttons only, no new gestures) | S-M | **done** 7dccb30 (+f200d5a) (instead of long-press #70) |
+| 91 | Text alignment (left / centre / right) for text labels; new labels typed inside a shape are centred | Multi-line labels in boxes look ragged | everyone, every multi-line label | medium-high | medium (new saved field `align`) | M | **done** 520ee23 (+f200d5a, 637fb63) |
 | 92 | Hover outline in Desktop Select (#66) | — | | | | | already built (ac80e0d "hover outline"); stale item |
 | 93 | Elbow bend clamps instead of snapping back (#69) | bend pushed through the end box resets | LLD, rare | low | medium | S | idea |
 | 94 | Page names (needs a page-level saved field) | pages have no titles | sometimes | medium | medium (document keys) | M | idea (overview first) |
@@ -258,3 +258,16 @@ Follow-ups found this round (ideas for the next round):
 89. **Open from the palette**: in Desktop mode the command palette lists "Open: <title>" for the other diagrams (most recently edited first, folder name as hint); Enter opens it (the current one is saved first, like the Library does).
 90. **Tablet panel commands**: on the tablet, the selection panel shows the Change shape choices for boxes, a "Select similar" button for a single item, and Copy style / Paste style buttons; same behaviour and undo as on desktop. Pen writing, pinch and pan unchanged.
 91. **Text alignment**: a text label (or the label inside a box) has Left / Centre / Right buttons in the panel (desktop and tablet); multi-line text lines are aligned inside the label box; a new label typed inside a shape (double-click / Enter / sticky note / quick create) is centred. Saved as `align` ('center' | 'right', omitted for left); renderer, sketchy, SVG/PNG/PDF export and the editor overlay honour it; old files unchanged (left).
+
+### Round 4 result (2026-11-24)
+All 10 picked items built (#82-#91); #92 (hover outline) was already built. Independent Opus review: 13 findings (4 medium, 9 low, none high), 12 fixed in cad6398 / f200d5a / 3678d69, one needed no change (no Enter/quick-create label path exists). Headless walk fixes in 637fb63 (template labels centred; desktop minimised UML button overlapped the taller page strip). Details and checklist: project-context.md, 2026-11-24 round 4 entry.
+
+Follow-ups found this round (ideas for the next round):
+- Right-click menu with one HLD box AND connectors selected (Step numbers chips shown) is ~714 px: still scrolls slightly at 1024x700.
+- Step-number pattern: a bare 1-2 digit label ("7", "12") counts as a step number; "404" or "200 OK" do not.
+- Page overview: Move earlier/later use < > arrows (tooltips say what they do); page names (#94) would make tiles clearer.
+- Label size / alignment buttons in the panel have no visible heading (tooltips and aria-labels only), like the existing text size buttons.
+- At 1440x900 an open minimap sits partly under the dock's right end (pre-existing, not changed).
+- Labels from older templates/diagrams have no `align`: editing them to two lines keeps them left-aligned (use the Centre button).
+- Older InkPad builds drop `labelFontSize` and `align` on save (like earlier round fields): keep the tablet PWA updated.
+- Palette refreshes the library list on every Ctrl+K (a network list call with Drive).
