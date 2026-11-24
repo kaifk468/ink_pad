@@ -70,3 +70,58 @@ Follow-ups found this round (ideas for the next round):
 - Tablet tap on a group member selects the group, but the tablet has no Group/Ungroup control yet (desktop keys/menu/panel only).
 - Older InkPad builds drop connector `label`, `group` and the new HLD shapes on save: keep the tablet PWA updated before mixed use.
 - Rename of a not-opened diagram refuses when the file has damaged items or unknown top-level fields (safe, but the user must open it first).
+
+## Round 2 — 2026-11-24 (branch desktop-20x)
+
+### User journeys walked (friction found, on top of round 1)
+1. Open the app and find a diagram: the Library is only sorted by last edit; there is no way to start from a copy of an existing diagram (interview template, last week's design) without exporting and importing.
+2. Start a new diagram: every diagram starts blank; the common interview skeletons (client → LB → service → cache/DB, a queue-based pipeline, a class diagram, a requirements/API/HLD board) are drawn by hand every time.
+3. Draw boxes, label, connect: arrows end anywhere on a side, so lines that should be straight and centred end up slightly off; adding the next box needs Ctrl+Arrow, which nobody discovers; there is no quick "note" for requirements or assumptions.
+4. Rearrange as it grows: an elbow connector's middle segment cannot be moved, so two elbows overlap or run through a label; the connector label hides the middle dot; shrinking a box leaves the text inside spilling out; finding "Redis" in a 40-box diagram means panning around; restyling all connectors means clicking each.
+5. Desktop power use: commands live in menus, panels and the ? list, but there is no single place to type a command name.
+6. Tablet: the Group / Ungroup buttons are desktop-only although tablet taps already select whole groups.
+
+### Candidates (problem · who/how often · benefit · risk · size · decision)
+| # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
+|---|---|---|---|---|---|---|---|
+| 28 | Command palette (Ctrl+K) | Commands hidden in menus; shortcuts must be memorised | desktop, daily | high | low (overlay, reuses key commands) | M | **picked** |
+| 29 | Find on canvas (Ctrl+F) | Finding a label in a big diagram means panning | everyone with big diagrams | high | low (pure search + zoom) | M | **picked** |
+| 30 | Diagram templates (insert a starter layout) | Same skeleton drawn every interview | HLD/LLD users, every new diagram | high | low (plain items via paste path) | M | **picked** (was #19) |
+| 31 | Sticky note (N) | No quick note for requirements/assumptions | everyone, often | medium | low (filled rectangle + label, no new kind) | S | **picked** (was #22) |
+| 32 | Elbow bend handle | Elbow middle segment cannot be moved; overlapping elbows | LLD users, often | medium-high | medium (new saved field) | M | **picked** (was #12, + label/middle-dot overlap follow-up) |
+| 33 | Connectors snap to side midpoints + anchor dots | Arrow ends slightly off-centre, crooked lines | everyone, every connector | high | low-medium (snap behaviour, tablet too) | S | **picked** |
+| 34 | Quick-connect buttons around a selected shape | Ctrl+Arrow is undiscoverable | desktop, every diagram | high | medium (select pointer path) | M | **picked** |
+| 35 | Library: Make a copy | Reusing a diagram needs export+import | sometimes, interview prep | medium-high | medium (store/Drive create) | M | **picked** (was #14) |
+| 36 | Library: sort by edited / name / created | Only "last edited" order | many diagrams | medium | low | S | **picked** |
+| 37 | Select similar (right-click) | Restyling all connectors/boxes means clicking each | desktop, often | medium | low | S | **picked** |
+| 38 | Tablet Group / Ungroup buttons | Groups can't be made on the tablet | tablet, sometimes | medium | low | S | **picked** (round 1 follow-up) |
+| 39 | Refit text after a box shrinks | Text spills out of a box made smaller | everyone, often | medium | medium (resize path) | S-M | **picked** (round 1 follow-up) |
+| 40 | Recent colours in the colour picker | — | | | | | skipped: already built (ColorPicker recent row) |
+| 41 | Laser pointer for interviews (fading trail, not saved) | Pointing at parts while screen sharing | interviews | medium | low-medium (new tool, overlay) | M | idea (next round) |
+| 42 | Undo toast naming the action ("Undid: Move") | Unsure what undo did | everyone | low-medium | high (every history call site) | M | skipped: touches every saveHistory site |
+| 43 | Drag diagram cards onto folders | Move dialog is a detour | sometimes | low-medium | medium (touch DnD) | M | idea (#15) |
+| 44 | Move folders into folders | restructure | rare | low | medium (Drive) | M | idea (#24) |
+| 45 | Shape search inside More shapes | many shapes | rare today (12 shapes) | low | low | S | idea |
+| 46 | Flow step numbers on connectors (1, 2, 3) | request-flow order | HLD, sometimes | medium | medium (format) | M | idea (labels can say "1") |
+| 47 | Frames / sections | large boards | sometimes | medium | high | L | idea (#21) |
+| 48 | Scribble-to-erase | tablet | | | high (writing path) | | skipped again (#17) |
+| 49 | Mermaid import | text-first users | rare | medium | medium | L | idea (#26) |
+| 50 | Floating mini toolbar near selection | panel is far from the item | desktop | medium | high (layout) | L | idea |
+| 51 | Font size keys (Ctrl+Shift+< / >) | resizing text needs the panel | desktop | low-medium | low | S | idea |
+| 52 | Swap the two ends of a connector (reverse) for all kinds | — | | | | | skipped: reverse exists for UML kinds; arrowheads cover plain arrows |
+| 53 | Template from the current diagram ("save as template") | own skeletons | sometimes | medium | medium (storage) | M | idea (Make a copy covers most) |
+| 54 | Hover quick preview of a diagram in the Library | which one is it | rare | low | low | S | skipped: cards already show thumbnails |
+
+### Acceptance criteria (picked items)
+28. **Command palette**: in Desktop mode Ctrl+K (Cmd+K) opens a centred box with a search field; the user types part of a name ("zoom", "group", "redis", "export") and sees matching commands with their shortcut on the right; arrow keys move, Enter runs, Esc or a click outside closes. It lists every keyboard command from the ? table plus tools, HLD shapes, templates, Find, export and library actions. Listed in the ? help. Tablet unchanged.
+29. **Find**: Ctrl+F (desktop) or "Find" in the More menu (both modes) opens a small find bar; typing shows "2 of 5"; Enter / Shift+Enter (or the arrows) go to the next/previous match on any page: the page is switched, the view centres on it and the item is selected. Text labels, connector labels, class boxes (name, attributes, methods) and code blocks are searched, case-insensitive. Esc closes. The browser's own find bar does not open.
+30. **Templates**: "Insert template" (More menu, command palette, and a button on the empty-page hint) offers Client–server–DB, Cache + queue microservice, Class diagram and Interview board; choosing one places the items in the middle of the view, selected, as one undo step; they are ordinary boxes, labels and connectors (connectors attached) that the user edits normally.
+31. **Sticky note**: N (desktop), the More shapes popover and the tablet Insert tray add a yellow note (filled box) at the pointer / view centre; on desktop the text editor opens inside it at once. One undo step. Saved as an ordinary filled rectangle with a label (no new kind).
+32. **Elbow bend**: with an elbow connector selected, dragging its middle dot moves the middle segment sideways (it stays moved when a box is moved, as an offset); a click still toggles straight/elbow; double-click on the middle dot or the label opens the label. One undo step, Esc cancels. A connector label no longer covers the middle dot (the dot sits just beside the label). Saved as an additive `bend` number on elbow connectors; old files unchanged.
+33. **Midpoint snap**: drawing a connector or dragging its end near the middle of a box side snaps exactly to that midpoint; while the end is over a box its four side midpoints show as small dots. Works for pen, touch and mouse. Existing connectors are not moved.
+34. **Quick-connect**: in Desktop Select mode, with one plain or HLD box selected, four small arrow buttons appear just outside its sides; hovering one shows a hint, clicking it creates a connected copy in that direction exactly like Ctrl+Arrow (one undo step). They don't appear on the tablet, while dragging, or for locked items.
+35. **Make a copy**: each Library card has "Make a copy"; the user gets "<title> (copy)" in the same folder with all pages and items, a toast, and the original untouched (works for local, device-folder and Drive storage).
+36. **Sort**: the Library has a Sort control (Last edited, Name, Created); the choice is remembered on the device.
+37. **Select similar**: right-click an item → "Select similar" selects every unlocked item on the page of the same kind (all connectors; all rectangles of that shape; all labels; all pen strokes). One click, no undo entry.
+38. **Tablet group**: on the tablet, selecting several items with the lasso shows Group / Ungroup buttons in the selection panel; they work as on desktop (one undo step).
+39. **Refit after shrink**: resizing a box smaller (desktop) makes a wrapped/auto-fitted label inside it rewrap or shrink so it stays inside the box; making it bigger again doesn't blow the text up beyond its chosen size. Same undo step as the resize.
