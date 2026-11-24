@@ -5271,7 +5271,19 @@ function App() {
         arrowheads={inputMode === 'desktop' && selectionHasArrowheads(strokesRef.current, currentSelectionKeys())
           ? { value: selectionArrowheads(strokesRef.current, currentSelectionKeys()), onChange: changeArrowheads }
           : null}
-        changeShape={inputMode === 'desktop' ? (() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })() : null}
+        changeShape={(() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })()}
+        selectionTools={inputMode !== 'desktop' && currentSelectionKeys().size > 0 ? (() => {
+          const keys = currentSelectionKeys()
+          const sole = soleSelectedKey()
+          const source = soleStyleSource()
+          return {
+            onSelectSimilar: sole !== null && similarItemKeys(strokesRef.current, sole).length > 0 ? () => { selectSimilarItems() } : null,
+            onCopyStyle: source !== null && captureStyle(source) !== null ? () => { copyStyleWithToast() } : null,
+            onPasteStyle: () => { pasteStyleWithToast() },
+            canPasteStyle: copiedStyleRef.current !== null,
+            onNumberSteps: stepTargets(strokesRef.current, keys).length > 0 ? () => { numberFlowSteps() } : null,
+          }
+        })() : null}
         layer={inputMode === 'desktop' && (selectedItemCount > 0 || hasSelectedRectangle) ? { onMove: (move) => { moveSelectionLayer(move) } } : null}
         arrange={inputMode === 'desktop' && canAlign(strokesRef.current, currentSelectionKeys())
           ? { canAlign: true, canDistribute: canDistribute(strokesRef.current, currentSelectionKeys()), onAlign: alignSelection, onDistribute: distributeSelection }

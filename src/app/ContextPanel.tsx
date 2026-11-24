@@ -81,6 +81,8 @@ type ContextPanelProps = {
   /** Desktop: align (2+ items) and distribute (3+ items). */
   /** Desktop: the shapes the selected boxes can change to (Change shape). */
   changeShape?: { choices: Array<{ id: string; label: string }>; onChange: (id: string) => void } | null
+  /** Tablet: the commands the desktop right-click menu has (Select similar, Copy / Paste style, Number steps). Each button shows only when its handler is given. */
+  selectionTools?: { onSelectSimilar?: (() => void) | null; onCopyStyle?: (() => void) | null; onPasteStyle?: (() => void) | null; canPasteStyle?: boolean; onNumberSteps?: (() => void) | null } | null
   group?: { canGroup: boolean; canUngroup: boolean; onGroup: () => void; onUngroup: () => void } | null
   arrange?: { canAlign: boolean; canDistribute: boolean; onAlign: (op: AlignOp) => void; onDistribute: (op: DistributeOp) => void } | null
   objectEraser?: boolean
@@ -249,6 +251,12 @@ export function ContextPanel(props: ContextPanelProps) {
         <div className="selection-actions">
           {props.changeShape.choices.map((choice) => <button key={choice.id} className="clear-selection-button" type="button" aria-label={`Change shape to ${choice.label}`} title={`Change shape to ${choice.label}`} onClick={() => props.changeShape?.onChange(choice.id)}>{choice.label}</button>)}
         </div>
+      </div>}
+      {props.selectionTools && (props.selectionTools.onSelectSimilar || props.selectionTools.onCopyStyle || props.selectionTools.onPasteStyle || props.selectionTools.onNumberSteps) && <div className="selection-actions selection-tools" role="group" aria-label="Selection commands">
+        {props.selectionTools.onSelectSimilar && <button className="clear-selection-button" type="button" aria-label="Select similar" title="Select every item like this one" onClick={props.selectionTools.onSelectSimilar}>Select similar</button>}
+        {props.selectionTools.onCopyStyle && <button className="clear-selection-button" type="button" aria-label="Copy style" title="Copy this item's colours and line style" onClick={props.selectionTools.onCopyStyle}>Copy style</button>}
+        {props.selectionTools.onPasteStyle && <button className="clear-selection-button" type="button" aria-label="Paste style" title="Apply the copied style to the selection" disabled={!props.selectionTools.canPasteStyle} onClick={props.selectionTools.onPasteStyle}>Paste style</button>}
+        {props.selectionTools.onNumberSteps && <button className="clear-selection-button" type="button" aria-label="Number steps" title="Number the selected arrows 1, 2, 3 in flow order" onClick={props.selectionTools.onNumberSteps}>Number steps</button>}
       </div>}
       {props.arrange && <div className="arrange-controls" role="group" aria-label="Align and distribute">
         <span className="panel-label">Align</span>
