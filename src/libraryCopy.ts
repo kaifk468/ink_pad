@@ -20,7 +20,8 @@ export function buildCopy(stored: InkPadDocument, now: string = new Date().toISO
 /**
  * Copies a stored diagram inside the same folder as a new document. The original is only read, never written. `folderId` is where the
  * original lives. Throws an Error with a message fit for the person when the diagram is missing or cannot be copied without loss.
- * Returns the new diagram's id and title. The caller is responsible for running this inside the save chain.
+ * Returns the new diagram's id and its real title: a device folder numbers a clash ("X (copy) (2)"), so the stored copy is read back for
+ * its title (falling back to the requested one if that read fails). The caller is responsible for running this inside the save chain.
  */
 export async function copyStoredDiagram(backend: StorageBackend, id: string, folderId: string | null): Promise<{ id: string; title: string }> {
   const stored = await (backend.loadFresh ? backend.loadFresh(id) : backend.load(id))
@@ -28,5 +29,10 @@ export async function copyStoredDiagram(backend: StorageBackend, id: string, fol
   const copy = buildCopy(stored)
   if (!copy) throw new Error(COPY_LOSSY_MESSAGE)
   const newId = await backend.save(null, copy, folderId)
-  return { id: newId, title: copy.title }
+  let title = copy.title
+  try {
+    const stored = await backend.load(newId)
+    if (stored?.title) title = stored.title
+  } catch { /* the copy is saved; the toast falls back to the title that was asked for */ }
+  return { id: newId, title }
 }

@@ -63,6 +63,24 @@ test('device folder: the copy sits in the same folder with all pages, the origin
   assert.equal(made.id, 'LLD/Order flow (copy).inkpad')
 })
 
+test('device folder: the returned title is the real one when the name was already taken', async () => {
+  const backend = device.createDeviceBackend(new FakeDirectory())
+  const id = await backend.save(null, richDocument('Order flow'), null)
+  const first = await copy.copyStoredDiagram(backend, id, null)
+  const second = await copy.copyStoredDiagram(backend, id, null)
+  assert.equal(first.title, 'Order flow (copy)')
+  assert.equal(second.id, 'Order flow (copy) (2).inkpad')
+  assert.equal(second.title, 'Order flow (copy) (2)')
+})
+
+test('the copy keeps the requested title when reading the stored copy back fails', async () => {
+  const backend = device.createDeviceBackend(new FakeDirectory())
+  const id = await backend.save(null, richDocument('Plan'), null)
+  const flaky = { ...backend, load: async (key) => { if (key !== id) throw new Error('read failed'); return backend.load(key) }, loadFresh: undefined }
+  const made = await copy.copyStoredDiagram(flaky, id, null)
+  assert.equal(made.title, 'Plan (copy)')
+})
+
 test('Drive: the copy is a new file in the same folder', async () => {
   const fake = new FakeDrive()
   const backend = drive.createDriveBackend({ fetch: fake.fetch, getToken: async () => 'tok' })
@@ -100,9 +118,10 @@ test('device files keep the lossy mark, so copy refuses them', async () => {
 test('Make a copy is wired: card button, status toast, busy state, save chain and fresh load', async () => {
   const home = await src('app/HomeScreen.tsx')
   assert.match(home, /aria-label=\{`Make a copy of \$\{entry\.title \|\| 'Untitled diagram'\}`\} title="Make a copy" disabled=\{copyingId !== null\}/)
-  assert.match(home, /props\.onMakeCopy\(id\), `Copied to “\$\{copyTitle\(titleOf\(id\)\)\}”`/)
+  assert.match(home, /const made = await props\.onMakeCopy\(id\)\n\s+if \(made !== false\) showStatus\(`Copied to “\$\{typeof made === 'string' && made \? made : copyTitle\(titleOf\(id\)\)\}”`\)/, 'the toast names the title the copy call returned')
   const app = await src('App.tsx')
   assert.match(app, /onMakeCopy=\{\(id\) => copyStoredDiagram\(id\)\}/)
+  assert.match(await src('app/useDocuments.ts'), /const copyStoredDiagram = async \(id: string\): Promise<string \| false>/)
   const hook = await src('app/useDocuments.ts')
   const body = hook.slice(hook.indexOf('const copyStoredDiagram'), hook.indexOf('const renameDiagram'))
   assert.match(body, /wasOpen = docIdRef\.current === id\n\s+if \(wasOpen\) await persistNow\(\)/)

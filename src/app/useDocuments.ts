@@ -628,11 +628,12 @@ export function useDocuments(host: DocumentHost) {
    * the storage has not accepted yet, or a file this version only partly understands, is refused with a message instead of a lossy copy.
    * The copy is not opened. Returns false (with a notice) on failure.
    */
-  const copyStoredDiagram = async (id: string): Promise<boolean> => {
+  const copyStoredDiagram = async (id: string): Promise<string | false> => {
     setFileNotice(null)
     const wasOpen = docIdRef.current === id
     if (wasOpen) await persistNow()
     let ok = true
+    let madeTitle = ''
     const body = async () => {
       try {
         const backend = backendRef.current
@@ -644,6 +645,7 @@ export function useDocuments(host: DocumentHost) {
         } else if (await keeper.recordFor(backend.kind, id)) throw new Error('That diagram has changes that are not saved yet. Wait until it is saved, then copy it.')
         const folderId = library.find((entry) => entry.id === sourceId || entry.id === id)?.folderId ?? null
         const made = await copyDiagramOnBackend(backend, sourceId, folderId)
+        madeTitle = made.title
         // the copy starts with the original's picture (stored apart from the diagram, by id)
         const picture = thumbnails[id]
         if (picture && backendRef.current === backend) {
@@ -661,7 +663,7 @@ export function useDocuments(host: DocumentHost) {
     saveChainRef.current = run
     await run
     await refreshLibrary()
-    return ok
+    return ok ? madeTitle : false
   }
 
   const renameDiagram = (title: string): Promise<void> => {

@@ -30,7 +30,7 @@ type HomeScreenProps = {
   onRenameFolder: (id: string, name: string) => Promise<boolean> | void
   onRenameDiagram: (id: string, title: string) => Promise<boolean | 'unchanged'> | void
   /** Saves "<title> (copy)" next to the original; resolves the real new title (a device folder may number it), or false (with a notice) when it could not be done. */
-  onMakeCopy: (id: string) => Promise<boolean> | void
+  onMakeCopy: (id: string) => Promise<string | false> | void
   onDeleteFolder: (id: string) => Promise<boolean> | void
   onMoveDiagram: (docId: string, folderId: string | null) => Promise<boolean> | void
   onDeleteDiagram: (id: string) => Promise<boolean> | void
@@ -200,7 +200,10 @@ export function HomeScreen(props: HomeScreenProps) {
   const makeCopy = async (id: string) => {
     if (copyingId !== null) return
     setCopyingId(id)
-    try { await act(() => props.onMakeCopy(id), `Copied to “${copyTitle(titleOf(id))}”`) } finally { setCopyingId(null) }
+    try {
+      const made = await props.onMakeCopy(id)
+      if (made !== false) showStatus(`Copied to “${typeof made === 'string' && made ? made : copyTitle(titleOf(id))}”`)
+    } finally { setCopyingId(null) }
   }
   const moveTo = (entry: DocumentSummary, folderId: string | null) => {
     setMovingId(null)
