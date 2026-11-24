@@ -215,6 +215,7 @@ export type KeyCommand =
   | { kind: 'quickCreate'; direction: 'right' | 'left' | 'up' | 'down' }
   | { kind: 'layer'; move: 'forward' | 'backward' | 'front' | 'back' }
   | { kind: 'toolLock' }
+  | { kind: 'fontSize'; direction: 1 | -1 }
   | { kind: 'tool'; tool: KeyTool }
 
 export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', k: 'code', n: 'sticky', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line', x: 'laser' }
@@ -258,6 +259,12 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if (key === 'a' && !event.shiftKey) return { kind: 'selectAll' }
     // Ctrl+G groups the selection, Ctrl+Shift+G ungroups it (the physical key decides, as Shift changes `key`).
     if (event.shiftKey ? event.code === 'KeyG' : (event.code ? event.code === 'KeyG' : key === 'g')) return event.repeat ? null : { kind: event.shiftKey ? 'ungroup' : 'group' }
+    // Ctrl/Cmd+Shift+. makes the selected label's text one step larger, Ctrl/Cmd+Shift+, one step smaller (the key is > and < on a US layout; the physical key covers the others).
+    if (event.shiftKey && (key === '.' || key === '>' || key === ',' || key === '<' || event.code === 'Period' || event.code === 'Comma')) {
+      if (event.repeat) return null
+      const larger = key === '.' || key === '>' ? true : key === ',' || key === '<' ? false : event.code === 'Period'
+      return { kind: 'fontSize', direction: larger ? 1 : -1 }
+    }
     // Ctrl+Shift+L locks the selection. The physical key decides, as Shift changes `key`.
     if (event.code === 'KeyL' && event.shiftKey) return event.repeat ? null : { kind: 'lock' }
     if (key === 'o' && !event.shiftKey && !event.repeat) return { kind: 'library' }

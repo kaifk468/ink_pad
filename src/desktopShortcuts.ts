@@ -41,6 +41,8 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'Edit', label: 'Copy style of the selected item', keys: 'Ctrl+Alt+C', input: { key: 'c', code: 'KeyC', altKey: true, ...ctrl } },
   { group: 'Edit', label: 'Paste style onto the selection', keys: 'Ctrl+Alt+V', input: { key: 'v', code: 'KeyV', altKey: true, ...ctrl } },
   { group: 'Edit', label: 'Lock the selection (right-click a locked item to unlock)', keys: 'Ctrl+Shift+L', input: { key: 'L', code: 'KeyL', ...ctrl, ...shift } },
+  { group: 'Edit', label: 'Larger text (selected label)', keys: 'Ctrl+Shift+.', input: { key: '>', code: 'Period', ...ctrl, ...shift } },
+  { group: 'Edit', label: 'Smaller text (selected label)', keys: 'Ctrl+Shift+,', input: { key: '<', code: 'Comma', ...ctrl, ...shift } },
   { group: 'Edit', label: 'Select all', keys: 'Ctrl+A', input: { key: 'a', ...ctrl } },
   { group: 'Edit', label: 'Edit the selected text, label or connector label', keys: 'Enter', input: { key: 'Enter' } },
   { group: 'Edit', label: 'Delete the selection', keys: 'Delete or Backspace', input: { key: 'Delete' } },

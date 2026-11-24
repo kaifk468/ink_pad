@@ -21,6 +21,13 @@ export const TEXT_FONT_SIZES = [18, 24, 32, 48]
 /** Extra small sizes, offered in Desktop mode only (the tablet panel keeps TEXT_FONT_SIZES). 10 is the smallest. */
 export const TEXT_FONT_SIZES_SMALL = [10, 12, 14, 16]
 export const TEXT_FONT_SIZES_DESKTOP = [...TEXT_FONT_SIZES_SMALL, ...TEXT_FONT_SIZES]
+
+/** One step along the Desktop panel sizes (10 .. 48): the next larger (direction 1) or smaller (-1) size than `size`, or null at the end. A size between two steps moves to the nearest step in that direction. */
+export function stepFontSize(size: number, direction: 1 | -1, steps: readonly number[] = TEXT_FONT_SIZES_DESKTOP): number | null {
+  const sorted = [...steps].sort((a, b) => a - b)
+  const next = direction === 1 ? sorted.find((step) => step > size) : [...sorted].reverse().find((step) => step < size)
+  return next ?? null
+}
 export const DEFAULT_TEXT_FONT_SIZE = 24
 export const MAX_TEXT_LENGTH = 2000
 export const TEXT_LINE_HEIGHT = 1.3

@@ -71,7 +71,7 @@ import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitCla
 import { buildEditedLabel, prepareEditorFit } from './textFit'
 import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
 import { CONNECTOR_LABEL_FONT_SIZE, pointOnConnectorLabel, setConnectorLabel } from './connectorLabel'
-import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
+import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, stepFontSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
 import type { TextFontId } from './canvasModel'
 import { useDocuments } from './app/useDocuments'
@@ -1808,6 +1808,15 @@ function App() {
     }
     const item = selectedTextItem()
     if (item && (item.fontSize !== size || item.fit !== 'off')) replaceTextItem(buildEditedLabel(item, item.text, { itemId: item.id, x: item.x, y: item.y, fontSize: size, fontFamily: item.fontFamily, initialText: item.text, fitOff: true }, createTextMeasure))
+  }
+  /** Ctrl+Shift+. / Ctrl+Shift+, : the selected label one panel size step larger or smaller (turns its auto-fit off like a panel pick); one undo step. */
+  const stepSelectedFontSize = (direction: 1 | -1): boolean => {
+    const item = selectedTextItem()
+    if (!item || isItemLocked(item)) return false
+    const size = stepFontSize(item.fontSize, direction)
+    if (size === null) return true
+    pickTextSize(size)
+    return true
   }
   /** The Desktop text panel toggle: auto-fit on or off for the label being edited or selected. */
   const textFitOn = (() => {
@@ -4789,6 +4798,7 @@ function App() {
       case 'layer': return moveSelectionLayer(command.move)
       case 'lock': return lockSelection()
       case 'toolLock': toggleToolLock(); return true
+      case 'fontSize': return stepSelectedFontSize(command.direction)
       case 'group': return groupSelection()
       case 'ungroup': return ungroupSelection()
       case 'tool':
@@ -5074,6 +5084,7 @@ function App() {
         arrowheads={inputMode === 'desktop' && selectionHasArrowheads(strokesRef.current, currentSelectionKeys())
           ? { value: selectionArrowheads(strokesRef.current, currentSelectionKeys()), onChange: changeArrowheads }
           : null}
+        changeShape={inputMode === 'desktop' ? (() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })() : null}
         layer={inputMode === 'desktop' && (selectedItemCount > 0 || hasSelectedRectangle) ? { onMove: (move) => { moveSelectionLayer(move) } } : null}
         arrange={inputMode === 'desktop' && canAlign(strokesRef.current, currentSelectionKeys())
           ? { canAlign: true, canDistribute: canDistribute(strokesRef.current, currentSelectionKeys()), onAlign: alignSelection, onDistribute: distributeSelection }
@@ -5081,7 +5092,6 @@ function App() {
         group={(canGroup(strokesRef.current, currentSelectionKeys()) || canUngroup(strokesRef.current, currentSelectionKeys()))
           ? { canGroup: canGroup(strokesRef.current, currentSelectionKeys()), canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()), onGroup: () => { groupSelection() }, onUngroup: () => { ungroupSelection() } }
           : null}
-        changeShape={inputMode === 'desktop' ? (() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })() : null}
         rotation={rotationPanel}
         code={codePanel}
         objectEraser={objectEraser}
