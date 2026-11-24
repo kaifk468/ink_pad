@@ -5,7 +5,7 @@ import { filterDisplayPoints } from '../oneEuroFilter'
 import { buildInterpolatingCurve, buildMidpointCurve, type InterpolatingStrokeSegment } from '../strokeCurves'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import { classBoxFont, getClassBoxGeometry, type ClassBoxCompartment, type FontMeasure } from '../classBoxLayout'
-import { CONNECTOR_LABEL_FONT_SIZE, connectorLabelLayout } from '../connectorLabel'
+import { connectorLabelFontSize, connectorLabelLayout } from '../connectorLabel'
 import { DEFAULT_TEXT_FONT, getCachedTextMeasure, getTextBaselines, labelLines, textFont, type TextMeasure } from '../textLayout'
 import type { MinimapGeometry } from '../viewport'
 import { isSketchyRectangle } from '../sketchy'
@@ -416,7 +416,7 @@ export function setConnectorLabelBackground(color: string): void { connectorLabe
 /** A connector's label: text centred on the middle of the drawn path over a pad that hides the line. Same for plain and sketchy. */
 export function drawConnectorLabel(ctx: CanvasRenderingContext2D, connector: ConnectorObject): void {
   if (!connector.label) return
-  const layout = connectorLabelLayout(connector, createTextMeasure(CONNECTOR_LABEL_FONT_SIZE, DEFAULT_TEXT_FONT))
+  const layout = connectorLabelLayout(connector, createTextMeasure(connectorLabelFontSize(connector), DEFAULT_TEXT_FONT))
   if (!layout) return
   ctx.save()
   ctx.fillStyle = connectorLabelBackground

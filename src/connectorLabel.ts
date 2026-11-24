@@ -1,8 +1,8 @@
 import { connectorPoints, type CanvasItem, type ConnectorObject } from './canvasModel'
 import { pathMidpoint } from './pathGeometry'
-import { getTextBaselines, measureTextSize, normalizeText, splitTextLines, type TextMeasure } from './textLayout'
+import { TEXT_FONT_SIZES_DESKTOP, getTextBaselines, measureTextSize, normalizeText, splitTextLines, type TextMeasure } from './textLayout'
 
-/** Connector labels are one fixed size (canvas units), in the app's default label font, in the connector's colour. */
+/** Connector labels default to this size (canvas units); `labelFontSize` overrides it. Always in the app's default label font and the connector's colour. */
 export const CONNECTOR_LABEL_FONT_SIZE = 18
 export const CONNECTOR_LABEL_PADDING = 4
 export const MAX_CONNECTOR_LABEL_LENGTH = 500
@@ -12,6 +12,18 @@ export function cleanConnectorLabel(text: unknown): string | undefined {
   if (typeof text !== 'string') return undefined
   const clean = normalizeText(text).slice(0, MAX_CONNECTOR_LABEL_LENGTH).replace(/\s+$/, '')
   return clean.trim().length === 0 ? undefined : clean
+}
+
+/** A saved label size as kept: finite, clamped to the Desktop text size range, and undefined when invalid or equal to the default. */
+export function cleanConnectorLabelFontSize(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  const clamped = Math.max(TEXT_FONT_SIZES_DESKTOP[0], Math.min(TEXT_FONT_SIZES_DESKTOP[TEXT_FONT_SIZES_DESKTOP.length - 1], value))
+  return clamped === CONNECTOR_LABEL_FONT_SIZE ? undefined : clamped
+}
+
+/** The size a connector's label is drawn at. */
+export function connectorLabelFontSize(connector: { labelFontSize?: number }): number {
+  return cleanConnectorLabelFontSize(connector.labelFontSize) ?? CONNECTOR_LABEL_FONT_SIZE
 }
 
 export type ConnectorLabelLayout = {
@@ -30,7 +42,7 @@ export type ConnectorLabelLayout = {
 export function connectorLabelLayout(connector: ConnectorObject, measure?: TextMeasure): ConnectorLabelLayout | null {
   const text = cleanConnectorLabel(connector.label)
   if (text === undefined) return null
-  const fontSize = CONNECTOR_LABEL_FONT_SIZE
+  const fontSize = connectorLabelFontSize(connector)
   const lines = splitTextLines(text)
   const size = measureTextSize(text, fontSize, measure)
   const centre = pathMidpoint(connectorPoints(connector))
@@ -65,4 +77,17 @@ export function setConnectorLabel(items: CanvasItem[], connectorId: number, text
     return label === undefined ? rest : { ...rest, label }
   })
   return changed ? next : items
+}
+
+/** The items with one connector's label size set (the default size removes the field). Returns the same array when nothing changes. */
+export function setConnectorLabelFontSize(items: CanvasItem[], connectorId: number, size: number): CanvasItem[] {
+  const next = cleanConnectorLabelFontSize(size)
+  let changed = false
+  const result = items.map((item) => {
+    if (item.kind !== 'connector' || item.id !== connectorId || item.labelFontSize === next) return item
+    changed = true
+    const { labelFontSize: _old, ...rest } = item
+    return next === undefined ? rest : { ...rest, labelFontSize: next }
+  })
+  return changed ? result : items
 }

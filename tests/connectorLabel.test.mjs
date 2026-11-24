@@ -85,3 +85,35 @@ test('wiring: editor, panel button, renderer', () => {
   assert.match(app, /drawConnectorLabel\(ctx, item\)/)
   assert.match(app, /Add label/)
 })
+
+test('label size: round-trips, default omitted, invalid dropped, clamped', () => {
+  const rt = (extra) => doc.stringifyDocument(doc.parseDocument(file([conn({ label: 'x', ...extra })])).document)
+  const big = rt({ labelFontSize: 32 })
+  assert.equal(doc.parseDocument(big).document.items[0].labelFontSize, 32)
+  assert.equal(doc.stringifyDocument(doc.parseDocument(big).document), big)
+  assert.equal(rt({ labelFontSize: 18 }).includes('labelFontSize'), false)
+  for (const bad of ['20', null, NaN, Infinity, {}]) assert.equal(rt({ labelFontSize: bad }).includes('labelFontSize'), false)
+  assert.equal(doc.parseDocument(rt({ labelFontSize: 500 })).document.items[0].labelFontSize, 48)
+  assert.equal(doc.parseDocument(rt({ labelFontSize: 2 })).document.items[0].labelFontSize, 10)
+})
+
+test('label size: layout scales, setter omits default, SVG uses it', () => {
+  const small = lab.connectorLabelLayout(conn({ label: 'REST' }))
+  const large = lab.connectorLabelLayout(conn({ label: 'REST', labelFontSize: 36 }))
+  assert.equal(large.fontSize, 36)
+  assert.ok(large.box.width > small.box.width && large.box.height > small.box.height)
+  const items = [conn({ label: 'x' })]
+  const set = lab.setConnectorLabelFontSize(items, 1, 24)
+  assert.equal(set[0].labelFontSize, 24)
+  assert.equal(lab.setConnectorLabelFontSize(set, 1, 24), set)
+  assert.equal('labelFontSize' in lab.setConnectorLabelFontSize(set, 1, 18)[0], false)
+  const svg = exporter.buildSheetSvg([conn({ label: 'REST', labelFontSize: 36 })], { width: 400, height: 300, template: 'blank', backgroundColor: '#fff' })
+  assert.match(svg, /font-size="36"/)
+})
+
+test('label size: wired into the editor, font keys and panel', () => {
+  assert.match(app, /fontSize: connectorLabelFontSize\(connector\)/)
+  assert.match(app, /pickConnectorLabelSize\(size\)/)
+  assert.match(app, /connectorLabelSize=\{/)
+  assert.doesNotMatch(app, /CONNECTOR_LABEL_FONT_SIZE/)
+})

@@ -8,7 +8,7 @@ import { CODE_FONT_FAMILY, codeColors, codeGeometry } from './codeBlock'
 import { getCodeLines } from './codeHighlight'
 import type { CodeObject, OpaqueObject } from './canvasModel'
 import { getTextBaselines, labelLines, TEXT_FONT_FAMILY, textFontFamily, getCachedTextMeasure, DEFAULT_TEXT_FONT } from './textLayout'
-import { CONNECTOR_LABEL_FONT_SIZE, connectorLabelLayout } from './connectorLabel'
+import { connectorLabelFontSize, connectorLabelLayout } from './connectorLabel'
 
 export type ExportTemplate = 'blank' | 'lined' | 'dotted'
 export type SheetExportOptions = {
@@ -162,7 +162,7 @@ function sketchyConnectorElement(connector: ConnectorObject): string {
 }
 
 function connectorLabelElement(connector: ConnectorObject): string {
-  const layout = connectorLabelLayout(connector, getCachedTextMeasure(CONNECTOR_LABEL_FONT_SIZE, DEFAULT_TEXT_FONT))
+  const layout = connectorLabelLayout(connector, getCachedTextMeasure(connectorLabelFontSize(connector), DEFAULT_TEXT_FONT))
   if (!layout) return ''
   const family = esc(textFontFamily(DEFAULT_TEXT_FONT))
   const pad = `<rect x="${n(layout.box.x)}" y="${n(layout.box.y)}" width="${n(layout.box.width)}" height="${n(layout.box.height)}" fill="${esc(labelBackground)}"/>`
@@ -353,7 +353,7 @@ export function getContentBounds(rawItems: CanvasItem[], sheet: { width: number;
       include(box.x + box.width, box.y + box.height, item.strokeWidth)
     } else {
       for (const p of connectorPoints(item)) include(p.x, p.y, item.strokeWidth + 16)
-      const labelLayout = connectorLabelLayout(item, getCachedTextMeasure(CONNECTOR_LABEL_FONT_SIZE, DEFAULT_TEXT_FONT))
+      const labelLayout = connectorLabelLayout(item, getCachedTextMeasure(connectorLabelFontSize(item), DEFAULT_TEXT_FONT))
       if (labelLayout) { include(labelLayout.box.x, labelLayout.box.y, 0); include(labelLayout.box.x + labelLayout.box.width, labelLayout.box.y + labelLayout.box.height, 0) }
     }
   }

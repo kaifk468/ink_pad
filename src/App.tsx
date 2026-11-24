@@ -72,7 +72,7 @@ import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
 import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
-import { CONNECTOR_LABEL_FONT_SIZE, pointOnConnectorLabel, setConnectorLabel } from './connectorLabel'
+import { connectorLabelFontSize, pointOnConnectorLabel, setConnectorLabel, setConnectorLabelFontSize } from './connectorLabel'
 import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, stepFontSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
 import type { TextFontId } from './canvasModel'
@@ -980,7 +980,7 @@ function App() {
     const routedItems = routeConnectors(strokesRef.current)
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
-      if (item.kind === 'connector' && !item.locked && (itemHitTest(item, point, Math.max(12 / viewportRef.current.scale, item.strokeWidth * 2)) || pointOnConnectorLabel(item, point, createTextMeasure(CONNECTOR_LABEL_FONT_SIZE, DEFAULT_TEXT_FONT)))) return strokesRef.current[index] as ConnectorObject
+      if (item.kind === 'connector' && !item.locked && (itemHitTest(item, point, Math.max(12 / viewportRef.current.scale, item.strokeWidth * 2)) || pointOnConnectorLabel(item, point, createTextMeasure(connectorLabelFontSize(item), DEFAULT_TEXT_FONT)))) return strokesRef.current[index] as ConnectorObject
     }
     return null
   }
@@ -1079,7 +1079,7 @@ function App() {
     const connector = routeConnectors(strokesRef.current).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
     if (!connector || connector.locked) return false
     const centre = pathMidpoint(connectorPoints(connector))
-    openTextEditor({ itemId: null, connectorId, x: centre.x, y: centre.y, fontSize: CONNECTOR_LABEL_FONT_SIZE, fontFamily: DEFAULT_TEXT_FONT, color: connector.strokeColor, initialText: connector.label ?? '', centerOn: { x: centre.x, y: centre.y } })
+    openTextEditor({ itemId: null, connectorId, x: centre.x, y: centre.y, fontSize: connectorLabelFontSize(connector), fontFamily: DEFAULT_TEXT_FONT, color: connector.strokeColor, initialText: connector.label ?? '', centerOn: { x: centre.x, y: centre.y } })
     return true
   }
 
@@ -1855,7 +1855,27 @@ function App() {
     const item = selectedTextItem()
     if (item && (item.fontSize !== size || item.fit !== 'off')) replaceTextItem(buildEditedLabel(item, item.text, { itemId: item.id, x: item.x, y: item.y, fontSize: size, fontFamily: item.fontFamily, initialText: item.text, fitOff: true }, createTextMeasure))
   }
-  /** Font size keys with a plain or HLD box selected: the unlocked labels inside it step one size (each from its own size), one undo step. Connector labels have no saved size and are left alone. */
+  /** The one selected connector when it has a label (its size can be changed), else null. */
+  const selectedLabelledConnector = (): ConnectorObject | null => {
+    const keys = [...selectedKeysRef.current]
+    if (keys.length !== 1 || !keys[0].startsWith('connector:')) return null
+    const id = Number(keys[0].slice('connector:'.length))
+    const item = strokesRef.current.find((candidate) => candidate.kind === 'connector' && candidate.id === id)
+    return item?.kind === 'connector' && item.label ? item : null
+  }
+  /** Sets the label size of the selected labelled connector (panel buttons and the font keys); one undo step. */
+  const pickConnectorLabelSize = (size: number) => {
+    const connector = selectedLabelledConnector()
+    if (!connector || connector.locked) return
+    const next = setConnectorLabelFontSize(strokesRef.current, connector.id, size)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+  }
+  /** Font size keys with a plain or HLD box selected: the unlocked labels inside it step one size (each from its own size), one undo step. */
   const stepBoxLabelFontSizes = (direction: 1 | -1): boolean => {
     const labelKeys = new Set(labelsInside(strokesRef.current, currentSelectionKeys()))
     if (labelKeys.size === 0) return false
@@ -1878,6 +1898,13 @@ function App() {
   }
   /** Ctrl+Shift+. / Ctrl+Shift+, : the selected label one panel size step larger or smaller (turns its auto-fit off like a panel pick); one undo step. */
   const stepSelectedFontSize = (direction: 1 | -1): boolean => {
+    const labelled = selectedLabelledConnector()
+    if (labelled && !selectedTextItem()) {
+      if (labelled.locked) return false
+      const size = stepFontSize(connectorLabelFontSize(labelled), direction)
+      if (size !== null) pickConnectorLabelSize(size)
+      return true
+    }
     const item = selectedTextItem()
     if (!item && inputModeRef.current === 'desktop') return stepBoxLabelFontSizes(direction)
     if (!item || isItemLocked(item)) return false
@@ -5209,6 +5236,7 @@ function App() {
         textSize={textSize}
         onTextSize={pickTextSize}
         textSizeChoices={inputMode === 'desktop' ? TEXT_FONT_SIZES_DESKTOP : undefined}
+        connectorLabelSize={selectedConnectorLabel && selectedItemCount === 1 && selectedConnectorId !== null ? (() => { const c = selectedLabelledConnector(); return c && !c.locked ? { size: connectorLabelFontSize(c), onPick: pickConnectorLabelSize } : undefined })() : undefined}
         textFit={textFitOn === null ? undefined : { on: textFitOn, onToggle: toggleTextFit }}
         showTextFonts={((optionsFor === 'text' || inputMode === 'desktop') && textMode) || (selectedTextId !== null && selectedItemCount === 1)}
         textFontId={selectedTextFont ?? textFontId}

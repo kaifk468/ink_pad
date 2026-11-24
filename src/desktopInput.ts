@@ -10,7 +10,7 @@
 import { canvasItemKey, getCanvasSelectionBounds, isItemLocked, toItemFrame, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
 import { hitInkBoxDivider, hitInkBoxMoveGrip } from './inkClassBox'
 import { itemHitTest } from './lassoSelection'
-import { CONNECTOR_LABEL_FONT_SIZE, pointOnConnectorLabel } from './connectorLabel'
+import { connectorLabelFontSize, pointOnConnectorLabel } from './connectorLabel'
 import { DEFAULT_TEXT_FONT, getCachedTextMeasure } from './textLayout'
 import { MAX_ZOOM, MIN_ZOOM, panViewport, zoomViewportAt, type Viewport } from './viewport'
 
@@ -341,7 +341,7 @@ export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scal
       const local = toItemFrame(item, point)
       return local.x >= item.x - pad && local.x <= item.x + item.width + pad && local.y >= item.y - pad && local.y <= item.y + item.height + pad
     })
-    ?? pick('connector', (item) => item.kind === 'connector' && (itemHitTest(item, point, Math.max(12 / scale, item.strokeWidth * 2)) || pointOnConnectorLabel(item, point, getCachedTextMeasure(CONNECTOR_LABEL_FONT_SIZE, DEFAULT_TEXT_FONT))))
+    ?? pick('connector', (item) => item.kind === 'connector' && (itemHitTest(item, point, Math.max(12 / scale, item.strokeWidth * 2)) || pointOnConnectorLabel(item, point, getCachedTextMeasure(connectorLabelFontSize(item), DEFAULT_TEXT_FONT))))
 }
 
 export type ClickTool = 'laser' | 'pen' | 'shape' | 'shapeDraw' | 'text' | 'connector' | 'lasso' | 'classBox' | 'select' | 'eraser'

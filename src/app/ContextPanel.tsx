@@ -5,7 +5,7 @@ import type { Arrowheads, ConnectorRelationshipType, LayerMove } from '../canvas
 import type { AlignOp, DistributeOp } from '../arrange'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import type { TextFontId } from '../canvasModel'
-import { TEXT_FONTS, TEXT_FONT_SIZES } from '../textLayout'
+import { TEXT_FONTS, TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP } from '../textLayout'
 import { FILL_PRESETS } from '../shapeFill'
 import { CODE_LANGUAGES } from '../codeBlock'
 import { COLORS, MAX_STROKE_WIDTH, MIN_STROKE_WIDTH, WIDTHS } from './appConfig'
@@ -38,6 +38,8 @@ type ContextPanelProps = {
   onTextSize: (size: number) => void
   /** Desktop only: sizes to offer (default TEXT_FONT_SIZES) and the auto-fit toggle for the label being edited or selected. */
   textSizeChoices?: readonly number[]
+  /** A lone selected labelled connector: its label size buttons. */
+  connectorLabelSize?: { size: number; onPick: (size: number) => void }
   textFit?: { on: boolean; onToggle: () => void }
   selectedItemCount: number
   onClearSelection: () => void
@@ -122,7 +124,7 @@ function ColorChoices({ value, label, onChange }: { value: string; label: string
 /** Settings that only appear when the active tool or selection needs them. */
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -314,6 +316,19 @@ export function ContextPanel(props: ContextPanelProps) {
             style={{ fontFamily: font.family }}
             onClick={() => props.onTextFont(font.id)}
           >Aa<span>{font.label}</span></button>
+        ))}
+      </div>}
+      {props.connectorLabelSize && <div className="tool-group text-size-group" role="group" aria-label="Arrow label size">
+        {TEXT_FONT_SIZES_DESKTOP.map((size) => (
+          <button
+            className={`text-size-button${props.connectorLabelSize?.size === size ? ' selected' : ''}`}
+            key={size}
+            type="button"
+            aria-label={`Arrow label size ${size}`}
+            aria-pressed={props.connectorLabelSize?.size === size}
+            title={`${size}px arrow label`}
+            onClick={() => props.connectorLabelSize?.onPick(size)}
+          >{size}</button>
         ))}
       </div>}
       {(props.showTextSizes || props.textFit) && <div className="tool-group text-size-group" role="group" aria-label="Text size" onMouseDown={props.textFit ? (event) => event.preventDefault() : undefined}>

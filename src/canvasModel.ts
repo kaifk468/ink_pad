@@ -45,6 +45,8 @@ export type ConnectorObject = {
   dash?: LineDash | 'solid'
   /** Text drawn centred on the middle of the path, over a background-coloured pad. Non-empty, at most 500 characters. Saved. */
   label?: string
+  /** Label text size (canvas units), 10..48. Omitted at the default size (18). Saved. */
+  labelFontSize?: number
   /** Desktop lock: drawn normally, never selected, edited or erased. Only ever `true`. */
   locked?: true
   /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */
