@@ -101,12 +101,32 @@ test('the right-click menu lists the change-shape rows only when offered, as sha
   const state = { hasSelection: true, clipboardHasItems: false, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false }
   assert.equal(input.contextMenuEntries(state).some((e) => e.action.startsWith('shape:')), false)
   const rows = input.contextMenuEntries({ ...state, changeShapes: [{ id: 'diamond', label: 'Diamond' }, { id: 'ellipse', label: 'Ellipse' }] }).filter((e) => e.action.startsWith('shape:'))
-  assert.deepEqual(rows.map((r) => [r.action, r.label]), [['shape:diamond', 'Change shape: Diamond'], ['shape:ellipse', 'Change shape: Ellipse']])
+  assert.deepEqual(rows.map((r) => [r.action, r.label]), [['shape:diamond', 'Change shape to Diamond'], ['shape:ellipse', 'Change shape to Ellipse']])
+})
+
+test('the change-shape choices form ONE chips row with short names, and the menu height covers it', () => {
+  const state = { hasSelection: true, clipboardHasItems: false, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false }
+  const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn'].map((id) => ({ id, label: id === 'loadBalancer' ? 'Load balancer' : id[0].toUpperCase() + id.slice(1) }))
+  const base = input.contextMenuEntries(state)
+  const withChips = input.contextMenuEntries({ ...state, changeShapes: hld })
+  const rows = input.contextMenuRows(withChips)
+  assert.equal(rows.filter((r) => r.chips).length, 1)
+  assert.equal(rows.find((r) => r.chips).chips.length, 9)
+  assert.equal(input.contextMenuRows(base).some((r) => r.chips), false)
+  const plain = input.contextMenuEntries({ ...state, changeShapes: [{ id: 'rectangle', label: 'Rectangle' }, { id: 'diamond', label: 'Diamond' }] })
+  assert.deepEqual(plain.filter((e) => e.chip).map((e) => e.chip), ['Rect', 'Diamond'])
+  // Nine HLD chips wrap onto several lines but stay far below nine full rows (9 x 34).
+  const extra = input.contextMenuHeight(withChips) - input.contextMenuHeight(base)
+  assert.ok(extra > 60 && extra < 9 * 34 / 2, `extra ${extra}`)
+  assert.ok(input.contextMenuHeight(plain) <= 700 - 16, 'plain shapes fit a 1024x700 screen without scrolling: ' + input.contextMenuHeight(plain))
+  assert.ok(input.contextMenuHeight(withChips) < input.contextMenuHeight(base) + 9 * 34, 'HLD chips take far less than nine rows')
+  assert.ok(input.chipBlockHeight(rows.find((r) => r.chips).chips) < input.chipBlockHeight([...rows.find((r) => r.chips).chips, ...rows.find((r) => r.chips).chips, ...rows.find((r) => r.chips).chips]))
 })
 
 test('wiring: one undo step, menu, panel', () => {
   assert.match(app, /const next = changeSelectedShapes\(strokesRef\.current, currentSelectionKeys\(\), target as ShapeChoice\)\s*if \(next === strokesRef\.current\) return false\s*saveHistory\(\)\s*strokesRef\.current = next/)
   assert.match(app, /action\.startsWith\('shape:'\)\) changeShapeSelection\(/)
+  assert.match(app, /className="canvas-context-chip" title=\{chip\.label\} aria-label=\{chip\.label\}/)
   assert.match(app, /changeShapes: changeShapeChoices\(strokesRef\.current, currentSelectionKeys\(\)\)/)
   assert.match(app, /changeShape=\{inputMode === 'desktop'/)
   assert.match(panel, /aria-label="Change shape"/)

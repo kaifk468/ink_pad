@@ -533,7 +533,12 @@ export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete
   | `shape:${string}`
 export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
-export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint: string; section: ContextMenuSection; disabled: boolean }
+export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint: string; section: ContextMenuSection; disabled: boolean; /** Change shape choices only: the short text of the chip (the label is its tooltip and aria-label). */ chip?: string }
+
+/** Short chip text for a shape name (the full name stays in the tooltip). */
+export function shortShapeLabel(label: string): string {
+  return label === 'Rectangle' ? 'Rect' : label === 'Load balancer' ? 'Load bal.' : label
+}
 
 /** What the menu needs to know about the page when it opens. */
 export type ContextMenuState = {
@@ -567,7 +572,7 @@ export type ContextMenuState = {
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
   const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [] } = state
-  const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled })
+  const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean, chip?: string): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled, ...(chip !== undefined ? { chip } : {}) })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
     entry('copy', 'Copy', 'Ctrl+C', 'clipboard', hasSelection),
@@ -577,7 +582,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     ...(canEditText ? [entry('editText', 'Edit text', 'Enter', 'text', true)] : []),
     entry('copyStyle', 'Copy style', 'Ctrl+Alt+C', 'style', canCopyStyle),
     entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'style', canPasteStyle),
-    ...changeShapes.map((choice) => entry(`shape:${choice.id}`, `Change shape: ${choice.label}`, '', 'shape', true)),
+    ...changeShapes.map((choice) => entry(`shape:${choice.id}`, `Change shape to ${choice.label}`, '', 'shape', true, shortShapeLabel(choice.label))),
     entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection),
     entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection),
     ...(canGroup ? [entry('group', 'Group', 'Ctrl+G', 'arrange', true)] : []),
@@ -594,13 +599,20 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
   ]
 }
 
-/** The menu rows with a separator wherever the section changes; the rendered menu maps this one list. */
-export type ContextMenuRow = { separator: true } | { separator?: false; entry: ContextMenuEntry }
+/** The menu rows with a separator wherever the section changes; the rendered menu maps this one list. Change shape choices form ONE `chips` row. */
+export type ContextMenuRow = { separator: true } | { separator?: false; entry: ContextMenuEntry; chips?: undefined } | { separator?: false; chips: ContextMenuEntry[]; entry?: undefined }
 
 export function contextMenuRows(entries: readonly ContextMenuEntry[]): ContextMenuRow[] {
   const rows: ContextMenuRow[] = []
+  let chips: ContextMenuEntry[] | null = null
   entries.forEach((entry, index) => {
     if (index > 0 && entries[index - 1].section !== entry.section) rows.push({ separator: true })
+    if (entry.chip !== undefined) {
+      if (chips === null) { chips = []; rows.push({ chips }) }
+      chips.push(entry)
+      return
+    }
+    chips = null
     rows.push({ entry })
   })
   return rows
@@ -612,13 +624,29 @@ const MENU_PADDING = 6 + 1 // vertical padding plus border, per side
 const MENU_ENTRY_HEIGHT = 34
 const MENU_GAP = 2
 const MENU_SEPARATOR_HEIGHT = 1 + 4 + 4 // line plus its vertical margin
+const CHIP_CAPTION_HEIGHT = 16
+const CHIP_HEIGHT = 26
+const CHIP_GAP = 4
+const CHIP_ROW_PADDING = 2 + 4 // top and bottom padding of the chip block
+const CHIP_AREA_WIDTH = CONTEXT_MENU_WIDTH - 2 * MENU_PADDING - 12 // inside the menu padding and the chip block's side padding
 
-/** Height of the right-click menu, worked out from its rows (entries and separators), for clampMenuPosition. */
+/** Height of the Change shape block: the caption plus as many chip lines as the (slightly overestimated) chip widths need. */
+export function chipBlockHeight(chips: readonly ContextMenuEntry[]): number {
+  let lines = 1
+  let used = 0
+  for (const chip of chips) {
+    const width = Math.ceil((chip.chip ?? chip.label).length * 6.8) + 18
+    if (used > 0 && used + CHIP_GAP + width > CHIP_AREA_WIDTH) { lines += 1; used = width } else used += (used > 0 ? CHIP_GAP : 0) + width
+  }
+  return CHIP_ROW_PADDING + CHIP_CAPTION_HEIGHT + lines * CHIP_HEIGHT + (lines - 1) * CHIP_GAP
+}
+
+/** Height of the right-click menu, worked out from its rows (entries, the chip block and separators), for clampMenuPosition. */
 export function contextMenuHeight(entries: readonly ContextMenuEntry[]): number {
   const rows = contextMenuRows(entries)
-  const separators = rows.filter((row) => row.separator).length
-  const items = rows.length - separators
-  return MENU_PADDING * 2 + items * MENU_ENTRY_HEIGHT + separators * MENU_SEPARATOR_HEIGHT + Math.max(0, rows.length - 1) * MENU_GAP
+  let height = MENU_PADDING * 2 + Math.max(0, rows.length - 1) * MENU_GAP
+  for (const row of rows) height += row.separator ? MENU_SEPARATOR_HEIGHT : row.chips ? chipBlockHeight(row.chips) : MENU_ENTRY_HEIGHT
+  return height
 }
 
 /** Keeps the menu fully on screen: opens at the pointer, shifted back when it would run past the right or bottom edge. */

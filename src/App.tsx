@@ -4976,7 +4976,16 @@ function App() {
             <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y }} onContextMenu={(event) => event.preventDefault()} onKeyDown={onContextMenuKeyDown}>
               {contextMenuRows(entries).map((row, index) => row.separator
                 ? <div key={`separator-${index}`} className="canvas-context-separator" role="separator" />
-                : (
+                : row.chips ? (
+                  <div key="change-shape" className="canvas-context-chips" role="group" aria-label="Change shape">
+                    <span className="canvas-context-chips-caption">Change shape</span>
+                    <div className="canvas-context-chips-row">
+                      {row.chips.map((chip) => (
+                        <button key={chip.action} type="button" role="menuitem" className="canvas-context-chip" title={chip.label} aria-label={chip.label} onClick={() => runContextMenuAction(chip.action, contextMenu.lockedKey)}>{chip.chip}</button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
                   <button key={row.entry.action} type="button" role="menuitem" disabled={row.entry.disabled} onClick={() => runContextMenuAction(row.entry.action, contextMenu.lockedKey)}>
                     <span>{row.entry.label}</span>
                     {row.entry.hint && <kbd className="canvas-context-hint">{row.entry.hint}</kbd>}

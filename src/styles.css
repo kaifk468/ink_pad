@@ -703,6 +703,10 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .canvas-context-menu button:hover:not(:disabled), .canvas-context-menu button:focus-visible { background: #eef1fc; outline: none; }
 .canvas-context-menu button:disabled { color: #a0a6b2; cursor: default; }
 .canvas-context-separator { height: 1px; margin: 4px 6px; background: rgba(36, 42, 52, .12); }
+.canvas-context-chips { display: flex; flex-direction: column; gap: 0; padding: 2px 6px 4px; }
+.canvas-context-chips-caption { height: 16px; line-height: 16px; font: 600 11px 'DM Sans', sans-serif; color: #7a8190; letter-spacing: .02em; }
+.canvas-context-chips-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.canvas-context-menu .canvas-context-chip { min-height: 26px; height: 26px; padding: 0 8px; gap: 0; justify-content: center; border: 1px solid #e0e4ec; border-radius: 13px; font-size: 12px; }
 .canvas-context-hint { font: 12px 'DM Sans', sans-serif; color: #7a8190; white-space: nowrap; }
 .canvas-context-menu button:disabled .canvas-context-hint { color: #b9beca; }
 
