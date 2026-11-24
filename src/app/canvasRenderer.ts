@@ -1,4 +1,4 @@
-import { connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, strokeHeadGeometry, getConnectorSymbolGeometry, itemAngle, rotatedItemBounds } from '../canvasModel'
+import { rectangleSideMidpoints, connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, strokeHeadGeometry, getConnectorSymbolGeometry, itemAngle, rotatedItemBounds } from '../canvasModel'
 import { hldOutlinePath } from '../hldShapes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextFontId, TextObject } from '../canvasModel'
 import { filterDisplayPoints } from '../oneEuroFilter'
@@ -501,6 +501,18 @@ export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasIte
         ctx.fill()
       } else ctx.stroke()
     }
+  }
+  ctx.restore()
+}
+
+/** Transient overlay: the four side midpoints of the box a connector end would snap to, as small constant-screen-size dots. Never an item. */
+export function drawSideMidpointDots(ctx: CanvasRenderingContext2D, box: Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>, scale: number): void {
+  ctx.save()
+  ctx.fillStyle = '#5269df'
+  for (const { point } of rectangleSideMidpoints(box)) {
+    ctx.beginPath()
+    ctx.arc(point.x, point.y, 3.5 / scale, 0, Math.PI * 2)
+    ctx.fill()
   }
   ctx.restore()
 }

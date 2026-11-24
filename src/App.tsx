@@ -32,7 +32,7 @@ import { createTestInk, isTestInk } from './testInk'
 import { createFrameRecorder, createRedrawTracker, formatDrawFlags, formatFrameSummary, formatRedrawSummary } from './app/frameRecorder'
 import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
 import { chooseDrawMode, countVisiblePoints, DEFAULT_DIRECT_MAX_VISIBLE_POINTS, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
-import { setConnectorLabelBackground, createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, layerCanvasOptions, rawDrawingOptions } from './app/canvasRenderer'
+import { setConnectorLabelBackground, createFontMeasure, createTextMeasure, drawConnector, drawSideMidpointDots, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, layerCanvasOptions, rawDrawingOptions } from './app/canvasRenderer'
 import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
 import { UmlConnectorIcon } from './app/UmlConnectorIcon'
 import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
@@ -1940,6 +1940,8 @@ function App() {
         activeConnector.startAttachment ? activeConnector.start : null,
         activeConnector.endAttachment ? activeConnector.end : null,
       ].filter((point): point is Point => point !== null)
+      const targetBox = activeConnector.endAttachment ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === activeConnector.endAttachment?.rectangleId) : undefined
+      if (targetBox) drawSideMidpointDots(ctx, targetBox, viewport.scale)
       if (snapPoints.length) {
         ctx.save()
         ctx.fillStyle = '#ffffff'
@@ -1979,6 +1981,7 @@ function App() {
         ctx.strokeStyle = '#5269df'
         ctx.lineWidth = 3 / scale
         ctx.strokeRect(box.x - 4 / scale, box.y - 4 / scale, box.width + 8 / scale, box.height + 8 / scale)
+        drawSideMidpointDots(ctx, box, scale)
       }
       ctx.strokeStyle = '#5269df'
       ctx.fillStyle = '#ffffff'

@@ -379,6 +379,32 @@ function nearestRectangleBoundaryPoint(rectangle: RectangleObject, point: Point)
   ))
 }
 
+/** How close (canvas units) to a side's middle an outline point snaps to that middle: 14, but never more than 20% of the side. */
+export const CONNECTOR_MIDPOINT_MAGNET = 14
+export const CONNECTOR_MIDPOINT_MAGNET_RATIO = 0.2
+
+/** The four side midpoints of a box (left, right, top, bottom), each with the length of its side. */
+export function rectangleSideMidpoints(rectangle: Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>, pressure = 1): Array<{ point: Point; sideLength: number }> {
+  const { x, y, width, height } = rectangle
+  return [
+    { point: { x, y: y + height / 2, pressure }, sideLength: height },
+    { point: { x: x + width, y: y + height / 2, pressure }, sideLength: height },
+    { point: { x: x + width / 2, y, pressure }, sideLength: width },
+    { point: { x: x + width / 2, y: y + height, pressure }, sideLength: width },
+  ]
+}
+
+/** The outline point `candidate`, or the exact middle of the side it is within the magnet distance of. */
+function snapToSideMidpoint(rectangle: RectangleObject, candidate: Point): Point {
+  let best: Point | null = null
+  let bestDistance = Infinity
+  for (const { point: mid, sideLength } of rectangleSideMidpoints(rectangle, candidate.pressure)) {
+    const distance = Math.hypot(candidate.x - mid.x, candidate.y - mid.y)
+    if (distance <= Math.min(CONNECTOR_MIDPOINT_MAGNET, sideLength * CONNECTOR_MIDPOINT_MAGNET_RATIO) && distance < bestDistance) { best = mid; bestDistance = distance }
+  }
+  return best ?? candidate
+}
+
 export function snapConnectorEndpoint(
   point: Point,
   items: CanvasItem[],
@@ -390,7 +416,7 @@ export function snapConnectorEndpoint(
     for (let index = items.length - 1; index >= 0; index -= 1) {
       const item = items[index]
       if (item.kind !== 'rectangle' || itemAngle(item) !== 0 || point.x < item.x || point.x > item.x + item.width || point.y < item.y || point.y > item.y + item.height) continue
-      const candidate = nearestRectangleBoundaryPoint(item, point)
+      const candidate = snapToSideMidpoint(item, nearestRectangleBoundaryPoint(item, point))
       return { point: candidate, attachment: { rectangleId: item.id, offsetX: candidate.x - item.x, offsetY: candidate.y - item.y } }
     }
   }
@@ -398,9 +424,10 @@ export function snapConnectorEndpoint(
   let closestDistance = tolerance
   for (const item of items) {
     if (item.kind !== 'rectangle' || itemAngle(item) !== 0) continue
-    const candidate = nearestRectangleBoundaryPoint(item, point)
-    const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y)
+    const outline = nearestRectangleBoundaryPoint(item, point)
+    const distance = Math.hypot(point.x - outline.x, point.y - outline.y)
     if (distance <= closestDistance) {
+      const candidate = snapToSideMidpoint(item, outline)
       closestDistance = distance
       closest = {
         point: candidate,
