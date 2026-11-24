@@ -3346,7 +3346,7 @@ function App() {
       const nextItems = activeResize.rectangleId !== null
         ? (() => {
           const resized = resizeRectangleItems(activeResize.originalItems, activeResize.rectangleId, bounds)
-          return activeResize.labelKeys ? followResizeLabels(resized, activeResize.rectangleId, original, bounds, activeResize.labelKeys) : resized
+          return activeResize.labelKeys ? followResizeLabels(resized, activeResize.rectangleId, original, bounds, activeResize.labelKeys, createTextMeasure) : resized
         })()
         : activeResize.selectedKeys?.size === 1 && [...activeResize.selectedKeys][0].startsWith('text:')
           ? resizeTextItem(activeResize.originalItems, Number([...activeResize.selectedKeys][0].slice('text:'.length)), original, bounds, activeResize.handle)

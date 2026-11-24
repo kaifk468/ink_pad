@@ -205,5 +205,5 @@ test('resize wiring: labels decided at start, desktop mouse flow boxes only, sam
   assert.match(app, /labelKeys\?: string\[\]/)
   assert.match(app, /const resizeLabelKeys = [\s\S]{0,200}inputModeRef\.current !== 'desktop' \|\| event\.pointerType !== 'mouse' \|\| !isFlowBox\(box\)/)
   assert.equal((app.match(/labelKeys: resizeLabelKeys\(/g) ?? []).length, 2)
-  assert.match(app, /followResizeLabels\(resized, activeResize\.rectangleId, original, bounds, activeResize\.labelKeys\)/)
+  assert.match(app, /followResizeLabels\(resized, activeResize\.rectangleId, original, bounds, activeResize\.labelKeys(?:, createTextMeasure)?\)/)
 })

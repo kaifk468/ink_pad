@@ -143,3 +143,19 @@ export function buildEditedLabel(base: TextObject, value: string, editor: FitEdi
   if (fit) return { ...updated, width: fit.width, height: fit.height, ...(fit.wrap ? { fit: 'wrap' as const } : {}) }
   return editor.fitOff ? { ...updated, fit: 'off' as const } : updated
 }
+
+/**
+ * A label inside a shape that was just resized: when it no longer fits the shape's inner area it is refitted (shrunk step by step, then
+ * wrapped at the minimum size) exactly as typing would. The label's current size is the upper bound, so growing the shape never enlarges
+ * text; a label with auto-fit turned off (`fit: 'off'`) is the user's choice and stays as it is. Returns the same label when it still fits.
+ */
+export function refitLabelToShape(label: TextObject, shape: RectangleObject, measureFor: MeasureFor): TextObject {
+  if (label.fit === 'off' || label.text.trim().length === 0) return label
+  const area = shapeInnerArea(shape)
+  if (label.width <= area.width && label.height <= area.height) return label
+  const fit = fitText(label.text, label.fontSize, area, label.fontFamily, measureFor)
+  const { fit: _old, ...plain } = label
+  void _old
+  const updated = updateTextObject(plain, label.text, fit.fontSize, measureFor(fit.fontSize, label.fontFamily))
+  return { ...updated, width: fit.width, height: fit.height, ...(fit.wrap ? { fit: 'wrap' as const } : {}) }
+}

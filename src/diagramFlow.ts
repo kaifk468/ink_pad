@@ -1,5 +1,5 @@
 import { canvasItemKey, createConnector, getCanvasSelectionBounds, snapConnectorEndpoint, type CanvasItem, type ConnectorAttachment, type ConnectorObject, type LineDash, type Point, type RectangleBounds, type RectangleObject, type TextObject } from './canvasModel'
-import { contains } from './textFit'
+import { contains, refitLabelToShape, type MeasureFor } from './textFit'
 
 /**
  * Desktop diagram flow (batch C): arrows that stick to shapes, quick-create connected shapes, labels inside shapes.
@@ -130,19 +130,22 @@ export function labelsInside(items: readonly CanvasItem[], boxKeys: ReadonlySet<
  * After a single box is resized from `oldBounds` to `newBounds`: the labels in `labelKeys` (decided once at resize start) keep the same
  * relative position of their centre inside the box. Label size and font are unchanged. Returns `items` itself when nothing moves.
  */
-export function followResizeLabels(items: CanvasItem[], _boxId: number, oldBounds: RectangleBounds, newBounds: RectangleBounds, labelKeys: readonly string[]): CanvasItem[] {
+export function followResizeLabels(items: CanvasItem[], boxId: number, oldBounds: RectangleBounds, newBounds: RectangleBounds, labelKeys: readonly string[], measureFor?: MeasureFor): CanvasItem[] {
   if (labelKeys.length === 0 || oldBounds.width <= 0 || oldBounds.height <= 0) return items
   const keys = new Set(labelKeys)
+  // With a measure, a label that no longer fits the resized box is refitted (never enlarged) and keeps its centre.
+  const box = measureFor ? items.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === boxId) : undefined
   let changed = false
   const next = items.map((item) => {
     if (item.kind !== 'text' || !keys.has(canvasItemKey(item))) return item
+    const label = box && measureFor ? refitLabelToShape(item, box, measureFor) : item
     const rx = (item.x + item.width / 2 - oldBounds.x) / oldBounds.width
     const ry = (item.y + item.height / 2 - oldBounds.y) / oldBounds.height
-    const x = newBounds.x + rx * newBounds.width - item.width / 2
-    const y = newBounds.y + ry * newBounds.height - item.height / 2
-    if (x === item.x && y === item.y) return item
+    const x = newBounds.x + rx * newBounds.width - label.width / 2
+    const y = newBounds.y + ry * newBounds.height - label.height / 2
+    if (x === label.x && y === label.y && label === item) return item
     changed = true
-    return { ...item, x, y }
+    return { ...label, x, y }
   })
   return changed ? next : items
 }
