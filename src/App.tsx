@@ -9,6 +9,7 @@ import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, pathMidpoint, bendFo
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
 import { similarItemKeys } from './selectSimilar'
+import { changeSelectedShapes, changeShapeChoices, type ShapeChoice } from './changeShape'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
@@ -1268,6 +1269,17 @@ function App() {
     historyCacheRef.current = null
     applySelectionState(normalizeSelection(expandToGroups(next, keys)))
     showToast('Grouped')
+    return true
+  }
+  // Change shape (right-click menu, panel): the selected boxes become another shape of their family; one undo step.
+  const changeShapeSelection = (target: string): boolean => {
+    const next = changeSelectedShapes(strokesRef.current, currentSelectionKeys(), target as ShapeChoice)
+    if (next === strokesRef.current) return false
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
     return true
   }
   const ungroupSelection = (): boolean => {
@@ -4559,6 +4571,7 @@ function App() {
       case 'ungroup': ungroupSelection(); break
       case 'unlock': if (lockedKey) unlockItems(new Set([lockedKey])); break
       case 'unlockAll': unlockItems(null); break
+      default: if (action.startsWith('shape:')) changeShapeSelection(action.slice('shape:'.length))
     }
   }
   // Menu keyboard: arrows (and Home/End) move focus between the enabled rows; Enter runs the focused row (a button click); Escape is handled with the other keys.
@@ -4854,6 +4867,7 @@ function App() {
             anyLocked: strokesRef.current.some(isItemLocked),
             canGroup: canGroup(strokesRef.current, currentSelectionKeys()),
             canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()),
+            changeShapes: changeShapeChoices(strokesRef.current, currentSelectionKeys())?.choices ?? [],
             canSelectSimilar: (() => { const key = soleSelectedKey(); return key !== null && similarItemKeys(strokesRef.current, key).length > 0 })(),
           })
           const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight)
@@ -5067,6 +5081,7 @@ function App() {
         group={(canGroup(strokesRef.current, currentSelectionKeys()) || canUngroup(strokesRef.current, currentSelectionKeys()))
           ? { canGroup: canGroup(strokesRef.current, currentSelectionKeys()), canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()), onGroup: () => { groupSelection() }, onUngroup: () => { ungroupSelection() } }
           : null}
+        changeShape={inputMode === 'desktop' ? (() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })() : null}
         rotation={rotationPanel}
         code={codePanel}
         objectEraser={objectEraser}

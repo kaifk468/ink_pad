@@ -75,6 +75,8 @@ type ContextPanelProps = {
   /** Desktop: layer order buttons for the selection. */
   layer?: { onMove: (move: LayerMove) => void } | null
   /** Desktop: align (2+ items) and distribute (3+ items). */
+  /** Desktop: the shapes the selected boxes can change to (Change shape). */
+  changeShape?: { choices: Array<{ id: string; label: string }>; onChange: (id: string) => void } | null
   group?: { canGroup: boolean; canUngroup: boolean; onGroup: () => void; onUngroup: () => void } | null
   arrange?: { canAlign: boolean; canDistribute: boolean; onAlign: (op: AlignOp) => void; onDistribute: (op: DistributeOp) => void } | null
   objectEraser?: boolean
@@ -120,7 +122,7 @@ function ColorChoices({ value, label, onChange }: { value: string; label: string
 /** Settings that only appear when the active tool or selection needs them. */
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -231,6 +233,10 @@ export function ContextPanel(props: ContextPanelProps) {
       {props.group && (props.group.canGroup || props.group.canUngroup) && <div className="selection-actions" role="group" aria-label="Group">
         {props.group.canGroup && <button className="clear-selection-button" type="button" aria-label="Group selection" title={props.desktop ? "Group the selected items so they select and move together (Ctrl+G)" : "Group the selected items so they select and move together"} onClick={props.group.onGroup}>Group</button>}
         {props.group.canUngroup && <button className="clear-selection-button" type="button" aria-label="Ungroup selection" title={props.desktop ? "Take the selected items out of their group (Ctrl+Shift+G)" : "Take the selected items out of their group"} onClick={props.group.onUngroup}>Ungroup</button>}
+      </div>}
+      {props.changeShape && props.changeShape.choices.length > 0 && <div className="selection-actions change-shape-controls" role="group" aria-label="Change shape">
+        <span className="panel-label">Shape</span>
+        {props.changeShape.choices.map((choice) => <button key={choice.id} className="clear-selection-button" type="button" aria-label={`Change shape to ${choice.label}`} title={`Change shape to ${choice.label}`} onClick={() => props.changeShape?.onChange(choice.id)}>{choice.label}</button>)}
       </div>}
       {props.arrange && <div className="arrange-controls" role="group" aria-label="Align and distribute">
         <span className="panel-label">Align</span>
