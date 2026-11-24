@@ -5076,6 +5076,7 @@ function App() {
         onMoveDiagram={(docId, folderId) => moveDiagram(docId, folderId)}
         onDeleteDiagram={(id) => deleteStoredDiagram(id)}
         onChangeStorage={() => { setLibraryOpen(false); setStoragePanelOpen(true) }}
+        desktop={inputMode === 'desktop'}
       />}
       {filePanelOpen && <FilePanel
         title={docTitle}

@@ -3,6 +3,7 @@ import type { DocumentSummary, FolderRecord } from '../documentStore'
 import { cleanFolderName, flattenFolders, folderPath } from '../folderTree'
 import { NEW_DIAGRAM_PRESETS, RECENT_COUNT, RECENT_MIN_LIBRARY, countInFolder, describeEdited, folderLabel, LIBRARY_SORTS, parseLibrarySort, recentDiagrams, searchLibrary, sortLibrary, type LibraryLayout, type LibrarySort } from '../libraryView'
 import { copyTitle } from '../libraryCopy'
+import { canDragCards, decideDrop, hasFinePointer } from '../libraryDrop'
 import { createPendingDeletes, hiddenForDiagram, hiddenForFolder, type PendingDeletes } from '../pendingDelete'
 import type { PageTemplate } from '../pageTemplates'
 
@@ -28,12 +29,14 @@ type HomeScreenProps = {
   onCreateFolder: (name: string, parentId: string | null) => Promise<boolean> | void
   onRenameFolder: (id: string, name: string) => Promise<boolean> | void
   onRenameDiagram: (id: string, title: string) => Promise<boolean | 'unchanged'> | void
-  /** Saves "<title> (copy)" next to the original; resolves false (with a notice) when it could not be done. */
+  /** Saves "<title> (copy)" next to the original; resolves the real new title (a device folder may number it), or false (with a notice) when it could not be done. */
   onMakeCopy: (id: string) => Promise<boolean> | void
   onDeleteFolder: (id: string) => Promise<boolean> | void
   onMoveDiagram: (docId: string, folderId: string | null) => Promise<boolean> | void
   onDeleteDiagram: (id: string) => Promise<boolean> | void
   onChangeStorage: () => void
+  /** Desktop input mode: cards can be dragged onto folders with the mouse. */
+  desktop?: boolean
 }
 
 const STATUS_MS = 3000
@@ -95,6 +98,33 @@ export function HomeScreen(props: HomeScreenProps) {
   failedRef.current = showStatus
   // Closing the Library (or opening a diagram) makes a pending delete real now. A page unload does not: the item simply stays.
   useEffect(() => () => { void pending.flush() }, [pending])
+  const dragEnabled = canDragCards(Boolean(props.desktop), hasFinePointer())
+  /** The diagram being dragged, and the drop target under the mouse ('root' = All diagrams). Mouse drag and drop only; touch uses the Move dialog. */
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropOver, setDropOver] = useState<string | null>(null)
+  const dropTarget = (folderId: string | null) => {
+    const key = folderId ?? 'root'
+    const valid = dragEnabled && dragId !== null && decideDrop(library, folders, dragId, folderId).ok
+    return {
+      onDragOver: (event: React.DragEvent) => {
+        if (!valid) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        if (dropOver !== key) setDropOver(key)
+      },
+      onDragLeave: (event: React.DragEvent) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropOver((over) => (over === key ? null : over))
+      },
+      onDrop: (event: React.DragEvent) => {
+        event.preventDefault()
+        setDropOver(null)
+        setDragId(null)
+        const decision = decideDrop(library, folders, dragId, folderId)
+        const entry = library.find((item) => item.id === dragId)
+        if (decision.ok && entry) moveTo(entry, decision.folderId)
+      },
+    }
+  }
   const openDiagram = (id: string) => { void pending.flush(); props.onOpenDiagram(id) }
   const deleteWithUndo = (item: { kind: 'diagram' | 'folder'; id: string; label: string; hidden: Set<string>; run: () => Promise<boolean> | void }) => {
     clearStatus()
@@ -189,7 +219,7 @@ export function HomeScreen(props: HomeScreenProps) {
     <div className="home-screen" role="dialog" aria-modal="true" aria-label="Library">
       <aside className="home-side" aria-label="Folders">
         <div className="home-brand"><span className="brand-mark" aria-hidden="true"><span /></span><strong>Ink Pad</strong></div>
-        <button type="button" className={`home-nav${view === 'all' && here === null ? ' selected' : ''}`} onClick={() => { setView('all'); setSelected(null); setRenaming(false); clearStatus() }}>
+        <button type="button" className={`home-nav${view === 'all' && here === null ? ' selected' : ''}${dropOver === 'root' ? ' drop-over' : ''}`} {...dropTarget(null)} onClick={() => { setView('all'); setSelected(null); setRenaming(false); clearStatus() }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
           <span className="home-nav-name">All diagrams</span><span className="home-count">{library.length}</span>
         </button>
@@ -200,7 +230,7 @@ export function HomeScreen(props: HomeScreenProps) {
         <div className="home-side-title">Folders</div>
         <nav className="home-tree" aria-label="Folder tree">
           {tree.map(({ folder, depth }) => (
-            <button key={folder.id} type="button" className={`home-nav${here === folder.id ? ' selected' : ''}`} style={{ paddingLeft: 12 + depth * 18 }} onClick={() => { setView('all'); setSelected(folder.id); setRenaming(false); clearStatus() }}>
+            <button key={folder.id} type="button" className={`home-nav${here === folder.id ? ' selected' : ''}${dropOver === folder.id ? ' drop-over' : ''}`} style={{ paddingLeft: 12 + depth * 18 }} {...dropTarget(folder.id)} onClick={() => { setView('all'); setSelected(folder.id); setRenaming(false); clearStatus() }}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
               <span className="home-nav-name">{folder.name}</span><span className="home-count">{countInFolder(library, folders, folder.id)}</span>
             </button>
@@ -328,7 +358,7 @@ export function HomeScreen(props: HomeScreenProps) {
             const isStarred = starredSet.has(entry.id)
             const where = folderLabel(folders, entry.folderId && folders.some((folder) => folder.id === entry.folderId) ? entry.folderId : null)
             return (
-              <li key={entry.id} className={`home-card${entry.id === props.currentId ? ' current' : ''}`}>
+              <li key={entry.id} className={`home-card${entry.id === props.currentId ? ' current' : ''}${dragId === entry.id ? ' dragging' : ''}`} draggable={dragEnabled && renamingDiagramId !== entry.id} onDragStart={dragEnabled ? (event) => { setDragId(entry.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', entry.title || 'Untitled diagram') } : undefined} onDragEnd={dragEnabled ? () => { setDragId(null); setDropOver(null) } : undefined}>
                 <button type="button" className="home-card-open" aria-label={`Open ${entry.title || 'Untitled diagram'}`} onClick={() => openDiagram(entry.id)}>
                   <span className="home-card-preview" aria-hidden="true">
                     {props.thumbnails[entry.id]
