@@ -25,7 +25,7 @@ test('menu entries: sections, shortcut hints, disabled instead of hidden', () =>
   const entries = menu({ hasSelection: true, clipboardHasItems: true, canEditText: true, canCopyStyle: true, canPasteStyle: true })
   const hints = Object.fromEntries(entries.map((e) => [e.action, e.hint]))
   assert.deepEqual(hints, { cut: 'Ctrl+X', copy: 'Ctrl+C', paste: 'Ctrl+V', duplicate: 'Ctrl+D', delete: 'Del', editText: 'Enter', copyStyle: 'Ctrl+Alt+C', pasteStyle: 'Ctrl+Alt+V', bringToFront: 'Ctrl+Shift+]', sendToBack: 'Ctrl+Shift+[', zoomSelection: 'Shift+2', lock: 'Ctrl+Shift+L', copyPng: 'Shift+Alt+C', exportPng: '', exportSvg: '', saveTemplate: '', selectAll: 'Ctrl+A' })
-  assert.deepEqual([...new Set(entries.map((e) => e.section))], ['clipboard', 'text', 'style', 'arrange', 'view', 'lock', 'export', 'select'])
+  assert.deepEqual([...new Set(entries.map((e) => e.section))], ['clipboard', 'text', 'shape', 'arrange', 'export', 'select'])
   for (const e of entries) assert.equal(e.disabled, false, e.action)
   const empty = menu({ pageHasItems: false })
   assert.ok(empty.find((e) => e.action === 'paste').disabled)
@@ -51,14 +51,13 @@ test('menu rows put a separator between sections only, and the height follows th
   const rows = input.contextMenuRows(entries)
   const separators = rows.filter((r) => r.separator).length
   assert.equal(separators, new Set(entries.map((e) => e.section)).size - 1)
-  // The three "Save selection as" entries (PNG, SVG, Template…) share one chip block.
+  // Style (Copy, Paste), Order (Front, Back) and "Save selection as" (PNG, SVG, Template…) are chip blocks.
   const chipRows = rows.filter((r) => r.chips)
-  assert.equal(chipRows.length, 1)
-  assert.deepEqual(chipRows[0].chips.map((e) => e.chip), ['PNG', 'SVG', 'Template…'])
+  assert.deepEqual(chipRows.map((r) => r.chips.map((e) => e.chip)), [['Copy', 'Paste'], ['Front', 'Back'], ['PNG', 'SVG', 'Template…']])
   const plainEntries = entries.filter((e) => e.chip === undefined).length
   assert.equal(rows.length, plainEntries + chipRows.length + separators)
   assert.ok(rows[0].entry && rows[rows.length - 1].entry)
-  assert.equal(input.contextMenuHeight(entries), 14 + plainEntries * 34 + input.chipBlockHeight(chipRows[0].chips) + separators * 9 + (rows.length - 1) * 2)
+  assert.equal(input.contextMenuHeight(entries), 14 + plainEntries * 34 + chipRows.reduce((sum, r) => sum + input.chipBlockHeight(r.chips), 0) + separators * 9 + (rows.length - 1) * 2)
   assert.ok(input.contextMenuHeight(menu({ hasSelection: true })) > input.contextMenuHeight(menu({})))
   assert.equal(input.CONTEXT_MENU_WIDTH, 248)
 })

@@ -88,7 +88,7 @@ import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -5052,7 +5052,7 @@ function App() {
           case 'text': if (!textMode) toggleTextTool(); break
           case 'code': insertCodeBlock(); break
           case 'sticky': insertStickyNote(); break
-          case 'laser': if (!laserModeRef.current) toggleLaserTool(); break
+          case 'laser': toggleLaserTool(); break
           case 'lasso': if (!lassoMode) toggleLassoTool(); break
           case 'connector': if (!connectorMode) toggleConnectorTool(); break
           case 'classBox': if (!(classMode && inkClassTool && hldShapeTool === null)) toggleInkClassTool(); break
@@ -5126,11 +5126,11 @@ function App() {
               {contextMenuRows(entries).map((row, index) => row.separator
                 ? <div key={`separator-${index}`} className="canvas-context-separator" role="separator" />
                 : row.chips ? (
-                  <div key={`chips-${row.chips[0].chipGroup}`} className="canvas-context-chips" role="group" aria-label={row.chips[0].chipGroup}>
+                  <div key={`chips-${row.chips[0].chipGroup}`} className={chipBlockLayout(row.chips).inline ? 'canvas-context-chips inline' : 'canvas-context-chips'} role="group" aria-label={row.chips[0].chipGroup}>
                     <span className="canvas-context-chips-caption">{row.chips[0].chipGroup}</span>
                     <div className="canvas-context-chips-row">
                       {row.chips.map((chip) => (
-                        <button key={chip.action} type="button" role="menuitem" className="canvas-context-chip" title={chip.label} aria-label={chip.label} onClick={() => runContextMenuAction(chip.action, contextMenu.lockedKey)}>{chip.chip}</button>
+                        <button key={chip.action} type="button" role="menuitem" className="canvas-context-chip" disabled={chip.disabled} title={chip.hint ? `${chip.label} (${chip.hint})` : chip.label} aria-label={chip.hint ? `${chip.label} (${chip.hint})` : chip.label} onClick={() => runContextMenuAction(chip.action, contextMenu.lockedKey)}>{chip.chip}</button>
                       ))}
                     </div>
                   </div>

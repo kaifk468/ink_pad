@@ -582,18 +582,18 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('duplicate', 'Duplicate', 'Ctrl+D', 'clipboard', hasSelection),
     entry('delete', 'Delete', 'Del', 'clipboard', hasSelection),
     ...(canEditText ? [entry('editText', 'Edit text', 'Enter', 'text', true)] : []),
-    entry('copyStyle', 'Copy style', 'Ctrl+Alt+C', 'style', canCopyStyle),
-    entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'style', canPasteStyle),
+    entry('copyStyle', 'Copy style', 'Ctrl+Alt+C', 'shape', canCopyStyle, 'Copy', 'Style'),
+    entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'shape', canPasteStyle, 'Paste', 'Style'),
     ...changeShapes.map((choice) => entry(`shape:${choice.id}`, `Change shape to ${choice.label}`, '', 'shape', true, shortShapeLabel(choice.label))),
-    ...(canNumberSteps ? [entry('numberSteps', 'Number steps', '', 'flow', true, 'Number', 'Step numbers'), entry('clearSteps', 'Clear step numbers', '', 'flow', true, 'Clear', 'Step numbers')] : []),
-    entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection),
-    entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection),
+    ...(canNumberSteps ? [entry('numberSteps', 'Number steps', '', 'shape', true, 'Number', 'Step numbers'), entry('clearSteps', 'Clear step numbers', '', 'shape', true, 'Clear', 'Step numbers')] : []),
+    entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection, 'Front', 'Order'),
+    entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection, 'Back', 'Order'),
     ...(canGroup ? [entry('group', 'Group', 'Ctrl+G', 'arrange', true)] : []),
     ...(canUngroup ? [entry('ungroup', 'Ungroup', 'Ctrl+Shift+G', 'arrange', true)] : []),
-    entry('zoomSelection', 'Zoom to selection', 'Shift+2', 'view', hasSelection),
-    ...(hasSelection && !lockedTarget ? [entry('lock', 'Lock', 'Ctrl+Shift+L', 'lock', true)] : []),
-    ...(lockedTarget ? [entry('unlock', 'Unlock', '', 'lock', true)] : []),
-    ...(!hasSelection && !lockedTarget && anyLocked ? [entry('unlockAll', 'Unlock all', '', 'lock', true)] : []),
+    entry('zoomSelection', 'Zoom to selection', 'Shift+2', 'arrange', hasSelection),
+    ...(hasSelection && !lockedTarget ? [entry('lock', 'Lock', 'Ctrl+Shift+L', 'arrange', true)] : []),
+    ...(lockedTarget ? [entry('unlock', 'Unlock', '', 'arrange', true)] : []),
+    ...(!hasSelection && !lockedTarget && anyLocked ? [entry('unlockAll', 'Unlock all', '', 'arrange', true)] : []),
     entry('copyPng', 'Copy as PNG', 'Shift+Alt+C', 'export', hasSelection || pageHasItems),
     // Only offered when something is selected.
     ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true, 'PNG', 'Save selection as'), entry('exportSvg', 'Export selection as SVG', '', 'export', true, 'SVG', 'Save selection as'), entry('saveTemplate', 'Save selection as template…', '', 'export', true, 'Template…', 'Save selection as')] : []),
@@ -633,15 +633,28 @@ const CHIP_GAP = 4
 const CHIP_ROW_PADDING = 2 + 4 // top and bottom padding of the chip block
 const CHIP_AREA_WIDTH = CONTEXT_MENU_WIDTH - 2 * MENU_PADDING - 12 // inside the menu padding and the chip block's side padding
 
-/** Height of the Change shape block: the caption plus as many chip lines as the (slightly overestimated) chip widths need. */
-export function chipBlockHeight(chips: readonly ContextMenuEntry[]): number {
-  let lines = 1
-  let used = 0
-  for (const chip of chips) {
-    const width = Math.ceil((chip.chip ?? chip.label).length * 6.8) + 18
-    if (used > 0 && used + CHIP_GAP + width > CHIP_AREA_WIDTH) { lines += 1; used = width } else used += (used > 0 ? CHIP_GAP : 0) + width
+const CAPTION_GAP = 6
+
+/** Chip block layout: the caption sits at the left of the first chip line when every chip still fits on that one line, else over the chips. */
+export function chipBlockLayout(chips: readonly ContextMenuEntry[]): { inline: boolean; lines: number } {
+  const widths = chips.map((chip) => Math.ceil((chip.chip ?? chip.label).length * 6.8) + 18)
+  const flow = (start: number) => {
+    let lines = 1
+    let used = start
+    for (const width of widths) {
+      if (used > 0 && used + CHIP_GAP + width > CHIP_AREA_WIDTH) { lines += 1; used = width } else used += (used > 0 ? CHIP_GAP : 0) + width
+    }
+    return lines
   }
-  return CHIP_ROW_PADDING + CHIP_CAPTION_HEIGHT + lines * CHIP_HEIGHT + (lines - 1) * CHIP_GAP
+  const caption = Math.ceil((chips[0]?.chipGroup ?? '').length * 6.4) + CAPTION_GAP
+  const inlineLines = flow(caption)
+  return inlineLines === 1 ? { inline: true, lines: 1 } : { inline: false, lines: flow(0) }
+}
+
+/** Height of a chip block: one chip line with the caption beside it, or the caption row plus as many chip lines as the (slightly overestimated) chip widths need. */
+export function chipBlockHeight(chips: readonly ContextMenuEntry[]): number {
+  const { inline, lines } = chipBlockLayout(chips)
+  return CHIP_ROW_PADDING + (inline ? 0 : CHIP_CAPTION_HEIGHT) + lines * CHIP_HEIGHT + (lines - 1) * CHIP_GAP
 }
 
 /** Height of the right-click menu, worked out from its rows (entries, the chip block and separators), for clampMenuPosition. */

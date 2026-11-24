@@ -127,10 +127,23 @@ test('the change-shape choices form ONE chips row with short names, and the menu
 test('wiring: one undo step, menu, panel', () => {
   assert.match(app, /const next = changeSelectedShapes\(strokesRef\.current, currentSelectionKeys\(\), target as ShapeChoice\)\s*if \(next === strokesRef\.current\) return false\s*saveHistory\(\)\s*strokesRef\.current = next/)
   assert.match(app, /action\.startsWith\('shape:'\)\) changeShapeSelection\(/)
-  assert.match(app, /className="canvas-context-chip" title=\{chip\.label\} aria-label=\{chip\.label\}/)
+  assert.match(app, /className="canvas-context-chip" disabled=\{chip\.disabled\} title=\{chip\.hint \? `\$\{chip\.label\} \(\$\{chip\.hint\}\)` : chip\.label\} aria-label=\{chip\.hint/)
   assert.match(app, /changeShapes: changeShapeChoices\(strokesRef\.current, currentSelectionKeys\(\)\)/)
   assert.match(app, /changeShape=\{\(\(\) => \{ const offered = changeShapeChoices\(/)
   assert.doesNotMatch(app, /changeShape=\{inputMode === 'desktop'/, 'the tablet panel offers Change shape too')
   assert.match(panel, /aria-label="Change shape"/)
   assert.match(panel, /Change shape to \$\{choice\.label\}/)
+})
+
+test('a realistic HLD box menu (Style and Order chips) fits 1024x700 without scrolling, with and without step numbers', () => {
+  const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn'].map((id) => ({ id, label: id === 'loadBalancer' ? 'Load balancer' : id[0].toUpperCase() + id.slice(1) }))
+  const state = { hasSelection: true, clipboardHasItems: true, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false, canCopyStyle: true, canPasteStyle: true, canSelectSimilar: true, canGroup: true, changeShapes: hld, canNumberSteps: false }
+  const entries = input.contextMenuEntries(state)
+  assert.ok(input.contextMenuHeight(entries) <= 684, 'height ' + input.contextMenuHeight(entries))
+  // With connectors in the selection the Step numbers chips add a block: that menu may scroll a little on a 700px window (the CSS caps and scrolls it).
+  assert.ok(input.contextMenuHeight(input.contextMenuEntries({ ...state, canNumberSteps: true })) <= 720)
+  const groups = input.contextMenuRows(entries).filter((r) => r.chips).map((r) => [r.chips[0].chipGroup, r.chips.map((c) => c.chip)])
+  assert.deepEqual(groups.filter(([g]) => g === 'Style' || g === 'Order'), [['Style', ['Copy', 'Paste']], ['Order', ['Front', 'Back']]])
+  assert.equal(entries.find((e) => e.action === 'copyStyle').label, 'Copy style')
+  assert.equal(entries.find((e) => e.action === 'bringToFront').hint, 'Ctrl+Shift+]')
 })
