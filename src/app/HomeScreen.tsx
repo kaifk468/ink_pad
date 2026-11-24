@@ -4,7 +4,7 @@ import { cleanFolderName, flattenFolders, folderPath } from '../folderTree'
 import { NEW_DIAGRAM_PRESETS, RECENT_COUNT, RECENT_MIN_LIBRARY, countInFolder, describeEdited, folderLabel, LIBRARY_SORTS, parseLibrarySort, recentDiagrams, searchLibrary, sortLibrary, type LibraryLayout, type LibrarySort } from '../libraryView'
 import { copyTitle } from '../libraryCopy'
 import { canDragCards, decideDrop, hasFinePointer } from '../libraryDrop'
-import { createPendingDeletes, hiddenForDiagram, hiddenForFolder, type PendingDeletes } from '../pendingDelete'
+import { createPendingDeletes, hiddenForDiagram, hiddenForFolder, hidesInFolder, type PendingDeletes } from '../pendingDelete'
 import type { PageTemplate } from '../pageTemplates'
 
 type HomeScreenProps = {
@@ -31,7 +31,10 @@ type HomeScreenProps = {
   onRenameDiagram: (id: string, title: string) => Promise<boolean | 'unchanged'> | void
   /** Saves "<title> (copy)" next to the original; resolves the real new title (a device folder may number it), or false (with a notice) when it could not be done. */
   onMakeCopy: (id: string) => Promise<string | false> | void
-  onDeleteFolder: (id: string) => Promise<boolean> | void
+  /** `confirmedDiagramIds` are the diagrams the person saw in the confirmation; the delete must refuse when the folder holds others by then. */
+  onDeleteFolder: (id: string, confirmedDiagramIds: string[]) => Promise<boolean> | void
+  /** Called when a folder delete is scheduled, so new saves stop landing in that folder. */
+  onFolderDeleteScheduled?: (id: string) => void
   onMoveDiagram: (docId: string, folderId: string | null) => Promise<boolean> | void
   onDeleteDiagram: (id: string) => Promise<boolean> | void
   onChangeStorage: () => void
@@ -54,15 +57,20 @@ function readLayout(): LibraryLayout {
 /** Full-screen library: folder tree on the left, search, and the diagrams as cards or a list. Opens from the folder button. */
 export function HomeScreen(props: HomeScreenProps) {
   const pendingRef = useRef<PendingDeletes | null>(null)
-  const [, setPendingTick] = useState(0)
+  const [pendingTick, setPendingTick] = useState(0)
   // Failure of a delayed delete: the item is visible again (the hook has set the alert notice for a plain failure; a throw gets this text).
   const failedRef = useRef<(text: string) => void>(() => undefined)
   if (pendingRef.current === null) pendingRef.current = createPendingDeletes({ onChange: () => setPendingTick((n) => n + 1), onFailed: (item, error) => { if (error !== undefined) failedRef.current(`Could not delete “${item.label}”. It is still in your Library.`) } })
   const pending = pendingRef.current
   const pendingItem = pending.current()
+  const pendingRunning = pending.isRunning()
   // An item waiting for its delete (diagram, or folder with everything inside) is hidden from every list, count, search and the Recent row.
-  const library = useMemo(() => (pendingItem ? props.library.filter((entry) => !pending.isHidden(entry.id)) : props.library), [props.library, pendingItem, pending])
-  const folders = useMemo(() => (pendingItem ? props.folders.filter((folder) => !pending.isHidden(folder.id)) : props.folders), [props.folders, pendingItem, pending])
+  const library = useMemo(() => (pending.hasHidden() ? props.library.filter((entry) => !pending.isHidden(entry.id)) : props.library), [props.library, pendingTick, pending])
+  const folders = useMemo(() => (pending.hasHidden() ? props.folders.filter((folder) => !pending.isHidden(folder.id)) : props.folders), [props.folders, pendingTick, pending])
+  // A deleted item stays hidden until the refreshed Library lists no longer contain it (no flash of the card coming back).
+  useEffect(() => { pending.sweep((id) => props.library.some((entry) => entry.id === id) || props.folders.some((folder) => folder.id === id)) }, [props.library, props.folders, pendingTick, pending])
+  const latestLists = useRef({ library: props.library, folders: props.folders })
+  latestLists.current = { library: props.library, folders: props.folders }
   const importRef = useRef<HTMLInputElement>(null)
   const [selected, setSelected] = useState<string | null>(null)
   /** 'starred' shows only starred diagrams from every folder. */
@@ -97,7 +105,7 @@ export function HomeScreen(props: HomeScreenProps) {
   useEffect(() => () => { if (statusTimer.current !== null) window.clearTimeout(statusTimer.current) }, [])
   failedRef.current = showStatus
   // Closing the Library (or opening a diagram) makes a pending delete real now. A page unload does not: the item simply stays.
-  useEffect(() => () => { void pending.flush() }, [pending])
+  useEffect(() => { pending.start(); return () => { void pending.dispose() } }, [pending])
   const dragEnabled = canDragCards(Boolean(props.desktop), hasFinePointer())
   /** The diagram being dragged, and the drop target under the mouse ('root' = All diagrams). Mouse drag and drop only; touch uses the Move dialog. */
   const [dragId, setDragId] = useState<string | null>(null)
@@ -125,10 +133,11 @@ export function HomeScreen(props: HomeScreenProps) {
       },
     }
   }
-  const openDiagram = (id: string) => { void pending.flush(); props.onOpenDiagram(id) }
-  const deleteWithUndo = (item: { kind: 'diagram' | 'folder'; id: string; label: string; hidden: Set<string>; run: () => Promise<boolean> | void }) => {
+  // Queued deletes finish (in the save chain) before another diagram opens.
+  const openDiagram = (id: string) => { void pending.flush().then(() => props.onOpenDiagram(id)) }
+  const deleteWithUndo = (item: { kind: 'diagram' | 'folder'; id: string; label: string; hidden: Set<string>; hides?: (id: string) => boolean; run: () => Promise<boolean> | void }) => {
     clearStatus()
-    void pending.schedule({ kind: item.kind, id: item.id, label: item.label, hiddenIds: item.hidden, run: async () => (await item.run()) !== false })
+    pending.schedule({ kind: item.kind, id: item.id, label: item.label, hiddenIds: item.hidden, hides: item.hides, run: async () => (await item.run()) !== false })
   }
   /** Runs a library action and shows the message only when it worked (failures show the alert notice instead). */
   const act = async (run: () => Promise<boolean | 'unchanged'> | void, message: string) => {
@@ -286,15 +295,15 @@ export function HomeScreen(props: HomeScreenProps) {
 
         {props.notice && <p className="home-notice" role="alert">{props.notice}</p>}
         {pendingItem && <div className="home-undo" role="status">
-          <span>Deleted “{pendingItem.label}”</span>
-          <button type="button" onClick={() => { pending.cancel() }}>Undo</button>
+          {pendingRunning ? <span>Deleting “{pendingItem.label}”…</span> : <span>Deleted “{pendingItem.label}”</span>}
+          {!pendingRunning && <button type="button" onClick={() => { pending.cancel() }}>Undo</button>}
         </div>}
         {status && <p className="home-status" role="status">{status}</p>}
 
         {confirmFolder && <div className="home-confirm" role="alertdialog" aria-label="Delete folder">
           <p>Delete “{confirmFolder.name}” and everything inside it? This removes {countInFolder(library, folders, confirmFolder.id)} diagram{countInFolder(library, folders, confirmFolder.id) === 1 ? '' : 's'} and any subfolders. You can Undo for a few seconds after deleting.</p>
           <div className="home-confirm-actions">
-            <button type="button" className="home-danger" onClick={() => { const gone = confirmFolder; setConfirmFolderId(null); deleteWithUndo({ kind: 'folder', id: gone.id, label: gone.name, hidden: hiddenForFolder(folders, library, gone.id), run: () => props.onDeleteFolder(gone.id) }) }}>Delete folder</button>
+            <button type="button" className="home-danger" onClick={() => { const gone = confirmFolder; setConfirmFolderId(null); const confirmed = [...hiddenForFolder(folders, library, gone.id)].filter((id) => library.some((entry) => entry.id === id)); props.onFolderDeleteScheduled?.(gone.id); deleteWithUndo({ kind: 'folder', id: gone.id, label: gone.name, hidden: hiddenForFolder(folders, library, gone.id), hides: (id) => hidesInFolder(latestLists.current.folders, latestLists.current.library, gone.id, id), run: () => props.onDeleteFolder(gone.id, confirmed) }) }}>Delete folder</button>
             <button type="button" onClick={() => setConfirmFolderId(null)}>Cancel</button>
           </div>
         </div>}

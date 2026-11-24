@@ -403,7 +403,7 @@ function App() {
   const {
     filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
-    newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
+    newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram,
     scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   } = useDocuments({
@@ -5260,7 +5260,8 @@ function App() {
         onRenameFolder={(id, name) => renameFolder(id, name)}
         onRenameDiagram={(id, title) => renameStoredDiagram(id, title)}
         onMakeCopy={(id) => copyStoredDiagram(id)}
-        onDeleteFolder={(id) => deleteFolder(id)}
+        onDeleteFolder={(id, confirmed) => deleteFolder(id, confirmed)}
+        onFolderDeleteScheduled={(id) => releaseFolderTarget(id)}
         onMoveDiagram={(docId, folderId) => moveDiagram(docId, folderId)}
         onDeleteDiagram={(id) => deleteStoredDiagram(id)}
         onChangeStorage={() => { setLibraryOpen(false); setStoragePanelOpen(true) }}

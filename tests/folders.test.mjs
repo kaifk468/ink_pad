@@ -62,7 +62,7 @@ test('deleting a folder removes its subfolders and diagrams; the UI asks first',
   const ui = await read('app/HomeScreen.tsx')
   assert.match(ui, /role="alertdialog"/)
   assert.match(ui, /and everything inside it/)
-  assert.match(ui, /props\.onDeleteFolder\(gone\.id\)/)
+  assert.match(ui, /props\.onDeleteFolder\(gone\.id, confirmed\)/)
   assert.match(ui, /props\.onDeleteDiagram\(entry\.id\)/)
   assert.match(ui, /props.onMoveDiagram\(entry\.id, folderId\)/)
   assert.match(ui, /props\.onNewDiagram\(here, preset\.template\)/)

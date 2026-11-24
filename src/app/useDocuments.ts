@@ -6,7 +6,7 @@ import { copyStoredDiagram as copyDiagramOnBackend } from '../libraryCopy'
 import { THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
 import { moveStarred, readStarred, starsToUpload, toggleStarred, writeStarred } from '../starred'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
-import { folderAndDescendantIds } from '../folderTree'
+import { diagramsInFolder, folderAndDescendantIds } from '../folderTree'
 import { DriveAuthError, DriveHttpError, createDriveBackend, fetchDriveProfile, type DriveEnv } from '../googleDrive'
 import { createIndexedDbDriveCache, type DriveCache } from '../driveCache'
 import { readStoredProfile, writeStoredProfile, type DriveProfile } from '../driveProfile'
@@ -472,20 +472,29 @@ export function useDocuments(host: DocumentHost) {
     }
   }
 
+  /** Runs a store delete in the save chain, so it never overlaps a save, rename or move. */
+  const inSaveChain = async <T,>(body: () => Promise<T>): Promise<T> => {
+    const run = saveChainRef.current.then(body, body)
+    saveChainRef.current = run.then(() => undefined, () => undefined)
+    return run
+  }
+
   const deleteStoredDiagram = async (id: string): Promise<boolean> => {
-    let ok = true
-    try {
-      await backendRef.current.remove(id)
-      void keeper.forget(backendRef.current.kind, id)
-      if (docIdRef.current === id) forgetCurrentDiagram(true)
-      void deleteThumbnail(id).catch(() => undefined)
-      if (localStarsRef.current.includes(id)) changeLocalStars((ids) => ids.filter((item) => item !== id))
-      setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
-    } catch {
-      setFileNotice('Could not delete that diagram.')
-      ok = false
-    }
-    void refreshLibrary()
+    const ok = await inSaveChain(async () => {
+      try {
+        await backendRef.current.remove(id)
+        void keeper.forget(backendRef.current.kind, id)
+        if (docIdRef.current === id) forgetCurrentDiagram(true)
+        void deleteThumbnail(id).catch(() => undefined)
+        if (localStarsRef.current.includes(id)) changeLocalStars((ids) => ids.filter((item) => item !== id))
+        setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
+        return true
+      } catch {
+        setFileNotice('Could not delete that diagram.')
+        return false
+      }
+    })
+    await refreshLibrary()
     return ok
   }
 
@@ -532,21 +541,42 @@ export function useDocuments(host: DocumentHost) {
     return ok
   }
 
-  /** Deletes the folder, its subfolders and every diagram inside them. The UI asks for confirmation first. */
-  const deleteFolder = async (id: string): Promise<boolean> => {
+  /** A folder is about to be deleted: new saves must not land in it any more. */
+  const releaseFolderTarget = (id: string) => {
+    const target = pendingFolderRef.current
+    if (target && new Set(folderAndDescendantIds(folders, id)).has(target)) pendingFolderRef.current = null
+  }
+
+  /**
+   * Deletes the folder, its subfolders and every diagram inside them. The UI asks for confirmation first and passes the diagram ids
+   * the person saw; if the folder holds any other diagram by now (a save or copy landed in it), nothing is deleted.
+   */
+  const deleteFolder = async (id: string, confirmedDiagramIds?: readonly string[]): Promise<boolean> => {
     setFileNotice(null)
-    let ok = true
-    try {
-      const ids = new Set(folderAndDescendantIds(folders, id))
-      const deleted = await backendRef.current.deleteFolder(id)
-      for (const gone of deleted) void keeper.forget(backendRef.current.kind, gone)
-      if (docIdRef.current && deleted.includes(docIdRef.current)) forgetCurrentDiagram(true)
-      if (pendingFolderRef.current && ids.has(pendingFolderRef.current)) pendingFolderRef.current = null
-    } catch (error) {
-      setFileNotice(errorText(error, 'Could not delete that folder.'))
-      ok = false
-    }
-    void refreshLibrary()
+    const ok = await inSaveChain(async () => {
+      try {
+        const listed = await backendRef.current.list()
+        const ids = new Set(folderAndDescendantIds(listed.folders, id))
+        if (confirmedDiagramIds) {
+          const confirmed = new Set(confirmedDiagramIds)
+          const inside = [...ids].flatMap((folderId) => diagramsInFolder(listed.documents, folderId, listed.folders))
+          if (inside.some((entry) => !confirmed.has(entry.id))) {
+            const name = listed.folders.find((folder) => folder.id === id)?.name ?? 'The folder'
+            setFileNotice(`“${name}” was not deleted: it has new diagrams.`)
+            return false
+          }
+        }
+        const deleted = await backendRef.current.deleteFolder(id)
+        for (const gone of deleted) void keeper.forget(backendRef.current.kind, gone)
+        if (docIdRef.current && deleted.includes(docIdRef.current)) forgetCurrentDiagram(true)
+        if (pendingFolderRef.current && ids.has(pendingFolderRef.current)) pendingFolderRef.current = null
+        return true
+      } catch (error) {
+        setFileNotice(errorText(error, 'Could not delete that folder.'))
+        return false
+      }
+    })
+    await refreshLibrary()
     return ok
   }
 
@@ -1162,7 +1192,7 @@ export function useDocuments(host: DocumentHost) {
   return {
     filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
-    newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
+    newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   }

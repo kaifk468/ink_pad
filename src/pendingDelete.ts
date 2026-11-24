@@ -11,6 +11,8 @@ export type PendingDelete = {
   label: string
   /** Every diagram or folder id to hide from the Library while the delete is pending. */
   hiddenIds: ReadonlySet<string>
+  /** Extra live rule (a folder hides whatever is inside it now, not only what was there at confirm time). */
+  hides?: (id: string) => boolean
   /** The real store delete. Resolves false (the caller has already shown a notice) or throws when it failed. */
   run: () => Promise<boolean | void>
 }
@@ -40,63 +42,125 @@ export function hiddenForFolder(folders: FolderRecord[], library: DocumentSummar
   return hidden
 }
 
+/** True when `id` is the folder, one of its subfolders, or a diagram now inside them (live lists, so late arrivals are hidden too). */
+export function hidesInFolder(folders: FolderRecord[], library: DocumentSummary[], folderId: string, id: string): boolean {
+  const subtree = new Set(folderAndDescendantIds(folders, folderId))
+  if (subtree.has(id)) return true
+  const entry = library.find((item) => item.id === id)
+  return Boolean(entry?.folderId && subtree.has(entry.folderId))
+}
+
 /**
- * Holds at most one delete back so it can be undone. Nothing is removed until the timer ends, another delete is scheduled, or flush()
- * is called. There is deliberately no unload handling: if the page closes while a delete is pending it never runs and the item stays.
+ * Holds deletes back so the newest can be undone. Nothing is removed until its timer ends, another delete is scheduled, or flush()
+ * is called. Items hide synchronously and are deleted one after another in order, so a rapid series never drops one. After a delete
+ * succeeds the item stays hidden until sweep() sees the Library lists no longer contain it. There is deliberately no unload
+ * handling: if the page closes while a delete is pending it never runs and the item stays.
  */
 export function createPendingDeletes(options: PendingDeleteOptions = {}) {
   const delay = options.delayMs ?? UNDO_DELETE_MS
   const setTimer = options.setTimer ?? ((callback: () => void, ms: number) => setTimeout(callback, ms))
   const clearTimer = options.clearTimer ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>))
-  let pending: PendingDelete | null = null
+  type Entry = { item: PendingDelete; ready: boolean }
+  /** Waiting or running, oldest first. */
+  let queue: Entry[] = []
+  /** Deleted in the store but possibly still listed by the Library props. */
+  let settling: PendingDelete[] = []
+  let undoable: Entry | null = null
+  let running: PendingDelete | null = null
+  let draining: Promise<boolean> | null = null
   let handle: unknown = null
-  /** The store call in progress, so a second flush waits for it instead of deleting twice, and Undo is refused once it started. */
-  let running: Promise<boolean> | null = null
+  let disposed = false
 
-  const notify = () => options.onChange?.(pending)
+  const notify = () => options.onChange?.(undoable?.item ?? running)
   const stopTimer = () => { if (handle !== null) { clearTimer(handle); handle = null } }
 
-  /** Runs the pending delete now. Resolves true when nothing was pending or it worked; false when it failed (the item is shown again). */
-  const flush = (): Promise<boolean> => {
-    if (running) return running
-    const item = pending
-    if (!item) return Promise.resolve(true)
-    stopTimer()
-    running = execute(item).finally(() => { running = null })
-    return running
-  }
   const execute = async (item: PendingDelete): Promise<boolean> => {
-    // it stays hidden while the store call runs; it is forgotten (or shown again on failure) afterwards
     let ok = true
     let failure: unknown
     try { ok = (await item.run()) !== false } catch (error) { ok = false; failure = error }
-    if (pending === item) pending = null
+    return finish(item, ok, failure)
+  }
+  const finish = (item: PendingDelete, ok: boolean, failure: unknown): boolean => {
+    running = null
+    queue = queue.filter((entry) => entry.item !== item)
+    if (ok) settling.push(item)
     notify()
     if (!ok) options.onFailed?.(item, failure)
     return ok
   }
+  /** Deletes every ready item in order, one at a time. Resolves false when any failed. */
+  const drain = (): Promise<boolean> => {
+    if (draining) return draining
+    const loop = async (): Promise<boolean> => {
+      let all = true
+      while (queue.length > 0 && queue[0].ready) {
+        running = queue[0].item
+        notify()
+        if (!(await execute(running))) all = false
+      }
+      return all
+    }
+    draining = loop().finally(() => { draining = null })
+    return draining
+  }
+  /** The undoable item loses its Undo and is deleted next. */
+  const commit = () => {
+    stopTimer()
+    if (undoable) { undoable.ready = true; undoable = null }
+  }
+
+  const flush = (): Promise<boolean> => {
+    commit()
+    if (queue.length === 0) { notify(); return draining ?? Promise.resolve(true) }
+    return drain()
+  }
 
   return {
-    /** Hides the item and starts the countdown. A delete that is already pending is flushed (really deleted) first. */
-    async schedule(item: PendingDelete): Promise<void> {
-      if (pending) await flush()
-      pending = item
-      stopTimer()
+    /** Hides the item at once and starts the countdown. The previous undoable item is committed (really deleted, in order) first. */
+    schedule(item: PendingDelete): void {
+      const committed = undoable !== null
+      commit()
+      const entry: Entry = { item, ready: false }
+      queue.push(entry)
+      if (committed) void drain()
+      if (disposed) { entry.ready = true; void drain(); notify(); return }
+      undoable = entry
       handle = setTimer(() => { handle = null; void flush() }, delay)
       notify()
     },
-    /** Undo: the pending delete is dropped and nothing was removed. Returns the item, or null when there was none. */
+    /** Undo: the newest delete is dropped and nothing was removed. Returns the item, or null when there is nothing to undo (or it already started). */
     cancel(): PendingDelete | null {
-      const item = pending
-      if (!item || running) return null // too late: the store call has started
+      const entry = undoable
+      if (!entry) return null
       stopTimer()
-      pending = null
+      undoable = null
+      queue = queue.filter((other) => other !== entry)
       notify()
-      return item
+      return entry.item
     },
+    /** Runs everything queued now. Resolves true when nothing was pending or all worked. */
     flush,
-    isHidden(id: string): boolean { return pending !== null && pending.hiddenIds.has(id) },
-    current(): PendingDelete | null { return pending },
+    /** The Library screen is shown again after having been closed (also covers a remount that reuses this controller). */
+    start(): void { disposed = false },
+    /** The Library closed: everything queued is deleted now and no timer starts afterwards. */
+    dispose(): Promise<boolean> { disposed = true; return flush() },
+    /** Forgets deleted items whose ids are gone from the Library lists. */
+    sweep(isListed: (id: string) => boolean): void {
+      if (settling.length === 0) return
+      const before = settling.length
+      settling = settling.filter((item) => [...item.hiddenIds].some(isListed))
+      if (settling.length !== before) notify()
+    },
+    isHidden(id: string): boolean {
+      for (const item of [...queue.map((entry) => entry.item), ...settling]) if (item.hiddenIds.has(id) || item.hides?.(id)) return true
+      return false
+    },
+    /** The item with the Undo toast, else the one being deleted now. */
+    current(): PendingDelete | null { return undoable?.item ?? running },
+    /** True while the store call for the toast's item runs (Undo is not possible then). */
+    isRunning(): boolean { return undoable === null && running !== null },
+    /** Anything hidden at all (queued, running or waiting to leave the lists). */
+    hasHidden(): boolean { return queue.length > 0 || settling.length > 0 },
   }
 }
 
