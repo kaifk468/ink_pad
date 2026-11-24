@@ -83,6 +83,20 @@ test('a file the loader only partly understands is refused, nothing is saved', a
   assert.equal(saves.length, 0)
 })
 
+test('device files keep the lossy mark, so copy refuses them', async () => {
+  const root = new FakeDirectory()
+  const backend = device.createDeviceBackend(root)
+  const raw = JSON.parse(format.stringifyDocument(format.createDocument({ title: 'Old', template: 'blank', background: 'white', items: [stroke(1)] })))
+  const handle = await root.getFileHandle('Old.inkpad', { create: true })
+  const w = await handle.createWritable()
+  await w.write(JSON.stringify({ ...raw, futureField: 1 }))
+  await w.close()
+  const loaded = await backend.load('Old.inkpad')
+  assert.equal(loaded.title, 'Old')
+  assert.equal(format.isLossyParse(loaded), true)
+  await assert.rejects(() => copy.copyStoredDiagram(backend, 'Old.inkpad', null), /cannot copy safely/)
+})
+
 test('Make a copy is wired: card button, status toast, busy state, save chain and fresh load', async () => {
   const home = await src('app/HomeScreen.tsx')
   assert.match(home, /aria-label=\{`Make a copy of \$\{entry\.title \|\| 'Untitled diagram'\}`\} title="Make a copy" disabled=\{copyingId !== null\}/)
@@ -91,7 +105,10 @@ test('Make a copy is wired: card button, status toast, busy state, save chain an
   assert.match(app, /onMakeCopy=\{\(id\) => copyStoredDiagram\(id\)\}/)
   const hook = await src('app/useDocuments.ts')
   const body = hook.slice(hook.indexOf('const copyStoredDiagram'), hook.indexOf('const renameDiagram'))
-  assert.match(body, /docIdRef\.current === id\) await persistNow\(\)/)
+  assert.match(body, /wasOpen = docIdRef\.current === id\n\s+if \(wasOpen\) await persistNow\(\)/)
+  assert.match(body, /sameSignature\(currentSignature\(\), savedSignatureRef\.current\)/, 'the open diagram is checked by its saved signature')
+  assert.match(body, /sourceId = docIdRef\.current/, 'a device rename on save changes the id')
+  assert.match(body, /else if \(await keeper\.recordFor/, 'recordFor only for diagrams that are not open')
   assert.match(body, /saveChainRef\.current\.then\(body, body\)/)
   assert.match(body, /keeper\.recordFor/)
   assert.doesNotMatch(body, /applyDocument|openStoredDiagram/, 'the copy is not opened')

@@ -219,3 +219,18 @@ test('an upload without a known Drive version (restored copy) keeps the remote f
   assert.ok(tree(fake).some((name) => /other device/.test(name)), tree(fake).join(','))
   assert.equal(JSON.parse(fake.files.get(id).content).items.length, 2)
 })
+
+test('loadFresh waits for a running upload and never replaces an unsent browser copy', async () => {
+  const { cache, store } = setup()
+  const id = await store.save(null, doc('Plan', [stroke(1)]), null)
+  await store.load(id)
+  // an edit saved to the browser copy but not uploaded yet
+  await cache.putText(id, JSON.stringify(doc('Plan', [stroke(1), stroke(2)])), { modifiedTime: 'x', pending: true })
+  const fresh = await store.loadFresh(id)
+  assert.equal(fresh.items.length, 2, 'the newer unsent edit wins over Drive')
+  assert.equal((await cache.get(id)).pending, true, 'the pending mark stays')
+  const upload = store.save(id, doc('Plan', [stroke(1), stroke(2), stroke(3)]), null)
+  const after = await store.loadFresh(id)
+  await upload
+  assert.equal(after.items.length, 3)
+})

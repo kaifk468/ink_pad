@@ -267,6 +267,14 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
       return (await download(id))?.document ?? null
     },
     async loadFresh(id) {
+      // an edit still on its way to Drive is newer than Drive's file: wait for it, and never replace an unsent browser copy
+      await (uploadQueues.get(id) ?? Promise.resolve()).catch(() => undefined)
+      let cached = null
+      try { cached = cache ? await cache.get(id) : null } catch { cached = null }
+      if (cached?.pending) {
+        const parsed = parseDocument(cached.text)
+        if (parsed.ok) return parsed.document
+      }
       return (await download(id))?.document ?? null
     },
     async save(id, document: InkPadDocument, folderId) {

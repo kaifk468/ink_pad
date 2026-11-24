@@ -630,14 +630,20 @@ export function useDocuments(host: DocumentHost) {
    */
   const copyStoredDiagram = async (id: string): Promise<boolean> => {
     setFileNotice(null)
-    if (docIdRef.current === id) await persistNow()
+    const wasOpen = docIdRef.current === id
+    if (wasOpen) await persistNow()
     let ok = true
     const body = async () => {
       try {
         const backend = backendRef.current
-        if (await keeper.recordFor(backend.kind, id)) throw new Error('That diagram has changes that are not saved yet. Wait until it is saved, then copy it.')
-        const folderId = library.find((entry) => entry.id === id)?.folderId ?? null
-        const made = await copyDiagramOnBackend(backend, id, folderId)
+        // The open diagram is judged by what this editor knows (its saved signature); a device rename on save changes its id, so the copy reads the current id.
+        let sourceId = id
+        if (wasOpen && docIdRef.current) {
+          if (!sameSignature(currentSignature(), savedSignatureRef.current)) throw new Error('That diagram has changes that are not saved yet. Wait until it is saved, then copy it.')
+          sourceId = docIdRef.current
+        } else if (await keeper.recordFor(backend.kind, id)) throw new Error('That diagram has changes that are not saved yet. Wait until it is saved, then copy it.')
+        const folderId = library.find((entry) => entry.id === sourceId || entry.id === id)?.folderId ?? null
+        const made = await copyDiagramOnBackend(backend, sourceId, folderId)
         // the copy starts with the original's picture (stored apart from the diagram, by id)
         const picture = thumbnails[id]
         if (picture && backendRef.current === backend) {

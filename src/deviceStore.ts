@@ -149,7 +149,9 @@ export function createDeviceBackend(root: DirHandle): StorageBackend {
       const file = await (await dir.getFileHandle(baseName(id))).getFile()
       const parsed = parseDocument(await file.text())
       if (!parsed.ok) return null
-      return { ...parsed.document, title: fileBase(baseName(id)) }
+      // set on the parsed object itself: a copy would lose the lossy-parse mark that Make a copy and rename rely on
+      parsed.document.title = fileBase(baseName(id))
+      return parsed.document
     } catch {
       return null
     }
