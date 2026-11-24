@@ -792,10 +792,18 @@ function App() {
       if (ctx) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
         ctx.clearRect(0, 0, window.innerWidth, window.innerHeight)
-        ctx.lineCap = 'round'
-        for (const segment of laserSegments(laserTrailRef.current, now)) {
+        const segments = laserSegments(laserTrailRef.current, now)
+        // Glow: one continuous path (no overlapping caps, so no darker dots at the joints).
+        if (segments.length > 0) {
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+          ctx.beginPath(); ctx.moveTo(segments[0].x1, segments[0].y1)
+          for (const segment of segments) ctx.lineTo(segment.x2, segment.y2)
+          ctx.strokeStyle = `rgba(255, 40, 40, ${segments[segments.length - 1].alpha * 0.25})`; ctx.lineWidth = 14; ctx.stroke()
+        }
+        // Core: per segment so the tail fades; butt caps so segments do not overlap.
+        ctx.lineCap = 'butt'
+        for (const segment of segments) {
           ctx.beginPath(); ctx.moveTo(segment.x1, segment.y1); ctx.lineTo(segment.x2, segment.y2)
-          ctx.strokeStyle = `rgba(255, 40, 40, ${segment.alpha * 0.28})`; ctx.lineWidth = 14; ctx.stroke()
           ctx.strokeStyle = `rgba(255, 30, 30, ${segment.alpha})`; ctx.lineWidth = 5; ctx.stroke()
           ctx.strokeStyle = `rgba(255, 190, 190, ${segment.alpha})`; ctx.lineWidth = 1.8; ctx.stroke()
         }

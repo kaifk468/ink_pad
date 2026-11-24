@@ -745,8 +745,8 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .zoom-controls .zoom-indicator.zoom-indicator-button { width: auto; min-width: 58px; height: 48px; padding: 0 4px; font-size: 14px; font-weight: 700; line-height: 1.2; }
 
 /* Desktop panel: width of the selection, line style, arrowheads, layer order, align and distribute. */
-.context-panel .selection-width, .context-panel .line-style-controls, .context-panel .arrowhead-controls, .context-panel .layer-controls, .context-panel .arrange-controls { display: flex; flex-direction: column; gap: 8px; }
-.context-panel.desktop-left .layer-controls .clear-selection-button, .context-panel.desktop-left .arrange-controls .clear-selection-button { min-height: 32px; height: 32px; }
+.context-panel .selection-width, .context-panel .line-style-controls, .context-panel .arrowhead-controls, .context-panel .layer-controls, .context-panel .arrange-controls, .context-panel .change-shape-controls { display: flex; flex-direction: column; gap: 8px; }
+.context-panel.desktop-left .layer-controls .clear-selection-button, .context-panel.desktop-left .arrange-controls .clear-selection-button, .context-panel.desktop-left .change-shape-controls .clear-selection-button { min-height: 32px; height: 32px; }
 .context-panel .line-style-controls .routing-toggle button, .context-panel .arrowhead-controls .routing-toggle button { display: inline-flex; align-items: center; justify-content: center; padding: 0 8px; }
 
 /* Desktop toast: fixed at the bottom centre, so showing it never moves anything. */

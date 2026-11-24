@@ -234,9 +234,11 @@ export function ContextPanel(props: ContextPanelProps) {
         {props.group.canGroup && <button className="clear-selection-button" type="button" aria-label="Group selection" title={props.desktop ? "Group the selected items so they select and move together (Ctrl+G)" : "Group the selected items so they select and move together"} onClick={props.group.onGroup}>Group</button>}
         {props.group.canUngroup && <button className="clear-selection-button" type="button" aria-label="Ungroup selection" title={props.desktop ? "Take the selected items out of their group (Ctrl+Shift+G)" : "Take the selected items out of their group"} onClick={props.group.onUngroup}>Ungroup</button>}
       </div>}
-      {props.changeShape && props.changeShape.choices.length > 0 && <div className="selection-actions change-shape-controls" role="group" aria-label="Change shape">
-        <span className="panel-label">Shape</span>
-        {props.changeShape.choices.map((choice) => <button key={choice.id} className="clear-selection-button" type="button" aria-label={`Change shape to ${choice.label}`} title={`Change shape to ${choice.label}`} onClick={() => props.changeShape?.onChange(choice.id)}>{choice.label}</button>)}
+      {props.changeShape && props.changeShape.choices.length > 0 && <div className="change-shape-controls" role="group" aria-label="Change shape">
+        <span className="panel-label">Change shape</span>
+        <div className="selection-actions">
+          {props.changeShape.choices.map((choice) => <button key={choice.id} className="clear-selection-button" type="button" aria-label={`Change shape to ${choice.label}`} title={`Change shape to ${choice.label}`} onClick={() => props.changeShape?.onChange(choice.id)}>{choice.label}</button>)}
+        </div>
       </div>}
       {props.arrange && <div className="arrange-controls" role="group" aria-label="Align and distribute">
         <span className="panel-label">Align</span>

@@ -103,8 +103,8 @@ export function ToolDock(props: ToolDockProps) {
       </button>
   </>
   const lock = props.onToolLock ? (
-    <button className={`tool-button tool-lock-button${props.toolLock ? ' selected' : ''}`} type="button" aria-label="Tool lock" aria-pressed={Boolean(props.toolLock)} title="Keep the tool after drawing (Q)" onClick={props.onToolLock}>
-      <svg viewBox="0 0 24 24" aria-hidden="true">{props.toolLock ? <path d="M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3" /> : <path d="M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 6.6-1.6" />}</svg><span>Lock</span>
+    <button className={`tool-button tool-lock-button${props.toolLock ? ' selected' : ''}`} type="button" aria-label="Tool lock" aria-pressed={Boolean(props.toolLock)} title={tip("Keep the tool after drawing, to draw several shapes in a row", "Q")} onClick={props.onToolLock}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6M10 4v6l-3 4h10l-3-4V4M12 14v6" fill={props.toolLock ? 'currentColor' : 'none'} fillOpacity={props.toolLock ? 0.25 : 0} /></svg><span>Keep tool</span>
     </button>
   ) : null
   if (props.desktop) {

@@ -30,9 +30,10 @@ test('tool lock is remembered on the device and storage failures fall back to of
   assert.doesNotThrow(() => input.saveToolLock(true, broken))
 })
 
-test('the dock has a pressed-state lock button with the Q tooltip in both modes', () => {
+test('the dock has a pressed-state Keep tool button (Q hint in Desktop mode) in both modes', () => {
   assert.match(dock, /aria-pressed=\{Boolean\(props\.toolLock\)\}/)
-  assert.match(dock, /Keep the tool after drawing \(Q\)/)
+  assert.match(dock, /tip\("Keep the tool after drawing, to draw several shapes in a row", "Q"\)/)
+  assert.match(dock, /<span>Keep tool<\/span>/)
   assert.equal((dock.match(/\{lock\}/g) ?? []).length, 2)
 })
 
