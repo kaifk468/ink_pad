@@ -64,7 +64,7 @@ import { FindBar } from './app/FindBar'
 import { sameSearchFingerprint, searchCanvas, searchFingerprint, type SearchMatch } from './canvasSearch'
 import { buildDiagramOutline, outlineFileName } from './diagramOutline'
 import { downloadBlob } from './documentStore'
-import { shortcutEntryId, shortcutPaletteEntries, type PaletteEntry } from './commandPalette'
+import { diagramIdFromEntry, diagramPaletteEntries, shortcutEntryId, shortcutPaletteEntries, type PaletteEntry } from './commandPalette'
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
 import { DIAGRAM_TEMPLATES, buildTemplate } from './diagramTemplates'
@@ -4835,6 +4835,8 @@ function App() {
   const paletteOpenRef = useRef(false)
   const openPalette = () => { paletteOpenRef.current = true; setPaletteOpen(true) }
   const closePalette = () => { paletteOpenRef.current = false; setPaletteOpen(false) }
+  // The "Open: <title>" rows come from the Library list: each time the palette opens, the list is refreshed (rows appear when it arrives).
+  useEffect(() => { if (paletteOpen) void refreshLibrary() }, [paletteOpen])
   // Text outline (Markdown) of the whole diagram: copied to the clipboard or downloaded as a .md file.
   const currentOutline = (): string => buildDiagramOutline(docTitle, pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)))
   const copyOutline = () => {
@@ -4871,6 +4873,8 @@ function App() {
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
     { id: 'setting:snapping', label: 'Toggle snapping', group: 'Settings', keywords: 'snap guides align', run: () => updateSnapping(!snappingRef.current) },
     { id: 'setting:sketchy', label: 'Toggle hand-drawn style', group: 'Settings', keywords: 'sketchy rough', run: toggleSketchy },
+    // Always last: equal search scores keep list order, so commands stay above diagrams. Opening goes through the Library's own open function (the open diagram is saved first).
+    ...diagramPaletteEntries(library, folders, currentDocId).map((entry) => ({ ...entry, run: () => { const id = diagramIdFromEntry(entry.id); if (id) void openStoredDiagram(id) } })),
   ]
   const runPaletteEntry = (id: string) => {
     const row = DESKTOP_SHORTCUTS.find((entry) => shortcutEntryId(entry) === id)

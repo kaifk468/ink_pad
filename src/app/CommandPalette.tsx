@@ -69,7 +69,7 @@ export function CommandPalette({ entries, onRun, onClose }: CommandPaletteProps)
               onPointerMove={() => { if (index !== current) setActive(index) }}
               onClick={() => run(entry.id)}
             >
-              <span className="command-palette-label">{entry.label}<small>{entry.group}</small></span>
+              <span className="command-palette-label">{entry.label}<small>{entry.hint ? `${entry.group} · ${entry.hint}` : entry.group}</small></span>
               {entry.keys && <kbd>{entry.keys}</kbd>}
             </div>
           ))}

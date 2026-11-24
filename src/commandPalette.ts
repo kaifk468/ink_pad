@@ -1,7 +1,49 @@
 import { DESKTOP_SHORTCUTS, type ShortcutEntry } from './desktopShortcuts'
 
-/** One line of the Desktop command palette (Ctrl/Cmd+K). `keys` is the shortcut shown on the right; `keywords` are extra search words. */
-export type PaletteEntry = { id: string; label: string; group: string; keys?: string; keywords?: string }
+/** One line of the Desktop command palette (Ctrl/Cmd+K). `keys` is the shortcut shown on the right; `keywords` are extra search words; `hint` is extra text shown beside the group (a diagram's folder). */
+export type PaletteEntry = { id: string; label: string; group: string; keys?: string; keywords?: string; hint?: string }
+
+export const DIAGRAM_ENTRY_PREFIX = 'diagram:'
+/** At most this many "Open: ..." rows (the most recently edited), so a huge library cannot make the palette slow. */
+export const MAX_DIAGRAM_ENTRIES = 200
+
+type LibraryDiagram = { id: string; title: string; updatedAt: string; folderId: string | null }
+type LibraryFolder = { id: string; name: string; parentId: string | null }
+
+/** Id of the diagram a palette row opens, or null for any other row. */
+export function diagramIdFromEntry(entryId: string): string | null {
+  return entryId.startsWith(DIAGRAM_ENTRY_PREFIX) ? entryId.slice(DIAGRAM_ENTRY_PREFIX.length) : null
+}
+
+function folderPath(folderId: string | null, folders: readonly LibraryFolder[]): string {
+  const names: string[] = []
+  const seen = new Set<string>()
+  let id = folderId
+  while (id !== null && !seen.has(id)) {
+    seen.add(id)
+    const folder = folders.find((candidate) => candidate.id === id)
+    if (!folder) break
+    names.unshift(folder.name)
+    id = folder.parentId
+  }
+  return names.join(' / ')
+}
+
+/**
+ * "Open: <title>" rows for the Library's diagrams except the open one, most recently edited first. The folder path is the hint and a search word.
+ * Put these after the command rows: equal scores keep list order, so commands stay above diagrams.
+ */
+export function diagramPaletteEntries(library: readonly LibraryDiagram[], folders: readonly LibraryFolder[], currentId: string | null): PaletteEntry[] {
+  return library
+    .filter((diagram) => diagram.id !== currentId)
+    .map((diagram, index) => ({ diagram, index }))
+    .sort((a, b) => (b.diagram.updatedAt > a.diagram.updatedAt ? 1 : b.diagram.updatedAt < a.diagram.updatedAt ? -1 : a.index - b.index))
+    .slice(0, MAX_DIAGRAM_ENTRIES)
+    .map(({ diagram }) => {
+      const folder = folderPath(diagram.folderId, folders)
+      return { id: `${DIAGRAM_ENTRY_PREFIX}${diagram.id}`, label: `Open: ${diagram.title}`, group: 'Diagrams', keywords: `open switch diagram ${folder}`.trim(), ...(folder ? { hint: folder } : {}) }
+    })
+}
 
 /** Id of the palette row made from a DESKTOP_SHORTCUTS row. */
 export function shortcutEntryId(row: ShortcutEntry): string {
@@ -49,6 +91,7 @@ export function filterCommands<T extends PaletteEntry>(entries: readonly T[], qu
     }
     ranked.push({ entry, score, order })
   })
+  // Equal scores keep list order, and diagram rows come last in the list, so a command is never pushed below a diagram of the same score.
   ranked.sort((a, b) => a.score - b.score || a.order - b.order)
   return ranked.map((item) => item.entry)
 }
