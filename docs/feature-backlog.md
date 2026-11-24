@@ -204,3 +204,57 @@ Follow-ups found this round (ideas for the next round):
 - Outline: ink inside HLD boxes is not counted; the panel's outline buttons are disabled when the current page is empty even if other pages have content.
 - Laser shows no active state in the dock (only in the More tray).
 - Hover outline in Desktop Select (#66), page names/overview (#67), elbow bend clamp (#69) remain ideas.
+
+## Round 4 — 2026-11-24 (branch desktop-20x)
+
+### User journeys walked (friction found, on top of rounds 1-3)
+1. Open the app and find a diagram: on the desktop, switching to another diagram always goes through the Library (Ctrl+O, scroll, click), even when the user knows its name.
+2. Start a new diagram: the four built-in templates are generic; the user's own skeleton (their interview board, their usual client → gateway → services layout) must be copied from an old diagram.
+3. Draw boxes, label, connect: a two-line label inside a box ("Order\nService") is drawn left-aligned and looks ragged; connector labels have one fixed size, so "publishes" on a big HLD reads tiny and the font keys skip them; request-flow order (1, 2, 3 …) is typed into each connector label by hand.
+4. Rearrange and restyle: the HLD right-click menu lists 8 "Change shape" rows, so the menu is tall and scrolls; on the tablet there is no Change shape, Select similar or copy/paste style (desktop right-click only).
+5. Pages: a diagram with v1/v2/v3 pages (round 3 Duplicate page) is navigated with up/down arrows and "2 / 5"; pages cannot be reordered; there is no overview of what is on which page.
+6. Presenting: after using the laser the tool falls back to Pen instead of the tool used before; the dock shows no laser state.
+7. NotebookLM export: handwriting inside HLD boxes is not counted; the outline buttons are disabled when the current page is empty although other pages have content.
+
+### Candidates (problem · who/how often · benefit · risk · size · decision)
+| # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
+|---|---|---|---|---|---|---|---|
+| 82 | Laser returns to the previous tool + dock laser state (round 3 follow-up) | After pointing, the user is dropped into Pen and must re-pick the tool | interviews, every use of the laser | medium | low | S | picked |
+| 83 | Connector label font size (`labelFontSize`, additive) + font keys + panel sizes (round 3 follow-up) | Arrow labels are fixed-size: tiny on large HLDs, font keys skip them | HLD users, every diagram with labels | medium-high | medium (new saved field) | M | picked |
+| 84 | Compact "Change shape" row in the right-click menu (round 3 follow-up) | 8 rows make the HLD menu tall and scroll | desktop, often | medium | low | S | picked |
+| 85 | Outline follow-ups: count ink in HLD boxes, buttons enabled when any page has content | NotebookLM outline misses handwriting; buttons look broken on an empty page | NotebookLM users | low-medium | low | S | picked |
+| 86 | Number flow steps on connectors (#68) | Request-flow order is typed into every arrow label by hand | HLD users, interviews | medium-high | low (labels only) | S-M | picked |
+| 87 | My templates: save the selection as a template, insert it from the chooser (#72/#53) | Own skeletons must be copied from old diagrams | interview prep, weekly | high | low-medium (local storage size) | M | picked |
+| 88 | Page overview: thumbnails of every page, jump, move a page earlier/later (#67 without names) | Many pages are just "2 / 5"; pages cannot be reordered | multi-page users, often | medium-high | medium (page undo history) | M | picked |
+| 89 | Open a diagram from the command palette by name | Switching diagrams always goes through the Library | desktop, daily | medium-high | low | S-M | picked |
+| 90 | Tablet selection panel: Change shape, Select similar, Copy/Paste style | These are desktop right-click only | tablet, often | medium | low (buttons only, no new gestures) | S-M | picked (instead of long-press #70) |
+| 91 | Text alignment (left / centre / right) for text labels; new labels typed inside a shape are centred | Multi-line labels in boxes look ragged | everyone, every multi-line label | medium-high | medium (new saved field `align`) | M | picked |
+| 92 | Hover outline in Desktop Select (#66) | — | | | | | already built (ac80e0d "hover outline"); stale item |
+| 93 | Elbow bend clamps instead of snapping back (#69) | bend pushed through the end box resets | LLD, rare | low | medium | S | idea |
+| 94 | Page names (needs a page-level saved field) | pages have no titles | sometimes | medium | medium (document keys) | M | idea (overview first) |
+| 95 | Curved connectors (#77) | nicer arrows | sometimes | low-medium | medium-high (routing, hit test, export) | M-L | idea |
+| 96 | Library multi-select (#74) | bulk move/delete | rare | low-medium | medium (pending delete) | M | idea |
+| 97 | Move folders into folders (#81) | restructure | rare | low | medium (Drive) | M | idea |
+| 98 | Shape search inside More shapes (#45) | many shapes | rare (12 shapes) | low | low | S | idea |
+| 99 | Connector label drag along the path | label covers a box | sometimes | low-medium | medium (format) | M | idea |
+| 100 | Mermaid / text-to-diagram import (#76) | text-first users | rare | medium | medium | L | idea |
+| 101 | Frames / sections (#75) | large boards | sometimes | medium | high | L | idea |
+| 102 | Alt+Arrow selects the connected neighbour | keyboard-only walking | rare | low | low | S | idea |
+| 103 | Paste a list of lines as stacked boxes | quick component list | sometimes | medium | low-medium | M | idea |
+| 104 | Library content search (#73) | find by label | sometimes | medium | high (loads every file) | L | idea |
+| 105 | Tablet long-press menu (#70) | | | | high (touch timing) | | skipped again: #90 gives the same commands without touching gestures |
+| 106 | Scribble-to-erase (#17/#48/#78) | | | | high (writing path) | | skipped again |
+| 107 | Undo toast naming the action (#42/#79) | | | | high | | skipped again |
+| 108 | Eyedropper (#16/#71) | | | | | | skipped again: copy/paste style covers it |
+
+### Acceptance criteria (picked items)
+82. **Laser back to the previous tool**: the user is on Rectangle (or any tool), presses X, points, presses X / Esc / picks Laser again → the Rectangle tool is active again (Pen only if Pen was active). While the laser is on, the dock's More button (desktop and tablet) shows an active state and its tooltip says "Laser pointer on (X)".
+83. **Connector label size**: with a labelled connector selected, Ctrl+Shift+. / , (and the panel's text size buttons) make its label one step larger/smaller; the label stays centred on the path, gap and hit area follow; saved as `labelFontSize` (omitted at the default), exported to SVG/PNG/PDF, restored after reload; one undo step. Old files unchanged.
+84. **Compact Change shape**: right-clicking a box shows one "Change shape" row holding small labelled chips (Rectangle / Diamond / Ellipse, or the HLD shapes) instead of one row per shape; the menu no longer scrolls on a 1024x700 screen; a click on a chip changes the shape as before.
+85. **Outline**: handwriting inside HLD boxes is listed as "(handwriting)" for that box; the outline buttons are enabled whenever any page has items.
+86. **Step numbers**: with connectors (or boxes and connectors) selected, right-click → "Number steps" (also in the command palette and the tablet panel) labels the selected connectors 1, 2, 3 … following the flow (from boxes nothing points into, then onwards; ties top-to-bottom, left-to-right); an existing label keeps its text after the number ("2. publishes"), old numbers are replaced; "Clear step numbers" removes them. One undo step each; toast "Numbered 5 steps".
+87. **My templates**: with items selected, "Save selection as template…" (right-click menu, command palette, and the template chooser) asks for a name and stores the items on this device; the template chooser shows a "My templates" section where the user inserts one (exactly like built-in templates: centred, selected, one undo step) or deletes one (confirm). A toast confirms saving; too-large selections are refused with a clear message. Device-only (local storage), documented in the tooltip.
+88. **Page overview**: a "Pages" button in the page controls (and More menu / palette "Page overview") opens a grid of page thumbnails with numbers; clicking one goes to that page; each tile has "Move earlier / Move later" buttons; Esc or a click outside closes. Moving a page keeps its items and its undo history; one-page diagrams show one tile. Works with mouse and touch.
+89. **Open from the palette**: in Desktop mode the command palette lists "Open: <title>" for the other diagrams (most recently edited first, folder name as hint); Enter opens it (the current one is saved first, like the Library does).
+90. **Tablet panel commands**: on the tablet, the selection panel shows the Change shape choices for boxes, a "Select similar" button for a single item, and Copy style / Paste style buttons; same behaviour and undo as on desktop. Pen writing, pinch and pan unchanged.
+91. **Text alignment**: a text label (or the label inside a box) has Left / Centre / Right buttons in the panel (desktop and tablet); multi-line text lines are aligned inside the label box; a new label typed inside a shape (double-click / Enter / sticky note / quick create) is centred. Saved as `align` ('center' | 'right', omitted for left); renderer, sketchy, SVG/PNG/PDF export and the editor overlay honour it; old files unchanged (left).
