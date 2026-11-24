@@ -56,7 +56,7 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'View', label: 'Show this list', keys: '?', input: { key: '?', ...shift } },
   { group: 'Arrange', label: 'Nudge the selection', keys: 'Arrow keys', input: { key: 'ArrowRight' } },
   { group: 'Arrange', label: 'Nudge by 10', keys: 'Shift+Arrow keys', input: { key: 'ArrowRight', ...shift } },
-  { group: 'Arrange', label: 'New connected shape next to the selected shape', keys: 'Ctrl+Arrow keys', input: { key: 'ArrowRight', ...ctrl } },
+  { group: 'Arrange', label: 'New connected shape next to the selected shape (or click an arrow button around it)', keys: 'Ctrl+Arrow keys', input: { key: 'ArrowRight', ...ctrl } },
   { group: 'Arrange', label: 'Bring forward', keys: 'Ctrl+]', input: { key: ']', code: 'BracketRight', ...ctrl } },
   { group: 'Arrange', label: 'Send backward', keys: 'Ctrl+[', input: { key: '[', code: 'BracketLeft', ...ctrl } },
   { group: 'Arrange', label: 'Bring to front', keys: 'Ctrl+Shift+]', input: { key: '}', code: 'BracketRight', ...ctrl, ...shift } },

@@ -4,6 +4,7 @@ import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
 import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForPointer, hitConnectorHandle, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
@@ -292,6 +293,9 @@ function App() {
   const spaceHeldRef = useRef(false)
   // Step 7: the item the mouse is over (Desktop mode; only a change redraws), and the pen's edge hold (select a box by holding on its edge).
   const hoverKeyRef = useRef<string | null>(null)
+  // Desktop quick-connect buttons: the hovered one, and the press in progress (a click, not a drag, makes the connected shape).
+  const quickHoverRef = useRef<QuickConnectDirection | null>(null)
+  const activeQuickRef = useRef<{ pointerId: number; direction: QuickConnectDirection; startScreen: Point; dragged: boolean } | null>(null)
   const hoverPointRef = useRef<Point | null>(null)
   // Desktop paste target: the last mouse position over the canvas (screen coordinates, converted at paste time so a pan or zoom keeps it right); null while the mouse is off the canvas.
   const cursorPointRef = useRef<Point | null>(null)
@@ -427,6 +431,8 @@ function App() {
     activeResizeRef.current = null
     activeRotateRef.current = null
     activeEndpointRef.current = null
+    activeQuickRef.current = null
+    quickHoverRef.current = null
     activeDividerRef.current = null
     activeStrokeBoxRef.current = null
     shapePreviewRef.current = null
@@ -1371,6 +1377,7 @@ function App() {
     if (!canvas) return
     const key = hoverKeyRef.current
     const selected = key !== null && (selectedKeysRef.current.has(key) || key === `rectangle:${selectedRectangleIdRef.current}`)
+    if (quickHoverRef.current !== null && inputModeRef.current === 'desktop' && mousePanRef.current === null && !spaceHeldRef.current) { canvas.style.cursor = 'pointer'; return }
     canvas.style.cursor = canvasCursor({ mode: inputModeRef.current, tool: clickToolName(), hover: key === null ? 'none' : selected ? 'selected' : 'item', panning: mousePanRef.current !== null, spaceHeld: spaceHeldRef.current })
   }
   const applyCursorRef = useRef(applyCanvasCursor)
@@ -1389,8 +1396,11 @@ function App() {
     const ready = point !== null && inputModeRef.current === 'desktop' && !eraser
     const target = ready ? hoverTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale) : null
     const key = target?.key ?? null
-    const changed = key !== hoverKeyRef.current
+    const quickBox = ready ? quickConnectSource() : null
+    const quick = quickBox && point ? hitQuickConnect(quickBox, point, viewportRef.current.scale) : null
+    const changed = key !== hoverKeyRef.current || quick !== quickHoverRef.current
     hoverKeyRef.current = key
+    quickHoverRef.current = quick
     applyCanvasCursor()
     if (changed) renderAll()
   }
@@ -1398,7 +1408,7 @@ function App() {
     hoverPointRef.current = point
     if (point === null) {
       if (hoverFrameRef.current !== null) { cancelAnimationFrame(hoverFrameRef.current); hoverFrameRef.current = null }
-      if (hoverKeyRef.current !== null) { hoverKeyRef.current = null; renderAll() }
+      if (hoverKeyRef.current !== null || quickHoverRef.current !== null) { hoverKeyRef.current = null; quickHoverRef.current = null; renderAll() }
       applyCanvasCursor()
       return
     }
@@ -1457,6 +1467,50 @@ function App() {
     const keys = currentSelectionKeys()
     if (keys.size !== 1 || ![...keys][0].startsWith('connector:')) return null
     return soleSelectedConnector(routeConnectors(strokesRef.current), keys)
+  }
+  /**
+   * The one selected plain or HLD box that shows the quick-connect buttons: Desktop Select mode, not locked, not rotated, big enough on
+   * screen, with no gesture or editor active. Null otherwise. Only mouse input starts a press (pen and touch never use the buttons).
+   */
+  const quickConnectSource = (): RectangleObject | null => {
+    if (inputModeRef.current !== 'desktop' || !selectionMode) return null
+    if (textEditorRef.current || codeEditorRef.current || activeMarqueeRef.current || activePointerRef.current !== null || activeConnectorRef.current || activeDragRef.current || activeResizeRef.current || activeRotateRef.current || activeEndpointRef.current || activeDividerRef.current || activeLassoRef.current || lassoDragRef.current || mousePanRef.current || activeQuickRef.current) return null
+    const keys = currentSelectionKeys()
+    if (keys.size !== 1) return null
+    const item = strokesRef.current.find((candidate) => keys.has(canvasItemKey(candidate)))
+    if (!item || item.kind !== 'rectangle' || !isFlowBox(item) || isItemLocked(item) || itemAngle(item) !== 0) return null
+    return quickConnectFits(item, viewportRef.current.scale) ? item : null
+  }
+  /** Starts a quick-connect press when a mouse pointer lands on one of the buttons. A click (not a drag) runs Ctrl+Arrow for that side. */
+  const startQuickConnectPress = (event: React.PointerEvent<HTMLCanvasElement>, point: Point): boolean => {
+    if (event.pointerType !== 'mouse' || event.button !== 0 || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return false
+    const source = quickConnectSource()
+    const direction = source ? hitQuickConnect(source, point, viewportRef.current.scale) : null
+    if (!direction) return false
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    activeQuickRef.current = { pointerId: event.pointerId, direction, startScreen: getScreenPoint(event), dragged: false }
+    quickHoverRef.current = null
+    renderAll()
+    return true
+  }
+  const moveQuickConnectPress = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const press = activeQuickRef.current
+    if (!press) return
+    event.preventDefault()
+    const now = getScreenPoint(event)
+    if (Math.hypot(now.x - press.startScreen.x, now.y - press.startScreen.y) >= CONNECTOR_CLICK_SLOP_PX) press.dragged = true
+  }
+  const finishQuickConnectPress = () => {
+    const press = activeQuickRef.current
+    activeQuickRef.current = null
+    if (press && !press.dragged) quickCreateShape(press.direction)
+    renderAll()
+  }
+  const cancelQuickConnectPress = () => {
+    if (activeQuickRef.current === null) return
+    activeQuickRef.current = null
+    renderAll()
   }
   /** Starts a handle gesture when `point` is on a handle of the selected connector. Returns true when it did. */
   const startConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>, point: Point): boolean => {
@@ -2111,6 +2165,54 @@ function App() {
       }
       ctx.restore()
     }
+    const quickSource = quickConnectSource()
+    if (quickSource) {
+      // Desktop quick-connect buttons: round, a constant size on screen, with an arrow pointing out; the hovered one is filled stronger and shows a hint.
+      const scale = viewportRef.current.scale
+      const hovered = quickHoverRef.current
+      ctx.save()
+      ctx.lineWidth = 1.5 / scale
+      ctx.strokeStyle = '#5269df'
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      for (const button of quickConnectButtons(quickSource, scale)) {
+        const { x, y } = button.center
+        const r = button.radius
+        const k = r * 0.4
+        const [dx, dy] = button.direction === 'right' ? [1, 0] : button.direction === 'left' ? [-1, 0] : button.direction === 'up' ? [0, -1] : [0, 1]
+        ctx.beginPath()
+        ctx.arc(x, y, r, 0, Math.PI * 2)
+        ctx.fillStyle = button.direction === hovered ? 'rgba(83, 111, 224, 0.92)' : 'rgba(255, 255, 255, 0.92)'
+        ctx.fill()
+        ctx.stroke()
+        // Chevron pointing outward: tip at +k along the direction, the two tails behind it.
+        ctx.beginPath()
+        ctx.strokeStyle = button.direction === hovered ? '#ffffff' : '#5269df'
+        ctx.moveTo(x - dx * k - dy * k, y - dy * k - dx * k)
+        ctx.lineTo(x + dx * k, y + dy * k)
+        ctx.lineTo(x - dx * k + dy * k, y - dy * k + dx * k)
+        ctx.stroke()
+        ctx.strokeStyle = '#5269df'
+        if (button.direction === hovered) {
+          const text = quickConnectHint(button.direction)
+          ctx.font = `${12 / scale}px system-ui, sans-serif`
+          ctx.textBaseline = 'middle'
+          const w = ctx.measureText(text).width
+          const pad = 6 / scale
+          const h = 20 / scale
+          const left = view.x + 4 / scale
+          const right = view.x + view.width - 4 / scale
+          const bx = Math.max(left, Math.min(x - w / 2 - pad, right - w - 2 * pad))
+          const by = button.direction === 'down' ? y + r + 6 / scale : y - r - 6 / scale - h
+          ctx.fillStyle = 'rgba(30, 36, 60, 0.92)'
+          ctx.fillRect(bx, by, w + 2 * pad, h)
+          ctx.fillStyle = '#ffffff'
+          ctx.textAlign = 'left'
+          ctx.fillText(text, bx + pad, by + h / 2)
+        }
+      }
+      ctx.restore()
+    }
     const lasso = activeLassoRef.current
     if (lasso && lasso.points.length > 1) {
       ctx.save()
@@ -2309,7 +2411,7 @@ function App() {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const anyGestureBusy = () => activeMarqueeRef.current !== null || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || mousePanRef.current !== null
+    const anyGestureBusy = () => activeQuickRef.current !== null || activeMarqueeRef.current !== null || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || mousePanRef.current !== null
     const setPanCursor = () => applyCursorRef.current()
     const onWheel = (event: WheelEvent) => {
       if (inputModeRef.current !== 'desktop') return
@@ -2928,6 +3030,7 @@ function App() {
       if (!continued) clickBeforeRef.current = { items: strokesRef.current.slice(), history: historyRef.current.capture(), owner: historyRef.current }
     }
     if (event.pointerType === 'mouse') setMouseHover(null)
+    if (selectionMode && startQuickConnectPress(event, point)) return
     if ((selectionMode || lassoMode) && (event.pointerType !== 'mouse' || event.button === 0) && startConnectorHandleGesture(event, point)) return
     if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') {
       if (event.shiftKey && !eraser) {
@@ -3278,6 +3381,7 @@ function App() {
       return
     }
     if (activeEndpointRef.current?.pointerId === event.pointerId) { moveConnectorHandleGesture(event); return }
+    if (activeQuickRef.current?.pointerId === event.pointerId) { moveQuickConnectPress(event); return }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       event.preventDefault()
       updateTouchPoint(event)
@@ -3490,6 +3594,7 @@ function App() {
       return
     }
     if (activeEndpointRef.current?.pointerId === event.pointerId) { finishConnectorHandleGesture(); return }
+    if (activeQuickRef.current?.pointerId === event.pointerId) { finishQuickConnectPress(); return }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
@@ -3655,6 +3760,7 @@ function App() {
       return
     }
     if (activeEndpointRef.current?.pointerId === event.pointerId) { cancelConnectorHandleGesture(); return }
+    if (activeQuickRef.current?.pointerId === event.pointerId) { cancelQuickConnectPress(); return }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
@@ -3935,6 +4041,7 @@ function App() {
     const rotate = activeRotateRef.current
     if (rotate) { activeRotateRef.current = null; handled = true; if (rotate.moved) { restored = rotate.originalItems; discardStep = true } }
     if (activeEndpointRef.current) { cancelConnectorHandleGesture(); handled = true }
+    if (activeQuickRef.current) { cancelQuickConnectPress(); handled = true }
     const resize = activeResizeRef.current
     if (resize) {
       activeResizeRef.current = null

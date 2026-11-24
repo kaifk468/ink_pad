@@ -103,7 +103,7 @@ test('App wiring: mouse click-select is Desktop only and before the tool branche
   const textBranch = app.indexOf('    if (textMode) {\n      event.currentTarget.setPointerCapture', down)
   assert.ok(clickBranch > down && clickBranch < textBranch)
   assert.match(app, /clickSelectTarget\(routeConnectors\(strokesRef\.current\), point, viewportRef\.current\.scale, clickToolName\(\)/)
-  assert.match(app, /const changed = key !== hoverKeyRef\.current\n\s*hoverKeyRef\.current = key\n\s*applyCanvasCursor\(\)\n\s*if \(changed\) renderAll\(\)/)
+  assert.match(app, /const changed = key !== hoverKeyRef\.current \|\| quick !== quickHoverRef\.current\n\s*hoverKeyRef\.current = key\n\s*quickHoverRef\.current = quick\n\s*applyCanvasCursor\(\)\n\s*if \(changed\) renderAll\(\)/)
   assert.match(app, /event\.pointerType === 'mouse' && event\.buttons === 0 && inputModeRef\.current === 'desktop'\) setMouseHover\(/)
   assert.match(app, /if \(event\.pointerType === 'pen' && !eraser && !buttonErase && !shapeMode && shapeTool === null\) \{\n\s*const edgeBox = edgeBandBox\(/)
   assert.match(app, /window\.setTimeout\(\(\) => fireEdgeHold\(pointerId\), EDGE_HOLD_MS\)/)
