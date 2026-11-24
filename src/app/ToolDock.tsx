@@ -48,6 +48,9 @@ type ToolDockProps = {
   /** Laser pointer (More menu, both modes). */
   onLaser?: () => void
   laserActive?: boolean
+  /** Hide the toolbars (present mode; More menu, both modes). */
+  onPresent?: () => void
+  presentActive?: boolean
 }
 
 const DESKTOP_SHAPES: Array<{ kind: 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'; label: string; key: string; num: string; icon: JSX.Element }> = [
@@ -121,7 +124,7 @@ export function ToolDock(props: ToolDockProps) {
         {divider}
         {inkClass}
         {divider}
-        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" onTemplates={props.onTemplates} onLaser={props.onLaser} laserActive={props.laserActive} laserKey="X" />
+        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" onTemplates={props.onTemplates} onLaser={props.onLaser} laserActive={props.laserActive} laserKey="X" onPresent={props.onPresent} presentActive={props.presentActive} presentKey="Alt+Z" />
       </nav>
     )
   }
@@ -145,7 +148,7 @@ export function ToolDock(props: ToolDockProps) {
         onShapes={props.onShapes}
         onSticky={props.onSticky}
       />
-      <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onFind={props.onFind} findTitle="Find text on the canvas" onTemplates={props.onTemplates} onLaser={props.onLaser} laserActive={props.laserActive} />
+      <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onFind={props.onFind} findTitle="Find text on the canvas" onTemplates={props.onTemplates} onLaser={props.onLaser} laserActive={props.laserActive} onPresent={props.onPresent} presentActive={props.presentActive} />
     </nav>
   )
 }

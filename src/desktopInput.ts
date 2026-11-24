@@ -177,6 +177,7 @@ export type KeyCommand =
   | { kind: 'pagePrev' }
   | { kind: 'pageNext' }
   | { kind: 'help' }
+  | { kind: 'presentMode' }
   | { kind: 'deselect' }
   | { kind: 'deleteSelection' }
   | { kind: 'selectAll' }
@@ -259,6 +260,8 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if (event.code === 'Digit1' || event.code === 'Numpad1') return event.repeat ? null : { kind: 'zoomFit' }
     if (event.code === 'Digit2' || event.code === 'Numpad2') return event.repeat ? null : { kind: 'zoomSelection' }
   }
+  // Alt+Z hides or shows the toolbars (present mode). The physical key decides: Alt changes `key` on a Mac.
+  if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.code === 'KeyZ' || (!event.code && key === 'z'))) return event.repeat ? null : { kind: 'presentMode' }
   // "?" opens the shortcut help (Shift + / on most layouts; some keyboards send "?" without Shift).
   if (key === '?' && !event.ctrlKey && !event.metaKey && !event.altKey) return event.repeat ? null : { kind: 'help' }
   // Arrow keys nudge the selection (Shift = 10 units); holding the key repeats on purpose. Other modifiers belong to the browser.

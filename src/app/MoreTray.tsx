@@ -19,10 +19,14 @@ type MoreTrayProps = {
   laserActive?: boolean
   /** The key to show in the hint (desktop only). */
   laserKey?: string
+  /** Hide or show the toolbars (present mode), both modes. */
+  onPresent?: () => void
+  presentActive?: boolean
+  presentKey?: string
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onLaser, laserActive, laserKey }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -81,6 +85,9 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, on
           <button className={`insert-entry${laserActive ? ' selected' : ''}`} type="button" aria-label="Laser pointer" aria-pressed={Boolean(laserActive)} title={`Laser pointer: draw a red trail that fades; nothing is saved${laserKey ? ` (${laserKey}; Esc leaves it)` : ''}`} onClick={() => { onLaser(); setOpen(false) }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg><span>Laser pointer</span>
           </button>
+          {onPresent && <button className={`insert-entry${presentActive ? ' selected' : ''}`} type="button" aria-label="Hide toolbars" aria-pressed={Boolean(presentActive)} title={`Hide the toolbars for presenting; a Show toolbars button brings them back${presentKey ? ` (${presentKey})` : ''}`} onClick={() => { onPresent(); setOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 9h17"/></svg><span>Hide toolbars</span>
+          </button>}
         </>}
         <div className="insert-tray-heading">Layout</div>
         <button className="insert-entry" type="button" aria-label={tidyLabel} title={`${tidyLabel}: arrange the class boxes neatly and make the connectors between them Elbow`} onClick={() => { onTidy(); setOpen(false) }}>

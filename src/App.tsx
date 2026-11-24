@@ -343,6 +343,10 @@ function App() {
   const guidesRef = useRef<Guide[]>([])
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
   // Laser pointer (transient presenting tool): the trail lives only in these refs and on its own overlay canvas, never in items, history or the saved diagram.
+  // Present mode: one class on the app root hides the dock, panels, top bar, minimap, page and zoom controls. Plain state, never saved.
+  const [presentMode, setPresentMode] = useState(false)
+  const presentModeRef = useRef(false)
+  presentModeRef.current = presentMode
   const [laserMode, setLaserMode] = useState(false)
   const laserModeRef = useRef(false)
   laserModeRef.current = laserMode
@@ -775,6 +779,10 @@ function App() {
     const now = performance.now()
     for (const point of points) laserTrailRef.current = addLaserPoint(laserTrailRef.current, point.clientX, point.clientY, now)
     if (laserFrameRef.current === null) laserFrameRef.current = requestAnimationFrame(drawLaser)
+  }
+  const togglePresentMode = () => {
+    setOptionsFor(null); setEraserMenuOpen(false)
+    setPresentMode((value) => !value)
   }
   const toggleLaserTool = () => {
     const next = !laserModeRef.current
@@ -4715,7 +4723,11 @@ function App() {
       if (laserModeRef.current && !cancelableGesture) { setLaserMode(false); return true }
       const action = escapeAction({ cancelableGesture, anyGesture: gestureActive || touchNav.touchCount() > 0, hasSelection: selectedKeysRef.current.size > 0 || selectedRectangleIdRef.current !== null })
       if (action === 'cancelGesture') return cancelActiveGesture()
-      if (action === 'none') return false
+      if (action === 'none') {
+        // Nothing to cancel or deselect: Esc shows the toolbars again, but never under a stroke, a drag or a pinch.
+        if (presentModeRef.current && !gestureActive && touchNav.touchCount() === 0) { setPresentMode(false); return true }
+        return false
+      }
     }
     if (gestureActive || activeMarqueeRef.current !== null || touchNav.touchCount() > 0) return false
     if (command.kind !== 'nudge') lastNudgeAtRef.current = null
@@ -4732,6 +4744,7 @@ function App() {
       case 'zoomSelection': zoomToSelection(); return true
       case 'pagePrev': goToPage(pageIndexRef.current - 1); return true
       case 'pageNext': goToPage(pageIndexRef.current + 1); return true
+      case 'presentMode': togglePresentMode(); return true
       case 'help': setShortcutHelpOpen((open) => !open); return true
       case 'deselect':
         if (selectedKeysRef.current.size === 0 && selectedRectangleIdRef.current === null) return false
@@ -4795,7 +4808,7 @@ function App() {
   }, [])
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${presentMode ? ' ui-hidden' : ''}`}>
       <section className="canvas-stage" aria-label="Drawing canvas">
         <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: sheetHeight }} />
         <div ref={eraserCursorRef} className="eraser-cursor" aria-hidden="true" />
@@ -5118,7 +5131,10 @@ function App() {
         onTemplates={() => setTemplateChooserOpen(true)}
         laserActive={laserMode}
         onLaser={toggleLaserTool}
+        presentActive={presentMode}
+        onPresent={togglePresentMode}
       />
+      {presentMode && <button className="show-toolbars-pill" type="button" title="Show the toolbars (Alt+Z or Esc)" onClick={() => setPresentMode(false)}>Show toolbars</button>}
       {classBoxEditor && <ClassBoxDialog
         key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}
         initial={classBoxEditor.content}
