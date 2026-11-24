@@ -3,6 +3,7 @@ import type { DocumentSummary, FolderRecord } from '../documentStore'
 import { cleanFolderName, flattenFolders, folderPath } from '../folderTree'
 import { NEW_DIAGRAM_PRESETS, RECENT_COUNT, RECENT_MIN_LIBRARY, countInFolder, describeEdited, folderLabel, LIBRARY_SORTS, parseLibrarySort, recentDiagrams, searchLibrary, sortLibrary, type LibraryLayout, type LibrarySort } from '../libraryView'
 import { copyTitle } from '../libraryCopy'
+import { createPendingDeletes, hiddenForDiagram, hiddenForFolder, type PendingDeletes } from '../pendingDelete'
 import type { PageTemplate } from '../pageTemplates'
 
 type HomeScreenProps = {
@@ -49,7 +50,16 @@ function readLayout(): LibraryLayout {
 
 /** Full-screen library: folder tree on the left, search, and the diagrams as cards or a list. Opens from the folder button. */
 export function HomeScreen(props: HomeScreenProps) {
-  const { library, folders } = props
+  const pendingRef = useRef<PendingDeletes | null>(null)
+  const [, setPendingTick] = useState(0)
+  // Failure of a delayed delete: the item is visible again (the hook has set the alert notice for a plain failure; a throw gets this text).
+  const failedRef = useRef<(text: string) => void>(() => undefined)
+  if (pendingRef.current === null) pendingRef.current = createPendingDeletes({ onChange: () => setPendingTick((n) => n + 1), onFailed: (item, error) => { if (error !== undefined) failedRef.current(`Could not delete “${item.label}”. It is still in your Library.`) } })
+  const pending = pendingRef.current
+  const pendingItem = pending.current()
+  // An item waiting for its delete (diagram, or folder with everything inside) is hidden from every list, count, search and the Recent row.
+  const library = useMemo(() => (pendingItem ? props.library.filter((entry) => !pending.isHidden(entry.id)) : props.library), [props.library, pendingItem, pending])
+  const folders = useMemo(() => (pendingItem ? props.folders.filter((folder) => !pending.isHidden(folder.id)) : props.folders), [props.folders, pendingItem, pending])
   const importRef = useRef<HTMLInputElement>(null)
   const [selected, setSelected] = useState<string | null>(null)
   /** 'starred' shows only starred diagrams from every folder. */
@@ -82,6 +92,14 @@ export function HomeScreen(props: HomeScreenProps) {
     setStatus(null)
   }
   useEffect(() => () => { if (statusTimer.current !== null) window.clearTimeout(statusTimer.current) }, [])
+  failedRef.current = showStatus
+  // Closing the Library (or opening a diagram) makes a pending delete real now. A page unload does not: the item simply stays.
+  useEffect(() => () => { void pending.flush() }, [pending])
+  const openDiagram = (id: string) => { void pending.flush(); props.onOpenDiagram(id) }
+  const deleteWithUndo = (item: { kind: 'diagram' | 'folder'; id: string; label: string; hidden: Set<string>; run: () => Promise<boolean> | void }) => {
+    clearStatus()
+    void pending.schedule({ kind: item.kind, id: item.id, label: item.label, hiddenIds: item.hidden, run: async () => (await item.run()) !== false })
+  }
   /** Runs a library action and shows the message only when it worked (failures show the alert notice instead). */
   const act = async (run: () => Promise<boolean | 'unchanged'> | void, message: string) => {
     const result = await run()
@@ -234,12 +252,16 @@ export function HomeScreen(props: HomeScreenProps) {
         </header>
 
         {props.notice && <p className="home-notice" role="alert">{props.notice}</p>}
+        {pendingItem && <div className="home-undo" role="status">
+          <span>Deleted “{pendingItem.label}”</span>
+          <button type="button" onClick={() => { pending.cancel() }}>Undo</button>
+        </div>}
         {status && <p className="home-status" role="status">{status}</p>}
 
         {confirmFolder && <div className="home-confirm" role="alertdialog" aria-label="Delete folder">
-          <p>Delete “{confirmFolder.name}” and everything inside it? This removes {countInFolder(library, folders, confirmFolder.id)} diagram{countInFolder(library, folders, confirmFolder.id) === 1 ? '' : 's'} and any subfolders. It cannot be undone.</p>
+          <p>Delete “{confirmFolder.name}” and everything inside it? This removes {countInFolder(library, folders, confirmFolder.id)} diagram{countInFolder(library, folders, confirmFolder.id) === 1 ? '' : 's'} and any subfolders. You can Undo for a few seconds after deleting.</p>
           <div className="home-confirm-actions">
-            <button type="button" className="home-danger" onClick={() => { const gone = confirmFolder; setConfirmFolderId(null); void act(() => props.onDeleteFolder(gone.id), `Deleted “${gone.name}”`) }}>Delete folder</button>
+            <button type="button" className="home-danger" onClick={() => { const gone = confirmFolder; setConfirmFolderId(null); deleteWithUndo({ kind: 'folder', id: gone.id, label: gone.name, hidden: hiddenForFolder(folders, library, gone.id), run: () => props.onDeleteFolder(gone.id) }) }}>Delete folder</button>
             <button type="button" onClick={() => setConfirmFolderId(null)}>Cancel</button>
           </div>
         </div>}
@@ -291,7 +313,7 @@ export function HomeScreen(props: HomeScreenProps) {
           <ul>
             {recent.map((entry) => (
               <li key={entry.id}>
-                <button type="button" aria-label={`Open recent ${entry.title || 'Untitled diagram'}`} onClick={() => props.onOpenDiagram(entry.id)}>
+                <button type="button" aria-label={`Open recent ${entry.title || 'Untitled diagram'}`} onClick={() => openDiagram(entry.id)}>
                   <span className="home-recent-preview" aria-hidden="true">{props.thumbnails[entry.id] ? <img src={props.thumbnails[entry.id]} alt="" draggable={false} /> : <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>}</span>
                   <span className="home-card-title">{entry.title || 'Untitled diagram'}</span>
                   <span className="home-card-meta">{describeEdited(entry.updatedAt) || 'earlier'}</span>
@@ -307,7 +329,7 @@ export function HomeScreen(props: HomeScreenProps) {
             const where = folderLabel(folders, entry.folderId && folders.some((folder) => folder.id === entry.folderId) ? entry.folderId : null)
             return (
               <li key={entry.id} className={`home-card${entry.id === props.currentId ? ' current' : ''}`}>
-                <button type="button" className="home-card-open" aria-label={`Open ${entry.title || 'Untitled diagram'}`} onClick={() => props.onOpenDiagram(entry.id)}>
+                <button type="button" className="home-card-open" aria-label={`Open ${entry.title || 'Untitled diagram'}`} onClick={() => openDiagram(entry.id)}>
                   <span className="home-card-preview" aria-hidden="true">
                     {props.thumbnails[entry.id]
                       ? <img src={props.thumbnails[entry.id]} alt="" draggable={false} />
@@ -329,7 +351,7 @@ export function HomeScreen(props: HomeScreenProps) {
                   <button type="button" aria-label={`Make a copy of ${entry.title || 'Untitled diagram'}`} title="Make a copy" disabled={copyingId !== null} aria-busy={copyingId === entry.id} onClick={() => void makeCopy(entry.id)}>{copyingId === entry.id ? 'Copying…' : 'Make a copy'}</button>
                   <button type="button" aria-label={`Move${entry.title || 'Untitled diagram'}`} onClick={() => setMovingId(entry.id)}>Move</button>
                   {confirmDiagramId === entry.id
-                    ? <button type="button" className="home-danger" onClick={() => { setConfirmDiagramId(null); void act(() => props.onDeleteDiagram(entry.id), `Deleted “${entry.title || 'Untitled diagram'}”`) }}>Delete?</button>
+                    ? <button type="button" className="home-danger" onClick={() => { setConfirmDiagramId(null); deleteWithUndo({ kind: 'diagram', id: entry.id, label: entry.title || 'Untitled diagram', hidden: hiddenForDiagram(entry.id), run: () => props.onDeleteDiagram(entry.id) }) }}>Delete?</button>
                     : <button type="button" aria-label={`Delete ${entry.title || 'Untitled diagram'}`} onClick={() => setConfirmDiagramId(entry.id)}>Delete</button>}
                 </span>}
               </li>
