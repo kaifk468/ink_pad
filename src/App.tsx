@@ -4667,7 +4667,7 @@ function App() {
         arrange={inputMode === 'desktop' && canAlign(strokesRef.current, currentSelectionKeys())
           ? { canAlign: true, canDistribute: canDistribute(strokesRef.current, currentSelectionKeys()), onAlign: alignSelection, onDistribute: distributeSelection }
           : null}
-        group={inputMode === 'desktop' && (canGroup(strokesRef.current, currentSelectionKeys()) || canUngroup(strokesRef.current, currentSelectionKeys()))
+        group={(canGroup(strokesRef.current, currentSelectionKeys()) || canUngroup(strokesRef.current, currentSelectionKeys()))
           ? { canGroup: canGroup(strokesRef.current, currentSelectionKeys()), canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()), onGroup: () => { groupSelection() }, onUngroup: () => { ungroupSelection() } }
           : null}
         rotation={rotationPanel}

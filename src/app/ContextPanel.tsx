@@ -229,8 +229,8 @@ export function ContextPanel(props: ContextPanelProps) {
         </div>
       </div>}
       {props.group && (props.group.canGroup || props.group.canUngroup) && <div className="selection-actions" role="group" aria-label="Group">
-        {props.group.canGroup && <button className="clear-selection-button" type="button" aria-label="Group selection" title="Group the selected items so they select and move together (Ctrl+G)" onClick={props.group.onGroup}>Group</button>}
-        {props.group.canUngroup && <button className="clear-selection-button" type="button" aria-label="Ungroup selection" title="Take the selected items out of their group (Ctrl+Shift+G)" onClick={props.group.onUngroup}>Ungroup</button>}
+        {props.group.canGroup && <button className="clear-selection-button" type="button" aria-label="Group selection" title={props.desktop ? "Group the selected items so they select and move together (Ctrl+G)" : "Group the selected items so they select and move together"} onClick={props.group.onGroup}>Group</button>}
+        {props.group.canUngroup && <button className="clear-selection-button" type="button" aria-label="Ungroup selection" title={props.desktop ? "Take the selected items out of their group (Ctrl+Shift+G)" : "Take the selected items out of their group"} onClick={props.group.onUngroup}>Ungroup</button>}
       </div>}
       {props.arrange && <div className="arrange-controls" role="group" aria-label="Align and distribute">
         <span className="panel-label">Align</span>
