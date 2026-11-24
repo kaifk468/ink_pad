@@ -89,7 +89,7 @@ test('wiring: the laser branch precedes the gesture gate, touch keeps navigation
   assert.match(laserBody, /requestAnimationFrame\(drawLaser\)/)
   assert.match(laserBody, /devicePixelRatio/)
   assert.match(app, /case 'laser': if \(!laserModeRef\.current\) toggleLaserTool\(\); break/)
-  assert.match(app, /if \(laserModeRef\.current && !cancelableGesture\) \{ setLaserMode\(false\); return true \}/)
+  assert.match(app, /if \(laserModeRef\.current && !cancelableGesture\) \{ leaveLaser\(\); return true \}/)
   assert.match(app, /const selectPenMode = \(\) => \{\n\s+setLaserMode\(false\)/)
   assert.match(app, /useEffect\(\(\) => \{ if \(anotherToolActive\) setLaserMode\(false\) \}/)
   assert.match(app, /\{laserMode && <canvas ref=\{laserCanvasRef\} className="laser-overlay"/)

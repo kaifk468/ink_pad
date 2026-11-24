@@ -61,3 +61,23 @@ export function laserOnTouchDown(activeType: string | null, touchCount: number, 
   if (touchCount === 1 && !penNear) return 'start'
   return 'clear'
 }
+
+/** The tool flags that make up "which tool is active" (all off = Pen). The App keeps them as separate useState flags. */
+export type ToolFlags = {
+  eraser: boolean
+  shapeMode: boolean
+  shapeTool: string | null
+  selectionMode: boolean
+  lassoMode: boolean
+  connectorMode: boolean
+  textMode: boolean
+  classMode: boolean
+  umlConnectorType: string | null
+}
+
+export const PEN_TOOL_FLAGS: ToolFlags = { eraser: false, shapeMode: false, shapeTool: null, selectionMode: false, lassoMode: false, connectorMode: false, textMode: false, classMode: false, umlConnectorType: null }
+
+/** The tool to bring back when the laser is switched off: the flags that were active when it was switched on (Pen when none was). */
+export function toolToRestoreAfterLaser(flags: ToolFlags): ToolFlags {
+  return { ...PEN_TOOL_FLAGS, ...flags }
+}

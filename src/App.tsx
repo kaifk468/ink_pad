@@ -48,7 +48,7 @@ import { ContextPanel } from './app/ContextPanel'
 import { applyStyle, captureStyle, type StyleSnapshot } from './styleClipboard'
 import { selectionFillColor, selectionHasFillable, setFillColor, matchingOutline } from './shapeFill'
 import { withSketchSeed, withSketchSeeds } from './sketchy'
-import { addLaserPoint, laserOnTouchDown, laserSegments, laserVisible, pruneLaser, type LaserPoint } from './laserPointer'
+import { addLaserPoint, laserOnTouchDown, laserSegments, laserVisible, PEN_TOOL_FLAGS, pruneLaser, toolToRestoreAfterLaser, type LaserPoint, type ToolFlags } from './laserPointer'
 import { createStickyNote, STICKY_HEIGHT, STICKY_WIDTH } from './stickyNote'
 import { HistoryBar } from './app/HistoryBar'
 import { ToolDock } from './app/ToolDock'
@@ -821,11 +821,22 @@ function App() {
     setOptionsFor(null); setEraserMenuOpen(false)
     setPresentMode((value) => !value)
   }
+  const laserPreviousToolRef = useRef<ToolFlags>(PEN_TOOL_FLAGS)
+  const leaveLaser = () => {
+    // Back to the tool that was active before the laser (Pen when it was Pen).
+    const previous = toolToRestoreAfterLaser(laserPreviousToolRef.current)
+    laserPreviousToolRef.current = PEN_TOOL_FLAGS
+    setLaserMode(false)
+    setEraser(previous.eraser); setShapeMode(previous.shapeMode); setShapeTool(previous.shapeTool as ShapeKind | 'arrow' | 'line' | null)
+    setSelectionMode(previous.selectionMode); setLassoMode(previous.lassoMode); setConnectorMode(previous.connectorMode)
+    setTextMode(previous.textMode); setClassMode(previous.classMode); setUmlConnectorType(previous.umlConnectorType as ConnectorRelationshipType | null)
+  }
   const toggleLaserTool = () => {
-    const next = !laserModeRef.current
     setOptionsFor(null)
-    selectPenMode() // clears every other tool (and the laser) ...
-    if (next) setLaserMode(true) // ... then the laser is set; the last state update wins
+    if (laserModeRef.current) { leaveLaser(); return }
+    laserPreviousToolRef.current = { eraser, shapeMode, shapeTool, selectionMode, lassoMode, connectorMode, textMode, classMode, umlConnectorType }
+    selectPenMode() // clears every other tool ...
+    setLaserMode(true) // ... then the laser is set; the last state update wins
   }
   // Leaving the laser (another tool, Esc, the menu) clears the trail and stops the animation loop.
   useEffect(() => {
@@ -4833,7 +4844,7 @@ function App() {
     const cancelableGesture = activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || activeQuickRef.current !== null
     if (command.kind === 'deselect') {
       // Esc leaves the laser first (it has no selection or gesture of its own).
-      if (laserModeRef.current && !cancelableGesture) { setLaserMode(false); return true }
+      if (laserModeRef.current && !cancelableGesture) { leaveLaser(); return true }
       const action = escapeAction({ cancelableGesture, anyGesture: gestureActive || touchNav.touchCount() > 0, hasSelection: selectedKeysRef.current.size > 0 || selectedRectangleIdRef.current !== null })
       if (action === 'cancelGesture') return cancelActiveGesture()
       if (action === 'none') {

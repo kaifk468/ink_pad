@@ -50,12 +50,12 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, on
   return (
     <div ref={rootRef} className="insert-control more-control">
       <button
-        className={`tool-button more-button${open ? ' selected' : ''}`}
+        className={`tool-button more-button${open || laserActive ? ' selected' : ''}`}
         type="button"
         aria-label="More"
         aria-haspopup="true"
         aria-expanded={open}
-        title="More actions"
+        title={laserActive ? `More tools — Laser pointer on${laserKey ? ` (${laserKey})` : ''}` : 'More actions'}
         onClick={() => setOpen((value) => !value)}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg><span>More</span>
