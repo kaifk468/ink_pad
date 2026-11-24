@@ -282,7 +282,7 @@ test('plain letters pick tools (any case), and only with no modifier and no auto
     assert.equal(input.keyCommand(key(k, { altKey: true }), 'desktop'), null)
     assert.equal(input.keyCommand(key(k, { shiftKey: true }), 'desktop') !== null, false, 'Shift+letter is not a tool key')
   }
-  for (const k of ['q', ' ']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
+  for (const k of ['w', ' ']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
 })
 
 test('bare number keys pick tools like Excalidraw; Shift+1/2 still zoom; modifiers, repeat and Tablet mode ignore them', async () => {

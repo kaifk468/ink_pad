@@ -51,6 +51,9 @@ type ToolDockProps = {
   /** Hide the toolbars (present mode; More menu, both modes). */
   onPresent?: () => void
   presentActive?: boolean
+  /** Tool lock: keep the shape/arrow/line tool after drawing. */
+  toolLock?: boolean
+  onToolLock?: () => void
 }
 
 const DESKTOP_SHAPES: Array<{ kind: 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'; label: string; key: string; num: string; icon: JSX.Element }> = [
@@ -96,6 +99,11 @@ export function ToolDock(props: ToolDockProps) {
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 9.5h16M4 14.5h16"/><path d="m8 7.2 2.2-.6M8 12.4c1.2-1 2-1 3 0M8 18c1.5-1 2.5-1 4 0"/></svg><span>Class box</span>
       </button>
   </>
+  const lock = props.onToolLock ? (
+    <button className={`tool-button tool-lock-button${props.toolLock ? ' selected' : ''}`} type="button" aria-label="Tool lock" aria-pressed={Boolean(props.toolLock)} title="Keep the tool after drawing (Q)" onClick={props.onToolLock}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">{props.toolLock ? <path d="M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3" /> : <path d="M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 6.6-1.6" />}</svg><span>Lock</span>
+    </button>
+  ) : null
   if (props.desktop) {
     // Desktop: typing and placing shapes come first, so every insert entry is a button of its own (no Insert tray).
     return (
@@ -125,6 +133,7 @@ export function ToolDock(props: ToolDockProps) {
         {inkClass}
         {divider}
         <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" onTemplates={props.onTemplates} onLaser={props.onLaser} laserActive={props.laserActive} laserKey="X" onPresent={props.onPresent} presentActive={props.presentActive} presentKey="Alt+Z" />
+        {lock}
       </nav>
     )
   }
@@ -149,6 +158,7 @@ export function ToolDock(props: ToolDockProps) {
         onSticky={props.onSticky}
       />
       <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onFind={props.onFind} findTitle="Find text on the canvas" onTemplates={props.onTemplates} onLaser={props.onLaser} laserActive={props.laserActive} onPresent={props.onPresent} presentActive={props.presentActive} />
+      {lock}
     </nav>
   )
 }

@@ -82,7 +82,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -275,6 +275,9 @@ function App() {
   const navigationSettingsRef = useRef(navigationSettings)
   // Per-device input mode (menu switch). Tablet, the default, leaves the canvas exactly as it always was; Desktop lets a mouse draw and edit.
   const [inputMode, setInputMode] = useState<InputMode>(() => loadInputMode())
+  const [toolLock, setToolLock] = useState<boolean>(() => loadToolLock())
+  const toolLockRef = useRef(toolLock)
+  toolLockRef.current = toolLock
   const inputModeRef = useRef(inputMode)
   // The zoom lock is a tablet-only control: in Desktop mode a lock saved earlier is ignored (and its switch is hidden), so it can never trap the menu.
   const zoomLockActive = navigationSettings.zoomLocked && inputMode !== 'desktop'
@@ -2972,7 +2975,7 @@ function App() {
         strokesRef.current = [...strokesRef.current.filter((item) => item !== targetBox), grown]
       } else if (arrowConnector) {
         strokesRef.current.push(arrowConnector)
-        selectNewConnectorRef.current(canvasItemKey(arrowConnector))
+        if (!toolLockRef.current) selectNewConnectorRef.current(canvasItemKey(arrowConnector))
       } else {
         strokesRef.current.push(stroke)
         if (stroke.kind === 'stroke' && stroke.erase) strokesRef.current = compactAfterErase(strokesRef.current, () => nextStrokeIdRef.current++)
@@ -3774,6 +3777,13 @@ function App() {
             const y = Math.min(finished.originalBounds.y, workspaceBoundsRef.current.y + workspaceBoundsRef.current.height - size.height)
             strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: size.width, height: size.height })
           }
+          if (toolLockRef.current) {
+            // Tool lock: the shape tool stays active for the next one and the new shape is not left selected.
+            setSelectedRectangle(null)
+            updateSelectedItems([])
+            renderAll()
+            return
+          }
           setShapeTool(null)
           setSelectionMode(true)
           setSelectedRectangle(finished.rectangleId)
@@ -4076,6 +4086,7 @@ function App() {
     setOptionsFor(null); setShapeMode(false); setTextMode(false); setClassMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false)
     if (next) { clearLassoSelection(); setSelectedRectangle(null) }
   }
+  const toggleToolLock = () => { const next = !toolLockRef.current; toolLockRef.current = next; setToolLock(next); saveToolLock(next) }
   selectNewConnectorRef.current = (key) => { toggleSelectTool(); setSelectedRectangle(null); updateSelectedItems([key]) }
   const toggleSelectTool = () => { const next = !selectionMode; setSelectionMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setShapeTool(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
   const openTextOptions = () => { setTextMode(true); setClassMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); clearLassoSelection(); setOptionsFor('text') }
@@ -4764,6 +4775,7 @@ function App() {
       case 'selectAll': return selectAllItems()
       case 'layer': return moveSelectionLayer(command.move)
       case 'lock': return lockSelection()
+      case 'toolLock': toggleToolLock(); return true
       case 'group': return groupSelection()
       case 'ungroup': return ungroupSelection()
       case 'tool':
@@ -5128,6 +5140,8 @@ function App() {
         onCode={insertCodeBlock}
         onFind={openFind}
         onSticky={insertStickyNote}
+        toolLock={toolLock}
+        onToolLock={toggleToolLock}
         onTemplates={() => setTemplateChooserOpen(true)}
         laserActive={laserMode}
         onLaser={toggleLaserTool}

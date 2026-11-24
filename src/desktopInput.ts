@@ -50,6 +50,25 @@ export function loadLineDashDefault(storage?: Pick<Storage, 'getItem'>): 'solid'
   }
 }
 
+export const TOOL_LOCK_KEY = 'inkpad.toolLock'
+
+/** Tool lock: keep the shape/arrow/line tool after drawing one (off by default; remembered on this device). */
+export function loadToolLock(storage?: Pick<Storage, 'getItem'>): boolean {
+  try {
+    return (storage ?? window.localStorage).getItem(TOOL_LOCK_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function saveToolLock(value: boolean, storage?: Pick<Storage, 'setItem'>): void {
+  try {
+    (storage ?? window.localStorage).setItem(TOOL_LOCK_KEY, value ? '1' : '0')
+  } catch {
+    /* storage unavailable: the choice lasts for this session only */
+  }
+}
+
 export function saveLineDashDefault(value: 'solid' | 'dashed' | 'dotted', storage?: Pick<Storage, 'setItem'>): void {
   try {
     (storage ?? window.localStorage).setItem(LINE_DASH_KEY, value)
@@ -195,6 +214,7 @@ export type KeyCommand =
   | { kind: 'edit' }
   | { kind: 'quickCreate'; direction: 'right' | 'left' | 'up' | 'down' }
   | { kind: 'layer'; move: 'forward' | 'backward' | 'front' | 'back' }
+  | { kind: 'toolLock' }
   | { kind: 'tool'; tool: KeyTool }
 
 export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', k: 'code', n: 'sticky', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line', x: 'laser' }
@@ -278,6 +298,7 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
   if (key === 'PageUp') return event.repeat ? null : { kind: 'pagePrev' }
   if (key === 'PageDown') return event.repeat ? null : { kind: 'pageNext' }
   if (event.repeat) return null
+  if (key === 'q') return { kind: 'toolLock' }
   const tool = TOOL_KEYS[key] ?? NUMBER_TOOL_KEYS[key]
   return tool ? { kind: 'tool', tool } : null
 }

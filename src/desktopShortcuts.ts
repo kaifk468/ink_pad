@@ -29,6 +29,7 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'Tools', label: 'Ellipse', keys: 'O or 4', input: { key: 'o' } },
   { group: 'Tools', label: 'Arrow', keys: 'A or 5', input: { key: 'a' } },
   { group: 'Tools', label: 'Line', keys: 'I or 6', input: { key: 'i' } },
+  { group: 'Tools', label: 'Keep the tool after drawing (tool lock)', keys: 'Q', input: { key: 'q' } },
   { group: 'Edit', label: 'Undo', keys: 'Ctrl+Z', input: { key: 'z', ...ctrl } },
   { group: 'Edit', label: 'Redo', keys: 'Ctrl+Y or Ctrl+Shift+Z', input: { key: 'y', ...ctrl } },
   { group: 'Edit', label: 'Copy', keys: 'Ctrl+C', input: { key: 'c', ...ctrl } },
