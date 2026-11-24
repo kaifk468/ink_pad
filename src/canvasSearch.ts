@@ -43,3 +43,24 @@ export function searchCanvas(pages: readonly (readonly CanvasItem[])[], query: s
   })
   return matches
 }
+
+/**
+ * What a search of `pages` depends on, as a flat list: the page breaks and the searchable text of every item, in search order.
+ * A cached match count stays valid while this list is equal (see `sameSearchFingerprint`), so an in-place label edit that keeps
+ * the same arrays and the same item count still refreshes the count. Strings compare by value and mostly by pointer, so this is cheap.
+ */
+export function searchFingerprint(pages: readonly (readonly CanvasItem[])[]): string[] {
+  const parts: string[] = []
+  for (const items of pages) {
+    parts.push('\u0000')
+    for (const item of items) {
+      const found = searchableText(item)
+      if (found) parts.push(found.text)
+    }
+  }
+  return parts
+}
+
+export function sameSearchFingerprint(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((part, index) => part === b[index])
+}

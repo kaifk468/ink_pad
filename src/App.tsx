@@ -60,7 +60,9 @@ import { EmptyCanvasHint } from './app/EmptyCanvasHint'
 import { ShortcutHelp } from './app/ShortcutHelp'
 import { CommandPalette } from './app/CommandPalette'
 import { FindBar } from './app/FindBar'
-import { searchCanvas, type SearchMatch } from './canvasSearch'
+import { sameSearchFingerprint, searchCanvas, searchFingerprint, type SearchMatch } from './canvasSearch'
+import { buildDiagramOutline, outlineFileName } from './diagramOutline'
+import { downloadBlob } from './documentStore'
 import { shortcutEntryId, shortcutPaletteEntries, type PaletteEntry } from './commandPalette'
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
@@ -4651,6 +4653,22 @@ function App() {
   const paletteOpenRef = useRef(false)
   const openPalette = () => { paletteOpenRef.current = true; setPaletteOpen(true) }
   const closePalette = () => { paletteOpenRef.current = false; setPaletteOpen(false) }
+  // Text outline (Markdown) of the whole diagram: copied to the clipboard or downloaded as a .md file.
+  const currentOutline = (): string => buildDiagramOutline(docTitle, pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)))
+  const copyOutline = () => {
+    const text = currentOutline()
+    const done = () => showToast('Outline copied')
+    const failed = () => showToast('Could not copy the outline')
+    try {
+      navigator.clipboard.writeText(text).then(done, failed)
+    } catch {
+      failed()
+    }
+  }
+  const downloadOutline = () => {
+    downloadBlob(new Blob([currentOutline()], { type: 'text/markdown' }), outlineFileName(docTitle))
+    showToast('Outline downloaded')
+  }
   /** Extra palette entries beyond the keyboard shortcuts. Add one line here to make a new command searchable (a later template list can append its own). */
   const paletteExtras = (): Array<PaletteEntry & { run: () => void }> => [
     ...HLD_SHAPES.map((shape) => ({ id: `hld:${shape}`, label: HLD_SHAPE_LABELS[shape], group: 'Shapes', keywords: 'hld system design add', run: () => toggleHldShapeTool(shape) })),
@@ -4658,6 +4676,8 @@ function App() {
     { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout', run: () => setTemplateChooserOpen(true) },
     { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2).then((error) => { if (error) showToast(error) }) },
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
+    { id: 'export:outline-copy', label: 'Copy as text outline', group: 'Export', keywords: 'markdown summary list copy', run: copyOutline },
+    { id: 'export:outline-download', label: 'Download outline (.md)', group: 'Export', keywords: 'markdown text summary file', run: downloadOutline },
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
     { id: 'setting:snapping', label: 'Toggle snapping', group: 'Settings', keywords: 'snap guides align', run: () => updateSnapping(!snappingRef.current) },
     { id: 'setting:sketchy', label: 'Toggle hand-drawn style', group: 'Settings', keywords: 'sketchy rough', run: toggleSketchy },
@@ -4681,15 +4701,16 @@ function App() {
   const openFind = () => { setFindOpen(true); setFindFocusTick((tick) => tick + 1) }
   const closeFind = () => setFindOpen(false)
   const findMatches = (query: string): SearchMatch[] => searchCanvas(pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)), query)
-  // The bar's count is memoised on the query and the item arrays (identity + length) so an ordinary re-render does not search every page again.
-  const findCountCacheRef = useRef<{ query: string; sources: CanvasItem[][]; lengths: number[]; count: number } | null>(null)
+  // The bar's count is memoised on the query and a fingerprint of the searchable text of every page, so an ordinary re-render does not search again but an in-place label edit refreshes the count.
+  const findCountCacheRef = useRef<{ query: string; fingerprint: string[]; count: number } | null>(null)
   const findCount = (query: string): number => {
     if (!query.trim()) return 0
     const sources = pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items))
+    const fingerprint = searchFingerprint(sources)
     const cache = findCountCacheRef.current
-    if (cache && cache.query === query && cache.sources.length === sources.length && sources.every((items, i) => items === cache.sources[i] && items.length === cache.lengths[i])) return cache.count
+    if (cache && cache.query === query && sameSearchFingerprint(cache.fingerprint, fingerprint)) return cache.count
     const count = searchCanvas(sources, query).length
-    findCountCacheRef.current = { query, sources, lengths: sources.map((items) => items.length), count }
+    findCountCacheRef.current = { query, fingerprint, count }
     return count
   }
   /** Shows the match: switches page, centres the view on the item (zooming out only when it does not fit) and selects it (a locked item is only shown). */
@@ -5230,6 +5251,8 @@ function App() {
         onNew={() => void newDiagram()}
         onExportDocument={exportDocumentFile}
         onImportFile={(file) => void importDocumentFile(file)}
+        onCopyOutline={copyOutline}
+        onDownloadOutline={downloadOutline}
         onExportSvg={() => void exportSvgFile()}
         onExportPng={(scale) => void exportPngFile(scale)}
         transparent={transparentExport}

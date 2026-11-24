@@ -13,6 +13,9 @@ type FilePanelProps = {
   onExportDocument: () => void
   onImportFile: (file: File) => void
   onExportSvg: () => void
+  /** Text outline of the whole diagram (Markdown): copy it, or download a .md file. */
+  onCopyOutline: () => void
+  onDownloadOutline: () => void
   onExportPng: (scale: 1 | 2) => void
   /** Export and Copy as PNG leave out the sheet colour and page style. */
   transparent: boolean
@@ -111,6 +114,12 @@ export function FilePanel(props: FilePanelProps) {
         </div>
         <label className="file-panel-check"><input type="checkbox" checked={props.transparent} onChange={(event) => props.onTransparentChange(event.target.checked)} /> Transparent background</label>
         <p className="file-panel-hint">Images are cropped to your drawing and include the sheet color and page style, unless Transparent background is on (it also applies to Copy as PNG).</p>
+
+        <h3>Text outline</h3>
+        <div className="file-panel-actions">
+          <button type="button" disabled={!props.canExport} title="Copy a Markdown outline of every page: components, connections, notes, classes and code" onClick={props.onCopyOutline}>Copy as text outline</button>
+          <button type="button" disabled={!props.canExport} title="Save the outline as a Markdown file named after the diagram" onClick={props.onDownloadOutline}>Download outline (.md)</button>
+        </div>
 
         <h3>NotebookLM</h3>
         <div className="file-panel-actions">

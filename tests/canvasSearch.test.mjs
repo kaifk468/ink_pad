@@ -4,7 +4,7 @@ import { loadModule } from './helpers/loadModule.mjs'
 import { readAppSource } from './helpers/appSource.mjs'
 import { readFile } from 'node:fs/promises'
 
-const { searchCanvas } = await loadModule('canvasSearch.ts')
+const { searchCanvas, searchFingerprint, sameSearchFingerprint } = await loadModule('canvasSearch.ts')
 const input = await loadModule('desktopInput.ts')
 const shortcuts = await loadModule('desktopShortcuts.ts')
 const app = await readAppSource()
@@ -15,6 +15,16 @@ const code = (id, t, extra = {}) => ({ kind: 'code', id, x: 0, y: 0, width: 80, 
 const box = (id, extra = {}) => ({ kind: 'rectangle', id, x: 0, y: 0, width: 100, height: 60, strokeColor: '#111', strokeWidth: 2, ...extra })
 const link = (id, label) => ({ kind: 'connector', id, start: p(0, 0), end: p(10, 10), strokeColor: '#111', strokeWidth: 2, relationshipType: 'association', reversed: false, ...(label ? { label } : {}) })
 const stroke = (id) => ({ kind: 'stroke', id, points: [p(0, 0), p(5, 5)], color: '#000', width: 3, erase: false })
+
+test('search fingerprint changes with an in-place label edit that keeps arrays, item count and text length', () => {
+  const page = [text(1, 'cat'), stroke(2)]
+  const before = searchFingerprint([page])
+  assert.ok(sameSearchFingerprint(before, searchFingerprint([page])))
+  page[0].text = 'car'
+  assert.equal(sameSearchFingerprint(before, searchFingerprint([page])), false)
+  assert.equal(sameSearchFingerprint(searchFingerprint([[text(1, 'a')], []]), searchFingerprint([[text(1, 'a'), text(2, 'b')]])), false)
+  assert.match(app, /sameSearchFingerprint\(cache\.fingerprint, fingerprint\)/)
+})
 
 test('empty or blank query finds nothing', () => {
   const pages = [[text(1, 'Redis cache')]]

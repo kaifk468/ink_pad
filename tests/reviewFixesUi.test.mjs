@@ -70,5 +70,5 @@ test('the find bar count is memoised, not searched on every render', () => {
   assert.equal(/count=\{[^}]*findMatches/.test(app), false)
   const body = app.slice(app.indexOf('const findCount'), app.indexOf('/** Shows the match'))
   assert.match(body, /findCountCacheRef\.current = /)
-  assert.match(body, /items === cache\.sources\[i\] && items\.length === cache\.lengths\[i\]/)
+  assert.match(body, /sameSearchFingerprint\(cache\.fingerprint, fingerprint\)/) // keyed on content, so an in-place label edit refreshes the count
 })
