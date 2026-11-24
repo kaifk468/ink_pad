@@ -111,3 +111,9 @@ test('wiring: chooser, More menu entry, hint button, paste path in one step', as
   assert.match(chooser, /event\.key !== 'Escape'/)
   assert.match(chooser, /aria-label="Close"/)
 })
+
+test('wiring: an inserted template larger than the view is zoomed out to fit, never zoomed in', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /const insertTemplate = [\s\S]*?fitViewportToBoundsInset\(bounds, rect\.width, rect\.height, insets, viewportRef\.current\.scale\)/)
+})

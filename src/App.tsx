@@ -4194,7 +4194,15 @@ function App() {
     const result = pasteItems(items, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET, workspaceBoundsRef.current, centre, strokesRef.current)
     if (!result) return false
     const done = insertPasted(sketchyRef.current ? { ...result, items: withSketchSeeds(result.items) } : result)
-    if (done) renderAll()
+    if (done) {
+      // A template larger than the view is zoomed out to fit (never zoomed in), so the whole layout is visible at once.
+      const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), new Set(result.keys))
+      if (bounds && !navigationSettingsRef.current.zoomLocked) {
+        const insets = inputModeRef.current === 'desktop' ? DESKTOP_FIT_INSETS : { top: 72, right: 24, bottom: 96, left: 24 }
+        applyViewport(fitViewportToBoundsInset(bounds, rect.width, rect.height, insets, viewportRef.current.scale))
+      }
+      renderAll()
+    }
     return done
   }
 
