@@ -80,7 +80,7 @@ import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, fitViewportToBoundsInset, DESKTOP_FIT_INSETS, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
-import { MAX_PAGES, canAddPage, clampPageIndex, insertPageAfter, insertPageAt, removePageAt, writeLastPage } from './pages'
+import { MAX_PAGES, canAddPage, clampPageIndex, duplicatePageItems, insertPageAfter, insertPageAt, removePageAt, writeLastPage } from './pages'
 import { PageControls, PageUndoBar } from './app/PageControls'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
@@ -529,6 +529,28 @@ function App() {
     pagesRef.current = insertPageAfter(pagesRef.current, pageIndexRef.current, { items: [], history: null })
     showPageSlot(pageIndexRef.current + 1)
     scheduleAutosave()
+  }
+
+  /** Duplicate page: a copy of the page on screen goes right after it (fresh ids, connectors on the copied boxes, an empty undo history like an added page) and is shown. */
+  const duplicatePage = () => {
+    if (penBusy()) return
+    if (!canAddPage(pagesRef.current.length)) {
+      setFileNotice(`A diagram can have up to ${MAX_PAGES} pages.`)
+      return
+    }
+    if (textEditorRef.current) commitTextEditor()
+    dismissDeletedPage()
+    stashCurrentPage()
+    resetInteractionState()
+    const copy = duplicatePageItems(strokesRef.current, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current })
+    nextStrokeIdRef.current = copy.counters.stroke
+    nextRectangleIdRef.current = copy.counters.rectangle
+    nextConnectorIdRef.current = copy.counters.connector
+    nextTextIdRef.current = copy.counters.text
+    pagesRef.current = insertPageAfter(pagesRef.current, pageIndexRef.current, { items: copy.items, history: null })
+    showPageSlot(pageIndexRef.current + 1)
+    scheduleAutosave()
+    showToast(`Page duplicated (now page ${pageIndexRef.current + 1})`)
   }
 
   // The page deleted last, kept (items and its undo history) for a few seconds so the Undo bar can put it back.
@@ -4676,6 +4698,7 @@ function App() {
     { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout', run: () => setTemplateChooserOpen(true) },
     { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2).then((error) => { if (error) showToast(error) }) },
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
+    { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
     { id: 'export:outline-copy', label: 'Copy as text outline', group: 'Export', keywords: 'markdown summary list copy', run: copyOutline },
     { id: 'export:outline-download', label: 'Download outline (.md)', group: 'Export', keywords: 'markdown text summary file', run: downloadOutline },
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
@@ -5003,7 +5026,7 @@ function App() {
           )}
         </aside>
         <aside className={`viewport-navigator${navigatorMinimized ? ' minimized' : ''}`} aria-label="Canvas navigation">
-          <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDelete={deletePage} />
+          <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDuplicate={duplicatePage} canDuplicate={canAddPage(pageCount)} duplicateHint={canAddPage(pageCount) ? 'Duplicate page: copy this page right after it' : 'Page limit reached'} onDelete={deletePage} />
           {navigatorMinimized ? (
             <button className="navigator-restore" type="button" aria-label="Show workspace map" title="Show workspace map" onClick={() => setNavigatorMinimized(false)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><rect x="7" y="8.5" width="6" height="5" rx="1"/></svg>
@@ -5193,6 +5216,8 @@ function App() {
         onLaser={toggleLaserTool}
         presentActive={presentMode}
         onPresent={togglePresentMode}
+        onDuplicatePage={duplicatePage}
+        canDuplicatePage={canAddPage(pageCount)}
       />
       {presentMode && <button className="show-toolbars-pill" type="button" title="Show the toolbars (Alt+Z or Esc)" onClick={() => setPresentMode(false)}>Show toolbars</button>}
       {classBoxEditor && <ClassBoxDialog

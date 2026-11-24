@@ -23,10 +23,13 @@ type MoreTrayProps = {
   onPresent?: () => void
   presentActive?: boolean
   presentKey?: string
+  /** Duplicates the page on screen right after it. */
+  onDuplicatePage?: () => void
+  canDuplicatePage?: boolean
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, canDuplicatePage = true }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -88,6 +91,12 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, on
           {onPresent && <button className={`insert-entry${presentActive ? ' selected' : ''}`} type="button" aria-label="Hide toolbars" aria-pressed={Boolean(presentActive)} title={`Hide the toolbars for presenting; a Show toolbars button brings them back${presentKey ? ` (${presentKey})` : ''}`} onClick={() => { onPresent(); setOpen(false) }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 9h17"/></svg><span>Hide toolbars</span>
           </button>}
+        </>}
+        {onDuplicatePage && <>
+          <div className="insert-tray-heading">Pages</div>
+          <button className="insert-entry" type="button" aria-label="Duplicate page" disabled={!canDuplicatePage} title={canDuplicatePage ? 'Copy this page right after it' : 'Page limit reached'} onClick={() => { onDuplicatePage(); setOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 5H7a2 2 0 0 0-2 2v9"/></svg><span>Duplicate page</span>
+          </button>
         </>}
         <div className="insert-tray-heading">Layout</div>
         <button className="insert-entry" type="button" aria-label={tidyLabel} title={`${tidyLabel}: arrange the class boxes neatly and make the connectors between them Elbow`} onClick={() => { onTidy(); setOpen(false) }}>

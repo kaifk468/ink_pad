@@ -1,3 +1,5 @@
+import type { CanvasItem } from './canvasModel'
+import { pasteItems, type IdCounters } from './clipboard'
 /** Rules for the pages of one diagram. A diagram always has at least one page; every page shares the diagram's size, template and colour. */
 export const MAX_PAGES = 50
 
@@ -69,4 +71,23 @@ export function writeLastPage(id: string, index: number): void {
     if ((current[id] ?? 0) === (index > 0 ? index : 0)) return
     localStorage.setItem(LAST_PAGE_KEY, JSON.stringify(withLastPage(current, id, index)))
   } catch { /* the page is only a convenience */ }
+}
+
+/** A workspace too large to clamp anything: a duplicated page keeps every coordinate exactly. */
+const UNBOUNDED_WORKSPACE = { x: -1e9, y: -1e9, width: 2e9, height: 2e9 }
+
+/**
+ * The items of a duplicated page: every item cloned at the same position with fresh ids from the shared per-kind counters (ids are global across
+ * pages), connectors re-attached to the copied boxes (never to the original page's boxes), groups renumbered, locks kept. Pure; `items` is not changed.
+ * Returns the counters to continue from.
+ */
+export function duplicatePageItems(items: readonly CanvasItem[], counters: IdCounters): { items: CanvasItem[]; counters: IdCounters } {
+  const pasted = pasteItems(items, counters, 0, UNBOUNDED_WORKSPACE)
+  if (!pasted) return { items: [], counters: { ...counters } }
+  // Pasting never keeps a lock; a duplicate page does. Order is unchanged, so the items line up one to one.
+  const copy = pasted.items.map((item, index): CanvasItem => {
+    const source = items[index]
+    return item.kind !== 'opaque' && source.kind !== 'opaque' && source.locked === true ? ({ ...item, locked: true } as CanvasItem) : item
+  })
+  return { items: copy, counters: pasted.counters }
 }
