@@ -370,7 +370,7 @@ function App() {
     filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
-    scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram,
+    scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   } = useDocuments({
     getItems: () => strokesRef.current,
@@ -4758,6 +4758,7 @@ function App() {
         onCreateFolder={(name, parentId) => createFolder(name, parentId)}
         onRenameFolder={(id, name) => renameFolder(id, name)}
         onRenameDiagram={(id, title) => renameStoredDiagram(id, title)}
+        onMakeCopy={(id) => copyStoredDiagram(id)}
         onDeleteFolder={(id) => deleteFolder(id)}
         onMoveDiagram={(docId, folderId) => moveDiagram(docId, folderId)}
         onDeleteDiagram={(id) => deleteStoredDiagram(id)}

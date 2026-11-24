@@ -659,8 +659,8 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .home-card-title { padding: 0 14px; font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-card-folder { padding: 0 14px; color: #354fc2; font-size: 14px; font-weight: 600; }
 .home-card-meta { padding: 0 14px; color: var(--home-muted); font-size: 13px; }
-.home-card-actions { display: flex; gap: 8px; padding: 8px 10px 10px; border-top: 1px solid var(--home-line); }
-.home-card-actions button { flex: 1; font-size: 14px; }
+.home-card-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 10px 10px; border-top: 1px solid var(--home-line); }
+.home-card-actions button { flex: 1 1 auto; font-size: 14px; }
 .home-list { grid-template-columns: 1fr; gap: 8px; }
 .home-list .home-card { flex-direction: row; align-items: center; }
 .home-list .home-card .home-card-open { flex: 1; min-width: 0; display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; grid-template-areas: 'p t m' 'p f m'; column-gap: 12px; align-items: center; padding: 8px 12px; }

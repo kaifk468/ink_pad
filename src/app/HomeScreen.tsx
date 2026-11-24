@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DocumentSummary, FolderRecord } from '../documentStore'
 import { cleanFolderName, flattenFolders, folderPath } from '../folderTree'
 import { NEW_DIAGRAM_PRESETS, RECENT_COUNT, RECENT_MIN_LIBRARY, countInFolder, describeEdited, folderLabel, LIBRARY_SORTS, parseLibrarySort, recentDiagrams, searchLibrary, sortLibrary, type LibraryLayout, type LibrarySort } from '../libraryView'
+import { copyTitle } from '../libraryCopy'
 import type { PageTemplate } from '../pageTemplates'
 
 type HomeScreenProps = {
@@ -26,6 +27,8 @@ type HomeScreenProps = {
   onCreateFolder: (name: string, parentId: string | null) => Promise<boolean> | void
   onRenameFolder: (id: string, name: string) => Promise<boolean> | void
   onRenameDiagram: (id: string, title: string) => Promise<boolean | 'unchanged'> | void
+  /** Saves "<title> (copy)" next to the original; resolves false (with a notice) when it could not be done. */
+  onMakeCopy: (id: string) => Promise<boolean> | void
   onDeleteFolder: (id: string) => Promise<boolean> | void
   onMoveDiagram: (docId: string, folderId: string | null) => Promise<boolean> | void
   onDeleteDiagram: (id: string) => Promise<boolean> | void
@@ -54,6 +57,8 @@ export function HomeScreen(props: HomeScreenProps) {
   const [query, setQuery] = useState('')
   const [layout, setLayout] = useState<LibraryLayout>(readLayout)
   const [sort, setSort] = useState<LibrarySort>(readSort)
+  /** The diagram being copied; blocks further copies until it is saved. */
+  const [copyingId, setCopyingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -143,6 +148,11 @@ export function HomeScreen(props: HomeScreenProps) {
     setRenamingDiagramId(null)
     if (!title || title === titleOf(id)) return
     void act(() => props.onRenameDiagram(id, title), `Renamed to “${title.slice(0, 80)}”`)
+  }
+  const makeCopy = async (id: string) => {
+    if (copyingId !== null) return
+    setCopyingId(id)
+    try { await act(() => props.onMakeCopy(id), `Copied to “${copyTitle(titleOf(id))}”`) } finally { setCopyingId(null) }
   }
   const moveTo = (entry: DocumentSummary, folderId: string | null) => {
     setMovingId(null)
@@ -316,7 +326,8 @@ export function HomeScreen(props: HomeScreenProps) {
                 </div>}
                 {renamingDiagramId !== entry.id && <span className="home-card-actions">
                   <button type="button" aria-label={`Rename ${entry.title || 'Untitled diagram'}`} onClick={() => { setRenamingDiagramId(entry.id); setDiagramDraft(entry.title || '') }}>Rename</button>
-                  <button type="button" aria-label={`Move ${entry.title || 'Untitled diagram'}`} onClick={() => setMovingId(entry.id)}>Move</button>
+                  <button type="button" aria-label={`Make a copy of ${entry.title || 'Untitled diagram'}`} title="Make a copy" disabled={copyingId !== null} aria-busy={copyingId === entry.id} onClick={() => void makeCopy(entry.id)}>{copyingId === entry.id ? 'Copying…' : 'Make a copy'}</button>
+                  <button type="button" aria-label={`Move${entry.title || 'Untitled diagram'}`} onClick={() => setMovingId(entry.id)}>Move</button>
                   {confirmDiagramId === entry.id
                     ? <button type="button" className="home-danger" onClick={() => { setConfirmDiagramId(null); void act(() => props.onDeleteDiagram(entry.id), `Deleted “${entry.title || 'Untitled diagram'}”`) }}>Delete?</button>
                     : <button type="button" aria-label={`Delete ${entry.title || 'Untitled diagram'}`} onClick={() => setConfirmDiagramId(entry.id)}>Delete</button>}

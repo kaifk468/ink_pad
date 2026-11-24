@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CanvasItem } from '../canvasModel'
 import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, isLossyParse, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
 import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
+import { copyStoredDiagram as copyDiagramOnBackend } from '../libraryCopy'
 import { THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
 import { moveStarred, readStarred, starsToUpload, toggleStarred, writeStarred } from '../starred'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
@@ -620,6 +621,43 @@ export function useDocuments(host: DocumentHost) {
     return outcome
   }
 
+  /**
+   * Makes a copy of a diagram from the Library: "<title> (copy)" in the same folder, all pages and items, never starred, and the
+   * original is only read. For the open diagram the pending edits are saved first. It runs inside the save chain, so it can never
+   * overlap an autosave, a rename or another copy, and it reads the stored version fresh (not a browser copy). A diagram with changes
+   * the storage has not accepted yet, or a file this version only partly understands, is refused with a message instead of a lossy copy.
+   * The copy is not opened. Returns false (with a notice) on failure.
+   */
+  const copyStoredDiagram = async (id: string): Promise<boolean> => {
+    setFileNotice(null)
+    if (docIdRef.current === id) await persistNow()
+    let ok = true
+    const body = async () => {
+      try {
+        const backend = backendRef.current
+        if (await keeper.recordFor(backend.kind, id)) throw new Error('That diagram has changes that are not saved yet. Wait until it is saved, then copy it.')
+        const folderId = library.find((entry) => entry.id === id)?.folderId ?? null
+        const made = await copyDiagramOnBackend(backend, id, folderId)
+        // the copy starts with the original's picture (stored apart from the diagram, by id)
+        const picture = thumbnails[id]
+        if (picture && backendRef.current === backend) {
+          try {
+            await saveThumbnail(made.id, picture)
+            setThumbnails((current) => ({ ...current, [made.id]: picture }))
+          } catch { /* the card shows an icon until it is opened */ }
+        }
+      } catch (error) {
+        setFileNotice(errorText(error, 'Could not copy that diagram.'))
+        ok = false
+      }
+    }
+    const run = saveChainRef.current.then(body, body)
+    saveChainRef.current = run
+    await run
+    await refreshLibrary()
+    return ok
+  }
+
   const renameDiagram = (title: string): Promise<void> => {
     const cleaned = cleanTitle(title)
     docMetaRef.current = { ...docMetaRef.current, title: cleaned }
@@ -1117,7 +1155,7 @@ export function useDocuments(host: DocumentHost) {
     filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
-    scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram,
+    scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   }
 }
