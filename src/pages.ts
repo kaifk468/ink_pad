@@ -81,13 +81,16 @@ const UNBOUNDED_WORKSPACE = { x: -1e9, y: -1e9, width: 2e9, height: 2e9 }
  * pages), connectors re-attached to the copied boxes (never to the original page's boxes), groups renumbered, locks kept. Pure; `items` is not changed.
  * Returns the counters to continue from.
  */
-export function duplicatePageItems(items: readonly CanvasItem[], counters: IdCounters): { items: CanvasItem[]; counters: IdCounters } {
-  const pasted = pasteItems(items, counters, 0, UNBOUNDED_WORKSPACE)
-  if (!pasted) return { items: [], counters: { ...counters } }
+export function duplicatePageItems(items: readonly CanvasItem[], counters: IdCounters): { items: CanvasItem[]; counters: IdCounters; skipped: number } {
+  // Items of a kind this version does not know cannot be given new ids, so they are left out of the copy (never copied with their old ids).
+  const known = items.filter((item) => item.kind !== 'opaque')
+  const skipped = items.length - known.length
+  const pasted = pasteItems(known, counters, 0, UNBOUNDED_WORKSPACE)
+  if (!pasted) return { items: [], counters: { ...counters }, skipped }
   // Pasting never keeps a lock; a duplicate page does. Order is unchanged, so the items line up one to one.
   const copy = pasted.items.map((item, index): CanvasItem => {
-    const source = items[index]
-    return item.kind !== 'opaque' && source.kind !== 'opaque' && source.locked === true ? ({ ...item, locked: true } as CanvasItem) : item
+    const source = known[index]
+    return item.kind !== 'opaque' && source.locked === true ? ({ ...item, locked: true } as CanvasItem) : item
   })
-  return { items: copy, counters: pasted.counters }
+  return { items: copy, counters: pasted.counters, skipped }
 }

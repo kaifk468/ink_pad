@@ -40,17 +40,17 @@ test('stepFontSize moves one panel step and stops at the ends', () => {
 })
 
 test('help and the palette list both shortcuts', () => {
-  const rows = shortcuts.DESKTOP_SHORTCUTS.filter((row) => row.label.includes('text (selected label)'))
+  const rows = shortcuts.DESKTOP_SHORTCUTS.filter((row) => row.label.includes('text (text or shape labels)'))
   assert.deepEqual(rows.map((r) => r.keys), ['Ctrl+Shift+.', 'Ctrl+Shift+,'])
   for (const row of rows) assert.ok(input.keyCommand({ ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, repeat: false, key: '', ...row.input }, 'desktop'))
   const entries = palette.shortcutPaletteEntries()
-  assert.ok(entries.some((e) => e.label === 'Larger text (selected label)'))
-  assert.ok(entries.some((e) => e.label === 'Smaller text (selected label)'))
+  assert.ok(entries.some((e) => e.label === 'Larger text (text or shape labels)'))
+  assert.ok(entries.some((e) => e.label === 'Smaller text (text or shape labels)'))
 })
 
 test('App applies a step through the panel size path: one undo step, auto-fit off, locked labels refused', () => {
   assert.match(app, /case 'fontSize': return stepSelectedFontSize\(command\.direction\)/)
-  assert.match(app, /const stepSelectedFontSize = \(direction: 1 \| -1\): boolean => \{\s*const item = selectedTextItem\(\)\s*if \(!item \|\| isItemLocked\(item\)\) return false\s*const size = stepFontSize\(item\.fontSize, direction\)\s*if \(size === null\) return true\s*pickTextSize\(size\)/)
+  assert.match(app, /const stepSelectedFontSize = \(direction: 1 \| -1\): boolean => \{\s*const item = selectedTextItem\(\)\s*if \(!item && inputModeRef\.current === .desktop.\) return stepBoxLabelFontSizes\(direction\)\s*if \(!item \|\| isItemLocked\(item\)\) return false\s*const size = stepFontSize\(item\.fontSize, direction\)\s*if \(size === null\) return true\s*pickTextSize\(size\)/)
   // pickTextSize replaces the label with fitOff: true through replaceTextItem, which saves exactly one history step.
   assert.match(app, /replaceTextItem\(buildEditedLabel\(item, item\.text, \{ itemId: item\.id[^}]*fontSize: size[^}]*fitOff: true \}/)
   assert.match(app, /const replaceTextItem = \(updated: TextObject\) => \{\s*saveHistory\(\)/)

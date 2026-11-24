@@ -32,7 +32,7 @@ test('wiring: one class on the app root, nothing unmounted, plain state (not sav
   assert.match(app, /const \[presentMode, setPresentMode\] = useState\(false\)/)
   const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
   const rule = css.slice(css.indexOf('.app-shell.ui-hidden .tool-dock'), css.indexOf('.show-toolbars-pill {'))
-  for (const part of ['.tool-dock', '.top-left-bar', '.history-bar', '.context-panel', '.zoom-controls', '.viewport-navigator']) assert.ok(rule.includes(`.ui-hidden ${part}`), part)
+  for (const part of ['.tool-dock', '.top-left-bar', '.history-bar', '.context-panel', '.zoom-controls', '.viewport-navigator', '.account-control', '.empty-canvas-hint', '.page-undo-bar']) assert.ok(rule.includes(`.ui-hidden ${part}`), part)
   assert.match(rule, /pointer-events: none/)
   assert.doesNotMatch(app.slice(app.indexOf('const togglePresentMode'), app.indexOf('const toggleLaserTool')), /saveHistory|scheduleAutosave|strokesRef/)
 })

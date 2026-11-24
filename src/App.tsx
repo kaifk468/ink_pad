@@ -9,7 +9,7 @@ import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, pathMidpoint, bendFo
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
 import { similarItemKeys } from './selectSimilar'
-import { changeSelectedShapes, changeShapeChoices, type ShapeChoice } from './changeShape'
+import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeChoice } from './changeShape'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
@@ -48,7 +48,7 @@ import { ContextPanel } from './app/ContextPanel'
 import { applyStyle, captureStyle, type StyleSnapshot } from './styleClipboard'
 import { selectionFillColor, selectionHasFillable, setFillColor, matchingOutline } from './shapeFill'
 import { withSketchSeed, withSketchSeeds } from './sketchy'
-import { addLaserPoint, laserSegments, laserVisible, pruneLaser, type LaserPoint } from './laserPointer'
+import { addLaserPoint, laserOnTouchDown, laserSegments, laserVisible, pruneLaser, type LaserPoint } from './laserPointer'
 import { createStickyNote, STICKY_HEIGHT, STICKY_WIDTH } from './stickyNote'
 import { HistoryBar } from './app/HistoryBar'
 import { ToolDock } from './app/ToolDock'
@@ -359,6 +359,7 @@ function App() {
   const laserCanvasRef = useRef<HTMLCanvasElement>(null)
   const laserTrailRef = useRef<LaserPoint[]>([])
   const laserPointerRef = useRef<number | null>(null)
+  const laserPointerTypeRef = useRef<string | null>(null)
   const laserFrameRef = useRef<number | null>(null)
   // While the laser is on a single finger draws the trail, so one-finger pan is off; the second finger still goes to navigation (pinch, three-finger pan).
   if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => laserModeRef.current ? { ...navigationSettingsRef.current, oneFingerPan: false } : navigationSettingsRef.current)
@@ -550,7 +551,7 @@ function App() {
     pagesRef.current = insertPageAfter(pagesRef.current, pageIndexRef.current, { items: copy.items, history: null })
     showPageSlot(pageIndexRef.current + 1)
     scheduleAutosave()
-    showToast(`Page duplicated (now page ${pageIndexRef.current + 1})`)
+    showToast(`Page duplicated (now page ${pageIndexRef.current + 1})${copy.skipped > 0 ? `; ${copy.skipped} ${copy.skipped === 1 ? 'item' : 'items'} this version can't copy ${copy.skipped === 1 ? 'was' : 'were'} left out` : ''}`)
   }
 
   // The page deleted last, kept (items and its undo history) for a few seconds so the Undo bar can put it back.
@@ -1304,6 +1305,8 @@ function App() {
     historyCacheRef.current = null
     renderAll()
     scheduleAutosave()
+    bumpSelectionColor((n) => n + 1)
+    showToast(`Changed to ${shapeChoiceLabel(target as ShapeChoice)}`)
     return true
   }
   const ungroupSelection = (): boolean => {
@@ -1833,9 +1836,31 @@ function App() {
     const item = selectedTextItem()
     if (item && (item.fontSize !== size || item.fit !== 'off')) replaceTextItem(buildEditedLabel(item, item.text, { itemId: item.id, x: item.x, y: item.y, fontSize: size, fontFamily: item.fontFamily, initialText: item.text, fitOff: true }, createTextMeasure))
   }
+  /** Font size keys with a plain or HLD box selected: the unlocked labels inside it step one size (each from its own size), one undo step. Connector labels have no saved size and are left alone. */
+  const stepBoxLabelFontSizes = (direction: 1 | -1): boolean => {
+    const labelKeys = new Set(labelsInside(strokesRef.current, currentSelectionKeys()))
+    if (labelKeys.size === 0) return false
+    let changed = false
+    const next = strokesRef.current.map((candidate): CanvasItem => {
+      if (candidate.kind !== 'text' || !labelKeys.has(canvasItemKey(candidate))) return candidate
+      const size = stepFontSize(candidate.fontSize, direction)
+      if (size === null) return candidate
+      changed = true
+      return buildEditedLabel(candidate, candidate.text, { itemId: candidate.id, x: candidate.x, y: candidate.y, fontSize: size, fontFamily: candidate.fontFamily, initialText: candidate.text, fitOff: true }, createTextMeasure)
+    })
+    if (changed) {
+      saveHistory()
+      strokesRef.current = next
+      historyCacheRef.current = null
+      renderAll()
+      scheduleAutosave()
+    }
+    return true
+  }
   /** Ctrl+Shift+. / Ctrl+Shift+, : the selected label one panel size step larger or smaller (turns its auto-fit off like a panel pick); one undo step. */
   const stepSelectedFontSize = (direction: 1 | -1): boolean => {
     const item = selectedTextItem()
+    if (!item && inputModeRef.current === 'desktop') return stepBoxLabelFontSizes(direction)
     if (!item || isItemLocked(item)) return false
     const size = stepFontSize(item.fontSize, direction)
     if (size === null) return true
@@ -3119,7 +3144,8 @@ function App() {
       touchNav.down(event.pointerId, getScreenPoint(event), performance.now())
       // Laser: one finger draws the trail; a second finger ends it and both fingers go to navigation (pinch, three-finger pan).
       if (laserModeRef.current) {
-        if (touchNav.touchCount() === 1 && !touchNav.penNear(performance.now())) { laserPointerRef.current = event.pointerId; pushLaserPoints([event]) } else laserPointerRef.current = null
+        const laserAction = laserOnTouchDown(laserPointerRef.current === null ? null : laserPointerTypeRef.current, touchNav.touchCount(), touchNav.penNear(performance.now()))
+        if (laserAction === 'start') { laserPointerRef.current = event.pointerId; laserPointerTypeRef.current = 'touch'; pushLaserPoints([event]) } else if (laserAction === 'clear') { laserPointerRef.current = null; laserPointerTypeRef.current = null }
       }
       return
     }
@@ -3143,6 +3169,7 @@ function App() {
       event.currentTarget.setPointerCapture(event.pointerId)
       if (event.pointerType === 'mouse') touchNav.mouseDown()
       laserPointerRef.current = event.pointerId
+      laserPointerTypeRef.current = event.pointerType
       pushLaserPoints([event])
       return
     }

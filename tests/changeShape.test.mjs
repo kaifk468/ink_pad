@@ -78,7 +78,7 @@ test('several boxes of one family change together; others, labels and connectors
   const b = box(2, { ellipse: true })
   const outside = box(3)
   const label = { kind: 'text', id: 1, x: 0, y: 0, width: 50, height: 20, text: 'hi', fontSize: 24, color: '#111' }
-  const link = { kind: 'connector', id: 1, start: { x: 0, y: 0, pressure: 1 }, end: { x: 5, y: 5, pressure: 1 }, strokeColor: '#111', strokeWidth: 2, relationshipType: 'association', reversed: false, startAttachment: { rectangleId: 1, offsetX: 50, offsetY: 0 } }
+  const link = { kind: 'connector', id: 1, start: { x: 0, y: 0, pressure: 1 }, end: { x: 5, y: 5, pressure: 1 }, strokeColor: '#111', strokeWidth: 2, relationshipType: 'association', reversed: false, startAttachment: { rectangleId: 3, offsetX: 50, offsetY: 0 } }
   const items = [a, b, outside, label, link]
   const selection = keys(a, b, label)
   assert.deepEqual(ids(changeShapeChoices(items, selection)), ['rectangle', 'diamond', 'ellipse'])

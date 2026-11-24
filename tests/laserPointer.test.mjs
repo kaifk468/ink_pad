@@ -82,7 +82,7 @@ test('wiring: the laser branch precedes the gesture gate, touch keeps navigation
   assert.ok(laserAt < down.indexOf('if (!canStartCanvasGesture('), 'laser comes before the gesture gate')
   assert.ok(laserAt < down.indexOf('saveHistory('), 'laser comes before any drawing or history')
   assert.ok(laserAt < down.indexOf('clickSelectTarget('), 'laser comes before selection')
-  assert.match(down, /touchNav\.down\(event\.pointerId[\s\S]*if \(laserModeRef\.current\) \{[\s\S]*touchNav\.touchCount\(\) === 1/)
+  assert.match(down, /touchNav\.down\(event\.pointerId[\s\S]*if \(laserModeRef\.current\) \{[\s\S]*laserOnTouchDown\(/)
   assert.match(app, /oneFingerPan: false/)
   const laserBody = app.slice(app.indexOf('const drawLaser'), app.indexOf('const undo = () =>'))
   assert.doesNotMatch(laserBody, /saveHistory|strokesRef\.current\s*=|scheduleAutosave/)

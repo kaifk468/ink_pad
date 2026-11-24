@@ -50,3 +50,14 @@ export function laserSegments(points: readonly LaserPoint[], now: number): Laser
 export function laserVisible(points: readonly LaserPoint[], now: number): boolean {
   return points.some((point) => laserAlpha(point, now) > 0)
 }
+
+/**
+ * What a touch-down does to the laser while it is on. `activeType` is the pointerType of the pointer drawing the trail (null when none).
+ * A pen or mouse trail is never ended by a touch (a resting palm); a touch trail starts with the first finger when no pen is near and
+ * ends with the second finger (both go to navigation).
+ */
+export function laserOnTouchDown(activeType: string | null, touchCount: number, penNear: boolean): 'start' | 'keep' | 'clear' {
+  if (activeType === 'pen' || activeType === 'mouse') return 'keep'
+  if (touchCount === 1 && !penNear) return 'start'
+  return 'clear'
+}

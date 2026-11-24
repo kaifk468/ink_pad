@@ -22,9 +22,14 @@ export function boxKindName(box: RectangleObject): string {
   return 'rectangle'
 }
 
+const HANDWRITTEN_BOX = 'handwritten box'
+/** The tablet class box drawn by hand: an ink box that is neither an HLD shape nor a typed class box. Not a flow box (it does not move labels), but the outline lists it. */
+const isInkClassBox = (box: RectangleObject): boolean => !!box.inkBox && !box.hldShape && !box.classBox
+
 /** Name of a flow box: its label, with the kind in brackets for HLD shapes, diamonds and ellipses ("Redis (cache)"); "(unlabeled rectangle)" without a label. */
 function flowBoxName(box: RectangleObject, labels: readonly TextObject[]): string {
   const text = flat([...labels].sort(byPosition).map((label) => label.text).join(' '))
+  if (isInkClassBox(box)) return text ? `${text} (${HANDWRITTEN_BOX})` : `(${HANDWRITTEN_BOX})`
   const kind = boxKindName(box)
   if (!text) return `(unlabeled ${kind})`
   return kind === 'rectangle' ? text : `${text} (${kind})`
@@ -112,7 +117,7 @@ function classLines(box: RectangleObject): string[] {
 /** The sections of one page at heading `level` (no page heading); empty when the page has nothing to list. */
 function pageSections(items: readonly CanvasItem[], level: string): string[] {
   const rectangles = items.filter((item): item is RectangleObject => item.kind === 'rectangle')
-  const flowBoxes = rectangles.filter(isFlowBox).sort(byPosition)
+  const flowBoxes = rectangles.filter((box) => isFlowBox(box) || isInkClassBox(box)).sort(byPosition)
   const classes = rectangles.filter((box) => box.classBox).sort(byPosition)
   const texts = items.filter((item): item is TextObject => item.kind === 'text')
   const { byBox, free } = assignLabels(texts, flowBoxes)
@@ -127,7 +132,8 @@ function pageSections(items: readonly CanvasItem[], level: string): string[] {
     [...flowBoxes, ...classes],
   )
   const connectionStrokes = new Set(lines.map((line) => line.strokeId).filter((id): id is number => id !== undefined))
-  const handwriting = strokes.filter((stroke) => !connectionStrokes.has(stroke.id)).length
+  const inBoxInk = rectangles.reduce((total, box) => total + (isInkClassBox(box) ? (box.inkBox?.ink ?? []).filter((stroke) => !stroke.erase).length : 0), 0)
+  const handwriting = strokes.filter((stroke) => !connectionStrokes.has(stroke.id)).length + inBoxInk
   const codes = items.filter((item): item is CodeObject => item.kind === 'code').sort(byPosition)
   const out: string[] = []
   const section = (title: string, body: string[]) => { if (body.length > 0) out.push(`${level} ${title}`, '', ...body, '') }

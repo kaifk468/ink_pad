@@ -61,7 +61,7 @@ test('duplicatePageItems: groups renumbered, locks kept, far items not moved, em
   assert.equal(copy.items[2].locked, true)
   assert.equal(copy.items[3].locked, undefined)
   assert.deepEqual(copy.items.map((i) => i.x), items.map((i) => i.x))
-  assert.deepEqual(pages.duplicatePageItems([], { stroke: 4, rectangle: 5, connector: 6, text: 7 }), { items: [], counters: { stroke: 4, rectangle: 5, connector: 6, text: 7 } })
+  assert.deepEqual(pages.duplicatePageItems([], { stroke: 4, rectangle: 5, connector: 6, text: 7 }), { items: [], counters: { stroke: 4, rectangle: 5, connector: 6, text: 7 }, skipped: 0 })
 })
 
 test('duplicatePageItems: an end attached to a box not on the page is detached, never pointed at another page', () => {

@@ -366,7 +366,7 @@ function closestPointOnSegment(point: Point, a: Point, b: Point): Point {
   return { x: a.x + t * dx, y: a.y + t * dy, pressure: point.pressure }
 }
 
-function nearestRectangleBoundaryPoint(rectangle: RectangleObject, point: Point): Point {
+export function nearestRectangleBoundaryPoint(rectangle: RectangleObject, point: Point): Point {
   const left = rectangle.x
   const right = rectangle.x + rectangle.width
   const top = rectangle.y
