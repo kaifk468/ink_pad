@@ -14,10 +14,15 @@ type MoreTrayProps = {
   findTitle?: string
   /** Opens the template chooser. */
   onTemplates: () => void
+  /** Laser pointer (both modes): a transient red trail for presenting; nothing is saved. */
+  onLaser?: () => void
+  laserActive?: boolean
+  /** The key to show in the hint (desktop only). */
+  laserKey?: string
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onLaser, laserActive, laserKey }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -69,6 +74,12 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, on
           <div className="insert-tray-heading">Search</div>
           <button className="insert-entry" type="button" aria-label="Find" title={findTitle ?? 'Find text on the canvas'} onClick={() => { onFind(); setOpen(false) }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></svg><span>Find</span>
+          </button>
+        </>}
+        {onLaser && <>
+          <div className="insert-tray-heading">Present</div>
+          <button className={`insert-entry${laserActive ? ' selected' : ''}`} type="button" aria-label="Laser pointer" aria-pressed={Boolean(laserActive)} title={`Laser pointer: draw a red trail that fades; nothing is saved${laserKey ? ` (${laserKey}; Esc leaves it)` : ''}`} onClick={() => { onLaser(); setOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg><span>Laser pointer</span>
           </button>
         </>}
         <div className="insert-tray-heading">Layout</div>

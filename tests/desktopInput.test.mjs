@@ -274,7 +274,7 @@ test('Ctrl/Cmd + plus, minus and 0 zoom in, out and reset; other Ctrl combinatio
 })
 
 test('plain letters pick tools (any case), and only with no modifier and no auto-repeat', () => {
-  const tools = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
+  const tools = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line', x: 'laser' }
   for (const [k, tool] of Object.entries(tools)) {
     assert.deepEqual(input.keyCommand(key(k), 'desktop'), { kind: 'tool', tool })
     assert.deepEqual(input.keyCommand(key(k.toUpperCase()), 'desktop'), { kind: 'tool', tool })
@@ -282,7 +282,7 @@ test('plain letters pick tools (any case), and only with no modifier and no auto
     assert.equal(input.keyCommand(key(k, { altKey: true }), 'desktop'), null)
     assert.equal(input.keyCommand(key(k, { shiftKey: true }), 'desktop') !== null, false, 'Shift+letter is not a tool key')
   }
-  for (const k of ['x', 'q', ' ']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
+  for (const k of ['q', ' ']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
 })
 
 test('bare number keys pick tools like Excalidraw; Shift+1/2 still zoom; modifiers, repeat and Tablet mode ignore them', async () => {

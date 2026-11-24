@@ -42,7 +42,7 @@ test('App: line and arrow are straight from the press point; a click without a d
 
 test('App: any other tool switches the shape tool off, and the pen is not active under a shape tool', () => {
   assert.match(app, /if \(connectorMode \|\| eraser \|\| shapeMode \|\| selectionMode \|\| lassoMode \|\| textMode \|\| classMode\) setShapeTool\(null\)/)
-  assert.match(app, /const penModeActive = !eraser && !shapeMode && shapeTool === null/)
+  assert.match(app, /const penModeActive = !laserMode && !eraser && !shapeMode && shapeTool === null/)
   assert.match(app, /'connector' : shapeTool !== null \? 'shapeDraw'/)
   assert.ok((app.match(/setShapeMode\(false\); setShapeTool\(null\)/g) ?? []).length >= 8)
 })

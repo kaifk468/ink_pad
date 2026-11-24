@@ -775,3 +775,6 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .find-button:hover:not(:disabled) { background: #f1f2f5; }
 .find-button:disabled { opacity: .35; cursor: default; }
 .find-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Laser pointer: its own overlay in screen coordinates; it never takes pointer events. */
+.laser-overlay { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 30; pointer-events: none; }

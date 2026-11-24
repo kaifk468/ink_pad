@@ -47,6 +47,7 @@ import { ContextPanel } from './app/ContextPanel'
 import { applyStyle, captureStyle, type StyleSnapshot } from './styleClipboard'
 import { selectionFillColor, selectionHasFillable, setFillColor, matchingOutline } from './shapeFill'
 import { withSketchSeed, withSketchSeeds } from './sketchy'
+import { addLaserPoint, laserSegments, laserVisible, pruneLaser, type LaserPoint } from './laserPointer'
 import { createStickyNote, STICKY_HEIGHT, STICKY_WIDTH } from './stickyNote'
 import { HistoryBar } from './app/HistoryBar'
 import { ToolDock } from './app/ToolDock'
@@ -341,7 +342,16 @@ function App() {
   const snapStateRef = useRef<{ pointerId: number; moving: Bounds | null; targets: Bounds[] } | null>(null)
   const guidesRef = useRef<Guide[]>([])
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
-  if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
+  // Laser pointer (transient presenting tool): the trail lives only in these refs and on its own overlay canvas, never in items, history or the saved diagram.
+  const [laserMode, setLaserMode] = useState(false)
+  const laserModeRef = useRef(false)
+  laserModeRef.current = laserMode
+  const laserCanvasRef = useRef<HTMLCanvasElement>(null)
+  const laserTrailRef = useRef<LaserPoint[]>([])
+  const laserPointerRef = useRef<number | null>(null)
+  const laserFrameRef = useRef<number | null>(null)
+  // While the laser is on a single finger draws the trail, so one-finger pan is off; the second finger still goes to navigation (pinch, three-finger pan).
+  if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => laserModeRef.current ? { ...navigationSettingsRef.current, oneFingerPan: false } : navigationSettingsRef.current)
   const touchNav = touchNavRef.current
   const updateNavigationSettings = (patch: Partial<NavigationSettings>) => {
     const next = { ...navigationSettingsRef.current, ...patch }
@@ -624,7 +634,7 @@ function App() {
   const [benchmarkRunning, setBenchmarkRunning] = useState(false)
   const [benchmarkResult, setBenchmarkResult] = useState<Record<string, unknown> | null>(null)
   const [navigatorMinimized, setNavigatorMinimized] = useState(true)
-  const penModeActive = !eraser && !shapeMode && shapeTool === null && !selectionMode && !lassoMode && !connectorMode && !textMode && !classMode && umlConnectorType === null
+  const penModeActive = !laserMode && !eraser && !shapeMode && shapeTool === null && !selectionMode && !lassoMode && !connectorMode && !textMode && !classMode && umlConnectorType === null
 
   const getCurrentMinimapBounds = useCallback((): ViewBounds => {
     return { ...sheetBoundsRef.current }
@@ -722,6 +732,7 @@ function App() {
   }
 
   const selectPenMode = () => {
+    setLaserMode(false)
     setTextMode(false); setClassMode(false)
     setEraser(false)
     setEraserMenuOpen(false)
@@ -732,6 +743,55 @@ function App() {
     setUmlConnectorType(null)
     clearLassoSelection()
   }
+
+  // The laser trail: points are screen coordinates; one rAF loop runs only while points remain visible.
+  const drawLaser = () => {
+    laserFrameRef.current = null
+    const now = performance.now()
+    laserTrailRef.current = pruneLaser(laserTrailRef.current, now)
+    const canvas = laserCanvasRef.current
+    if (canvas) {
+      const dpr = window.devicePixelRatio || 1
+      const width = Math.round(window.innerWidth * dpr)
+      const height = Math.round(window.innerHeight * dpr)
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height }
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight)
+        ctx.lineCap = 'round'
+        for (const segment of laserSegments(laserTrailRef.current, now)) {
+          ctx.beginPath(); ctx.moveTo(segment.x1, segment.y1); ctx.lineTo(segment.x2, segment.y2)
+          ctx.strokeStyle = `rgba(255, 40, 40, ${segment.alpha * 0.28})`; ctx.lineWidth = 14; ctx.stroke()
+          ctx.strokeStyle = `rgba(255, 30, 30, ${segment.alpha})`; ctx.lineWidth = 5; ctx.stroke()
+          ctx.strokeStyle = `rgba(255, 190, 190, ${segment.alpha})`; ctx.lineWidth = 1.8; ctx.stroke()
+        }
+      }
+    }
+    if (laserVisible(laserTrailRef.current, now)) laserFrameRef.current = requestAnimationFrame(drawLaser)
+    else laserTrailRef.current = []
+  }
+  const pushLaserPoints = (points: ReadonlyArray<{ clientX: number; clientY: number }>) => {
+    const now = performance.now()
+    for (const point of points) laserTrailRef.current = addLaserPoint(laserTrailRef.current, point.clientX, point.clientY, now)
+    if (laserFrameRef.current === null) laserFrameRef.current = requestAnimationFrame(drawLaser)
+  }
+  const toggleLaserTool = () => {
+    const next = !laserModeRef.current
+    setOptionsFor(null)
+    selectPenMode() // clears every other tool (and the laser) ...
+    if (next) setLaserMode(true) // ... then the laser is set; the last state update wins
+  }
+  // Leaving the laser (another tool, Esc, the menu) clears the trail and stops the animation loop.
+  useEffect(() => {
+    if (laserMode) return
+    laserPointerRef.current = null
+    laserTrailRef.current = []
+    if (laserFrameRef.current !== null) { cancelAnimationFrame(laserFrameRef.current); laserFrameRef.current = null }
+  }, [laserMode])
+  // Picking any other tool (dock, keys, palette, tray) leaves the laser.
+  const anotherToolActive = eraser || selectionMode || textMode || classMode || lassoMode || connectorMode || umlConnectorType !== null || shapeMode || shapeTool !== null
+  useEffect(() => { if (anotherToolActive) setLaserMode(false) }, [anotherToolActive])
 
   const undo = () => {
     const previous = historyRef.current.undo(strokesRef.current)
@@ -1255,7 +1315,7 @@ function App() {
   }
 
   // Step 7. The tool the mouse is using, as the click-to-select rule names it.
-  const clickToolName = (): ClickTool => eraser ? 'eraser'
+  const clickToolName = (): ClickTool => laserMode ? 'laser' : eraser ? 'eraser'
     : selectionMode ? 'select' : lassoMode ? 'lasso' : textMode ? 'text' : classMode ? 'classBox'
     : (connectorMode || umlConnectorType !== null) ? 'connector' : shapeTool !== null ? 'shapeDraw' : shapeMode ? 'shape' : 'pen'
 
@@ -1394,7 +1454,7 @@ function App() {
   const refreshHover = () => {
     hoverFrameRef.current = null
     const point = hoverPointRef.current
-    const ready = point !== null && inputModeRef.current === 'desktop' && !eraser
+    const ready = point !== null && inputModeRef.current === 'desktop' && !eraser && !laserModeRef.current
     const target = ready ? hoverTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale) : null
     const key = target?.key ?? null
     const quickBox = ready ? quickConnectSource() : null
@@ -3001,6 +3061,10 @@ function App() {
       }
       event.currentTarget.setPointerCapture(event.pointerId)
       touchNav.down(event.pointerId, getScreenPoint(event), performance.now())
+      // Laser: one finger draws the trail; a second finger ends it and both fingers go to navigation (pinch, three-finger pan).
+      if (laserModeRef.current) {
+        if (touchNav.touchCount() === 1 && !touchNav.penNear(performance.now())) { laserPointerRef.current = event.pointerId; pushLaserPoints([event]) } else laserPointerRef.current = null
+      }
       return
     }
     const penGestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeQuickRef.current !== null
@@ -3015,6 +3079,15 @@ function App() {
       mousePanRef.current = { pointerId: event.pointerId, start: getScreenPoint(event), startViewport: viewportRef.current }
       touchNav.mouseDown()
       event.currentTarget.style.cursor = 'grabbing'
+      return
+    }
+    // Laser pointer: handled before any drawing, selection or editing logic, and only while the laser is on. Pen and mouse (main button) draw the trail; touch is handled in the touch branch above.
+    if (laserModeRef.current && (event.pointerType === 'pen' || (event.pointerType === 'mouse' && event.button === 0))) {
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      if (event.pointerType === 'mouse') touchNav.mouseDown()
+      laserPointerRef.current = event.pointerId
+      pushLaserPoints([event])
       return
     }
     if (!canStartCanvasGesture(event.pointerType, event.button, inputModeRef.current, penGestureActive, anyGestureActive, touchNav.touchCount() > 0)) return
@@ -3378,6 +3451,11 @@ function App() {
     if (PEN_BUTTON_DEBUG) showPenButtonState('move', event)
     if (event.pointerType === 'pen') touchNav.penSeen(performance.now())
     moveEraserCursor(event)
+    if (laserPointerRef.current === event.pointerId) {
+      if (event.pointerType !== 'touch' || touchNav.touchCount() === 1) pushLaserPoints(event.nativeEvent.getCoalescedEvents?.().length ? event.nativeEvent.getCoalescedEvents() : [event])
+      else laserPointerRef.current = null
+      if (event.pointerType !== 'touch') { event.preventDefault(); return }
+    }
     if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') cursorPointRef.current = getScreenPoint(event)
     if (clickPairRef.current && event.pointerType === 'mouse') clickPairRef.current = clickPairOnMove(clickPairRef.current, event.clientX, event.clientY)
     const mousePan = mousePanRef.current
@@ -3595,6 +3673,7 @@ function App() {
     if (edgeHoldRef.current?.pointerId === event.pointerId) cancelEdgeHold()
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
+    if (laserPointerRef.current === event.pointerId) { laserPointerRef.current = null; if (event.pointerType !== 'touch') return }
     if (mousePanRef.current?.pointerId === event.pointerId) {
       mousePanRef.current = null
       applyCanvasCursor()
@@ -3761,6 +3840,7 @@ function App() {
     if (edgeHoldRef.current?.pointerId === event.pointerId) cancelEdgeHold()
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
+    if (laserPointerRef.current === event.pointerId) { laserPointerRef.current = null; if (event.pointerType !== 'touch') return }
     if (mousePanRef.current?.pointerId === event.pointerId) {
       mousePanRef.current = null
       applyCanvasCursor()
@@ -4631,6 +4711,8 @@ function App() {
     }
     const cancelableGesture = activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || activeQuickRef.current !== null
     if (command.kind === 'deselect') {
+      // Esc leaves the laser first (it has no selection or gesture of its own).
+      if (laserModeRef.current && !cancelableGesture) { setLaserMode(false); return true }
       const action = escapeAction({ cancelableGesture, anyGesture: gestureActive || touchNav.touchCount() > 0, hasSelection: selectedKeysRef.current.size > 0 || selectedRectangleIdRef.current !== null })
       if (action === 'cancelGesture') return cancelActiveGesture()
       if (action === 'none') return false
@@ -4683,6 +4765,7 @@ function App() {
           case 'text': if (!textMode) toggleTextTool(); break
           case 'code': insertCodeBlock(); break
           case 'sticky': insertStickyNote(); break
+          case 'laser': if (!laserModeRef.current) toggleLaserTool(); break
           case 'lasso': if (!lassoMode) toggleLassoTool(); break
           case 'connector': if (!connectorMode) toggleConnectorTool(); break
           case 'classBox': if (!(classMode && inkClassTool && hldShapeTool === null)) toggleInkClassTool(); break
@@ -4716,6 +4799,7 @@ function App() {
       <section className="canvas-stage" aria-label="Drawing canvas">
         <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: sheetHeight }} />
         <div ref={eraserCursorRef} className="eraser-cursor" aria-hidden="true" />
+        {laserMode && <canvas ref={laserCanvasRef} className="laser-overlay" aria-hidden="true" />}
         {PEN_BUTTON_DEBUG && <div ref={penButtonReadoutRef} className="pen-button-readout" role="status">pen button: waiting for the pen</div>}
         <canvas
           ref={canvasRef}
@@ -5032,6 +5116,8 @@ function App() {
         onFind={openFind}
         onSticky={insertStickyNote}
         onTemplates={() => setTemplateChooserOpen(true)}
+        laserActive={laserMode}
+        onLaser={toggleLaserTool}
       />
       {classBoxEditor && <ClassBoxDialog
         key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}
