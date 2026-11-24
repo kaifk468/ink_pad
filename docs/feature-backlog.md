@@ -84,18 +84,18 @@ Follow-ups found this round (ideas for the next round):
 ### Candidates (problem · who/how often · benefit · risk · size · decision)
 | # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
 |---|---|---|---|---|---|---|---|
-| 28 | Command palette (Ctrl+K) | Commands hidden in menus; shortcuts must be memorised | desktop, daily | high | low (overlay, reuses key commands) | M | **picked** |
-| 29 | Find on canvas (Ctrl+F) | Finding a label in a big diagram means panning | everyone with big diagrams | high | low (pure search + zoom) | M | **picked** |
-| 30 | Diagram templates (insert a starter layout) | Same skeleton drawn every interview | HLD/LLD users, every new diagram | high | low (plain items via paste path) | M | **picked** (was #19) |
-| 31 | Sticky note (N) | No quick note for requirements/assumptions | everyone, often | medium | low (filled rectangle + label, no new kind) | S | **picked** (was #22) |
-| 32 | Elbow bend handle | Elbow middle segment cannot be moved; overlapping elbows | LLD users, often | medium-high | medium (new saved field) | M | **picked** (was #12, + label/middle-dot overlap follow-up) |
-| 33 | Connectors snap to side midpoints + anchor dots | Arrow ends slightly off-centre, crooked lines | everyone, every connector | high | low-medium (snap behaviour, tablet too) | S | **picked** |
-| 34 | Quick-connect buttons around a selected shape | Ctrl+Arrow is undiscoverable | desktop, every diagram | high | medium (select pointer path) | M | **picked** |
-| 35 | Library: Make a copy | Reusing a diagram needs export+import | sometimes, interview prep | medium-high | medium (store/Drive create) | M | **picked** (was #14) |
-| 36 | Library: sort by edited / name / created | Only "last edited" order | many diagrams | medium | low | S | **picked** |
-| 37 | Select similar (right-click) | Restyling all connectors/boxes means clicking each | desktop, often | medium | low | S | **picked** |
-| 38 | Tablet Group / Ungroup buttons | Groups can't be made on the tablet | tablet, sometimes | medium | low | S | **picked** (round 1 follow-up) |
-| 39 | Refit text after a box shrinks | Text spills out of a box made smaller | everyone, often | medium | medium (resize path) | S-M | **picked** (round 1 follow-up) |
+| 28 | Command palette (Ctrl+K) | Commands hidden in menus; shortcuts must be memorised | desktop, daily | high | low (overlay, reuses key commands) | M | **done** a21f2ae |
+| 29 | Find on canvas (Ctrl+F) | Finding a label in a big diagram means panning | everyone with big diagrams | high | low (pure search + zoom) | M | **done** 4ee0328 |
+| 30 | Diagram templates (insert a starter layout) | Same skeleton drawn every interview | HLD/LLD users, every new diagram | high | low (plain items via paste path) | M | **done** 577af9a (+fit 17233f5) (was #19) |
+| 31 | Sticky note (N) | No quick note for requirements/assumptions | everyone, often | medium | low (filled rectangle + label, no new kind) | S | **done** c91eac2 (was #22) |
+| 32 | Elbow bend handle | Elbow middle segment cannot be moved; overlapping elbows | LLD users, often | medium-high | medium (new saved field) | M | **done** 819d1c6 (+relative drag 0d77109) (was #12, + label/middle-dot overlap follow-up) |
+| 33 | Connectors snap to side midpoints + anchor dots | Arrow ends slightly off-centre, crooked lines | everyone, every connector | high | low-medium (snap behaviour, tablet too) | S | **done** 590f9a3 |
+| 34 | Quick-connect buttons around a selected shape | Ctrl+Arrow is undiscoverable | desktop, every diagram | high | medium (select pointer path) | M | **done** b1228d3 (+fixes 9aec479) |
+| 35 | Library: Make a copy | Reusing a diagram needs export+import | sometimes, interview prep | medium-high | medium (store/Drive create) | M | **done** 987fdd8 (+fixes 84fdb92) (was #14) |
+| 36 | Library: sort by edited / name / created | Only "last edited" order | many diagrams | medium | low | S | **done** da33588 |
+| 37 | Select similar (right-click) | Restyling all connectors/boxes means clicking each | desktop, often | medium | low | S | **done** 5695ab6 |
+| 38 | Tablet Group / Ungroup buttons | Groups can't be made on the tablet | tablet, sometimes | medium | low | S | **done** f760e46 (round 1 follow-up) |
+| 39 | Refit text after a box shrinks | Text spills out of a box made smaller | everyone, often | medium | medium (resize path) | S-M | **done** bf258c7 (+shrink-only 0d77109) (round 1 follow-up) |
 | 40 | Recent colours in the colour picker | — | | | | | skipped: already built (ColorPicker recent row) |
 | 41 | Laser pointer for interviews (fading trail, not saved) | Pointing at parts while screen sharing | interviews | medium | low-medium (new tool, overlay) | M | idea (next round) |
 | 42 | Undo toast naming the action ("Undid: Move") | Unsure what undo did | everyone | low-medium | high (every history call site) | M | skipped: touches every saveHistory site |
@@ -125,3 +125,16 @@ Follow-ups found this round (ideas for the next round):
 37. **Select similar**: right-click an item → "Select similar" selects every unlocked item on the page of the same kind (all connectors; all rectangles of that shape; all labels; all pen strokes). One click, no undo entry.
 38. **Tablet group**: on the tablet, selecting several items with the lasso shows Group / Ungroup buttons in the selection panel; they work as on desktop (one undo step).
 39. **Refit after shrink**: resizing a box smaller (desktop) makes a wrapped/auto-fitted label inside it rewrap or shrink so it stays inside the box; making it bigger again doesn't blow the text up beyond its chosen size. Same undo step as the resize.
+
+### Round 2 result (2026-11-24)
+All 12 picked items built (#28-#39), plus an independent Opus review (9 findings, all fixed in 84fdb92 / 0d77109; three were data-safety fixes, one of them pre-existing: device-folder rename could drop unknown/damaged data because the lossy-file guard never fired for device files) and a second Opus pass over the fixes and quick-connect (1 defect + 3 minor, fixed in 9aec479). Headless walk found the oversized template (fixed 17233f5). Details and checklist: project-context.md, 2026-11-24 round 2 entry.
+
+Follow-ups found this round (ideas for the next round):
+- Laser pointer for interviews (#41) — not started.
+- Template labels are placed with estimated text widths; HLD templates are large (the view zooms out to fit). Consider smaller default HLD template sizes.
+- Elbow bend: a bend pushed through the end box snaps back to the default route instead of clamping; a bend only applies to Z-shaped routes.
+- Find count is cached on page-array identity + length; an in-place edit keeping both could show a stale count until the next query.
+- Library copy toast names "X (copy)" even when a device folder numbers the file "X (copy) (2)".
+- Tablet lasso does not expand to whole groups (tap does).
+- Select similar has no shortcut; consider adding it to the command palette list explicitly (it is reachable only via right-click).
+- Older builds drop connector `bend` on save (like round-1 fields): keep the tablet PWA updated.
