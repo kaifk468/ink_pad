@@ -75,9 +75,39 @@ test('wiring: desktop select gating, quickCreateShape call, overlay draw, pointe
   assert.match(app, /if \(press && !press\.dragged\) quickCreateShape\(press\.direction\)/)
   assert.match(app, /if \(event\.pointerType !== 'mouse' \|\| event\.button !== 0/)
   assert.match(app, /if \(selectionMode && startQuickConnectPress\(event, point\)\) return\s*\n\s*if \(\(selectionMode \|\| lassoMode\)[^\n]*startConnectorHandleGesture/)
-  assert.match(app, /quickConnectButtons\(quickSource, scale\)/)
+  assert.match(app, /quickConnectButtons\(quickSource, scale, quickInsideSheet\)/)
   assert.match(app, /activeQuickRef\.current\?\.pointerId === event\.pointerId\) \{ moveQuickConnectPress/)
   assert.match(app, /activeQuickRef\.current\?\.pointerId === event\.pointerId\) \{ finishQuickConnectPress/)
   assert.match(app, /activeQuickRef\.current\?\.pointerId === event\.pointerId\) \{ cancelQuickConnectPress/)
   assert.match(app, /quickHoverRef\.current !== null && inputModeRef\.current === 'desktop'[^\n]*cursor = 'pointer'/)
+})
+
+test('buttons whose centre is off the page are hidden and not hit', () => {
+  const inside = (p) => p.x >= 0 && p.x <= 400 && p.y >= 0 && p.y <= 400
+  const nearEdge = { x: 5, y: 150, width: 160, height: 80 }
+  const dirs = q.quickConnectButtons(nearEdge, 1, inside).map((b) => b.direction)
+  assert.ok(!dirs.includes('left'))
+  assert.equal(dirs.length, 3)
+  const left = q.quickConnectButtons(nearEdge, 1).find((b) => b.direction === 'left')
+  assert.equal(q.hitQuickConnect(nearEdge, left.center, 1, inside), null)
+  assert.equal(q.hitQuickConnect(nearEdge, left.center, 1), 'left')
+})
+
+test('quick-connect review fixes are wired in App', () => {
+  assert.equal(q.QUICK_CONNECT_DOUBLE_CLICK_MS, 500)
+  // 1: the press never joins a double-click pair, and a double-click right after one is ignored.
+  assert.match(app, /activeQuickRef\.current = \{[^\n]*\n[^\n]*\n\s*clickPairRef\.current = null\n\s*clickBeforeRef\.current = null/)
+  assert.match(app, /quickClickAtRef\.current = performance\.now\(\)/)
+  assert.match(app, /performance\.now\(\) - quickClickAtRef\.current < QUICK_CONNECT_DOUBLE_CLICK_MS\) return/)
+  // 2: hidden outside the sheet, in draw and hit.
+  assert.match(app, /quickConnectButtons\(quickSource, scale, quickInsideSheet\)/)
+  assert.match(app, /hitQuickConnect\(source, point, viewportRef\.current\.scale, quickInsideSheet\)/)
+  assert.match(app, /hitQuickConnect\(quickBox, point, viewportRef\.current\.scale, quickInsideSheet\)/)
+  // 3: the press counts as an active gesture everywhere.
+  const gestureLines = app.split('\n').filter((l) => /const (penGestureActive|gestureActive|cancelableGesture|anyGesture) =/.test(l))
+  assert.equal(gestureLines.length, 4)
+  for (const l of gestureLines) assert.match(l, /activeQuickRef\.current !== null/)
+  // 4: buttons stay drawn while pressed, the pressed one highlighted.
+  assert.doesNotMatch(app, /mousePanRef\.current \|\| activeQuickRef\.current\) return null/)
+  assert.match(app, /const hovered = activeQuickRef\.current\?\.direction \?\? quickHoverRef\.current/)
 })

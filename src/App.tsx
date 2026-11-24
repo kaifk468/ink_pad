@@ -4,7 +4,7 @@ import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
 import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, connectorPoints } from './canvasModel'
-import { hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
+import { QUICK_CONNECT_DOUBLE_CLICK_MS, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, pathMidpoint, bendForDrag, hitConnectorHandle, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
@@ -295,6 +295,7 @@ function App() {
   const hoverKeyRef = useRef<string | null>(null)
   // Desktop quick-connect buttons: the hovered one, and the press in progress (a click, not a drag, makes the connected shape).
   const quickHoverRef = useRef<QuickConnectDirection | null>(null)
+  const quickClickAtRef = useRef(-Infinity)
   const activeQuickRef = useRef<{ pointerId: number; direction: QuickConnectDirection; startScreen: Point; dragged: boolean } | null>(null)
   const hoverPointRef = useRef<Point | null>(null)
   // Desktop paste target: the last mouse position over the canvas (screen coordinates, converted at paste time so a pan or zoom keeps it right); null while the mouse is off the canvas.
@@ -1397,7 +1398,7 @@ function App() {
     const target = ready ? hoverTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale) : null
     const key = target?.key ?? null
     const quickBox = ready ? quickConnectSource() : null
-    const quick = quickBox && point ? hitQuickConnect(quickBox, point, viewportRef.current.scale) : null
+    const quick = quickBox && point ? hitQuickConnect(quickBox, point, viewportRef.current.scale, quickInsideSheet) : null
     const changed = key !== hoverKeyRef.current || quick !== quickHoverRef.current
     hoverKeyRef.current = key
     quickHoverRef.current = quick
@@ -1472,9 +1473,11 @@ function App() {
    * The one selected plain or HLD box that shows the quick-connect buttons: Desktop Select mode, not locked, not rotated, big enough on
    * screen, with no gesture or editor active. Null otherwise. Only mouse input starts a press (pen and touch never use the buttons).
    */
+  /** Buttons whose centre is off the page are hidden (and not hit): the page-bounds check would drop the press anyway. */
+  const quickInsideSheet = (point: Point) => isPointWithinBounds(point, sheetBoundsRef.current)
   const quickConnectSource = (): RectangleObject | null => {
     if (inputModeRef.current !== 'desktop' || !selectionMode) return null
-    if (textEditorRef.current || codeEditorRef.current || activeMarqueeRef.current || activePointerRef.current !== null || activeConnectorRef.current || activeDragRef.current || activeResizeRef.current || activeRotateRef.current || activeEndpointRef.current || activeDividerRef.current || activeLassoRef.current || lassoDragRef.current || mousePanRef.current || activeQuickRef.current) return null
+    if (textEditorRef.current || codeEditorRef.current || activeMarqueeRef.current || activePointerRef.current !== null || activeConnectorRef.current || activeDragRef.current || activeResizeRef.current || activeRotateRef.current || activeEndpointRef.current || activeDividerRef.current || activeLassoRef.current || lassoDragRef.current || mousePanRef.current) return null
     const keys = currentSelectionKeys()
     if (keys.size !== 1) return null
     const item = strokesRef.current.find((candidate) => keys.has(canvasItemKey(candidate)))
@@ -1485,11 +1488,14 @@ function App() {
   const startQuickConnectPress = (event: React.PointerEvent<HTMLCanvasElement>, point: Point): boolean => {
     if (event.pointerType !== 'mouse' || event.button !== 0 || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return false
     const source = quickConnectSource()
-    const direction = source ? hitQuickConnect(source, point, viewportRef.current.scale) : null
+    const direction = source ? hitQuickConnect(source, point, viewportRef.current.scale, quickInsideSheet) : null
     if (!direction) return false
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     activeQuickRef.current = { pointerId: event.pointerId, direction, startScreen: getScreenPoint(event), dragged: false }
+    // The press must not join a double-click pair (its second click would undo the new shape or open a label editor).
+    clickPairRef.current = null
+    clickBeforeRef.current = null
     quickHoverRef.current = null
     renderAll()
     return true
@@ -1504,6 +1510,7 @@ function App() {
   const finishQuickConnectPress = () => {
     const press = activeQuickRef.current
     activeQuickRef.current = null
+    quickClickAtRef.current = performance.now()
     if (press && !press.dragged) quickCreateShape(press.direction)
     renderAll()
   }
@@ -2169,13 +2176,13 @@ function App() {
     if (quickSource) {
       // Desktop quick-connect buttons: round, a constant size on screen, with an arrow pointing out; the hovered one is filled stronger and shows a hint.
       const scale = viewportRef.current.scale
-      const hovered = quickHoverRef.current
+      const hovered = activeQuickRef.current?.direction ?? quickHoverRef.current
       ctx.save()
       ctx.lineWidth = 1.5 / scale
       ctx.strokeStyle = '#5269df'
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
-      for (const button of quickConnectButtons(quickSource, scale)) {
+      for (const button of quickConnectButtons(quickSource, scale, quickInsideSheet)) {
         const { x, y } = button.center
         const r = button.radius
         const k = r * 0.4
@@ -2996,7 +3003,7 @@ function App() {
       touchNav.down(event.pointerId, getScreenPoint(event), performance.now())
       return
     }
-    const penGestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null
+    const penGestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeQuickRef.current !== null
     const anyGestureActive = penGestureActive || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null
     if (startsMousePan(event.pointerType, event.button, inputModeRef.current, spaceHeldRef.current)) {
       // Middle button, or Space + left button: drag the view instead of using a tool. Refused while any other gesture or finger is active.
@@ -4355,6 +4362,8 @@ function App() {
   }
   const onCanvasDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (inputModeRef.current !== 'desktop' || lastPointerTypeRef.current !== 'mouse' || event.button !== 0 || textEditorRef.current || classBoxEditor) return
+    // The second click of a double-click on a quick-connect button already made its shape: no undo, no label editor.
+    if (performance.now() - quickClickAtRef.current < QUICK_CONNECT_DOUBLE_CLICK_MS) return
     const rect = event.currentTarget.getBoundingClientRect()
     const point = screenToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, viewportRef.current)
     const routed = routeConnectors(strokesRef.current)
@@ -4386,7 +4395,7 @@ function App() {
       else openTextEditor({ itemId: null, x: shapeAction.centre.x, y: shapeAction.centre.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: { x: shapeAction.centre.x, y: shapeAction.centre.y } })
       return
     }
-    const anyGesture = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0
+    const anyGesture = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null || activeQuickRef.current !== null || touchNav.touchCount() > 0
     if (anyGesture || !before || before.owner !== historyRef.current || !isPointWithinBounds(point, sheetBoundsRef.current)) return
     // Empty canvas, any tool: a new label, as one undo step (the label) or nothing. The two single clicks already ran through the tool.
     const itemsChanged = !clickItemsUnchanged(before.items, strokesRef.current)
@@ -4614,13 +4623,13 @@ function App() {
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (paletteOpenRef.current || shortcutHelpOpen || templateChooserOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
     if (codeEditor && liveCodeEditor()) return false
-    const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
+    const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeQuickRef.current !== null
     if (contextMenuRef.current) {
       // While the menu is open Escape closes it and no other shortcut runs.
       if (command.kind === 'deselect') { closeContextMenu(); return true }
       return false
     }
-    const cancelableGesture = activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null
+    const cancelableGesture = activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || activeQuickRef.current !== null
     if (command.kind === 'deselect') {
       const action = escapeAction({ cancelableGesture, anyGesture: gestureActive || touchNav.touchCount() > 0, hasSelection: selectedKeysRef.current.size > 0 || selectedRectangleIdRef.current !== null })
       if (action === 'cancelGesture') return cancelActiveGesture()

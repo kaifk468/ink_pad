@@ -22,24 +22,26 @@ export function quickConnectFits(box: Box, scale: number): boolean {
 }
 
 /** Button centres in canvas coordinates (radius too), a constant size on screen whatever the zoom. */
-export function quickConnectButtons(box: Box, scale: number): QuickConnectButton[] {
+export function quickConnectButtons(box: Box, scale: number, inside?: (point: Point) => boolean): QuickConnectButton[] {
   const cx = box.x + box.width / 2
   const cy = box.y + box.height / 2
   const gap = QUICK_CONNECT_OFFSET_PX / scale
   const radius = QUICK_CONNECT_RADIUS_PX / scale
   const at = (x: number, y: number): Point => ({ x, y, pressure: 1 })
-  return [
+  const all: QuickConnectButton[] = [
     { direction: 'right', center: at(box.x + box.width + gap, cy), radius },
     { direction: 'left', center: at(box.x - gap, cy), radius },
     { direction: 'up', center: at(cx + QUICK_CONNECT_UP_SHIFT_PX / scale, box.y - gap), radius },
     { direction: 'down', center: at(cx, box.y + box.height + gap), radius },
   ]
+  // `inside` hides the buttons whose centre is off the page (a press there is dropped before it reaches the buttons).
+  return inside ? all.filter((button) => inside(button.center)) : all
 }
 
 /** The button under `point` (canvas coordinates), or null. */
-export function hitQuickConnect(box: Box, point: Point, scale: number): QuickConnectDirection | null {
+export function hitQuickConnect(box: Box, point: Point, scale: number, inside?: (point: Point) => boolean): QuickConnectDirection | null {
   if (!quickConnectFits(box, scale)) return null
-  for (const button of quickConnectButtons(box, scale)) {
+  for (const button of quickConnectButtons(box, scale, inside)) {
     if (Math.hypot(point.x - button.center.x, point.y - button.center.y) <= button.radius) return button.direction
   }
   return null
@@ -49,3 +51,6 @@ export function hitQuickConnect(box: Box, point: Point, scale: number): QuickCon
 export function quickConnectHint(direction: QuickConnectDirection): string {
   return `New connected shape (Ctrl+${QUICK_CONNECT_ARROWS[direction]})`
 }
+
+/** A double-click event within this long of a quick-connect click is ignored (the shape is already made). */
+export const QUICK_CONNECT_DOUBLE_CLICK_MS = 500
