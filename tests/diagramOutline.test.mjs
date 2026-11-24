@@ -108,11 +108,21 @@ test('code blocks are fenced with their language; plain text has none; backticks
   assert.match(md, /## Code\n\n```python\nprint\(1\)\n```\n\n````\na ``` b\n````\n/)
 })
 
-test('handwriting is a count; erase strokes are ignored; ink inside class boxes is not counted', () => {
+test('handwriting is a count; erase strokes are ignored; ink inside HLD boxes is listed for the box and counted', () => {
   const items = [stroke(1, pt(0, 0), pt(5, 5)), stroke(2, pt(0, 0), pt(5, 5)), stroke(3, pt(0, 0), pt(5, 5), { erase: true }), hld(4, 100, 100, 'queue')]
   items[3].inkBox.ink = [stroke(9, pt(110, 130), pt(120, 130))]
   const md = outline.buildDiagramOutline('t', [items])
-  assert.match(md, /Handwriting: 2 strokes\n$/)
+  assert.match(md, /- \(unlabeled queue\) \(handwriting\)\n/)
+  assert.match(md, /Handwriting: 3 strokes\n$/)
+})
+
+test('an HLD box with a label and ink is listed with its label, kind and (handwriting); one without ink is unchanged', () => {
+  const withInk = hld(1, 0, 0, 'cache')
+  withInk.inkBox.ink = [stroke(9, pt(10, 30), pt(20, 30)), stroke(10, pt(10, 30), pt(20, 30), { erase: true })]
+  const plain = hld(2, 400, 0, 'queue')
+  const md = outline.buildDiagramOutline('t', [[withInk, plain, inside(10, withInk, 'Redis')]])
+  assert.match(md, /- Redis \(cache\) \(handwriting\)\n- \(unlabeled queue\)\n/)
+  assert.match(md, /Handwriting: 1 stroke\n$/)
 })
 
 test('pages: headings only with several pages, empty pages skipped, numbers kept', () => {
@@ -155,4 +165,14 @@ test('wiring: file panel buttons and palette entries', async () => {
   assert.match(app, /id: 'export:outline-download'/)
   assert.match(app, /onCopyOutline=\{/)
   assert.match(app, /onDownloadOutline=\{/)
+})
+
+test('wiring: the outline buttons use their own enable flag (any page has items), not the current page', async () => {
+  const panel = await read('FilePanel.tsx')
+  assert.match(panel, /canOutline: boolean/)
+  assert.equal((panel.match(/disabled=\{!props\.canOutline\}/g) ?? []).length, 2)
+  assert.doesNotMatch(panel, /disabled=\{!props\.canExport\}[^>]*onClick=\{props\.onCopyOutline\}/)
+  const app = await (await import('./helpers/appSource.mjs')).readAppSource()
+  assert.match(app, /canOutline=\{/)
+  assert.match(app, /canOutline=\{hasInk \|\| pagesRef\.current\.some/)
 })

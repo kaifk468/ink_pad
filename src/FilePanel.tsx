@@ -24,6 +24,8 @@ type FilePanelProps = {
   onExportNotebookLm: () => void
   exportBusy: boolean
   canExport: boolean
+  /** Any page of the diagram has something to list (the outline covers every page, so it does not depend on the current page being empty). */
+  canOutline: boolean
   storage: StorageInfo
 }
 
@@ -117,8 +119,8 @@ export function FilePanel(props: FilePanelProps) {
 
         <h3>Text outline</h3>
         <div className="file-panel-actions">
-          <button type="button" disabled={!props.canExport} title="Copy a Markdown outline of every page: components, connections, notes, classes and code" onClick={props.onCopyOutline}>Copy as text outline</button>
-          <button type="button" disabled={!props.canExport} title="Save the outline as a Markdown file named after the diagram" onClick={props.onDownloadOutline}>Download outline (.md)</button>
+          <button type="button" disabled={!props.canOutline} title="Copy a Markdown outline of every page: components, connections, notes, classes and code" onClick={props.onCopyOutline}>Copy as text outline</button>
+          <button type="button" disabled={!props.canOutline} title="Save the outline as a Markdown file named after the diagram" onClick={props.onDownloadOutline}>Download outline (.md)</button>
         </div>
 
         <h3>NotebookLM</h3>

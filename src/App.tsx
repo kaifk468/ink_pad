@@ -5327,6 +5327,7 @@ function App() {
         saveStatus={saveStatus}
         notice={fileNotice}
         canExport={hasInk}
+        canOutline={hasInk || pagesRef.current.some((slot, index) => index !== pageIndex && slot.items.some((item) => !(item.kind === 'stroke' && item.erase)))}
         storage={storage}
         onClose={() => setFilePanelOpen(false)}
         onTitleChange={renameDiagram}
