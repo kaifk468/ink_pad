@@ -157,6 +157,8 @@ button { font: inherit; }
 .uml-toolbox.minimized { width: auto; max-height: none; padding: 0; overflow: visible; border: 0; background: transparent; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
 /* Desktop: the left options panel sits where the toolbox starts on the tablet, so it starts on the right edge (a dragged position still wins: inline left beats right). */
 .uml-toolbox.desktop { left: auto; right: max(16px, env(safe-area-inset-right)); }
+/* Desktop, minimised: the restore button sits under the account button, clear of the page strip that grows upwards from the minimap (several pages + overview button + open minimap reached the middle of the screen). */
+.uml-toolbox.desktop.minimized { top: 84px; transform: none; }
 .uml-toolbox-restore { display: grid; place-items: center; width: 46px; height: 46px; padding: 0; border: 1px solid rgba(36, 42, 52, .14); border-radius: 14px; background: rgba(255, 255, 255, .97); color: #4d5fc0; box-shadow: 0 4px 16px rgba(31, 39, 52, .2); cursor: grab; touch-action: none; }
 .uml-toolbox-restore:active { cursor: grabbing; }
 .uml-toolbox-restore:hover { background: #f2f4ff; }

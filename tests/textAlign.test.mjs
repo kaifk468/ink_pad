@@ -90,3 +90,9 @@ test('keepAlignAnchor: a re-edited centred label keeps its centre, a right one i
   assert.match(app, /centerOn: \{ x: item\.x \+ item\.width \/ 2, y: item\.y \+ item\.height \/ 2 \}/)
   assert.match(overlay, /editor\.anchorRight \* scale/)
 })
+
+test('template labels inside boxes are centred (align center), like labels typed inside a shape', async () => {
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync(new URL('../src/diagramTemplates.ts', import.meta.url), 'utf8')
+  assert.match(source, /const label: TextObject = \{ \.\.\.made, align: 'center'/)
+})

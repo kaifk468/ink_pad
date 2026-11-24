@@ -59,10 +59,10 @@ class Sheet {
     return box
   }
 
-  /** A text label whose centre is the box centre (plus `drop` down), so it lies fully inside the box. */
+  /** A text label whose centre is the box centre (plus `drop` down), so it lies fully inside the box; centred like labels typed inside a shape. */
   private label(box: RectangleObject, text: string, fontSize: number, drop: number): TextObject {
     const made = createTextObject(this.textId++, 0, 0, text, STROKE_COLOR, fontSize)
-    const label = { ...made, x: box.x + box.width / 2 - made.width / 2, y: box.y + box.height / 2 + drop - made.height / 2 }
+    const label: TextObject = { ...made, align: 'center', x: box.x + box.width / 2 - made.width / 2, y: box.y + box.height / 2 + drop - made.height / 2 }
     this.items.push(label)
     return label
   }

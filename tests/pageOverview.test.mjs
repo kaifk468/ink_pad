@@ -91,3 +91,9 @@ test('wiring: a failed library refresh keeps the list that is shown', async () =
   assert.doesNotMatch(failure, /setLibrary\(|setFolders\(/)
   assert.match(body, /const listed = await backend\.list\(\)/)
 })
+
+test('desktop: the minimised UML toolbox button sits near the top, clear of the taller page strip', async () => {
+  const { readFileSync } = await import('node:fs')
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
+  assert.match(css, /\.uml-toolbox\.desktop\.minimized \{ top: 84px; transform: none; \}/)
+})
