@@ -12,7 +12,7 @@ import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, tog
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
-import { HLD_DEFAULT_SIZE, createHldShape, isHldTapCreate, type HldShape } from './hldShapes'
+import { HLD_DEFAULT_SIZE, HLD_SHAPES, HLD_SHAPE_LABELS, createHldShape, isHldTapCreate, type HldShape } from './hldShapes'
 import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
 import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, hitInkBoxMoveGrip, inkBoxMoveGrip, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
 import type { CanvasItem, ClassBoxContent, CodeObject, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
@@ -54,6 +54,9 @@ import { storageLabel } from './StoragePanel'
 import { ZoomControls } from './app/ZoomControls'
 import { EmptyCanvasHint } from './app/EmptyCanvasHint'
 import { ShortcutHelp } from './app/ShortcutHelp'
+import { CommandPalette } from './app/CommandPalette'
+import { shortcutEntryId, shortcutPaletteEntries, type PaletteEntry } from './commandPalette'
+import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
@@ -4348,11 +4351,34 @@ function App() {
     if (!libraryOpen) window.setTimeout(() => void captureThumbnail(), 250) // after the Library has painted
     setLibraryOpen((open) => !open)
   }
+  // Command palette (Desktop, Ctrl/Cmd+K). The ref is cleared the moment the palette closes so the command it runs is not refused as "a dialog is open".
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const paletteOpenRef = useRef(false)
+  const openPalette = () => { paletteOpenRef.current = true; setPaletteOpen(true) }
+  const closePalette = () => { paletteOpenRef.current = false; setPaletteOpen(false) }
+  /** Extra palette entries beyond the keyboard shortcuts. Add one line here to make a new command searchable (a later template list can append its own). */
+  const paletteExtras = (): Array<PaletteEntry & { run: () => void }> => [
+    ...HLD_SHAPES.map((shape) => ({ id: `hld:${shape}`, label: HLD_SHAPE_LABELS[shape], group: 'Shapes', keywords: 'hld system design add', run: () => toggleHldShapeTool(shape) })),
+    { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2).then((error) => { if (error) showToast(error) }) },
+    { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
+    { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
+    { id: 'setting:snapping', label: 'Toggle snapping', group: 'Settings', keywords: 'snap guides align', run: () => updateSnapping(!snappingRef.current) },
+    { id: 'setting:sketchy', label: 'Toggle hand-drawn style', group: 'Settings', keywords: 'sketchy rough', run: toggleSketchy },
+  ]
+  const runPaletteEntry = (id: string) => {
+    const row = DESKTOP_SHORTCUTS.find((entry) => shortcutEntryId(entry) === id)
+    if (row) {
+      const input = shortcutKeyInput(row)
+      if (input) { const command = keyCommand(input, 'desktop'); if (command) keyActionsRef.current(command) }
+      return
+    }
+    paletteExtras().find((entry) => entry.id === id)?.run()
+  }
   const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
   keyActionsRef.current = (command) => {
     if (command.kind === 'library' && libraryOpen) return true // the Library is already open: only keep the browser's open dialog away
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
-    if (shortcutHelpOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
+    if (paletteOpenRef.current || shortcutHelpOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
     if (codeEditor && liveCodeEditor()) return false
     const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
     if (contextMenuRef.current) {
@@ -4372,6 +4398,7 @@ function App() {
       case 'undo': undo(); return true
       case 'redo': redo(); return true
       case 'library': toggleLibrary(); return true
+      case 'palette': openPalette(); return true
       case 'zoomIn': if (!navigationSettingsRef.current.zoomLocked) zoomBy(ZOOM_STEP); return true
       case 'zoomOut': if (!navigationSettingsRef.current.zoomLocked) zoomBy(1 / ZOOM_STEP); return true
       case 'zoomReset': zoomToActualSize(); return true
@@ -4425,7 +4452,10 @@ function App() {
       const command = keyCommand(event, inputModeRef.current)
       if (!command) return
       const target = event.target as HTMLElement | null
-      if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) return
+      if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) {
+        if (command.kind === 'palette') event.preventDefault() // Chrome's Ctrl+K (search bar) never wins, even inside a text field
+        return
+      }
       // Enter on a focused button or link activates it: only a canvas-level Enter edits.
       if (command.kind === 'edit' && ['BUTTON', 'A'].includes((target?.tagName ?? '').toUpperCase())) return
       const handled = keyActionsRef.current(command)
@@ -4719,6 +4749,7 @@ function App() {
       />
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
+      {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
       <ZoomControls desktop={inputMode === 'desktop'} onResetZoom={zoomToActualSize} zoomPercent={zoomPercent} locked={zoomLockActive} onToggleLock={() => updateNavigationSettings({ zoomLocked: !zoomLockActive })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
         desktop={inputMode === 'desktop'}

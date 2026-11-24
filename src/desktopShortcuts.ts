@@ -50,6 +50,7 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'View', label: 'Pan', keys: 'Space + drag, or middle mouse drag' },
   { group: 'View', label: 'Zoom around the pointer', keys: 'Ctrl + wheel' },
   { group: 'View', label: 'Open the library', keys: 'Ctrl+O', input: { key: 'o', ...ctrl } },
+  { group: 'View', label: 'Command palette', keys: 'Ctrl+K', input: { key: 'k', ...ctrl } },
   { group: 'View', label: 'Show this list', keys: '?', input: { key: '?', ...shift } },
   { group: 'Arrange', label: 'Nudge the selection', keys: 'Arrow keys', input: { key: 'ArrowRight' } },
   { group: 'Arrange', label: 'Nudge by 10', keys: 'Shift+Arrow keys', input: { key: 'ArrowRight', ...shift } },
