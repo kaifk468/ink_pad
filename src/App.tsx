@@ -60,6 +60,8 @@ import { FindBar } from './app/FindBar'
 import { searchCanvas, type SearchMatch } from './canvasSearch'
 import { shortcutEntryId, shortcutPaletteEntries, type PaletteEntry } from './commandPalette'
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
+import { TemplateChooser } from './app/TemplateChooser'
+import { DIAGRAM_TEMPLATES, buildTemplate } from './diagramTemplates'
 import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
@@ -4072,6 +4074,23 @@ function App() {
     return copied.length > 0 && insertPasted(pasteItems(copied, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET, workspaceBoundsRef.current, null, strokesRef.current))
   }
 
+  // Insert template: the template's items go through the paste path (new ids, counters, groups, workspace bounds), centred in the view, as one undo step, selected afterwards.
+  const insertTemplate = (id: string): boolean => {
+    const canvas = canvasRef.current
+    const items = buildTemplate(id)
+    setTemplateChooserOpen(false)
+    if (!canvas || !items) return false
+    if (textEditorRef.current) commitTextEditor()
+    if (codeEditorRef.current) commitCodeEditor()
+    const rect = canvas.getBoundingClientRect()
+    const centre = screenToCanvasPoint({ x: rect.width / 2, y: rect.height / 2, pressure: 1 }, viewportRef.current)
+    const result = pasteItems(items, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET, workspaceBoundsRef.current, centre, strokesRef.current)
+    if (!result) return false
+    const done = insertPasted(sketchyRef.current ? { ...result, items: withSketchSeeds(result.items) } : result)
+    if (done) renderAll()
+    return done
+  }
+
   // Ctrl+Arrow with one plain or HLD shape selected: a new empty shape of the same kind in that direction, joined by an arrow. One undo step.
   const quickCreateShape = (direction: FlowDirection): boolean => {
     const keys = selectionKeysWithBox()
@@ -4376,6 +4395,7 @@ function App() {
   }, [renderAll])
 
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
+  const [templateChooserOpen, setTemplateChooserOpen] = useState(false)
   const toggleLibrary = () => {
     void refreshLibrary()
     if (!libraryOpen) window.setTimeout(() => void captureThumbnail(), 250) // after the Library has painted
@@ -4389,6 +4409,8 @@ function App() {
   /** Extra palette entries beyond the keyboard shortcuts. Add one line here to make a new command searchable (a later template list can append its own). */
   const paletteExtras = (): Array<PaletteEntry & { run: () => void }> => [
     ...HLD_SHAPES.map((shape) => ({ id: `hld:${shape}`, label: HLD_SHAPE_LABELS[shape], group: 'Shapes', keywords: 'hld system design add', run: () => toggleHldShapeTool(shape) })),
+    ...DIAGRAM_TEMPLATES.map((template) => ({ id: `template:${template.id}`, label: `Template: ${template.name}`, group: 'Templates', keywords: `insert starter layout ${template.description}`, run: () => { insertTemplate(template.id) } })),
+    { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout', run: () => setTemplateChooserOpen(true) },
     { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2).then((error) => { if (error) showToast(error) }) },
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
@@ -4464,7 +4486,7 @@ function App() {
   keyActionsRef.current = (command) => {
     if (command.kind === 'library' && libraryOpen) return true // the Library is already open: only keep the browser's open dialog away
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
-    if (paletteOpenRef.current || shortcutHelpOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
+    if (paletteOpenRef.current || shortcutHelpOpen || templateChooserOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
     if (codeEditor && liveCodeEditor()) return false
     const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
     if (contextMenuRef.current) {
@@ -4626,7 +4648,7 @@ function App() {
           const block = strokesRef.current.find((candidate) => candidate.kind === 'code' && candidate.id === codeEditor.id)
           return block?.kind === 'code' ? <CodeEditorOverlay key={codeEditor.id} item={block} viewport={viewportRef.current} onChange={(value) => { codeEditorValueRef.current = value }} onCommit={commitCodeEditor} /> : null
         })()}
-        {!hasInk && !textEditor && !codeEditor && !classBoxEditor && !libraryOpen && !filePanelOpen && !storagePanelOpen && !shortcutHelpOpen && <EmptyCanvasHint desktop={inputMode === 'desktop'} />}
+        {!hasInk && !textEditor && !codeEditor && !classBoxEditor && !libraryOpen && !filePanelOpen && !storagePanelOpen && !shortcutHelpOpen && !templateChooserOpen && <EmptyCanvasHint desktop={inputMode === 'desktop'} onTemplates={() => setTemplateChooserOpen(true)} />}
         <aside
           ref={umlToolboxRef}
           className={`uml-toolbox${umlToolboxMinimized ? ' minimized' : ''}${inputMode === 'desktop' ? ' desktop' : ''}`}
@@ -4839,6 +4861,7 @@ function App() {
       {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findQuery.trim() ? findMatches(findQuery).length : 0} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
       {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
+      {templateChooserOpen && <TemplateChooser onChoose={insertTemplate} onClose={() => setTemplateChooserOpen(false)} />}
       <ZoomControls desktop={inputMode === 'desktop'} onResetZoom={zoomToActualSize} zoomPercent={zoomPercent} locked={zoomLockActive} onToggleLock={() => updateNavigationSettings({ zoomLocked: !zoomLockActive })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
         desktop={inputMode === 'desktop'}
@@ -4873,6 +4896,7 @@ function App() {
         onCode={insertCodeBlock}
         onFind={openFind}
         onSticky={insertStickyNote}
+        onTemplates={() => setTemplateChooserOpen(true)}
       />
       {classBoxEditor && <ClassBoxDialog
         key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}

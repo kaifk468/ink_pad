@@ -39,6 +39,8 @@ type ToolDockProps = {
   onTidy: () => void
   /** Adds a sticky note (desktop: More shapes; tablet: Insert tray). */
   onSticky: () => void
+  /** Opens the template chooser (More menu, both modes). */
+  onTemplates: () => void
   /** Desktop only: adds a code block at the middle of the view. */
   onCode?: () => void
   /** Opens the find bar (More menu, both modes). */
@@ -116,7 +118,7 @@ export function ToolDock(props: ToolDockProps) {
         {divider}
         {inkClass}
         {divider}
-        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" />
+        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" onTemplates={props.onTemplates} />
       </nav>
     )
   }
@@ -140,7 +142,7 @@ export function ToolDock(props: ToolDockProps) {
         onShapes={props.onShapes}
         onSticky={props.onSticky}
       />
-      <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onFind={props.onFind} findTitle="Find text on the canvas" />
+      <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onFind={props.onFind} findTitle="Find text on the canvas" onTemplates={props.onTemplates} />
     </nav>
   )
 }

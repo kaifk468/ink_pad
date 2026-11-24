@@ -12,10 +12,12 @@ type MoreTrayProps = {
   /** Opens the find bar (both modes). */
   onFind?: () => void
   findTitle?: string
+  /** Opens the template chooser. */
+  onTemplates: () => void
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -59,6 +61,10 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, on
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 8-4 4 4 4M15 8l4 4-4 4"/></svg><span>Code block</span>
           </button>
         </>}
+        <div className="insert-tray-heading">Templates</div>
+        <button className="insert-entry" type="button" aria-label="Insert template" title="Insert a starter layout in the middle of the view" onClick={() => { onTemplates(); setOpen(false) }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 9h17M9 9v11.5"/></svg><span>Insert template…</span>
+        </button>
         {onFind && <>
           <div className="insert-tray-heading">Search</div>
           <button className="insert-entry" type="button" aria-label="Find" title={findTitle ?? 'Find text on the canvas'} onClick={() => { onFind(); setOpen(false) }}>
