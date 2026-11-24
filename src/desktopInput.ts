@@ -529,7 +529,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
 }
 
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'exportPng' | 'exportSvg'
-  | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps'
+  | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps' | 'saveTemplate'
   | `shape:${string}`
 export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select' | 'flow'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
@@ -596,7 +596,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     ...(!hasSelection && !lockedTarget && anyLocked ? [entry('unlockAll', 'Unlock all', '', 'lock', true)] : []),
     entry('copyPng', 'Copy as PNG', 'Shift+Alt+C', 'export', hasSelection || pageHasItems),
     // Only offered when something is selected.
-    ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true), entry('exportSvg', 'Export selection as SVG', '', 'export', true)] : []),
+    ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true), entry('exportSvg', 'Export selection as SVG', '', 'export', true), entry('saveTemplate', 'Save selection as template…', '', 'export', true)] : []),
     ...(canSelectSimilar ? [entry('selectSimilar', 'Select similar', '', 'select', true)] : []),
     entry('selectAll', 'Select all', 'Ctrl+A', 'select', pageHasItems),
   ]

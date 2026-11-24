@@ -316,7 +316,7 @@ function sanitizeAttachment(value: unknown): ConnectorAttachment | undefined {
 }
 
 /** Reads one item; the optional `locked: true` is kept on canvas items only (never on eraser marks or unknown items; any other value is dropped). */
-function sanitizeItem(value: unknown): CanvasItem | null {
+export function sanitizeItem(value: unknown): CanvasItem | null {
   let item = sanitizeItemFields(value)
   if (item && item.kind !== 'opaque' && isRecord(value) && value.locked === true && !(item.kind === 'stroke' && item.erase)) item = { ...item, locked: true }
   // `group`: a positive safe integer only, on canvas items (never eraser marks or unknown items).

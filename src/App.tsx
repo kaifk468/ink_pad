@@ -68,6 +68,7 @@ import { shortcutEntryId, shortcutPaletteEntries, type PaletteEntry } from './co
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
 import { DIAGRAM_TEMPLATES, buildTemplate } from './diagramTemplates'
+import { addUserTemplate, loadUserTemplates, newTemplateId, removeUserTemplate, saveUserTemplates, type UserTemplate } from './userTemplates'
 import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
@@ -4458,9 +4459,11 @@ function App() {
   }
 
   // Insert template: the template's items go through the paste path (new ids, counters, groups, workspace bounds), centred in the view, as one undo step, selected afterwards.
-  const insertTemplate = (id: string): boolean => {
+  const insertTemplate = (id: string): boolean => insertTemplateItems(buildTemplate(id))
+  // "My templates" use the same path: the saved items are plain canvas items with local ids, so pasteItems gives them fresh ones.
+  const insertUserTemplate = (id: string): boolean => insertTemplateItems(userTemplates.find((template) => template.id === id)?.items ?? null)
+  const insertTemplateItems = (items: CanvasItem[] | null): boolean => {
     const canvas = canvasRef.current
-    const items = buildTemplate(id)
     setTemplateChooserOpen(false)
     if (!canvas || !items) return false
     if (textEditorRef.current) commitTextEditor()
@@ -4717,6 +4720,7 @@ function App() {
       case 'pasteStyle': pasteStyleWithToast(); break
       case 'exportPng': exportSelectionAs('png'); break
       case 'exportSvg': exportSelectionAs('svg'); break
+      case 'saveTemplate': openSaveTemplate(); break
       case 'delete': deleteSelection(); break
       case 'selectAll': selectAllItems(); break
       case 'selectSimilar': selectSimilarItems(); break
@@ -4792,6 +4796,35 @@ function App() {
 
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
   const [templateChooserOpen, setTemplateChooserOpen] = useState(false)
+  // "My templates": saved on this device only (localStorage). Re-read each time the chooser opens; `templateSaveMode` opens it with the name field showing.
+  const [userTemplates, setUserTemplates] = useState<UserTemplate[]>(() => loadUserTemplates())
+  const [templateSaveMode, setTemplateSaveMode] = useState(false)
+  useEffect(() => {
+    if (templateChooserOpen) setUserTemplates(loadUserTemplates())
+    else setTemplateSaveMode(false)
+  }, [templateChooserOpen])
+  const openSaveTemplate = () => {
+    if (selectionKeysWithBox().size === 0) { showToast('Select something first to save it as a template'); return }
+    setTemplateSaveMode(true)
+    setTemplateChooserOpen(true)
+  }
+  // Returns an error message for the chooser to show, or null when the template was saved.
+  const saveSelectionAsTemplate = (name: string): string | null => {
+    const copied = copyItems(strokesRef.current, selectionKeysWithBox())
+    const stored = loadUserTemplates()
+    const result = addUserTemplate(stored, name, copied, newTemplateId(), new Date().toISOString())
+    if (!result.ok) return result.message
+    if (!saveUserTemplates(result.templates)) return 'Could not save on this device (storage is full or blocked).'
+    setUserTemplates(result.templates)
+    setTemplateChooserOpen(false)
+    showToast(`Saved template “${result.template.name}” on this device`)
+    return null
+  }
+  const deleteUserTemplate = (id: string) => {
+    const next = removeUserTemplate(loadUserTemplates(), id)
+    if (saveUserTemplates(next)) setUserTemplates(next)
+    else showToast('Could not update the saved templates on this device')
+  }
   const toggleLibrary = () => {
     void refreshLibrary()
     if (!libraryOpen) window.setTimeout(() => void captureThumbnail(), 250) // after the Library has painted
@@ -4823,7 +4856,8 @@ function App() {
     ...HLD_SHAPES.map((shape) => ({ id: `hld:${shape}`, label: HLD_SHAPE_LABELS[shape], group: 'Shapes', keywords: 'hld system design add', run: () => toggleHldShapeTool(shape) })),
     ...DIAGRAM_TEMPLATES.map((template) => ({ id: `template:${template.id}`, label: `Template: ${template.name}`, group: 'Templates', keywords: `insert starter layout ${template.description}`, run: () => { insertTemplate(template.id) } })),
     ...(alignTargetKeys().size > 0 ? (['left', 'center', 'right'] as const).map((align) => ({ id: `align:${align}`, label: `Align text ${align === 'center' ? 'centre' : align}`, group: 'Edit', keywords: 'text label alignment justify', run: () => pickTextAlign(align) })) : []),
-    { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout', run: () => setTemplateChooserOpen(true) },
+    { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout my templates saved', run: () => setTemplateChooserOpen(true) },
+    ...(selectionKeysWithBox().size > 0 ? [{ id: 'template:save', label: 'Save selection as template…', group: 'Templates', keywords: 'my templates store reuse', run: openSaveTemplate }] : []),
     { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2).then((error) => { if (error) showToast(error) }) },
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
@@ -5331,7 +5365,7 @@ function App() {
       {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
       {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
-      {templateChooserOpen && <TemplateChooser onChoose={insertTemplate} onClose={() => setTemplateChooserOpen(false)} />}
+      {templateChooserOpen && <TemplateChooser onChoose={insertTemplate} onClose={() => setTemplateChooserOpen(false)} userTemplates={userTemplates} onChooseUser={insertUserTemplate} onDeleteUser={deleteUserTemplate} canSave={selectedItemCount > 0 || hasSelectedRectangle} startSaving={templateSaveMode} onSave={saveSelectionAsTemplate} />}
       <ZoomControls desktop={inputMode === 'desktop'} onResetZoom={zoomToActualSize} zoomPercent={zoomPercent} locked={zoomLockActive} onToggleLock={() => updateNavigationSettings({ zoomLocked: !zoomLockActive })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
         desktop={inputMode === 'desktop'}
