@@ -107,7 +107,7 @@ async function copyDirectory(from: DirHandle, to: DirHandle): Promise<void> {
 }
 
 export function createDeviceBackend(root: DirHandle): StorageBackend {
-  const summaryCache = new Map<string, { title: string; itemCount: number; pageCount: number }>()
+  const summaryCache = new Map<string, { title: string; createdAt: string; itemCount: number; pageCount: number }>()
 
   const scan = async () => {
     const documents: DocumentSummary[] = []
@@ -129,10 +129,10 @@ export function createDeviceBackend(root: DirHandle): StorageBackend {
             if (!info) {
               const parsed = parseDocument(await file.text())
               if (!parsed.ok) continue
-              info = { title: fileBase(name), itemCount: documentItemCount(parsed.document), pageCount: documentPageCount(parsed.document) }
+              info = { title: fileBase(name), createdAt: parsed.document.createdAt, itemCount: documentItemCount(parsed.document), pageCount: documentPageCount(parsed.document) }
               summaryCache.set(key, info)
             }
-            documents.push({ id, title: info.title, updatedAt: new Date(file.lastModified).toISOString(), itemCount: info.itemCount, folderId: path, ...(info.pageCount > 1 ? { pageCount: info.pageCount } : {}) })
+            documents.push({ id, title: info.title, updatedAt: new Date(file.lastModified).toISOString(), ...(info.createdAt ? { createdAt: info.createdAt } : {}), itemCount: info.itemCount, folderId: path, ...(info.pageCount > 1 ? { pageCount: info.pageCount } : {}) })
           } catch {
             // An unreadable file is left out of the list rather than breaking it.
           }

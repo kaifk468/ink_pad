@@ -1,3 +1,4 @@
+import { DEFAULT_DOCUMENT_TITLE } from './documentFormat'
 import type { DocumentSummary, FolderRecord } from './documentStore'
 import { folderAndDescendantIds, folderPath } from './folderTree'
 import type { PageTemplate } from './pageTemplates'
@@ -12,6 +13,17 @@ export type LibraryQuery = {
 }
 
 export type LibraryLayout = 'grid' | 'list'
+export type LibrarySort = 'edited' | 'name' | 'created'
+export const LIBRARY_SORTS: readonly { id: LibrarySort; label: string }[] = [
+  { id: 'edited', label: 'Last edited' },
+  { id: 'name', label: 'Name' },
+  { id: 'created', label: 'Created' },
+]
+
+/** Reads a remembered sort choice; anything unknown means the default (Last edited). */
+export function parseLibrarySort(value: unknown): LibrarySort {
+  return value === 'name' || value === 'created' ? value : 'edited'
+}
 
 export type NewDiagramPreset = { id: string; label: string; hint: string; template: PageTemplate }
 
@@ -46,6 +58,42 @@ export function searchLibrary(library: DocumentSummary[], folders: FolderRecord[
       return words.every((word) => text.includes(word))
     })
     .sort((a, b) => time(b.updatedAt) - time(a.updatedAt))
+}
+
+function isUntitled(entry: DocumentSummary): boolean {
+  const title = entry.title.trim()
+  return !title || title.toLowerCase() === DEFAULT_DOCUMENT_TITLE.toLowerCase()
+}
+
+/**
+ * Orders diagrams. 'edited': newest edit first. 'name': A to Z, locale-aware and case-insensitive, untitled diagrams last.
+ * 'created': newest first by the created time the storage reports (browser and device storage and Google Drive do); a diagram whose
+ * created time is unknown (older browser records not saved since) uses its last-edited time instead. Ties fall back to last edited,
+ * so the order is stable. Never changes the input.
+ */
+export function sortLibrary(entries: DocumentSummary[], sort: LibrarySort): DocumentSummary[] {
+  const edited = (a: DocumentSummary, b: DocumentSummary) => time(b.updatedAt) - time(a.updatedAt)
+  const created = (entry: DocumentSummary) => {
+    const stamp = entry.createdAt ? time(entry.createdAt) : -Infinity
+    return stamp === -Infinity ? time(entry.updatedAt) : stamp
+  }
+  const compare = (a: DocumentSummary, b: DocumentSummary): number => {
+    if (sort === 'name') {
+      const ua = isUntitled(a)
+      const ub = isUntitled(b)
+      if (ua !== ub) return ua ? 1 : -1
+      if (!ua) {
+        const byName = a.title.trim().localeCompare(b.title.trim(), undefined, { sensitivity: 'base', numeric: true })
+        if (byName !== 0) return byName
+      }
+    } else if (sort === 'created') {
+      const ca = created(a)
+      const cb = created(b)
+      if (ca !== cb) return ca === -Infinity ? 1 : cb === -Infinity ? -1 : cb - ca
+    }
+    return edited(a, b)
+  }
+  return entries.slice().sort(compare)
 }
 
 /** The Recent row appears only when the library has more than this many diagrams. */

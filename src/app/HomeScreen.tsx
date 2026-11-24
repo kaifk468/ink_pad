@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DocumentSummary, FolderRecord } from '../documentStore'
 import { cleanFolderName, flattenFolders, folderPath } from '../folderTree'
-import { NEW_DIAGRAM_PRESETS, RECENT_COUNT, RECENT_MIN_LIBRARY, countInFolder, describeEdited, folderLabel, recentDiagrams, searchLibrary, type LibraryLayout } from '../libraryView'
+import { NEW_DIAGRAM_PRESETS, RECENT_COUNT, RECENT_MIN_LIBRARY, countInFolder, describeEdited, folderLabel, LIBRARY_SORTS, parseLibrarySort, recentDiagrams, searchLibrary, sortLibrary, type LibraryLayout, type LibrarySort } from '../libraryView'
 import type { PageTemplate } from '../pageTemplates'
 
 type HomeScreenProps = {
@@ -34,6 +34,11 @@ type HomeScreenProps = {
 
 const STATUS_MS = 3000
 const LAYOUT_KEY = 'inkpad.libraryLayout'
+const SORT_KEY = 'inkpad.librarySort'
+
+function readSort(): LibrarySort {
+  try { return parseLibrarySort(window.localStorage.getItem(SORT_KEY)) } catch { return 'edited' }
+}
 
 function readLayout(): LibraryLayout {
   try { return window.localStorage.getItem(LAYOUT_KEY) === 'list' ? 'list' : 'grid' } catch { return 'grid' }
@@ -48,6 +53,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const [view, setView] = useState<'all' | 'starred'>('all')
   const [query, setQuery] = useState('')
   const [layout, setLayout] = useState<LibraryLayout>(readLayout)
+  const [sort, setSort] = useState<LibrarySort>(readSort)
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -83,7 +89,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const hereFolder = here ? folders.find((folder) => folder.id === here) : undefined
   const starredSet = props.starredIds
   const starredCount = useMemo(() => library.filter((entry) => starredSet.has(entry.id)).length, [library, starredSet])
-  const shown = useMemo(() => searchLibrary(library, folders, { query, folderId: here, onlyIds: view === 'starred' ? starredSet : undefined }), [library, folders, query, here, view, starredSet])
+  const shown = useMemo(() => sortLibrary(searchLibrary(library, folders, { query, folderId: here, onlyIds: view === 'starred' ? starredSet : undefined }), sort), [library, folders, query, here, view, starredSet, sort])
   const tree = useMemo(() => flattenFolders(folders), [folders])
   const confirmFolder = confirmFolderId ? folders.find((folder) => folder.id === confirmFolderId) : undefined
   const moveTarget = movingId ? library.find((entry) => entry.id === movingId) : undefined
@@ -122,6 +128,10 @@ export function HomeScreen(props: HomeScreenProps) {
   const chooseLayout = (value: LibraryLayout) => {
     setLayout(value)
     try { window.localStorage.setItem(LAYOUT_KEY, value) } catch { /* per-viewer convenience only */ }
+  }
+  const chooseSort = (value: LibrarySort) => {
+    setSort(value)
+    try { window.localStorage.setItem(SORT_KEY, value) } catch { /* per-viewer convenience only */ }
   }
   const submitCreate = () => {
     const name = cleanFolderName(draftName)
@@ -250,6 +260,12 @@ export function HomeScreen(props: HomeScreenProps) {
             <button type="button" onClick={() => { setRenaming(true); setDraftName(hereFolder.name) }}>Rename folder</button>
             <button type="button" onClick={() => setConfirmFolderId(hereFolder.id)}>Delete folder</button>
           </span>}
+          <label className="home-sort">
+            <span>Sort</span>
+            <select aria-label="Sort" value={sort} onChange={(event) => chooseSort(parseLibrarySort(event.target.value))}>
+              {LIBRARY_SORTS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </label>
           <span className="home-layout" role="group" aria-label="Layout">
             <button type="button" aria-label="Grid" aria-pressed={layout === 'grid'} className={layout === 'grid' ? 'selected' : undefined} onClick={() => chooseLayout('grid')}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1"/></svg>

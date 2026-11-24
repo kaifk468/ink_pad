@@ -45,11 +45,11 @@ test('browser records hold JSON text with a summary, and older object records st
   const record = store.toStoredRecord('doc-1', doc)
   assert.equal(typeof record.json, 'string')
   assert.equal(record.document, undefined)
-  assert.deepEqual(store.summaryFromRecord(record, 'f1'), { id: 'doc-1', title: 'T', updatedAt: '2026-01-01T00:00:00.000Z', itemCount: 2, folderId: 'f1' })
+  assert.deepEqual(store.summaryFromRecord(record, 'f1'), { id: 'doc-1', title: 'T', updatedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z', itemCount: 2, folderId: 'f1' })
   assert.equal(store.documentFromRecord(record).items.length, 2)
   const legacy = { id: 'old', document: doc }
   assert.equal(store.documentFromRecord(legacy).title, 'T')
-  assert.deepEqual(store.summaryFromRecord(legacy, null), { id: 'old', title: 'T', updatedAt: '2026-01-01T00:00:00.000Z', itemCount: 2, folderId: null })
+  assert.deepEqual(store.summaryFromRecord(legacy, null), { id: 'old', title: 'T', updatedAt: '2026-01-01T00:00:00.000Z', createdAt: '2026-01-01T00:00:00.000Z', itemCount: 2, folderId: null })
   assert.equal(store.documentFromRecord(undefined), null)
   assert.throws(() => store.documentFromRecord({ id: 'bad', json: '{"nope":1}' }))
 })

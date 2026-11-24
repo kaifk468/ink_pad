@@ -640,6 +640,8 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .home-inline-edit { display: flex; flex: 1; gap: 8px; }
 .home-inline-edit input { flex: 1; min-width: 0; height: var(--home-touch); padding: 0 12px; border: 1px solid var(--home-line); border-radius: 10px; font: inherit; }
 .home-inline-edit button { padding: 0 16px; }
+.home-sort { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.home-sort select { min-height: 40px; padding: 0 8px; border: 1px solid var(--home-line); border-radius: 12px; background: var(--home-surface); color: inherit; font: inherit; }
 .home-layout { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--home-line); border-radius: 12px; background: var(--home-surface); }
 .home-layout button { width: var(--home-touch); border: 0; background: transparent; }
 .home-layout button.selected { background: var(--home-accent-soft); color: #354fc2; }

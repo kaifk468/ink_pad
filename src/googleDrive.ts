@@ -56,6 +56,7 @@ type DriveFile = {
   mimeType?: string
   parents?: string[]
   modifiedTime?: string
+  createdTime?: string
   appProperties?: Record<string, string>
 }
 
@@ -88,7 +89,7 @@ async function listAll(env: DriveEnv): Promise<DriveFile[]> {
       spaces: ROOT_ALIAS,
       q: 'trashed = false',
       pageSize: '1000',
-      fields: 'nextPageToken,files(id,name,mimeType,parents,modifiedTime,appProperties)',
+      fields: 'nextPageToken,files(id,name,mimeType,parents,modifiedTime,createdTime,appProperties)',
     })
     if (pageToken) params.set('pageToken', pageToken)
     const data = await (await call(env, `${FILES_URL}?${params}`)).json() as { files?: DriveFile[]; nextPageToken?: string }
@@ -109,6 +110,7 @@ function organise(files: DriveFile[]) {
     id: file.id,
     title: fileBase(file.name),
     updatedAt: file.modifiedTime ?? '',
+    ...(file.createdTime ? { createdAt: file.createdTime } : {}),
     itemCount: Number(file.appProperties?.itemCount) || 0,
     ...(Number(file.appProperties?.pageCount) > 1 ? { pageCount: Number(file.appProperties?.pageCount) } : {}),
     ...(file.appProperties?.starred === STARRED_VALUE ? { starred: true } : {}),
