@@ -25,11 +25,12 @@ type MoreTrayProps = {
   presentKey?: string
   /** Duplicates the page on screen right after it. */
   onDuplicatePage?: () => void
+  onPageOverview?: () => void
   canDuplicatePage?: boolean
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, canDuplicatePage = true }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, onPageOverview, canDuplicatePage = true }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -94,6 +95,9 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, on
         </>}
         {onDuplicatePage && <>
           <div className="insert-tray-heading">Pages</div>
+          {onPageOverview && <button className="insert-entry" type="button" aria-label="Page overview" title="See every page as a thumbnail; jump to one or move it earlier or later" onClick={() => { onPageOverview(); setOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span>Page overview</span>
+          </button>}
           <button className="insert-entry" type="button" aria-label="Duplicate page" disabled={!canDuplicatePage} title={canDuplicatePage ? 'Copy this page right after it' : 'Page limit reached'} onClick={() => { onDuplicatePage(); setOpen(false) }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 5H7a2 2 0 0 0-2 2v9"/></svg><span>Duplicate page</span>
           </button>

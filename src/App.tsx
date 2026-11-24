@@ -82,8 +82,9 @@ import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, fitViewportToBoundsInset, DESKTOP_FIT_INSETS, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
-import { MAX_PAGES, canAddPage, clampPageIndex, duplicatePageItems, insertPageAfter, insertPageAt, removePageAt, writeLastPage } from './pages'
+import { MAX_PAGES, canAddPage, clampPageIndex, duplicatePageItems, insertPageAfter, insertPageAt, movePage, indexAfterMove, removePageAt, writeLastPage } from './pages'
 import { PageControls, PageUndoBar } from './app/PageControls'
+import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
@@ -404,7 +405,7 @@ function App() {
   const [pageCount, setPageCount] = useState(1)
 
   const {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram,
     scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
@@ -581,6 +582,28 @@ function App() {
     deletedPageRef.current = { index: removedIndex, slot: removedSlot }
     setDeletedPageNumber(removedIndex + 1)
     deletedPageTimerRef.current = window.setTimeout(dismissDeletedPage, DELETED_PAGE_UNDO_MS)
+  }
+
+  const [pageOverviewOpen, setPageOverviewOpen] = useState(false)
+  /**
+   * Moves page `from` to position `to`: its items and its undo/redo history travel together (they are one slot), the page on screen stays on
+   * screen (pageIndex follows it), and the new order is saved. Not part of canvas undo, like add/delete page; move it back with the buttons.
+   * A pending "Page deleted" undo bar is dismissed first (its remembered position would be stale after a reorder); the deleted page is then gone for good.
+   */
+  const movePageTo = (from: number, to: number) => {
+    const count = pagesRef.current.length
+    const target = clampPageIndex(to, count)
+    if (penBusy() || from < 0 || from >= count || target === from) return
+    if (textEditorRef.current) commitTextEditor()
+    dismissDeletedPage()
+    stashCurrentPage()
+    resetInteractionState()
+    const current = pageIndexRef.current
+    pagesRef.current = movePage(pagesRef.current, from, target)
+    const shown = indexAfterMove(current, from, target)
+    showPageSlot(shown)
+    if (currentDocId) writeLastPage(currentDocId, shown)
+    scheduleAutosave()
   }
 
   const undoDeletePage = () => {
@@ -4862,6 +4885,7 @@ function App() {
     ...(selectionKeysWithBox().size > 0 ? [{ id: 'template:save', label: 'Save selection as template…', group: 'Templates', keywords: 'my templates store reuse', run: openSaveTemplate }] : []),
     { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2).then((error) => { if (error) showToast(error) }) },
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
+    { id: 'page:overview', label: 'Page overview', group: 'Pages', keywords: 'pages thumbnails grid reorder move jump', run: () => setPageOverviewOpen(true) },
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
     ...(stepTargets(strokesRef.current, currentSelectionKeys()).length > 0 ? [
@@ -4957,7 +4981,7 @@ function App() {
   keyActionsRef.current = (command) => {
     if (command.kind === 'library' && libraryOpen) return true // the Library is already open: only keep the browser's open dialog away
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
-    if (paletteOpenRef.current || shortcutHelpOpen || templateChooserOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
+    if (paletteOpenRef.current || shortcutHelpOpen || templateChooserOpen || pageOverviewOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
     if (codeEditor && liveCodeEditor()) return false
     const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeQuickRef.current !== null
     if (contextMenuRef.current) {
@@ -5207,7 +5231,7 @@ function App() {
           )}
         </aside>
         <aside className={`viewport-navigator${navigatorMinimized ? ' minimized' : ''}`} aria-label="Canvas navigation">
-          <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDuplicate={duplicatePage} canDuplicate={canAddPage(pageCount)} duplicateHint={canAddPage(pageCount) ? 'Duplicate page: copy this page right after it' : 'Page limit reached'} onDelete={deletePage} />
+          <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDuplicate={duplicatePage} canDuplicate={canAddPage(pageCount)} duplicateHint={canAddPage(pageCount) ? 'Duplicate page: copy this page right after it' : 'Page limit reached'} onDelete={deletePage} onOverview={() => setPageOverviewOpen(true)} />
           {navigatorMinimized ? (
             <button className="navigator-restore" type="button" aria-label="Show workspace map" title="Show workspace map" onClick={() => setNavigatorMinimized(false)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><rect x="7" y="8.5" width="6" height="5" rx="1"/></svg>
@@ -5365,6 +5389,7 @@ function App() {
           ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, hasLabel: selectedConnectorLabel, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
           : null}
       />
+      {pageOverviewOpen && <PageOverview count={pageCount} current={pageIndex} loadThumbnail={renderPageThumbnail} onGo={(index) => { goToPage(index); setPageOverviewOpen(false) }} onMove={movePageTo} onClose={() => setPageOverviewOpen(false)} />}
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
       {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
@@ -5412,6 +5437,7 @@ function App() {
         presentActive={presentMode}
         onPresent={togglePresentMode}
         onDuplicatePage={duplicatePage}
+        onPageOverview={() => setPageOverviewOpen(true)}
         canDuplicatePage={canAddPage(pageCount)}
       />
       {presentMode && <button className="show-toolbars-pill" type="button" title="Show the toolbars (Alt+Z or Esc)" onClick={() => setPresentMode(false)}>Show toolbars</button>}

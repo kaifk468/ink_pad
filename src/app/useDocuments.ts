@@ -740,8 +740,8 @@ export function useDocuments(host: DocumentHost) {
 
   type ImageExportOptions = { keys?: ReadonlySet<string> | null; transparent?: boolean; fontCss?: string }
   /** The picture of one page: the one on screen for exports, the first page for the Library picture. */
-  const getImageExport = (which: 'current' | 'first' = 'current', options: ImageExportOptions = {}) => {
-    const all = which === 'first' ? (hostRef.current.getPageItems()[0] ?? []) : hostRef.current.getItems()
+  const getImageExport = (which: 'current' | 'first' | number = 'current', options: ImageExportOptions = {}) => {
+    const all = which === 'current' ? hostRef.current.getItems() : (hostRef.current.getPageItems()[which === 'first' ? 0 : which] ?? [])
     const items = itemsForExport(all, options.keys)
     const page = hostRef.current.getPage()
     const sheetHeight = page.sheetHeight ?? SHEET_HEIGHT
@@ -766,6 +766,23 @@ export function useDocuments(host: DocumentHost) {
     const probe = getImageExport('current', options)
     if (!probe || !probe.usesFont) return probe
     try { return getImageExport('current', { ...options, fontCss: await loadExcalifontCss() }) } catch { return probe }
+  }
+
+  /**
+   * A small picture (PNG data URL) of page `index` for the page overview, or null for a blank page or one too large to draw cheaply.
+   * Called one page at a time, only while the overview is open (never while writing).
+   */
+  const renderPageThumbnail = async (index: number): Promise<string | null> => {
+    const exported = getImageExport(index)
+    if (!exported || exported.svg.length > THUMBNAIL_MAX_SVG_CHARS) return null
+    const size = thumbnailSize(exported.bounds.width, exported.bounds.height)
+    const blob = await svgToPngBlob(exported.svg, size.width, size.height, 1)
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error ?? new Error('Could not read the picture.'))
+      reader.readAsDataURL(blob)
+    })
   }
 
   /**
@@ -1190,7 +1207,7 @@ export function useDocuments(host: DocumentHost) {
   }, [])
 
   return {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,

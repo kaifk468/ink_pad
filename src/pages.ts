@@ -34,6 +34,26 @@ export function insertPageAt<T>(pages: readonly T[], at: number, page: T): T[] {
   return [...pages.slice(0, position), page, ...pages.slice(position)]
 }
 
+/** The pages with the one at `from` moved to index `to` (both clamped). Pages are moved whole, so a page keeps everything stored with it (drawing, undo history). A no-op returns an unchanged copy. */
+export function movePage<T>(pages: readonly T[], from: number, to: number): T[] {
+  const next = pages.slice()
+  if (next.length < 2) return next
+  const source = clampPageIndex(from, next.length)
+  const target = clampPageIndex(to, next.length)
+  if (source === target) return next
+  const [page] = next.splice(source, 1)
+  next.splice(target, 0, page)
+  return next
+}
+
+/** Where the page that was at `current` is after `movePage(pages, from, to)`: the moved page follows itself, the pages it passed shift by one. */
+export function indexAfterMove(current: number, from: number, to: number): number {
+  if (current === from) return to
+  if (from < to && current > from && current <= to) return current - 1
+  if (from > to && current >= to && current < from) return current + 1
+  return current
+}
+
 /** The page of each diagram you were last on, so reopening a diagram lands where you left it. A view detail, kept on this device only and never inside the diagram. */
 export const LAST_PAGE_KEY = 'inkpad.lastPage'
 const MAX_REMEMBERED = 200
