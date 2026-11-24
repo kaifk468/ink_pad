@@ -20,6 +20,7 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'Tools', label: 'Lasso', keys: 'L', input: { key: 'l' } },
   { group: 'Tools', label: 'Text', keys: 'T or 8', input: { key: 't' } },
   { group: 'Tools', label: 'Code block', keys: 'K', input: { key: 'k' } },
+  { group: 'Tools', label: 'Sticky note (at the pointer)', keys: 'N', input: { key: 'n' } },
   { group: 'Tools', label: 'Connector', keys: 'C or 9', input: { key: 'c' } },
   { group: 'Tools', label: 'Class box', keys: 'B', input: { key: 'b' } },
   { group: 'Tools', label: 'Rectangle', keys: 'R or 2', input: { key: 'r' } },

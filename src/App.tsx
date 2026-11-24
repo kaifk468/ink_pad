@@ -46,6 +46,7 @@ import { ContextPanel } from './app/ContextPanel'
 import { applyStyle, captureStyle, type StyleSnapshot } from './styleClipboard'
 import { selectionFillColor, selectionHasFillable, setFillColor, matchingOutline } from './shapeFill'
 import { withSketchSeed, withSketchSeeds } from './sketchy'
+import { createStickyNote, STICKY_HEIGHT, STICKY_WIDTH } from './stickyNote'
 import { HistoryBar } from './app/HistoryBar'
 import { ToolDock } from './app/ToolDock'
 import { TopLeftBar } from './app/TopLeftBar'
@@ -4159,6 +4160,33 @@ function App() {
     openCodeEditor(block.id)
     renderAll()
   }
+  // Sticky note: a plain yellow rectangle. Desktop (N key or More shapes): at the mouse, or the view centre from the menu, with the text editor opened inside it. Tablet (Insert tray): at the view centre, selected; the user writes in it with the pen as in any box.
+  const insertStickyNote = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const desktop = inputModeRef.current === 'desktop'
+    if (textEditorRef.current) commitTextEditor()
+    if (codeEditorRef.current) commitCodeEditor()
+    const rect = canvas.getBoundingClientRect()
+    const mouse = desktop ? cursorPointRef.current : null
+    const anchor = screenToCanvasPoint(mouse ?? { x: rect.width / 2, y: rect.height / 2, pressure: 1 }, viewportRef.current)
+    // At the mouse the note's top-left corner sits on the pointer (as a code block does); from a menu it is centred.
+    const centre = mouse ? { x: anchor.x + STICKY_WIDTH / 2, y: anchor.y + STICKY_HEIGHT / 2 } : anchor
+    saveHistory()
+    const plain = createStickyNote(nextRectangleIdRef.current++, centre, width, workspaceBoundsRef.current)
+    const note = sketchyRef.current ? withSketchSeed(plain) : plain
+    strokesRef.current = [...strokesRef.current, note]
+    setHasInk(true)
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    updateSelectedItems([])
+    setSelectedRectangle(note.id)
+    if (desktop) {
+      const middle = { x: note.x + note.width / 2, y: note.y + note.height / 2 }
+      openTextEditor({ itemId: null, x: middle.x, y: middle.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: middle })
+      setSelectedRectangle(note.id)
+    }
+    renderAll()
+  }
   const changeCode = (change: (items: CanvasItem[], id: number) => CanvasItem[]) => {
     const block = soleCode()
     if (!block) return
@@ -4497,6 +4525,7 @@ function App() {
             break
           case 'text': if (!textMode) toggleTextTool(); break
           case 'code': insertCodeBlock(); break
+          case 'sticky': insertStickyNote(); break
           case 'lasso': if (!lassoMode) toggleLassoTool(); break
           case 'connector': if (!connectorMode) toggleConnectorTool(); break
           case 'classBox': if (!(classMode && inkClassTool && hldShapeTool === null)) toggleInkClassTool(); break
@@ -4843,6 +4872,7 @@ function App() {
         onTidy={tidyDiagram}
         onCode={insertCodeBlock}
         onFind={openFind}
+        onSticky={insertStickyNote}
       />
       {classBoxEditor && <ClassBoxDialog
         key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}

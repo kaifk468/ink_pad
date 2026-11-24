@@ -12,6 +12,7 @@ type InsertTrayProps = {
   onTextOptions: () => void
   onClass: () => void
   onShapes: () => void
+  onSticky: () => void
 }
 
 export const HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint: string }> = [
@@ -31,7 +32,7 @@ export const MORE_HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint:
 ]
 
 /** The Insert button and the tray that opens upward from the bottom dock. Entries reuse the existing tool handlers. */
-export function InsertTray({ textActive, classActive, shapeActive, hldActive, onHldShape, onText, onTextOptions, onClass, onShapes }: InsertTrayProps) {
+export function InsertTray({ textActive, classActive, shapeActive, hldActive, onHldShape, onText, onTextOptions, onClass, onShapes, onSticky }: InsertTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const lastTapRef = useRef(0)
@@ -78,6 +79,9 @@ export function InsertTray({ textActive, classActive, shapeActive, hldActive, on
         </button>
         <button className={`insert-entry${shapeActive ? ' selected' : ''}`} type="button" aria-label="Shapes" aria-pressed={shapeActive} title="Straight lines and rectangles recognize on hold automatically. Toggle for arrows." onClick={choose(onShapes)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="10" height="10" rx="1"/><path d="M10 19h9m0 0-4-4m4 4-4 4"/></svg><span>Shapes and arrows</span>
+        </button>
+        <button className="insert-entry" type="button" aria-label="Sticky note" title="Add a yellow sticky note in the middle of the view; write in it with the S Pen" onClick={choose(onSticky)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v10l-5 5H5z"/><path d="M14 19.5v-5h5"/></svg><span>Sticky note</span>
         </button>
         <div className="insert-tray-heading">LLD</div>
         <button className={`insert-entry${classActive ? ' selected' : ''}`} type="button" aria-label="Typed class box" aria-pressed={classActive} title="Tap the sheet with the S Pen to add a typed UML class box; tap a box or rectangle to edit it" onClick={choose(onClass)}>

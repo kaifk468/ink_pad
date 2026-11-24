@@ -162,7 +162,7 @@ export function spaceIsPanKey(key: string, targetTag: string, isEditable: boolea
  * - A plain letter picks a tool, and picking the tool already active leaves it active ("set", not "toggle"):
  *   P pen, V select, E eraser, T text, L lasso, C connector, B class box, and the shapes R rectangle, D diamond, O ellipse, A arrow, I line.
  */
-export type KeyTool = 'pen' | 'select' | 'eraser' | 'text' | 'code' | 'lasso' | 'connector' | 'classBox' | 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'
+export type KeyTool = 'pen' | 'select' | 'eraser' | 'text' | 'code' | 'sticky' | 'lasso' | 'connector' | 'classBox' | 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'
 export type KeyCommand =
   | { kind: 'undo' }
   | { kind: 'redo' }
@@ -196,7 +196,7 @@ export type KeyCommand =
   | { kind: 'layer'; move: 'forward' | 'backward' | 'front' | 'back' }
   | { kind: 'tool'; tool: KeyTool }
 
-export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', k: 'code', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
+export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', k: 'code', n: 'sticky', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
 
 /** Excalidraw-style number keys (bare digits, also on the numpad). Lasso, HLD shapes, class box and code keep letters only. */
 export const NUMBER_TOOL_KEYS: Record<string, KeyTool> = { '1': 'select', '2': 'rectangle', '3': 'diamond', '4': 'ellipse', '5': 'arrow', '6': 'line', '7': 'pen', '8': 'text', '9': 'connector', '0': 'eraser' }

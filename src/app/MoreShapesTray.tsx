@@ -6,10 +6,11 @@ import { MORE_HLD_ENTRIES } from './InsertTray'
 type MoreShapesTrayProps = {
   hldActive: HldShape | null
   onHldShape: (shape: HldShape) => void
+  onSticky: () => void
 }
 
 /** Desktop dock: one "More shapes" button that opens a small grid of the extra HLD shapes (same popover style as More). */
-export function MoreShapesTray({ hldActive, onHldShape }: MoreShapesTrayProps) {
+export function MoreShapesTray({ hldActive, onHldShape, onSticky }:MoreShapesTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const anyActive = MORE_HLD_ENTRIES.some((entry) => entry.shape === hldActive)
@@ -49,6 +50,9 @@ export function MoreShapesTray({ hldActive, onHldShape }: MoreShapesTrayProps) {
             </button>
           ))}
         </div>
+        <button className="insert-entry" type="button" aria-label="Sticky note" title="Add a yellow sticky note at the pointer and type in it (N)" onClick={() => { onSticky(); setOpen(false) }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v10l-5 5H5z"/><path d="M14 19.5v-5h5"/></svg><span>Sticky note</span>
+        </button>
       </div>}
     </div>
   )

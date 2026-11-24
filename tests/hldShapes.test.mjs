@@ -186,7 +186,7 @@ test('More shapes popover: one desktop dock button, six entries, same handler as
   const tray = await read('InsertTray.tsx')
   const desktop = dock.slice(dock.indexOf('if (props.desktop) {'), dock.lastIndexOf('  return ('))
   assert.equal((dock.match(/<MoreShapesTray/g) ?? []).length, 1)
-  assert.ok(desktop.includes('<MoreShapesTray hldActive={props.hldShapeActive} onHldShape={props.onHldShape} />'))
+  assert.ok(desktop.includes('<MoreShapesTray hldActive={props.hldShapeActive} onHldShape={props.onHldShape} onSticky={props.onSticky} />'))
   assert.ok(desktop.indexOf('HLD_ENTRIES.map') < desktop.indexOf('<MoreShapesTray') && desktop.indexOf('<MoreShapesTray') < desktop.indexOf('{inkClass}'))
   assert.match(more, /aria-label="More shapes"/)
   assert.match(more, /aria-expanded=\{open\}/)
