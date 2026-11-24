@@ -138,3 +138,58 @@ Follow-ups found this round (ideas for the next round):
 - Tablet lasso does not expand to whole groups (tap does).
 - Select similar has no shortcut; consider adding it to the command palette list explicitly (it is reachable only via right-click).
 - Older builds drop connector `bend` on save (like round-1 fields): keep the tablet PWA updated.
+
+## Round 3 — 2026-11-24 (branch desktop-20x)
+
+### User journeys walked (friction found, on top of rounds 1-2)
+1. Open the app and find a diagram: deleting a diagram or folder is instant and permanent ("cannot be undone"), so one wrong click loses work; moving a diagram into a folder always goes through the Move dialog, even with a mouse; a "Make a copy" into a device folder can name the toast wrongly.
+2. Start a new diagram: templates exist, but the HLD templates are large and the view zooms out to fit.
+3. Draw boxes, label, connect: after each rectangle/diamond/ellipse the tool falls back to Select, so drawing five service boxes means pressing R five times; a box drawn as a rectangle that should be a Database/Cache must be deleted and redrawn (losing its label position and connectors); text size changes need the panel.
+4. Rearrange and grow: a design that evolves (v1 → v2 → scaled) is drawn again on a new page instead of starting from a copy of the current page; on the tablet a lasso catches half a group.
+5. Interviews and screen sharing: there is no way to point at a part of the diagram without drawing on it, and the toolbars take space on a shared screen.
+6. Export for notes (NotebookLM): only pictures (PNG/SVG/PDF) leave the app; NotebookLM and plain notes work far better with text (components, connections, labels, class members).
+7. Desktop power use: "Select similar" is only reachable by right-click; the find count can go stale after an in-place edit.
+
+### Candidates (problem · who/how often · benefit · risk · size · decision)
+| # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
+|---|---|---|---|---|---|---|---|
+| 55 | Library: Undo after delete | A wrong delete click loses a diagram or folder for good | everyone, occasionally (high cost) | high (data safety) | low-medium (deferred delete) | S-M | picked |
+| 56 | Tool lock (Q / dock lock button) | Drawing several boxes means re-picking the tool each time | everyone, every diagram | high | low-medium (shape finish path) | S | picked |
+| 57 | Laser pointer (X, More menu, tablet More tray) (was #41) | Can't point at parts while presenting without drawing | interviews, weekly | high for interviews | medium (new pointer branch, overlay) | M | picked |
+| 58 | Hide toolbars / present mode (Alt+Z) | UI chrome takes space when screen sharing | interviews | medium | low | S | picked |
+| 59 | Duplicate page | Evolving a design (v1 → v2) means redrawing on a new page | HLD users, often | high | low-medium (id remap) | S-M | picked |
+| 60 | Change shape (rectangle ↔ diamond ↔ ellipse; HLD shape ↔ HLD shape) | Wrong shape must be deleted and redrawn, losing connectors | everyone, often | medium-high | medium (shape flags) | M | picked |
+| 61 | Text outline export (Markdown, copy or download) | NotebookLM/notes get only pictures, no searchable text | NotebookLM users, every study diagram | high | low (pure module) | M | picked |
+| 62 | Drag diagram cards onto folders (desktop mouse) (was #43/#15) | Move dialog is a detour | desktop, often while organising | medium | medium (DnD, mouse only) | M | picked |
+| 63 | Font size keys Ctrl+Shift+. / Ctrl+Shift+, (was #51) | Text size needs the panel | desktop, often | medium | low | S | picked |
+| 64 | Tablet lasso expands to whole groups (round 2 follow-up) | Lasso catches half a group on the tablet | tablet, sometimes | medium | low (selection only) | S | picked |
+| 65 | Round 2 follow-ups: Select similar in the palette, find count refresh, exact copy toast name, smaller HLD template sizes | small paper cuts | | low-medium | low | S | picked |
+| 66 | Hover outline in Desktop Select (what a click will pick) | thin connectors and groups are hard to predict | desktop | medium | medium (redraw per mouse move, perf) | S-M | idea (needs a cheap overlay first) |
+| 67 | Page names / page overview grid | many pages are just "3 / 7" | sometimes | medium | medium (format field) | M | idea |
+| 68 | Number connectors 1..n (flow steps) via labels | request order | HLD, sometimes | low-medium | low | S | idea (labels already do it by hand) |
+| 69 | Elbow bend clamps instead of snapping back | — | LLD | low | medium | S | idea (round 2 follow-up) |
+| 70 | Tablet long-press opens the right-click menu | tablet lacks Select similar, copy style, lock | tablet | medium | high (touch pan/pinch timing) | M | skipped: risks touch navigation; needs device testing |
+| 71 | Eyedropper (was #16) | — | | low | | S | skipped again: copy/paste style covers it |
+| 72 | Save the current diagram as a template (was #53) | own skeletons | sometimes | medium | medium (storage) | M | idea (Make a copy covers most) |
+| 73 | Library content search (labels inside diagrams) | find "the one with Kafka" | sometimes | medium | high (loads every file, Drive) | L | idea |
+| 74 | Library multi-select (bulk move/delete) | reorganising many diagrams | rare | low-medium | medium | M | idea |
+| 75 | Frames / sections (was #21/#47) | large boards | sometimes | medium | high | L | idea |
+| 76 | Mermaid import (was #26/#49) | text-first users | rare | medium | medium | L | idea |
+| 77 | Curved connectors | nicer arrows | sometimes | low-medium | medium (format, routing) | M | idea |
+| 78 | Scribble-to-erase (was #17/#48) | tablet | | | high (writing path) | | skipped again |
+| 79 | Undo toast naming the action (was #42) | | | | high | | skipped again |
+| 80 | Export PNG scale choice (1x/2x/3x) | sharper slides | rare | low | low | S | idea (export is already 2x) |
+| 81 | Move folders into folders (was #24/#44) | restructure | rare | low | medium (Drive) | M | idea |
+
+### Acceptance criteria (picked items)
+55. **Undo delete in the Library**: after confirming Delete on a diagram card or a folder, the item disappears at once and a toast says "Deleted “X”" with an **Undo** button for about 8 s; Undo brings it back exactly as it was (nothing was removed from storage); when the toast ends (or another delete starts) the delete really happens. Closing the tab during the toast keeps the item (it is never half-deleted). Works for browser, device-folder and Drive storage (the store call is unchanged, only delayed).
+56. **Tool lock**: a lock button at the end of the dock (both modes, tooltip "Keep the tool after drawing (Q)") and the Q key (desktop) toggle it; while on, drawing a rectangle/diamond/ellipse/arrow/line keeps that tool active for the next one (the new shape is still created normally, one undo step each); off (default) behaves exactly as before. Remembered on the device. Pen writing is unaffected.
+57. **Laser pointer**: X (desktop), the command palette and the More menu/tray (both modes) pick the laser; moving the mouse with the button down, or the pen/one finger, draws a short red glowing trail that fades within about a second; nothing is saved, no undo entry, no item is selected or moved. Two-finger pinch and three-finger pan still work; Esc or picking another tool leaves it.
+58. **Hide toolbars**: Alt+Z (desktop), the command palette and the More menu toggle a clean view: dock, panels, top bar, minimap and page controls hide; a small "Show toolbars" pill in a corner brings them back (and Alt+Z / Esc). Drawing, zoom and pan keep working; the laser works in it.
+59. **Duplicate page**: a "Duplicate page" button in the page controls (and the More menu / command palette) inserts a copy of the current page right after it and switches to it; all items, labels, connectors (still attached) and groups are copied with new ids; the original is unchanged; the copy can be deleted with the usual page delete (with its Undo bar).
+60. **Change shape**: right-clicking a plain rectangle/diamond/ellipse shows "Change shape → Rectangle / Diamond / Ellipse"; for an HLD box, the other HLD shapes. The box keeps its position, size, colour, fill, label and connectors (re-routed to the new outline). One undo step. Several selected boxes of one family change together. The desktop panel shows the same choice as small buttons.
+61. **Text outline**: Export menu → "Copy as text outline" and "Download outline (.md)" produce Markdown: the diagram title, one section per page, the boxes with their labels (and HLD kind, e.g. "Redis (cache)"), connections as "A → B: label", free text notes, class boxes with attributes and methods, and code blocks fenced with their language. Ink handwriting is listed as "(handwriting)" count only. A toast confirms copy.
+62. **Drag to folder**: on the desktop with a mouse, dragging a diagram card onto a folder in the folder list (or the "All diagrams"/root entry) moves it there; the folder highlights while hovered; a toast confirms ("Moved “X” to Y"). Touch/pen Library is unchanged (Move dialog).
+63. **Font size keys**: with text, a label, a shape with a label or a connector label selected, Ctrl+Shift+. makes the text one step larger and Ctrl+Shift+, one step smaller (same steps as the panel); one undo step per press; listed in ? help and the palette.
+64. **Tablet lasso groups**: on the tablet, a lasso that catches any member of a group selects the whole group (as a tap already does); Group/Ungroup buttons show as before.
+65. **Follow-ups**: "Select similar" appears in the command palette (acts on the selected item); the Find count updates after editing a label in place; the "Make a copy" toast names the real new title; the HLD templates use smaller default sizes so they fit at a readable zoom.
