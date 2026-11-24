@@ -153,17 +153,17 @@ Follow-ups found this round (ideas for the next round):
 ### Candidates (problem · who/how often · benefit · risk · size · decision)
 | # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
 |---|---|---|---|---|---|---|---|
-| 55 | Library: Undo after delete | A wrong delete click loses a diagram or folder for good | everyone, occasionally (high cost) | high (data safety) | low-medium (deferred delete) | S-M | picked |
-| 56 | Tool lock (Q / dock lock button) | Drawing several boxes means re-picking the tool each time | everyone, every diagram | high | low-medium (shape finish path) | S | picked |
-| 57 | Laser pointer (X, More menu, tablet More tray) (was #41) | Can't point at parts while presenting without drawing | interviews, weekly | high for interviews | medium (new pointer branch, overlay) | M | picked |
-| 58 | Hide toolbars / present mode (Alt+Z) | UI chrome takes space when screen sharing | interviews | medium | low | S | picked |
-| 59 | Duplicate page | Evolving a design (v1 → v2) means redrawing on a new page | HLD users, often | high | low-medium (id remap) | S-M | picked |
-| 60 | Change shape (rectangle ↔ diamond ↔ ellipse; HLD shape ↔ HLD shape) | Wrong shape must be deleted and redrawn, losing connectors | everyone, often | medium-high | medium (shape flags) | M | picked |
-| 61 | Text outline export (Markdown, copy or download) | NotebookLM/notes get only pictures, no searchable text | NotebookLM users, every study diagram | high | low (pure module) | M | picked |
-| 62 | Drag diagram cards onto folders (desktop mouse) (was #43/#15) | Move dialog is a detour | desktop, often while organising | medium | medium (DnD, mouse only) | M | picked |
-| 63 | Font size keys Ctrl+Shift+. / Ctrl+Shift+, (was #51) | Text size needs the panel | desktop, often | medium | low | S | picked |
-| 64 | Tablet lasso expands to whole groups (round 2 follow-up) | Lasso catches half a group on the tablet | tablet, sometimes | medium | low (selection only) | S | picked |
-| 65 | Round 2 follow-ups: Select similar in the palette, find count refresh, exact copy toast name, smaller HLD template sizes | small paper cuts | | low-medium | low | S | picked |
+| 55 | Library: Undo after delete | A wrong delete click loses a diagram or folder for good | everyone, occasionally (high cost) | high (data safety) | low-medium (deferred delete) | S-M | **done** 4b56094 (+fixes baab0f2) |
+| 56 | Tool lock (Q / dock lock button) | Drawing several boxes means re-picking the tool each time | everyone, every diagram | high | low-medium (shape finish path) | S | **done** 4f407ed (+cf84484: "Keep tool" pin) |
+| 57 | Laser pointer (X, More menu, tablet More tray) (was #41) | Can't point at parts while presenting without drawing | interviews, weekly | high for interviews | medium (new pointer branch, overlay) | M | **done** e3b9e90 (+palm fix dbffcf3) |
+| 58 | Hide toolbars / present mode (Alt+Z) | UI chrome takes space when screen sharing | interviews | medium | low | S | **done** 6e1c693 (+dbffcf3) |
+| 59 | Duplicate page | Evolving a design (v1 → v2) means redrawing on a new page | HLD users, often | high | low-medium (id remap) | S-M | **done** 28518ad (+dbffcf3) |
+| 60 | Change shape (rectangle ↔ diamond ↔ ellipse; HLD shape ↔ HLD shape) | Wrong shape must be deleted and redrawn, losing connectors | everyone, often | medium-high | medium (shape flags) | M | **done** 65be2df (+dbffcf3, cf84484) |
+| 61 | Text outline export (Markdown, copy or download) | NotebookLM/notes get only pictures, no searchable text | NotebookLM users, every study diagram | high | low (pure module) | M | **done** a33c337 (+dbffcf3) |
+| 62 | Drag diagram cards onto folders (desktop mouse) (was #43/#15) | Move dialog is a detour | desktop, often while organising | medium | medium (DnD, mouse only) | M | **done** 5070c55 |
+| 63 | Font size keys Ctrl+Shift+. / Ctrl+Shift+, (was #51) | Text size needs the panel | desktop, often | medium | low | S | **done** 608e062 (+boxes dbffcf3) |
+| 64 | Tablet lasso expands to whole groups (round 2 follow-up) | Lasso catches half a group on the tablet | tablet, sometimes | medium | low (selection only) | S | already done in round 1 (1cee701); stale item |
+| 65 | Round 2 follow-ups: Select similar in the palette, find count refresh, exact copy toast name, smaller HLD template sizes | small paper cuts | | low-medium | low | S | **done** a7ab0ea, a33c337, 25602f6 |
 | 66 | Hover outline in Desktop Select (what a click will pick) | thin connectors and groups are hard to predict | desktop | medium | medium (redraw per mouse move, perf) | S-M | idea (needs a cheap overlay first) |
 | 67 | Page names / page overview grid | many pages are just "3 / 7" | sometimes | medium | medium (format field) | M | idea |
 | 68 | Number connectors 1..n (flow steps) via labels | request order | HLD, sometimes | low-medium | low | S | idea (labels already do it by hand) |
@@ -193,3 +193,14 @@ Follow-ups found this round (ideas for the next round):
 63. **Font size keys**: with text, a label, a shape with a label or a connector label selected, Ctrl+Shift+. makes the text one step larger and Ctrl+Shift+, one step smaller (same steps as the panel); one undo step per press; listed in ? help and the palette.
 64. **Tablet lasso groups**: on the tablet, a lasso that catches any member of a group selects the whole group (as a tap already does); Group/Ungroup buttons show as before.
 65. **Follow-ups**: "Select similar" appears in the command palette (acts on the selected item); the Find count updates after editing a label in place; the "Make a copy" toast names the real new title; the HLD templates use smaller default sizes so they fit at a readable zoom.
+
+### Round 3 result (2026-11-24)
+10 picked items built (#55-#63, #65); #64 was already done in round 1. Independent Opus review: 13 defects, all fixed (baab0f2, dbffcf3). Headless walk fixes in cf84484. Details and checklist: project-context.md, 2026-11-24 round 3 entry.
+
+Follow-ups found this round (ideas for the next round):
+- Leaving the laser returns to Pen instead of the previous tool.
+- The HLD right-click menu shows 8 "Change shape" rows; consider a submenu or a compact chip row.
+- Connector labels have no font size (needs an additive `labelFontSize` field) — font keys skip them.
+- Outline: ink inside HLD boxes is not counted; the panel's outline buttons are disabled when the current page is empty even if other pages have content.
+- Laser shows no active state in the dock (only in the More tray).
+- Hover outline in Desktop Select (#66), page names/overview (#67), elbow bend clamp (#69) remain ideas.
