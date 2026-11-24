@@ -26,26 +26,35 @@ export function serializeUserTemplates(templates: readonly UserTemplate[]): stri
   return JSON.stringify({ version: USER_TEMPLATES_VERSION, templates })
 }
 
-/** The stored list; anything unreadable gives an empty list, and a damaged template or item is dropped on its own. */
-export function parseUserTemplates(text: string | null | undefined): UserTemplate[] {
-  if (!text) return []
+export const TEMPLATES_FROM_NEWER_VERSION = 'Templates saved by another InkPad version: update InkPad first'
+
+type StoredTemplates = { templates: UserTemplate[]; /** Stored entries that could not be read here; saving writes them back unchanged. */ unreadable: unknown[]; /** Stored text exists but is not a version 1 template list. */ blocked: boolean }
+
+function readStored(text: string | null | undefined): StoredTemplates {
+  if (!text) return { templates: [], unreadable: [], blocked: false }
   let data: unknown
-  try { data = JSON.parse(text) } catch { return [] }
-  if (!isRecord(data) || data.version !== USER_TEMPLATES_VERSION || !Array.isArray(data.templates)) return []
-  const result: UserTemplate[] = []
+  try { data = JSON.parse(text) } catch { return { templates: [], unreadable: [], blocked: true } }
+  if (!isRecord(data) || data.version !== USER_TEMPLATES_VERSION || !Array.isArray(data.templates)) return { templates: [], unreadable: [], blocked: true }
+  const templates: UserTemplate[] = []
+  const unreadable: unknown[] = []
   const seen = new Set<string>()
   for (const raw of data.templates) {
-    if (result.length >= MAX_USER_TEMPLATES) break
-    if (!isRecord(raw) || typeof raw.id !== 'string' || raw.id === '' || seen.has(raw.id) || !Array.isArray(raw.items)) continue
+    if (templates.length >= MAX_USER_TEMPLATES) { unreadable.push(raw); continue }
+    if (!isRecord(raw) || typeof raw.id !== 'string' || raw.id === '' || seen.has(raw.id) || !Array.isArray(raw.items)) { unreadable.push(raw); continue }
     const name = cleanTemplateName(raw.name)
-    if (name === '' || name.length > MAX_TEMPLATE_NAME_LENGTH) continue
+    if (name === '' || name.length > MAX_TEMPLATE_NAME_LENGTH) { unreadable.push(raw); continue }
     let items: CanvasItem[]
-    try { items = raw.items.map((item) => sanitizeItem(item)).filter((item): item is CanvasItem => item !== null && item.kind !== 'opaque') } catch { continue }
-    if (items.length === 0) continue
+    try { items = raw.items.map((item) => sanitizeItem(item)).filter((item): item is CanvasItem => item !== null && item.kind !== 'opaque') } catch { unreadable.push(raw); continue }
+    if (items.length === 0) { unreadable.push(raw); continue }
     seen.add(raw.id)
-    result.push({ id: raw.id, name, createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : '', items })
+    templates.push({ id: raw.id, name, createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : '', items })
   }
-  return result
+  return { templates, unreadable, blocked: false }
+}
+
+/** The stored list; anything unreadable gives an empty list, and a damaged template or item is left out of it (saving keeps it in storage). */
+export function parseUserTemplates(text: string | null | undefined): UserTemplate[] {
+  return readStored(text).templates
 }
 
 const shiftStroke = (stroke: Stroke, dx: number, dy: number): Stroke => ({ ...stroke, points: stroke.points.map((point) => ({ ...point, x: point.x + dx, y: point.y + dy })) })
@@ -118,8 +127,19 @@ export function loadUserTemplates(storage: Pick<Storage, 'getItem'> | null = def
   try { return parseUserTemplates(storage?.getItem(USER_TEMPLATES_KEY)) } catch { return [] }
 }
 
-/** True when the list was stored. */
-export function saveUserTemplates(templates: readonly UserTemplate[], storage: Pick<Storage, 'setItem'> | null = defaultStorage()): boolean {
+/** A message when saving or deleting would overwrite stored templates this version cannot read (another version's format); null when it is safe. */
+export function userTemplatesBlockedMessage(storage: Pick<Storage, 'getItem'> | null = defaultStorage()): string | null {
+  try { return readStored(storage?.getItem(USER_TEMPLATES_KEY)).blocked ? TEMPLATES_FROM_NEWER_VERSION : null } catch { return null }
+}
+
+/** True when the list was stored. Refuses (false) to overwrite a stored list in an unknown format; entries of a readable list that this version could not read are written back unchanged. */
+export function saveUserTemplates(templates: readonly UserTemplate[], storage: Pick<Storage, 'setItem'> & Partial<Pick<Storage, 'getItem'>> | null = defaultStorage()): boolean {
   if (!storage) return false
-  try { storage.setItem(USER_TEMPLATES_KEY, serializeUserTemplates(templates)); return true } catch { return false }
+  try {
+    const stored = readStored(storage.getItem?.(USER_TEMPLATES_KEY))
+    if (stored.blocked) return false
+    const text = stored.unreadable.length === 0 ? serializeUserTemplates(templates) : JSON.stringify({ version: USER_TEMPLATES_VERSION, templates: [...templates, ...stored.unreadable] })
+    storage.setItem(USER_TEMPLATES_KEY, text)
+    return true
+  } catch { return false }
 }

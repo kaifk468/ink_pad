@@ -10,6 +10,7 @@ const model = await loadModule('canvasModel.ts')
 const read = (path) => readFile(new URL(`../src/${path}`, import.meta.url), 'utf8')
 
 const sample = () => tpl.buildTemplate('client-server-database')
+const appSource = await readAppSource()
 const origin = (items) => { const b = model.getCanvasSelectionBounds(items, new Set(items.map(model.canvasItemKey))); return [Math.round(b.x * 1000) / 1000, Math.round(b.y * 1000) / 1000] }
 const NOW = '2026-11-24T00:00:00.000Z'
 
@@ -120,4 +121,28 @@ test('wiring: context menu, palette, chooser, shared insert path', async () => {
   assert.match(chooser, /confirm\(`Delete template “/)
   assert.match(chooser, /on this device only/i)
   assert.doesNotMatch(chooser, /window\.prompt/)
+})
+
+test('saving never overwrites templates stored by another version, and keeps entries this version cannot read', () => {
+  const mem = new Map()
+  const store = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) }
+  const key = 'inkpad.userTemplates'
+  for (const text of ['{"version":2,"templates":[{"id":"x"}]}', 'not json', '[]']) {
+    mem.set(key, text)
+    assert.equal(ut.userTemplatesBlockedMessage(store), 'Templates saved by another InkPad version: update InkPad first')
+    assert.equal(ut.saveUserTemplates([], store), false)
+    assert.equal(mem.get(key), text, 'stored text untouched')
+  }
+  mem.delete(key)
+  assert.equal(ut.userTemplatesBlockedMessage(store), null)
+  const added = ut.addUserTemplate([], 'A', sample(), 'a', NOW)
+  assert.equal(ut.saveUserTemplates(added.templates, store), true)
+  // A readable list that also holds an entry this version cannot read: the entry survives save and delete.
+  const odd = { id: 'odd', name: 'Future', createdAt: NOW, items: [{ kind: 'hologram' }] }
+  const stored = JSON.parse(mem.get(key))
+  mem.set(key, JSON.stringify({ ...stored, templates: [...stored.templates, odd] }))
+  assert.deepEqual(ut.loadUserTemplates(store).map((t) => t.id), ['a'])
+  assert.equal(ut.saveUserTemplates(ut.removeUserTemplate(ut.loadUserTemplates(store), 'a'), store), true)
+  assert.deepEqual(JSON.parse(mem.get(key)).templates, [odd])
+  assert.match(appSource, /userTemplatesBlockedMessage\(\)/)
 })

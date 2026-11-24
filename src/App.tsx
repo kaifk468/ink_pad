@@ -68,7 +68,7 @@ import { diagramIdFromEntry, diagramPaletteEntries, shortcutEntryId, shortcutPal
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
 import { DIAGRAM_TEMPLATES, buildTemplate } from './diagramTemplates'
-import { addUserTemplate, loadUserTemplates, newTemplateId, removeUserTemplate, saveUserTemplates, type UserTemplate } from './userTemplates'
+import { addUserTemplate, loadUserTemplates, newTemplateId, removeUserTemplate, saveUserTemplates, userTemplatesBlockedMessage, type UserTemplate } from './userTemplates'
 import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
@@ -4836,6 +4836,8 @@ function App() {
   }
   // Returns an error message for the chooser to show, or null when the template was saved.
   const saveSelectionAsTemplate = (name: string): string | null => {
+    const blocked = userTemplatesBlockedMessage()
+    if (blocked) return blocked
     const copied = copyItems(strokesRef.current, selectionKeysWithBox())
     const stored = loadUserTemplates()
     const result = addUserTemplate(stored, name, copied, newTemplateId(), new Date().toISOString())
@@ -4847,6 +4849,8 @@ function App() {
     return null
   }
   const deleteUserTemplate = (id: string) => {
+    const blocked = userTemplatesBlockedMessage()
+    if (blocked) { showToast(blocked); return }
     const next = removeUserTemplate(loadUserTemplates(), id)
     if (saveUserTemplates(next)) setUserTemplates(next)
     else showToast('Could not update the saved templates on this device')

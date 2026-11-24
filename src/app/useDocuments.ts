@@ -3,7 +3,7 @@ import type { CanvasItem } from '../canvasModel'
 import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, isLossyParse, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
 import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
 import { copyStoredDiagram as copyDiagramOnBackend } from '../libraryCopy'
-import { THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
+import { PAGE_PREVIEW_TOO_LARGE, THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
 import { moveStarred, readStarred, starsToUpload, toggleStarred, writeStarred } from '../starred'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
 import { diagramsInFolder, folderAndDescendantIds } from '../folderTree'
@@ -234,8 +234,7 @@ export function useDocuments(host: DocumentHost) {
       setFolders(listed.folders)
       void uploadLocalStars(backend, listed.documents)
     } catch {
-      setLibrary([])
-      setFolders([])
+      // Keep the list already shown (Drive offline, a failed refresh); the Library's own notice and status say why it could not refresh.
     }
   }
 
@@ -769,12 +768,13 @@ export function useDocuments(host: DocumentHost) {
   }
 
   /**
-   * A small picture (PNG data URL) of page `index` for the page overview, or null for a blank page or one too large to draw cheaply.
+   * A small picture (PNG data URL) of page `index` for the page overview, null for a blank page, or PAGE_PREVIEW_TOO_LARGE for one too large to draw cheaply.
    * Called one page at a time, only while the overview is open (never while writing).
    */
   const renderPageThumbnail = async (index: number): Promise<string | null> => {
     const exported = getImageExport(index)
-    if (!exported || exported.svg.length > THUMBNAIL_MAX_SVG_CHARS) return null
+    if (!exported) return null
+    if (exported.svg.length > THUMBNAIL_MAX_SVG_CHARS) return PAGE_PREVIEW_TOO_LARGE
     const size = thumbnailSize(exported.bounds.width, exported.bounds.height)
     const blob = await svgToPngBlob(exported.svg, size.width, size.height, 1)
     return new Promise<string>((resolve, reject) => {

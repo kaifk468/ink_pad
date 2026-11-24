@@ -74,3 +74,20 @@ test('overlay: tile navigation, move buttons disabled at the ends, Esc and backd
   assert.match(overlay, /Move earlier/)
   assert.match(overlay, /Move later/)
 })
+
+test('wiring: a page too heavy for a thumbnail says "Preview too large", only a page with no items says "Blank"', async () => {
+  const docs = await read('app/useDocuments.ts')
+  const body = docs.slice(docs.indexOf('const renderPageThumbnail'), docs.indexOf('const captureThumbnail'))
+  assert.match(body, /if \(!exported\) return null\s*\n\s*if \(exported\.svg\.length > THUMBNAIL_MAX_SVG_CHARS\) return PAGE_PREVIEW_TOO_LARGE/)
+  const overview = await read('app/PageOverview.tsx')
+  assert.match(overview, /pictures\[index\] === PAGE_PREVIEW_TOO_LARGE \? <em>Preview too large<\/em>/)
+  assert.match(overview, /pictures\[index\] === null \? 'Blank'/)
+})
+
+test('wiring: a failed library refresh keeps the list that is shown', async () => {
+  const docs = await read('app/useDocuments.ts')
+  const body = docs.slice(docs.indexOf('const refreshLibrary'), docs.indexOf('const uploadLocalStars'))
+  const failure = body.slice(body.lastIndexOf('} catch {'))
+  assert.doesNotMatch(failure, /setLibrary\(|setFolders\(/)
+  assert.match(body, /const listed = await backend\.list\(\)/)
+})

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { movePage } from '../pages'
+import { PAGE_PREVIEW_TOO_LARGE } from '../thumbnail'
 
 type PageOverviewProps = {
   count: number
@@ -67,7 +68,7 @@ export function PageOverview({ count, current, loadThumbnail, onGo, onMove, onCl
             <li key={index} className={`page-tile${index === current ? ' current' : ''}`}>
               <button type="button" className="page-tile-open" aria-label={`Go to page ${index + 1}`} aria-current={index === current ? 'page' : undefined} title={`Go to page ${index + 1}`} onClick={() => onGo(index)}>
                 <span className="page-tile-picture">
-                  {pictures[index] ? <img src={pictures[index] ?? undefined} alt="" draggable={false} /> : <em>{pictures[index] === null ? 'Blank' : '…'}</em>}
+                  {pictures[index] === PAGE_PREVIEW_TOO_LARGE ? <em>Preview too large</em> : pictures[index] ? <img src={pictures[index] ?? undefined} alt="" draggable={false} /> : <em>{pictures[index] === null ? 'Blank' : '…'}</em>}
                 </span>
               </button>
               <div className="page-tile-bar">
