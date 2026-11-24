@@ -14,7 +14,7 @@ export function EmptyCanvasHint({ desktop, onTemplates }: EmptyCanvasHintProps) 
         <p className="empty-canvas-title">{desktop ? 'Start your diagram' : 'Start drawing'}</p>
         {(desktop ? DESKTOP_LINES : TABLET_LINES).map((line) => <p key={line} className="empty-canvas-line">{line}</p>)}
       </div>
-      <button type="button" className="empty-canvas-template" onClick={onTemplates}>Start from a template</button>
+      {desktop && <button type="button" className="empty-canvas-template" onClick={onTemplates}>Start from a template</button>}
     </div>
   )
 }

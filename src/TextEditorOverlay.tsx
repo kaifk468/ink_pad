@@ -22,6 +22,8 @@ export type TextEditorState = {
   centerOn?: { x: number; y: number }
   /** Editing the label of this connector (Enter commits, Shift+Enter is a new line; committing writes connector.label). */
   connectorId?: number
+  /** A label typed into a just-inserted sticky note: committing it adds no undo step of its own (the insert already saved one). */
+  mergeHistory?: boolean
 }
 
 type TextEditorOverlayProps = {

@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
-import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, connectorPoints } from './canvasModel'
 import { hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
-import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForPointer, hitConnectorHandle, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
+import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, pathMidpoint, bendForDrag, hitConnectorHandle, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
 import { similarItemKeys } from './selectSimilar'
@@ -249,7 +249,7 @@ function App() {
   /** A rotate-handle drag on the single selected label or plain shape. */
   const activeRotateRef = useRef<{ pointerId: number; key: string; originalItems: CanvasItem[]; moved: boolean } | null>(null)
   /** A drag or click on a handle of the single selected connector: `which` is an end, or the middle dot (a click toggles straight/elbow). `saved` = its one history step was recorded. `target` = box highlighted as the snap target. */
-  const activeEndpointRef = useRef<{ pointerId: number; pointerType: string; id: number; which: ConnectorHandleKind; startScreen: Point; originalItems: CanvasItem[]; dragged: boolean; saved: boolean; target: number | null } | null>(null)
+  const activeEndpointRef = useRef<{ pointerId: number; pointerType: string; id: number; which: ConnectorHandleKind; startScreen: Point; startPoint: Point; startBend: number; originalItems: CanvasItem[]; dragged: boolean; saved: boolean; target: number | null } | null>(null)
   const activeLassoRef = useRef<{ pointerId: number; points: Point[] } | null>(null)
   const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean; duplicate?: boolean; dup?: DragDup } | null>(null)
   const selectedKeysRef = useRef<Set<string>>(new Set())
@@ -917,7 +917,7 @@ function App() {
     }
     if (editor.itemId === null) {
       if (!isBlankText(value)) {
-        saveHistory()
+        if (!editor.mergeHistory) saveHistory()
         const created = createTextObject(nextTextIdRef.current++, editor.x, editor.y, value, editor.color, editor.fontSize, createTextMeasure(editor.fontSize, editor.fontFamily), editor.fontFamily)
         const label = editor.fitArea || editor.fitOff ? buildEditedLabel(created, value, editor, createTextMeasure) : created
         strokesRef.current.push(editor.centerOn ? centreLabelOn(label, editor.centerOn) : label)
@@ -961,7 +961,7 @@ function App() {
   const editConnectorLabel = (connectorId: number): boolean => {
     const connector = routeConnectors(strokesRef.current).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
     if (!connector || connector.locked) return false
-    const centre = connectorHandlePositions(connector).middle
+    const centre = pathMidpoint(connectorPoints(connector))
     openTextEditor({ itemId: null, connectorId, x: centre.x, y: centre.y, fontSize: CONNECTOR_LABEL_FONT_SIZE, fontFamily: DEFAULT_TEXT_FONT, color: connector.strokeColor, initialText: connector.label ?? '', centerOn: { x: centre.x, y: centre.y } })
     return true
   }
@@ -1520,7 +1520,7 @@ function App() {
     if (!which) return false
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
-    activeEndpointRef.current = { pointerId: event.pointerId, pointerType: event.pointerType, id: connector.id, which, startScreen: getScreenPoint(event), originalItems: strokesRef.current.slice(), dragged: false, saved: false, target: null }
+    activeEndpointRef.current = { pointerId: event.pointerId, pointerType: event.pointerType, id: connector.id, which, startScreen: getScreenPoint(event), startPoint: point, startBend: connector.bend ?? 0, originalItems: strokesRef.current.slice(), dragged: false, saved: false, target: null }
     return true
   }
   const moveConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1532,7 +1532,7 @@ function App() {
     gesture.dragged = true
     if (gesture.which === 'middle') {
       // Dragging the middle dot of an elbow connector moves its middle segment (one undo step); on any other connector it does nothing.
-      const bend = bendForPointer(gesture.originalItems, gesture.id, getBoundedPoint(event))
+      const bend = bendForDrag(gesture.originalItems, gesture.id, gesture.startPoint, getBoundedPoint(event), gesture.startBend)
       if (bend === null) return
       const next = setConnectorBend(gesture.originalItems, gesture.id, bend)
       if (next === strokesRef.current || (!gesture.saved && next === gesture.originalItems)) return
@@ -4308,7 +4308,7 @@ function App() {
     setSelectedRectangle(note.id)
     if (desktop) {
       const middle = { x: note.x + note.width / 2, y: note.y + note.height / 2 }
-      openTextEditor({ itemId: null, x: middle.x, y: middle.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: middle })
+      openTextEditor({ itemId: null, x: middle.x, y: middle.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: middle, mergeHistory: true })
       setSelectedRectangle(note.id)
     }
     renderAll()
@@ -4543,6 +4543,17 @@ function App() {
   const openFind = () => { setFindOpen(true); setFindFocusTick((tick) => tick + 1) }
   const closeFind = () => setFindOpen(false)
   const findMatches = (query: string): SearchMatch[] => searchCanvas(pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)), query)
+  // The bar's count is memoised on the query and the item arrays (identity + length) so an ordinary re-render does not search every page again.
+  const findCountCacheRef = useRef<{ query: string; sources: CanvasItem[][]; lengths: number[]; count: number } | null>(null)
+  const findCount = (query: string): number => {
+    if (!query.trim()) return 0
+    const sources = pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items))
+    const cache = findCountCacheRef.current
+    if (cache && cache.query === query && cache.sources.length === sources.length && sources.every((items, i) => items === cache.sources[i] && items.length === cache.lengths[i])) return cache.count
+    const count = searchCanvas(sources, query).length
+    findCountCacheRef.current = { query, sources, lengths: sources.map((items) => items.length), count }
+    return count
+  }
   /** Shows the match: switches page, centres the view on the item (zooming out only when it does not fit) and selects it (a locked item is only shown). */
   const goToFindMatch = (match: SearchMatch): boolean => {
     if (match.pageIndex !== pageIndexRef.current) goToPage(match.pageIndex)
@@ -4965,7 +4976,7 @@ function App() {
           : null}
       />
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
-      {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findQuery.trim() ? findMatches(findQuery).length : 0} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} />}
+      {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
       {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
       {templateChooserOpen && <TemplateChooser onChoose={insertTemplate} onClose={() => setTemplateChooserOpen(false)} />}

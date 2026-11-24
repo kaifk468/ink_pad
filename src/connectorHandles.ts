@@ -132,11 +132,26 @@ export function setConnectorBend(items: CanvasItem[], connectorId: number, bend:
  * the route would put it with no bend. Null when the connector is not an elbow with a movable middle segment (straight, L, C).
  */
 export function bendForPointer(items: CanvasItem[], connectorId: number, point: Point): number | null {
+  const offset = bendOffset(items, connectorId, point)
+  return offset === null ? null : Math.max(-MAX_CONNECTOR_BEND, Math.min(MAX_CONNECTOR_BEND, offset))
+}
+
+/**
+ * Bend while dragging: the starting bend plus the pointer's movement from `from` along the middle segment's perpendicular axis, so the
+ * segment never jumps at drag start (the dot is not always on the segment). Null when the connector has no movable middle segment.
+ */
+export function bendForDrag(items: CanvasItem[], connectorId: number, from: Point, to: Point, startBend: number): number | null {
+  const a = bendOffset(items, connectorId, from)
+  const b = bendOffset(items, connectorId, to)
+  if (a === null || b === null) return null
+  return Math.max(-MAX_CONNECTOR_BEND, Math.min(MAX_CONNECTOR_BEND, startBend + b - a))
+}
+
+function bendOffset(items: CanvasItem[], connectorId: number, point: Point): number | null {
   const routed = routeConnectors(setConnectorBend(items, connectorId, 0)).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
   if (!routed || routed.routing !== 'elbow') return null
   const path = connectorPoints(routed)
   const middle = bendableMiddle(path)
   if (!middle) return null
-  const bend = middle.axis === 'x' ? point.x - path[middle.index].x : point.y - path[middle.index].y
-  return Math.max(-MAX_CONNECTOR_BEND, Math.min(MAX_CONNECTOR_BEND, bend))
+  return middle.axis === 'x' ? point.x - path[middle.index].x : point.y - path[middle.index].y
 }

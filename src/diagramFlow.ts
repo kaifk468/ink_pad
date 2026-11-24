@@ -1,5 +1,5 @@
 import { canvasItemKey, createConnector, getCanvasSelectionBounds, snapConnectorEndpoint, type CanvasItem, type ConnectorAttachment, type ConnectorObject, type LineDash, type Point, type RectangleBounds, type RectangleObject, type TextObject } from './canvasModel'
-import { contains, refitLabelToShape, type MeasureFor } from './textFit'
+import { contains, refitLabelToShape, shapeInnerArea, type MeasureFor } from './textFit'
 
 /**
  * Desktop diagram flow (batch C): arrows that stick to shapes, quick-create connected shapes, labels inside shapes.
@@ -135,10 +135,13 @@ export function followResizeLabels(items: CanvasItem[], boxId: number, oldBounds
   const keys = new Set(labelKeys)
   // With a measure, a label that no longer fits the resized box is refitted (never enlarged) and keeps its centre.
   const box = measureFor ? items.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === boxId) : undefined
+  // Only a label that fitted the old inner area is refitted; one sitting in the padding margin is left alone when the box grows.
+  const oldArea = box ? shapeInnerArea({ ...box, ...oldBounds }) : null
   let changed = false
   const next = items.map((item) => {
     if (item.kind !== 'text' || !keys.has(canvasItemKey(item))) return item
-    const label = box && measureFor ? refitLabelToShape(item, box, measureFor) : item
+    const fitted = oldArea !== null && item.width <= oldArea.width && item.height <= oldArea.height
+    const label = box && measureFor && fitted ? refitLabelToShape(item, box, measureFor) : item
     const rx = (item.x + item.width / 2 - oldBounds.x) / oldBounds.width
     const ry = (item.y + item.height / 2 - oldBounds.y) / oldBounds.height
     const x = newBounds.x + rx * newBounds.width - label.width / 2

@@ -146,7 +146,7 @@ test('clipboard copy keeps the bend and drops only the derived path', () => {
 })
 
 test('wiring: dragging the elbow middle dot sets the bend as one undo step; a click still toggles', () => {
-  assert.match(app, /bendForPointer\(gesture\.originalItems, gesture\.id/)
+  assert.match(app, /bendForDrag\(gesture\.originalItems, gesture\.id/)
   assert.match(app, /setConnectorBend\(gesture\.originalItems, gesture\.id, bend\)/)
   assert.match(app, /if \(gesture\.which === 'middle' && !gesture\.dragged\)/)
 })
