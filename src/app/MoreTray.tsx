@@ -9,10 +9,13 @@ type MoreTrayProps = {
   typedClassActive?: boolean
   /** Desktop: adds a code block. */
   onCode?: () => void
+  /** Opens the find bar (both modes). */
+  onFind?: () => void
+  findTitle?: string
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -54,6 +57,12 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, on
           <div className="insert-tray-heading">Code</div>
           <button className="insert-entry" type="button" aria-label="Code block" title="Add a code block in the middle of the view (K)" onClick={() => { onCode(); setOpen(false) }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 8-4 4 4 4M15 8l4 4-4 4"/></svg><span>Code block</span>
+          </button>
+        </>}
+        {onFind && <>
+          <div className="insert-tray-heading">Search</div>
+          <button className="insert-entry" type="button" aria-label="Find" title={findTitle ?? 'Find text on the canvas'} onClick={() => { onFind(); setOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></svg><span>Find</span>
           </button>
         </>}
         <div className="insert-tray-heading">Layout</div>

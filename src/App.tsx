@@ -55,6 +55,8 @@ import { ZoomControls } from './app/ZoomControls'
 import { EmptyCanvasHint } from './app/EmptyCanvasHint'
 import { ShortcutHelp } from './app/ShortcutHelp'
 import { CommandPalette } from './app/CommandPalette'
+import { FindBar } from './app/FindBar'
+import { searchCanvas, type SearchMatch } from './canvasSearch'
 import { shortcutEntryId, shortcutPaletteEntries, type PaletteEntry } from './commandPalette'
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { statusLabel } from './FilePanel'
@@ -4374,6 +4376,62 @@ function App() {
     }
     paletteExtras().find((entry) => entry.id === id)?.run()
   }
+  // Find on the canvas (both modes): the bar, the query and which match is shown. Matches are searched again on every step, so edits and undo never leave stale ones.
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [findIndex, setFindIndex] = useState(-1)
+  const [findFocusTick, setFindFocusTick] = useState(0)
+  const findQueryRef = useRef('')
+  const findIndexRef = useRef(-1)
+  const openFind = () => { setFindOpen(true); setFindFocusTick((tick) => tick + 1) }
+  const closeFind = () => setFindOpen(false)
+  const findMatches = (query: string): SearchMatch[] => searchCanvas(pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)), query)
+  /** Shows the match: switches page, centres the view on the item (zooming out only when it does not fit) and selects it (a locked item is only shown). */
+  const goToFindMatch = (match: SearchMatch): boolean => {
+    if (match.pageIndex !== pageIndexRef.current) goToPage(match.pageIndex)
+    if (pageIndexRef.current !== match.pageIndex) return false
+    const canvas = canvasRef.current
+    const item = strokesRef.current.find((candidate) => canvasItemKey(candidate) === match.key)
+    if (!canvas || !item) return false
+    const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), new Set([match.key]))
+    if (bounds) {
+      const rect = canvas.getBoundingClientRect()
+      const insets = inputModeRef.current === 'desktop' ? DESKTOP_FIT_INSETS : { left: 16, top: 120, right: 16, bottom: 96 }
+      const viewport = viewportRef.current
+      const freeWidth = rect.width - insets.left - insets.right
+      const freeHeight = rect.height - insets.top - insets.bottom
+      const fits = bounds.width * viewport.scale <= freeWidth && bounds.height * viewport.scale <= freeHeight
+      if (!fits && !navigationSettingsRef.current.zoomLocked && freeWidth >= 120 && freeHeight >= 120) {
+        applyViewport(fitViewportToBoundsInset(bounds, rect.width, rect.height, insets, viewport.scale))
+      } else {
+        const targetX = (insets.left + rect.width - insets.right) / 2
+        const targetY = (insets.top + rect.height - insets.bottom) / 2
+        applyViewport({ scale: viewport.scale, offsetX: targetX - (bounds.x + bounds.width / 2) * viewport.scale, offsetY: targetY - (bounds.y + bounds.height / 2) * viewport.scale })
+      }
+    }
+    if (isItemLocked(item)) { renderAll(); return true }
+    // Selecting needs the Select tool (as Select all and paste do).
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    applySelectionState(normalizeSelection(expandToGroups(strokesRef.current, new Set([match.key]))))
+    return true
+  }
+  const setFindCurrent = (index: number) => { findIndexRef.current = index; setFindIndex(index) }
+  const changeFindQuery = (query: string) => {
+    findQueryRef.current = query
+    setFindQuery(query)
+    const matches = findMatches(query)
+    if (matches.length === 0) { setFindCurrent(-1); return }
+    setFindCurrent(0)
+    goToFindMatch(matches[0])
+  }
+  const stepFind = (delta: 1 | -1) => {
+    const matches = findMatches(findQueryRef.current)
+    if (matches.length === 0) { setFindCurrent(-1); return }
+    const from = findIndexRef.current
+    const next = from < 0 || from >= matches.length ? (delta > 0 ? 0 : matches.length - 1) : (from + delta + matches.length) % matches.length
+    setFindCurrent(next)
+    goToFindMatch(matches[next])
+  }
   const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
   keyActionsRef.current = (command) => {
     if (command.kind === 'library' && libraryOpen) return true // the Library is already open: only keep the browser's open dialog away
@@ -4399,6 +4457,7 @@ function App() {
       case 'redo': redo(); return true
       case 'library': toggleLibrary(); return true
       case 'palette': openPalette(); return true
+      case 'find': openFind(); return true
       case 'zoomIn': if (!navigationSettingsRef.current.zoomLocked) zoomBy(ZOOM_STEP); return true
       case 'zoomOut': if (!navigationSettingsRef.current.zoomLocked) zoomBy(1 / ZOOM_STEP); return true
       case 'zoomReset': zoomToActualSize(); return true
@@ -4453,7 +4512,7 @@ function App() {
       if (!command) return
       const target = event.target as HTMLElement | null
       if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) {
-        if (command.kind === 'palette') event.preventDefault() // Chrome's Ctrl+K (search bar) never wins, even inside a text field
+        if (command.kind === 'palette' || command.kind === 'find') event.preventDefault() // Chrome's Ctrl+K (search bar) and Ctrl+F (find bar) never win, even inside a text field
         return
       }
       // Enter on a focused button or link activates it: only a canvas-level Enter edits.
@@ -4748,6 +4807,7 @@ function App() {
           : null}
       />
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
+      {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findQuery.trim() ? findMatches(findQuery).length : 0} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
       {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
       <ZoomControls desktop={inputMode === 'desktop'} onResetZoom={zoomToActualSize} zoomPercent={zoomPercent} locked={zoomLockActive} onToggleLock={() => updateNavigationSettings({ zoomLocked: !zoomLockActive })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
@@ -4782,6 +4842,7 @@ function App() {
         tidyLabel={tidyScope(strokesRef.current, selectedKeysRef.current).selection ? 'Tidy selected' : 'Tidy all'}
         onTidy={tidyDiagram}
         onCode={insertCodeBlock}
+        onFind={openFind}
       />
       {classBoxEditor && <ClassBoxDialog
         key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}

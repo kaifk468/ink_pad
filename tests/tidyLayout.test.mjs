@@ -240,7 +240,7 @@ test('wiring: a Tidy button next to Undo/Redo that is one undo step and does not
   assert.match(more, /aria-label="More"/)
   assert.match(more, /onTidy\(\)/)
   const dock = await readFile(new URL('../src/app/ToolDock.tsx', import.meta.url), 'utf8')
-  assert.match(dock, /<InsertTray[\s\S]*?\/>\s*<MoreTray tidyLabel=\{props\.tidyLabel\} onTidy=\{props\.onTidy\} \/>/, 'More sits right after Insert')
+  assert.match(dock, /<InsertTray[\s\S]*?\/>\s*<MoreTray tidyLabel=\{props\.tidyLabel\} onTidy=\{props\.onTidy\}[^>]*\/>/, 'More sits right after Insert')
   const history = await readFile(new URL('../src/app/HistoryBar.tsx', import.meta.url), 'utf8')
   assert.doesNotMatch(history, /Tidy/, 'Tidy is no longer beside Undo/Redo')
 })

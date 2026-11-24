@@ -39,6 +39,8 @@ type ToolDockProps = {
   onTidy: () => void
   /** Desktop only: adds a code block at the middle of the view. */
   onCode?: () => void
+  /** Opens the find bar (More menu, both modes). */
+  onFind?: () => void
 }
 
 const DESKTOP_SHAPES: Array<{ kind: 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'; label: string; key: string; num: string; icon: JSX.Element }> = [
@@ -112,7 +114,7 @@ export function ToolDock(props: ToolDockProps) {
         {divider}
         {inkClass}
         {divider}
-        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} />
+        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" />
       </nav>
     )
   }
@@ -135,7 +137,7 @@ export function ToolDock(props: ToolDockProps) {
         onClass={props.onClass}
         onShapes={props.onShapes}
       />
-      <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} />
+      <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onFind={props.onFind} findTitle="Find text on the canvas" />
     </nav>
   )
 }

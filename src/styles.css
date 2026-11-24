@@ -752,3 +752,13 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .command-palette-label small { margin-left: 8px; color: #8a909c; font-size: 12px; }
 .command-palette-row kbd { flex: none; padding: 2px 7px; border: 1px solid #d9dce2; border-radius: 6px; background: #f4f6fa; color: #343944; font: 600 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .command-palette-empty { margin: 0; padding: 16px 10px; color: #6b7280; text-align: center; }
+
+/* Find bar: top centre, just under the history bar; the area around it stays canvas */
+.find-bar { position: absolute; z-index: 4; top: calc(max(16px, env(safe-area-inset-top)) + 64px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; box-sizing: border-box; max-width: calc(100vw - 32px); padding: 4px 6px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .98); box-shadow: 0 3px 12px rgba(31, 39, 52, .16); }
+.find-input { box-sizing: border-box; width: 200px; min-width: 0; height: 40px; padding: 0 10px; border: 1px solid #d9dce2; border-radius: 10px; outline: none; font-size: 16px; color: #343944; background: #fff; }
+.find-input:focus { border-color: #5574ed; }
+.find-count { min-width: 56px; padding: 0 6px; color: #6b7280; font-size: 13px; text-align: center; white-space: nowrap; }
+.find-button { display: grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: #343944; cursor: pointer; touch-action: manipulation; }
+.find-button:hover:not(:disabled) { background: #f1f2f5; }
+.find-button:disabled { opacity: .35; cursor: default; }
+.find-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
