@@ -30,7 +30,7 @@ test('hit radius is larger for pen and touch and shrinks with zoom (screen pixel
   assert.equal(h.hitConnectorHandle(c, pt(12, 0), 0.5, 'mouse'), 'start')
 })
 
-test('elbow connector: the middle dot is halfway along the routed path', () => {
+test('elbow connector: the middle dot is on the routed path (halfway along it, or the middle of a movable middle segment)', () => {
   const a = box(1, 0, 0), b = box(2, 300, 200)
   const c = conn(3, pt(100, 30), pt(300, 230), { routing: 'elbow', startAttachment: { rectangleId: 1, offsetX: 100, offsetY: 30 }, endAttachment: { rectangleId: 2, offsetX: 0, offsetY: 30 } })
   const routed = route.routeConnectors([a, b, c])[2]
@@ -47,7 +47,9 @@ test('elbow connector: the middle dot is halfway along the routed path', () => {
     if (onSegment) { covered += seg(pts[i - 1], mid); found = true } else covered += seg(pts[i - 1], pts[i])
   }
   assert.ok(found, 'the dot lies on the routed path')
-  assert.ok(Math.abs(covered - total / 2) < 1e-6)
+  const movable = route.bendableMiddle(pts)
+  if (movable) assert.deepEqual([mid.x, mid.y], [(pts[movable.index].x + pts[movable.index + 1].x) / 2, (pts[movable.index].y + pts[movable.index + 1].y) / 2])
+  else assert.ok(Math.abs(covered - total / 2) < 1e-6)
 })
 
 test('only one unlocked selected connector has handles', () => {

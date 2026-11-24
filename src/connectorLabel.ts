@@ -1,5 +1,5 @@
 import { connectorPoints, type CanvasItem, type ConnectorObject } from './canvasModel'
-import { pathMidpoint } from './connectorHandles'
+import { pathMidpoint } from './pathGeometry'
 import { getTextBaselines, measureTextSize, normalizeText, splitTextLines, type TextMeasure } from './textLayout'
 
 /** Connector labels are one fixed size (canvas units), in the app's default label font, in the connector's colour. */

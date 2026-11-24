@@ -259,7 +259,51 @@ function gridRoute(a: Point, b: Point, startDir: Dir | null, endDir: Dir | null,
  * first the simple shapes (straight, L, Z, C), then a search round the boxes in the way; when no way round exists the
  * line ignores the others rather than disappearing. Returns the points from start to end.
  */
-export function elbowPath(start: Point, end: Point, startBox?: Box, endBox?: Box, others: Box[] = []): Point[] {
+export function elbowPath(start: Point, end: Point, startBox?: Box, endBox?: Box, others: Box[] = [], bend = 0): Point[] {
+  const path = elbowPathUnbent(start, end, startBox, endBox, others)
+  if (!bend || !Number.isFinite(bend)) return path
+  const middle = bendableMiddle(path)
+  if (!middle) return path
+  // The user chose this: only the connector's own boxes (and the exit rules) can veto it, other boxes cannot.
+  const shifted = shiftMiddleSegment(path, middle, bend)
+  const startDir = startBox ? outwardDirection(startBox, start) : dominantDirection(start, end)
+  const endDir = endBox ? outwardDirection(endBox, end) : dominantDirection(end, start)
+  const own = [startBox, endBox].filter((box): box is Box => Boolean(box))
+  return scorePath(shifted, { startDir, endDir, obstacles: own }) !== null ? shifted : path
+}
+
+export type BendableMiddle = { /** The middle segment runs from path[index] to path[index + 1]. */ index: number; /** 'x': the segment is vertical (moves sideways in x); 'y': horizontal (moves in y). */ axis: 'x' | 'y' }
+
+/**
+ * The middle segment of a Z-shaped route (3 segments, or 5 with box stubs) when it can be moved sideways: it is
+ * perpendicular to its two neighbours and they run the same way (a C or U shape, a straight line or an L has none).
+ */
+export function bendableMiddle(path: readonly Point[]): BendableMiddle | null {
+  const segments = path.length - 1
+  if (segments !== 3 && segments !== 5) return null
+  const index = (segments - 1) / 2
+  const dir = (i: number): Dir => segmentDirection(path[i], path[i + 1])
+  const before = dir(index - 1)
+  const middle = dir(index)
+  const after = dir(index + 1)
+  for (let i = 0; i < segments; i += 1) {
+    const a = path[i]
+    const b = path[i + 1]
+    if (Math.abs(a.x - b.x) > 0.01 && Math.abs(a.y - b.y) > 0.01) return null
+  }
+  if (!sameDirection(before, after) || Math.abs(before.x * middle.x + before.y * middle.y) > 0.01) return null
+  return { index, axis: Math.abs(middle.x) < 0.5 ? 'x' : 'y' }
+}
+
+/** The path with its bendable middle segment moved by `bend` along its axis. */
+function shiftMiddleSegment(path: Point[], middle: BendableMiddle, bend: number): Point[] {
+  const moved = path.map((p, i) => (i === middle.index || i === middle.index + 1
+    ? point(middle.axis === 'x' ? p.x + bend : p.x, middle.axis === 'y' ? p.y + bend : p.y, p.pressure)
+    : p))
+  return simplify(moved)
+}
+
+function elbowPathUnbent(start: Point, end: Point, startBox?: Box, endBox?: Box, others: Box[] = []): Point[] {
   if (Math.abs(start.x - end.x) < 0.01 && Math.abs(start.y - end.y) < 0.01) return [start, end]
   const startDir = startBox ? outwardDirection(startBox, start) : dominantDirection(start, end)
   const endDir = endBox ? outwardDirection(endBox, end) : dominantDirection(end, start)
@@ -334,11 +378,11 @@ export function routeConnector(connector: ConnectorObject, rectangles: ReadonlyM
   if (connector.routing !== 'elbow') return connector
   const startBox = connector.startAttachment ? rectangles.get(connector.startAttachment.rectangleId) : undefined
   const endBox = connector.endAttachment ? rectangles.get(connector.endAttachment.rectangleId) : undefined
-  const signature = `${connector.start.x},${connector.start.y},${connector.end.x},${connector.end.y}|${connector.startAttachment?.rectangleId ?? '-'}|${connector.endAttachment?.rectangleId ?? '-'}|${allBoxesKey(rectangles)}`
+  const signature = `${connector.start.x},${connector.start.y},${connector.end.x},${connector.end.y}|${connector.startAttachment?.rectangleId ?? '-'}|${connector.endAttachment?.rectangleId ?? '-'}|${connector.bend ?? 0}|${allBoxesKey(rectangles)}`
   const cached = routeCache.get(connector)
   if (cached && cached.signature === signature) return cached.routed
   const others = [...rectangles.values()].filter((box) => box !== startBox && box !== endBox)
-  const routed: ConnectorObject = { ...connector, routedPath: elbowPath(connector.start, connector.end, startBox, endBox, others) }
+  const routed: ConnectorObject = { ...connector, routedPath: elbowPath(connector.start, connector.end, startBox, endBox, others, connector.bend) }
   routeCache.set(connector, { signature, routed })
   return routed
 }
@@ -436,8 +480,10 @@ export function reattachConnectorSides(
     const startAttachment = attach(startBox, startId, best.start, connector.startAttachment)
     const endAttachment = attach(endBox, endId, best.end, connector.endAttachment)
     if (!result) result = items.slice()
+    // Other box sides make a different route, so a bend chosen for the old one is dropped.
+    const { bend: _bend, ...withoutBend } = connector
     result[index] = {
-      ...connector,
+      ...withoutBend,
       start: best.start,
       end: best.end,
       ...(startAttachment ? { startAttachment } : {}),

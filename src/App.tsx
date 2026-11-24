@@ -4,7 +4,7 @@ import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
 import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
-import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, hitConnectorHandle, moveConnectorEndpoint, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
+import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForPointer, hitConnectorHandle, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
 import { similarItemKeys } from './selectSimilar'
@@ -1468,7 +1468,17 @@ function App() {
     const now = getScreenPoint(event)
     if (!gesture.dragged && Math.hypot(now.x - gesture.startScreen.x, now.y - gesture.startScreen.y) < CONNECTOR_CLICK_SLOP_PX) return
     gesture.dragged = true
-    if (gesture.which === 'middle') return
+    if (gesture.which === 'middle') {
+      // Dragging the middle dot of an elbow connector moves its middle segment (one undo step); on any other connector it does nothing.
+      const bend = bendForPointer(gesture.originalItems, gesture.id, getBoundedPoint(event))
+      if (bend === null) return
+      const next = setConnectorBend(gesture.originalItems, gesture.id, bend)
+      if (next === strokesRef.current || (!gesture.saved && next === gesture.originalItems)) return
+      if (!gesture.saved) { saveHistory(); gesture.saved = true }
+      strokesRef.current = next
+      renderAll()
+      return
+    }
     const point = getBoundedPoint(event)
     const snapped = snapEndpointTarget(point, gesture.originalItems, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale, (p) => isPointWithinBounds(p, workspaceBoundsRef.current))
     if (!gesture.saved) { saveHistory(); gesture.saved = true }

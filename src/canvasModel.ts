@@ -22,6 +22,8 @@ export type TextObject = { kind: 'text'; id: number; x: number; y: number; width
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
 export type ConnectorRouting = 'straight' | 'elbow'
+/** Largest saved elbow `bend` (canvas units, either direction). */
+export const MAX_CONNECTOR_BEND = 5000
 export type ConnectorAttachment = { rectangleId: number; offsetX: number; offsetY: number }
 export type ConnectorRelationshipType = 'association' | 'directed-association' | 'inheritance' | 'realization' | 'dependency' | 'aggregation' | 'composition'
 export type ConnectorObject = {
@@ -37,6 +39,8 @@ export type ConnectorObject = {
   endAttachment?: ConnectorAttachment
   /** Line shape: straight (default when missing) or elbow (right angles). Saved. */
   routing?: ConnectorRouting
+  /** Elbow only: how far (canvas units) the middle segment of the Z route is moved from its default middle, sideways. Finite, |bend| <= MAX_CONNECTOR_BEND; omitted when 0. Saved. */
+  bend?: number
   /** Own line style: wins over the dash of the relationship type ('solid' = draw solid although the relationship type is dashed). Missing = the relationship type decides. */
   dash?: LineDash | 'solid'
   /** Text drawn centred on the middle of the path, over a background-coloured pad. Non-empty, at most 500 characters. Saved. */
@@ -340,7 +344,8 @@ export function updateConnectorRelationship(items: CanvasItem[], connectorId: nu
 export function updateConnectorRouting(items: CanvasItem[], connectorId: number, routing: ConnectorRouting): CanvasItem[] {
   return items.map((item) => {
     if (item.kind !== 'connector' || item.id !== connectorId || (item.routing ?? 'straight') === routing) return item
-    const { routing: _old, routedPath: _path, ...rest } = item
+    // The bend belongs to the elbow route: dropped on every switch so a later re-toggle starts clean.
+    const { routing: _old, routedPath: _path, bend: _bend, ...rest } = item
     return routing === 'elbow' ? { ...rest, routing } : rest
   })
 }

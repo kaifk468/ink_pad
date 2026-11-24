@@ -1,4 +1,8 @@
-import { canvasItemKey, connectorPoints, snapConnectorEndpoint, updateConnectorRouting, type CanvasItem, type ConnectorObject, type Point, type SnappedConnectorEndpoint } from './canvasModel'
+import { bendableMiddle, routeConnectors } from './connectorRoute'
+import { connectorLabelLayout } from './connectorLabel'
+import { pathLength, pathMidpoint, pointAlongPath } from './pathGeometry'
+import type { TextMeasure } from './textLayout'
+import { MAX_CONNECTOR_BEND, canvasItemKey, connectorPoints, snapConnectorEndpoint, updateConnectorRouting, type CanvasItem, type ConnectorObject, type Point, type SnappedConnectorEndpoint } from './canvasModel'
 
 /** Excalidraw-style handles of one selected connector: a dot on each end and a smaller one in the middle of the drawn path. */
 export type ConnectorHandleKind = 'start' | 'end' | 'middle'
@@ -14,27 +18,44 @@ export function connectorHandleRadiusPx(pointerType: string): number {
   return pointerType === 'mouse' ? CONNECTOR_HANDLE_RADIUS_MOUSE_PX : CONNECTOR_HANDLE_RADIUS_TOUCH_PX
 }
 
-/** The point halfway along a path, measured along its length. */
-export function pathMidpoint(path: Point[]): Point {
-  if (path.length === 0) return { x: 0, y: 0, pressure: 1 }
-  let total = 0
-  for (let i = 1; i < path.length; i += 1) total += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y)
-  if (total === 0) return { ...path[0] }
-  let remaining = total / 2
-  for (let i = 1; i < path.length; i += 1) {
-    const length = Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y)
-    if (remaining <= length && length > 0) {
-      const t = remaining / length
-      return { x: path[i - 1].x + (path[i].x - path[i - 1].x) * t, y: path[i - 1].y + (path[i].y - path[i - 1].y) * t, pressure: 1 }
-    }
-    remaining -= length
+export { pathMidpoint }
+
+/** Space (canvas units) kept between the middle dot and the label pad. */
+export const MIDDLE_DOT_LABEL_GAP = 12
+
+/**
+ * Where the middle dot sits: the middle of the drawn path, or for an elbow with a movable middle segment the middle of that segment.
+ * With a label the dot moves along the path to just past the label pad (the label stays on the path middle), so both can be clicked.
+ */
+export function connectorMiddleDot(connector: ConnectorObject, measure?: TextMeasure): Point {
+  const path = connectorPoints(connector)
+  const movable = connector.routing === 'elbow' ? bendableMiddle(path) : null
+  let at = path.length ? pathMidpoint(path) : { x: 0, y: 0, pressure: 1 }
+  let arc = pathLength(path) / 2
+  if (movable) {
+    arc = pathLength(path.slice(0, movable.index + 1)) + Math.hypot(path[movable.index + 1].x - path[movable.index].x, path[movable.index + 1].y - path[movable.index].y) / 2
+    at = pointAlongPath(path, arc).point
   }
-  return { ...path[path.length - 1] }
+  const layout = connectorLabelLayout(connector, measure)
+  if (!layout) return at
+  const { box } = layout
+  const inside = (p: Point) => p.x > box.x - MIDDLE_DOT_LABEL_GAP && p.x < box.x + box.width + MIDDLE_DOT_LABEL_GAP && p.y > box.y - MIDDLE_DOT_LABEL_GAP && p.y < box.y + box.height + MIDDLE_DOT_LABEL_GAP
+  if (!inside(at)) return at
+  // Walk along the path (past the middle, or before it when the end is too close) until the dot is clear of the pad.
+  const total = pathLength(path)
+  for (const sign of [1, -1]) {
+    for (let step = 2; step <= total; step += 2) {
+      const candidate = pointAlongPath(path, arc + sign * step).point
+      if (arc + sign * step < 0 || arc + sign * step > total) break
+      if (!inside(candidate)) return candidate
+    }
+  }
+  return at
 }
 
 /** Handle positions of a connector. Pass the routed copy (routeConnectors) so an elbow connector uses its routed path. */
-export function connectorHandlePositions(connector: ConnectorObject): ConnectorHandles {
-  return { start: connector.start, end: connector.end, middle: pathMidpoint(connectorPoints(connector)) }
+export function connectorHandlePositions(connector: ConnectorObject, measure?: TextMeasure): ConnectorHandles {
+  return { start: connector.start, end: connector.end, middle: connectorMiddleDot(connector, measure) }
 }
 
 /** A locked connector shows no handles (there is no saved lock flag today; one is honoured if it is added). */
@@ -91,4 +112,31 @@ export function toggleConnectorRouting(items: CanvasItem[], connectorId: number)
   const connector = items.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
   if (!connector) return items
   return updateConnectorRouting(items, connectorId, connector.routing === 'elbow' ? 'straight' : 'elbow')
+}
+
+/** The items with one connector's elbow bend set (clamped; 0 or not finite removes it). Same array when nothing changes. */
+export function setConnectorBend(items: CanvasItem[], connectorId: number, bend: number): CanvasItem[] {
+  const clean = Number.isFinite(bend) && bend !== 0 ? Math.max(-MAX_CONNECTOR_BEND, Math.min(MAX_CONNECTOR_BEND, bend)) : 0
+  let changed = false
+  const next = items.map((item) => {
+    if (item.kind !== 'connector' || item.id !== connectorId || (item.bend ?? 0) === clean) return item
+    changed = true
+    const { bend: _old, routedPath: _path, ...rest } = item
+    return clean === 0 ? rest : { ...rest, bend: clean }
+  })
+  return changed ? next : items
+}
+
+/**
+ * The bend that puts the middle segment of an elbow connector under `point`: the pointer's offset, across the segment, from where
+ * the route would put it with no bend. Null when the connector is not an elbow with a movable middle segment (straight, L, C).
+ */
+export function bendForPointer(items: CanvasItem[], connectorId: number, point: Point): number | null {
+  const routed = routeConnectors(setConnectorBend(items, connectorId, 0)).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
+  if (!routed || routed.routing !== 'elbow') return null
+  const path = connectorPoints(routed)
+  const middle = bendableMiddle(path)
+  if (!middle) return null
+  const bend = middle.axis === 'x' ? point.x - path[middle.index].x : point.y - path[middle.index].y
+  return Math.max(-MAX_CONNECTOR_BEND, Math.min(MAX_CONNECTOR_BEND, bend))
 }

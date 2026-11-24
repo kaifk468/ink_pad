@@ -1,5 +1,6 @@
 import { clampCodeFontSize, cleanCodeLanguage, DEFAULT_CODE_FONT_SIZE, MAX_CODE_LENGTH, normalizeCodeText } from './codeBlock'
 import { cleanConnectorLabel } from './connectorLabel'
+import { MAX_CONNECTOR_BEND } from './canvasModel'
 import type { CodeObject, OpaqueObject, TextFontId, HldShape, CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 
 /**
@@ -385,6 +386,7 @@ function sanitizeItemFields(value: unknown): CanvasItem | null {
       kind: 'connector', id: value.id, start, end, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth,
       relationshipType, reversed: value.reversed === true,
       ...(value.routing === 'elbow' ? { routing: 'elbow' as const } : {}),
+      ...(isNum(value.bend) && value.bend !== 0 ? { bend: Math.max(-MAX_CONNECTOR_BEND, Math.min(MAX_CONNECTOR_BEND, value.bend)) } : {}),
       ...(value.dash === 'dashed' || value.dash === 'dotted' || value.dash === 'solid' ? { dash: value.dash } : {}),
       ...(startAttachment ? { startAttachment } : {}),
       ...(endAttachment ? { endAttachment } : {}),
