@@ -57,7 +57,8 @@ test('SVG export anchors aligned lines inside the box', () => {
 })
 
 test('align is wired: renderer, editor overlay, panel buttons, palette, new labels in shapes', () => {
-  assert.match(renderer, /alignedLineX\(text\.x, text\.width, ctx\.measureText\(line\)\.width, text\.align\)/)
+  assert.match(renderer, /getCachedTextMeasure\(text\.fontSize, text\.fontFamily\)/)
+  assert.match(renderer, /textLineX\(text, /)
   assert.match(overlay, /editor\.align/)
   assert.match(panel, /aria-label=\{`Align text \$\{option\.label\}`\}/)
   assert.match(app, /textAlign=\{textAlignPanel\}/)
@@ -66,4 +67,26 @@ test('align is wired: renderer, editor overlay, panel buttons, palette, new labe
   assert.match(app, /\.\.\.\(item\.align \? \{ align: item\.align \} : \{\}\)/)
   const pick = app.slice(app.indexOf('const pickTextAlign'), app.indexOf('const textAlignPanel'))
   assert.equal((pick.match(/saveHistory\(\)/g) ?? []).length, 1)
+})
+
+test('textLineX clamps a line wider than the box to its left edge, like the SVG export', () => {
+  const box = { x: 100, width: 120 }
+  assert.equal(layout.textLineX({ ...box }, 200), 100)
+  assert.equal(layout.textLineX({ ...box, align: 'center' }, 40), 140)
+  assert.equal(layout.textLineX({ ...box, align: 'center' }, 200), 100)
+  assert.equal(layout.textLineX({ ...box, align: 'right' }, 200), 100)
+  assert.equal(layout.textLineX({ ...box, align: 'right' }, 40), 180)
+  const sheet = readFileSync(new URL('../src/sheetExport.ts', import.meta.url), 'utf8')
+  assert.match(sheet, /textLineX\(text, measure\(line\)\)/)
+})
+
+test('keepAlignAnchor: a re-edited centred label keeps its centre, a right one its right edge, a left one its x', () => {
+  const before = { x: 100, width: 120 }
+  const after = text({ x: 100, width: 60 })
+  assert.equal(layout.keepAlignAnchor({ ...before, align: 'center' }, after).x, 130)
+  assert.equal(layout.keepAlignAnchor({ ...before, align: 'right' }, after).x, 160)
+  assert.equal(layout.keepAlignAnchor({ ...before }, after).x, 100)
+  assert.match(app, /keepAlignAnchor\(existing, updated\)/)
+  assert.match(app, /centerOn: \{ x: item\.x \+ item\.width \/ 2, y: item\.y \+ item\.height \/ 2 \}/)
+  assert.match(overlay, /editor\.anchorRight \* scale/)
 })

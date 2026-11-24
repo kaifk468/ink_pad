@@ -22,6 +22,8 @@ export type TextEditorState = {
   centerOn?: { x: number; y: number }
   /** Alignment of the label being edited (new labels inside a shape are centred through centerOn). */
   align?: TextAlign
+  /** A right-aligned label being re-edited keeps this right edge (sheet coordinates) while typing and when saved. */
+  anchorRight?: number
   /** Editing the label of this connector (Enter commits, Shift+Enter is a new line; committing writes connector.label). */
   connectorId?: number
   /** A label typed into a just-inserted sticky note: committing it adds no undo step of its own (the insert already saved one). */
@@ -68,7 +70,7 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
       rows={1}
       wrap={fit?.wrap ? 'soft' : 'off'}
       style={{
-        left: editor.centerOn ? editor.centerOn.x * scale + viewport.offsetX - boxWidth / 2 : editor.x * scale + viewport.offsetX - padding,
+        left: editor.centerOn ? editor.centerOn.x * scale + viewport.offsetX - boxWidth / 2 : editor.anchorRight !== undefined ? editor.anchorRight * scale + viewport.offsetX - boxWidth + padding : editor.x * scale + viewport.offsetX - padding,
         top: editor.centerOn ? editor.centerOn.y * scale + viewport.offsetY - boxHeight / 2 : editor.y * scale + viewport.offsetY - padding,
         width: boxWidth,
         height: boxHeight,

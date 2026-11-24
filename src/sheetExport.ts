@@ -7,7 +7,7 @@ import { getClassBoxGeometry, type ClassBoxCompartment } from './classBoxLayout'
 import { CODE_FONT_FAMILY, codeColors, codeGeometry } from './codeBlock'
 import { getCodeLines } from './codeHighlight'
 import type { CodeObject, OpaqueObject } from './canvasModel'
-import { getTextBaselines, labelLines, TEXT_FONT_FAMILY, textFontFamily, getCachedTextMeasure, DEFAULT_TEXT_FONT } from './textLayout'
+import { getTextBaselines, labelLines, textLineX, TEXT_FONT_FAMILY, textFontFamily, getCachedTextMeasure, DEFAULT_TEXT_FONT } from './textLayout'
 import { connectorLabelFontSize, connectorLabelLayout } from './connectorLabel'
 
 export type ExportTemplate = 'blank' | 'lined' | 'dotted'
@@ -206,10 +206,15 @@ function textElement(text: TextObject): string {
   const lines = labelLines(text)
   const baselines = getTextBaselines(lines.join('\n'), text.fontSize)
   const family = esc(textFontFamily(text.fontFamily))
+  // Aligned lines are placed with the same clamped left edge the canvas uses (a line wider than the box stays at the left edge); with no text measure (no DOM) the SVG anchors them instead.
+  const measure = text.align ? getCachedTextMeasure(text.fontSize, text.fontFamily) : undefined
   return lines
-    .map((line, index) => (line.length === 0
-      ? ''
-      : `<text x="${n(text.align === 'center' ? text.x + text.width / 2 : text.align === 'right' ? text.x + text.width : text.x)}" y="${n(text.y + baselines[index])}"${text.align === 'center' ? ' text-anchor="middle"' : text.align === 'right' ? ' text-anchor="end"' : ''} font-family="${family}" font-size="${n(text.fontSize)}" fill="${esc(text.color)}" xml:space="preserve">${esc(line)}</text>`))
+    .map((line, index) => {
+      if (line.length === 0) return ''
+      const anchored = text.align && !measure
+      const x = measure ? textLineX(text, measure(line)) : text.align === 'center' ? text.x + text.width / 2 : text.align === 'right' ? text.x + text.width : text.x
+      return `<text x="${n(x)}" y="${n(text.y + baselines[index])}"${anchored ? (text.align === 'center' ? ' text-anchor="middle"' : ' text-anchor="end"') : ''} font-family="${family}" font-size="${n(text.fontSize)}" fill="${esc(text.color)}" xml:space="preserve">${esc(line)}</text>`
+    })
     .join('')
 }
 

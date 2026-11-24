@@ -6,7 +6,7 @@ import { buildInterpolatingCurve, buildMidpointCurve, type InterpolatingStrokeSe
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import { classBoxFont, getClassBoxGeometry, type ClassBoxCompartment, type FontMeasure } from '../classBoxLayout'
 import { connectorLabelFontSize, connectorLabelLayout } from '../connectorLabel'
-import { DEFAULT_TEXT_FONT, alignedLineX, getCachedTextMeasure, getTextBaselines, labelLines, textFont, type TextMeasure } from '../textLayout'
+import { DEFAULT_TEXT_FONT, textLineX, getCachedTextMeasure, getTextBaselines, labelLines, textFont, type TextMeasure } from '../textLayout'
 import type { MinimapGeometry } from '../viewport'
 import { isSketchyRectangle } from '../sketchy'
 import { drawSketchyConnector, fillRectangle, strokeSketchyRectangle, strokeSketchyStroke } from './sketchyRender'
@@ -405,7 +405,8 @@ export function drawText(ctx: CanvasRenderingContext2D, text: TextObject): void 
   ctx.textBaseline = 'alphabetic'
   const lines = labelLines(text)
   const baselines = getTextBaselines(lines.join('\n'), text.fontSize)
-  lines.forEach((line, index) => ctx.fillText(line, text.align ? alignedLineX(text.x, text.width, ctx.measureText(line).width, text.align) : text.x, text.y + baselines[index]))
+  const measureLine = text.align ? getCachedTextMeasure(text.fontSize, text.fontFamily) : undefined
+  lines.forEach((line, index) => ctx.fillText(line, text.align ? textLineX(text, (measureLine ?? ((value: string) => ctx.measureText(value).width))(line)) : text.x, text.y + baselines[index]))
   ctx.restore()
 }
 

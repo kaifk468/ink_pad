@@ -75,7 +75,7 @@ import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitCla
 import { buildEditedLabel, prepareEditorFit } from './textFit'
 import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
 import { connectorLabelFontSize, pointOnConnectorLabel, setConnectorLabel, setConnectorLabelFontSize } from './connectorLabel'
-import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, stepFontSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
+import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, keepAlignAnchor, stepFontSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
 import type { TextAlign, TextFontId } from './canvasModel'
 import { useDocuments } from './app/useDocuments'
@@ -1079,7 +1079,8 @@ function App() {
           const updated = autoFit ? buildEditedLabel(existing, value, editor, createTextMeasure) : value !== existing.text ? updateTextObject(existing, value, existing.fontSize, createTextMeasure(existing.fontSize, existing.fontFamily)) : existing
           if (updated.text !== existing.text || updated.fontSize !== existing.fontSize || updated.fit !== existing.fit) {
             saveHistory()
-            strokesRef.current = strokesRef.current.map((item, itemIndex) => (itemIndex === index ? updated : item))
+            const anchored = keepAlignAnchor(existing, updated)
+            strokesRef.current = strokesRef.current.map((item, itemIndex) => (itemIndex === index ? anchored : item))
           }
         }
       }
@@ -1097,7 +1098,7 @@ function App() {
   // A new empty label at the point (the Text tool's tap and the Desktop double-click on empty canvas): nothing is made until text is typed.
   const openNewTextEditorAt = (point: Point) => openTextEditor({ itemId: null, x: point.x, y: point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
 
-  const editTextItem = (item: TextObject) => openTextEditor({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text, ...(item.align ? { align: item.align } : {}) })
+  const editTextItem = (item: TextObject) => openTextEditor({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text, ...(item.align ? { align: item.align } : {}), ...(item.align === 'center' ? { centerOn: { x: item.x + item.width / 2, y: item.y + item.height / 2 } } : {}), ...(item.align === 'right' ? { anchorRight: item.x + item.width } : {}) })
 
   // Edits the label of a connector in the text overlay, centred on the middle of its drawn path; committing writes connector.label (one undo step).
   const editConnectorLabel = (connectorId: number): boolean => {
@@ -1924,13 +1925,14 @@ function App() {
     strokesRef.current = next
     historyCacheRef.current = null
     renderAll()
+    bumpSelectionColor((n) => n + 1)
     scheduleAutosave()
   }
-  /** Text labels the alignment buttons act on: the selected labels plus (Desktop) the labels inside a selected box. */
+  /** Text labels the alignment buttons act on: the selected labels plus the labels inside a selected box (both modes). */
   const alignTargetKeys = (): Set<string> => {
     const selected = currentSelectionKeys()
     const keys = new Set([...selected].filter((key) => key.startsWith('text:')))
-    if (inputModeRef.current === 'desktop') for (const key of labelsInside(strokesRef.current, selected)) keys.add(key)
+    for (const key of labelsInside(strokesRef.current, selected)) keys.add(key)
     return keys
   }
   /** Left / Centre / Right for every target label; one undo step. */
@@ -1941,6 +1943,7 @@ function App() {
     strokesRef.current = next
     historyCacheRef.current = null
     renderAll()
+    bumpSelectionColor((n) => n + 1)
     scheduleAutosave()
   }
   /** The alignment panel state: the shared alignment of the target labels (null when mixed), or undefined when none are selected. */

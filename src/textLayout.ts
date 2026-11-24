@@ -182,6 +182,18 @@ export function alignedLineX(x: number, width: number, lineWidth: number, align?
   return x
 }
 
+/** Left edge of a line `lineWidth` wide: its own x for a left label, else alignedLineX (the canvas and the SVG export share this, so a line wider than the box clamps the same way). */
+export function textLineX(text: Pick<TextObject, 'x' | 'width' | 'align'>, lineWidth: number): number {
+  return text.align ? alignedLineX(text.x, text.width, lineWidth, text.align) : text.x
+}
+
+/** An edited label keeps the anchor its alignment promises: a centred label keeps its horizontal centre, a right-aligned one its right edge, a left one its left edge. */
+export function keepAlignAnchor(before: Pick<TextObject, 'x' | 'width' | 'align'>, after: TextObject): TextObject {
+  if (before.align === 'center') return { ...after, x: before.x + before.width / 2 - after.width / 2 }
+  if (before.align === 'right') return { ...after, x: before.x + before.width - after.width }
+  return after
+}
+
 /** The text labels whose key is in `keys` (unlocked only) with their alignment set; 'left' removes it. Same array when nothing changes. */
 export function setTextAlign(items: CanvasItem[], keys: ReadonlySet<string>, align: TextAlign | 'left'): CanvasItem[] {
   let changed = false

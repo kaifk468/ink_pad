@@ -1,10 +1,8 @@
 import { canvasItemKey, type CanvasItem, type ConnectorObject } from './canvasModel'
 import { cleanConnectorLabel, MAX_CONNECTOR_LABEL_LENGTH } from './connectorLabel'
 
-/** A leading step number as written by numberSteps ("2", "2.", "2)", "2. text"), with the space after it. */
-const LEADING_NUMBER = /^\d+[.)]?\s*/
-/** What "Clear step numbers" removes: a number only when it reads as a step ("2.", "2)", or the whole label), so "3 servers" is kept. */
-const STEP_NUMBER = /^\d+(?:[.)]\s*|\s*$)/
+/** A step prefix: digits then "." or ")" and whitespace or the end ("2. text", "2)"), or a label that is only one or two digits (a bare step number; "404" is data). "200 OK", "3 replicas", "1.5k QPS" and "2.5 MB/s" are not steps. */
+const STEP_NUMBER = /^(?:\d+[.)](?:\s+|$)|\d{1,2}\s*$)/
 
 /**
  * The connectors a step command works on: the unlocked connectors in the selection; when the selection holds only boxes,
@@ -78,7 +76,7 @@ export function numberSteps(items: CanvasItem[], selectedKeys: ReadonlySet<strin
   if (targets.length === 0) return null
   const changes = new Map<number, string | undefined>()
   flowOrder(targets).forEach((connector, index) => {
-    const rest = (cleanConnectorLabel(connector.label) ?? '').replace(LEADING_NUMBER, '').trim()
+    const rest = (cleanConnectorLabel(connector.label) ?? '').replace(STEP_NUMBER, '').trim()
     const label = rest === '' ? String(index + 1) : `${index + 1}. ${rest}`
     changes.set(connector.id, cleanConnectorLabel(label.slice(0, MAX_CONNECTOR_LABEL_LENGTH)))
   })

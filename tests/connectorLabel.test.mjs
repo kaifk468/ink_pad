@@ -117,3 +117,22 @@ test('label size: wired into the editor, font keys and panel', () => {
   assert.match(app, /connectorLabelSize=\{/)
   assert.doesNotMatch(app, /CONNECTOR_LABEL_FONT_SIZE/)
 })
+
+test('removing a connector label drops its label size too; setting one keeps it', () => {
+  const sized = [conn({ label: 'HTTP', labelFontSize: 30 })]
+  assert.equal('labelFontSize' in lab.setConnectorLabel(sized, 1, '')[0], false)
+  assert.equal('label' in lab.setConnectorLabel(sized, 1, '  ')[0], false)
+  assert.equal(lab.setConnectorLabel(sized, 1, 'gRPC')[0].labelFontSize, 30)
+})
+
+test('connector handles use the real text measure by default, so the middle dot clears a large label', async () => {
+  const handles = await loadModule('connectorHandles.ts')
+  const src = (await import('node:fs')).readFileSync(new URL('../src/connectorHandles.ts', import.meta.url), 'utf8')
+  assert.match(src, /connectorLabelLayout\(connector, measure \?\? getCachedTextMeasure\(connectorLabelFontSize\(connector\), DEFAULT_TEXT_FONT\)\)/)
+  const wide = (line) => line.length * 20
+  const c = conn({ end: p(1000, 100), label: 'a long label here', labelFontSize: 30 })
+  const dot = handles.connectorHandlePositions(c, wide).middle
+  const box = lab.connectorLabelLayout(c, wide).box
+  assert.ok(dot.x >= box.x + box.width || dot.x <= box.x, 'dot is outside the label box')
+  assert.deepEqual(handles.hitConnectorHandle(c, dot, 1, 'mouse', wide), 'middle')
+})

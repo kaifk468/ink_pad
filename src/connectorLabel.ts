@@ -74,7 +74,9 @@ export function setConnectorLabel(items: CanvasItem[], connectorId: number, text
     if (item.kind !== 'connector' || item.id !== connectorId || item.label === label) return item
     changed = true
     const { label: _old, ...rest } = item
-    return label === undefined ? rest : { ...rest, label }
+    // A removed label takes its size with it (a new label starts at the default size).
+    if (label === undefined) { const { labelFontSize: _size, ...bare } = rest; return bare }
+    return { ...rest, label }
   })
   return changed ? next : items
 }

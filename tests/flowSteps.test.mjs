@@ -108,3 +108,32 @@ test('App wires Number steps: menu, palette, one undo step, toasts', () => {
   assert.match(app, /const numberFlowSteps[\s\S]*?saveHistory\(\)[\s\S]*?Numbered \$\{count\}/)
   assert.match(app, /const clearFlowSteps[\s\S]*?saveHistory\(\)[\s\S]*?Cleared step numbers/)
 })
+
+test('only a real step prefix is replaced: "200 OK", "3 replicas", "404", "1.5k QPS" keep their text', () => {
+  const run = (label) => labels(numberSteps([box(1), box(2), conn(10, 1, 2, 0, 0, { label })], keys('connector:10')))[10]
+  assert.equal(run('200 OK'), '1. 200 OK')
+  assert.equal(run('1.5k QPS'), '1. 1.5k QPS')
+  assert.equal(run('3 replicas'), '1. 3 replicas')
+  assert.equal(run('404'), '1. 404')
+  assert.equal(run('2. publishes'), '1. publishes')
+  assert.equal(run('2) publishes'), '1. publishes')
+})
+
+test('clear removes step prefixes only: "2.5 MB/s", "200 OK" and "404" stay, a bare "7" and "2. x" go', () => {
+  const run = (label) => { const r = clearSteps([box(1), box(2), conn(10, 1, 2, 0, 0, { label })], keys('connector:10')); return r === null ? 'unchanged' : r[2].label }
+  assert.equal(run('2.5 MB/s'), 'unchanged')
+  assert.equal(run('200 OK'), 'unchanged')
+  assert.equal(run('404'), 'unchanged')
+  assert.equal(run('7'), undefined)
+  assert.equal(run('2. publishes'), 'publishes')
+})
+
+test('wiring: the label size and alignment pickers re-render the panel; alignment also reaches labels inside a box on the tablet', () => {
+  const size = app.slice(app.indexOf('const pickConnectorLabelSize'), app.indexOf('const alignTargetKeys'))
+  assert.match(size, /bumpSelectionColor\(\(n\) => n \+ 1\)/)
+  const align = app.slice(app.indexOf('const pickTextAlign'), app.indexOf('const textAlignPanel'))
+  assert.match(align, /bumpSelectionColor\(\(n\) => n \+ 1\)/)
+  const targets = app.slice(app.indexOf('const alignTargetKeys'), app.indexOf('const pickTextAlign'))
+  assert.doesNotMatch(targets, /inputModeRef/)
+  assert.match(targets, /labelsInside\(/)
+})

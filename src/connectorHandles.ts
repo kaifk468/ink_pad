@@ -1,7 +1,7 @@
 import { bendableMiddle, routeConnectors } from './connectorRoute'
-import { connectorLabelLayout } from './connectorLabel'
+import { connectorLabelFontSize, connectorLabelLayout } from './connectorLabel'
 import { pathLength, pathMidpoint, pointAlongPath } from './pathGeometry'
-import type { TextMeasure } from './textLayout'
+import { DEFAULT_TEXT_FONT, getCachedTextMeasure, type TextMeasure } from './textLayout'
 import { MAX_CONNECTOR_BEND, canvasItemKey, connectorPoints, snapConnectorEndpoint, updateConnectorRouting, type CanvasItem, type ConnectorObject, type Point, type SnappedConnectorEndpoint } from './canvasModel'
 
 /** Excalidraw-style handles of one selected connector: a dot on each end and a smaller one in the middle of the drawn path. */
@@ -36,7 +36,8 @@ export function connectorMiddleDot(connector: ConnectorObject, measure?: TextMea
     arc = pathLength(path.slice(0, movable.index + 1)) + Math.hypot(path[movable.index + 1].x - path[movable.index].x, path[movable.index + 1].y - path[movable.index].y) / 2
     at = pointAlongPath(path, arc).point
   }
-  const layout = connectorLabelLayout(connector, measure)
+  // The same measure the renderer uses, so the dot clears the real (large) label; without a DOM the estimate applies.
+  const layout = connectorLabelLayout(connector, measure ?? getCachedTextMeasure(connectorLabelFontSize(connector), DEFAULT_TEXT_FONT))
   if (!layout) return at
   const { box } = layout
   const inside = (p: Point) => p.x > box.x - MIDDLE_DOT_LABEL_GAP && p.x < box.x + box.width + MIDDLE_DOT_LABEL_GAP && p.y > box.y - MIDDLE_DOT_LABEL_GAP && p.y < box.y + box.height + MIDDLE_DOT_LABEL_GAP
@@ -73,9 +74,9 @@ export function soleSelectedConnector(items: readonly CanvasItem[], keys: Readon
 }
 
 /** Which handle is under `point`, or null. The ends win over the middle where they overlap. */
-export function hitConnectorHandle(connector: ConnectorObject, point: Point, scale: number, pointerType = 'mouse'): ConnectorHandleKind | null {
+export function hitConnectorHandle(connector: ConnectorObject, point: Point, scale: number, pointerType = 'mouse', measure?: TextMeasure): ConnectorHandleKind | null {
   const radius = connectorHandleRadiusPx(pointerType) / scale
-  const handles = connectorHandlePositions(connector)
+  const handles = connectorHandlePositions(connector, measure)
   const distance = (p: Point) => Math.hypot(point.x - p.x, point.y - p.y)
   const dEnd = distance(handles.end)
   const dStart = distance(handles.start)
