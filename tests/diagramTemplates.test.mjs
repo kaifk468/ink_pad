@@ -10,6 +10,7 @@ const model = await loadModule('canvasModel.ts')
 const clip = await loadModule('clipboard.ts')
 const flow = await loadModule('diagramFlow.ts')
 const viewport = await loadModule('viewport.ts')
+const hldModule = await loadModule('hldShapes.ts')
 
 const read = (path) => readFile(new URL(`../src/${path}`, import.meta.url), 'utf8')
 const roundTrip = (items) => doc.parseDocument(doc.stringifyDocument(doc.createDocument({ title: 't', template: 'blank', background: 'white', items })))
@@ -74,6 +75,28 @@ for (const t of tpl.DIAGRAM_TEMPLATES) {
     }
   })
 }
+
+test('HLD templates are drawn smaller than the default shape sizes so they fit one screen at a readable zoom', () => {
+  assert.equal(tpl.HLD_TEMPLATE_SCALE, 0.7)
+  for (const id of ['client-server-database', 'cache-queue-service']) {
+    const items = tpl.buildTemplate(id)
+    const boxes = items.filter((i) => i.kind === 'rectangle')
+    const bounds = model.getCanvasSelectionBounds(items, new Set(items.map(model.canvasItemKey)))
+    assert.ok(bounds.width <= 1100 && bounds.height <= 460, `${id} is ${bounds.width} x ${bounds.height}`)
+    for (const box of boxes) {
+      const size = hldModule.HLD_DEFAULT_SIZE[box.hldShape]
+      assert.ok(box.width <= size.width && box.height <= size.height, `${id}: ${box.hldShape} is not larger than its default`)
+      assert.ok(box.width >= 64 && box.height >= 64)
+      assert.ok(box.inkBox.top >= box.y + 24 && box.inkBox.mid >= box.inkBox.top + 24 && box.inkBox.mid <= box.y + box.height - 24, 'ink dividers stay valid')
+    }
+    for (const label of items.filter((i) => i.kind === 'text')) assert.ok(boxes.some((box) => flow.labelInsideBox(label, box)), label.text)
+    for (const a of boxes) for (const b of boxes) {
+      if (a.id >= b.id) continue
+      const apart = a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y
+      assert.ok(apart, `${id}: boxes ${a.id} and ${b.id} overlap`)
+    }
+  }
+})
 
 test('templates use the HLD shapes, typed class boxes and an inheritance connector as specified', () => {
   const hld = (id) => tpl.buildTemplate(id).filter((i) => i.kind === 'rectangle' && i.hldShape).map((i) => i.hldShape)

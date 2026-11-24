@@ -4699,6 +4699,7 @@ function App() {
     { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2).then((error) => { if (error) showToast(error) }) },
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
+    ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
     { id: 'export:outline-copy', label: 'Copy as text outline', group: 'Export', keywords: 'markdown summary list copy', run: copyOutline },
     { id: 'export:outline-download', label: 'Download outline (.md)', group: 'Export', keywords: 'markdown text summary file', run: downloadOutline },
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },

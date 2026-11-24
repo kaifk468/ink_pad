@@ -14,6 +14,8 @@ export type DiagramTemplate = { id: string; name: string; description: string; b
 type Side = 'left' | 'right' | 'top' | 'bottom'
 const STROKE_COLOR = '#1e1e1e'
 const LABEL_SIZE = 24
+/** The HLD templates are drawn at this fraction of the shapes' tap-create sizes (a whole template is then about 1000 x 400 units, readable on one screen). */
+export const HLD_TEMPLATE_SCALE = 0.7
 
 class Sheet {
   items: CanvasItem[] = []
@@ -21,8 +23,16 @@ class Sheet {
   private textId = 1
   private connectorId = 1
 
-  /** An HLD shape; `name` becomes a text label centred in it (`labelDrop` moves it down for shapes with an icon in the middle). */
-  hld(shape: HldShape, x: number, y: number, name: string, size = HLD_DEFAULT_SIZE[shape], labelDrop = 0): RectangleObject {
+  /** `scale` shrinks every HLD box position and size, so a whole template fits one screen at a readable zoom. */
+  constructor(private readonly scale = 1) {}
+
+  /** An HLD shape; `name` becomes a text label centred in it (`labelDrop` moves it down for shapes with an icon in the middle). Coordinates and sizes are in unscaled units. */
+  hld(shape: HldShape, unscaledX: number, unscaledY: number, name: string, unscaledSize = HLD_DEFAULT_SIZE[shape], unscaledLabelDrop = 0): RectangleObject {
+    const scaled = (value: number): number => Math.round(value * this.scale)
+    const x = scaled(unscaledX)
+    const y = scaled(unscaledY)
+    const size = { width: scaled(unscaledSize.width), height: scaled(unscaledSize.height) }
+    const labelDrop = scaled(unscaledLabelDrop)
     const made = createHldShape(this.rectangleId++, x, y, size.width, size.height, STROKE_COLOR, CLASS_BOX_DEFAULT_STROKE_WIDTH, shape)
     // The saved file keeps the two ink dividers 24 units from the edges and each other; start with those values so a save and load changes nothing.
     const top = Math.min(Math.max(made.inkBox?.top ?? y, y + 24), y + size.height - 48)
@@ -73,7 +83,7 @@ class Sheet {
 }
 
 function clientServerDatabase(): CanvasItem[] {
-  const sheet = new Sheet()
+  const sheet = new Sheet(HLD_TEMPLATE_SCALE)
   const user = sheet.hld('user', 0, 170, 'User', undefined, 50)
   const balancer = sheet.hld('loadBalancer', 220, 185, 'Load balancer')
   const serviceA = sheet.hld('service', 620, 20, 'Service A')
@@ -88,7 +98,7 @@ function clientServerDatabase(): CanvasItem[] {
 }
 
 function cacheAndQueue(): CanvasItem[] {
-  const sheet = new Sheet()
+  const sheet = new Sheet(HLD_TEMPLATE_SCALE)
   const client = sheet.hld('browser', 0, 120, 'Client', { width: 280, height: 160 }, 12)
   const api = sheet.hld('service', 360, 120, 'API service', { width: 320, height: 160 })
   const cache = sheet.hld('cache', 780, 125, 'Cache', { width: 280, height: 150 })

@@ -75,3 +75,9 @@ test('App wiring: palette is gated like other commands, closed before the comman
   assert.match(app, /paletteOpen && inputMode === 'desktop' && <CommandPalette/)
   assert.match(app, /const paletteExtras = /)
 })
+
+test('Select similar is in the palette only with exactly one item selected and runs the right-click code', () => {
+  assert.match(app, /\.\.\.\(soleSelectedKey\(\) !== null \? \[\{ id: 'select:similar', label: 'Select similar'[^\n]*selectSimilarItems\(\)/)
+  assert.match(app, /case 'selectSimilar': selectSimilarItems\(\); break/)
+  assert.match(app, /const soleSelectedKey = \(\): string \| null => \{\s+const keys = currentSelectionKeys\(\)\s+return keys\.size === 1/)
+})
