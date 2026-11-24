@@ -492,7 +492,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
 }
 
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'exportPng' | 'exportSvg'
-  | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup'
+  | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar'
 export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'arrange' | 'view' | 'lock' | 'export' | 'select'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
 export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint: string; section: ContextMenuSection; disabled: boolean }
@@ -516,6 +516,8 @@ export type ContextMenuState = {
   canGroup?: boolean
   /** A selected item belongs to a group (Ungroup is offered). */
   canUngroup?: boolean
+  /** Exactly one selectable item is selected (Select similar is offered). */
+  canSelectSimilar?: boolean
 }
 
 /**
@@ -524,7 +526,7 @@ export type ContextMenuState = {
  * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
-  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false } = state
+  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false } = state
   const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
@@ -546,6 +548,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('copyPng', 'Copy as PNG', 'Shift+Alt+C', 'export', hasSelection || pageHasItems),
     // Only offered when something is selected.
     ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true), entry('exportSvg', 'Export selection as SVG', '', 'export', true)] : []),
+    ...(canSelectSimilar ? [entry('selectSimilar', 'Select similar', '', 'select', true)] : []),
     entry('selectAll', 'Select all', 'Ctrl+A', 'select', pageHasItems),
   ]
 }

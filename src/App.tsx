@@ -7,6 +7,7 @@ import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectio
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, hitConnectorHandle, moveConnectorEndpoint, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
+import { similarItemKeys } from './selectSimilar'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
@@ -1212,6 +1213,22 @@ function App() {
   }
 
   // Select every item on the page, switching to the select tool first when no selecting tool is active so the selection can be moved.
+  // Select similar (right-click): the unlocked items of the same kind / shape as the one selected, through the normal selection path. No history entry.
+  const soleSelectedKey = (): string | null => {
+    const keys = currentSelectionKeys()
+    return keys.size === 1 ? [...keys][0] : null
+  }
+  const selectSimilarItems = (): boolean => {
+    const key = soleSelectedKey()
+    const keys = key ? similarItemKeys(strokesRef.current, key) : []
+    if (keys.length === 0) return false
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    setSelectedRectangle(null)
+    updateSelectedItems(keys)
+    renderAll()
+    showToast(`Selected ${keys.length} similar item${keys.length === 1 ? '' : 's'}`)
+    return true
+  }
   const selectAllItems = (): boolean => {
     const keys = allCanvasItemKeys(strokesRef.current)
     if (keys.length === 0) return false
@@ -4244,6 +4261,7 @@ function App() {
       case 'exportSvg': exportSelectionAs('svg'); break
       case 'delete': deleteSelection(); break
       case 'selectAll': selectAllItems(); break
+      case 'selectSimilar': selectSimilarItems(); break
       case 'bringToFront': moveSelectionLayer('front'); break
       case 'sendToBack': moveSelectionLayer('back'); break
       case 'editText': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); if (target) openEditTarget(target); break }
@@ -4439,6 +4457,7 @@ function App() {
             anyLocked: strokesRef.current.some(isItemLocked),
             canGroup: canGroup(strokesRef.current, currentSelectionKeys()),
             canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()),
+            canSelectSimilar: (() => { const key = soleSelectedKey(); return key !== null && similarItemKeys(strokesRef.current, key).length > 0 })(),
           })
           const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight)
           return (
