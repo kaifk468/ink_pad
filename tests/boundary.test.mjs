@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { loadModule } from './helpers/loadModule.mjs'
@@ -90,3 +91,54 @@ test('wiring: chip, palette, panel, one undo step, editor on the label', () => {
   assert.match(block, /editTextItem\(result\.label, true\)/)
   assert.match(block, /updateSelectedItems\(\[canvasItemKey\(result\.label\)\]\)/)
 })
+
+// Container rectangles: only the edge band (or a label) picks them.
+const bnd = await loadModule('boundary.ts')
+const label = (id, x, y, w = 60, h = 20) => ({ kind: 'text', id, x, y, width: w, height: h, text: 'x', fontSize: 16, color: '#111' })
+
+test('isContainerBox: an unfilled plain rectangle holding another box is a container', () => {
+  const outer = box(1, 0, 0, 400, 300)
+  assert.equal(bnd.isContainerBox([outer, box(2, 100, 100)], outer), true)
+  assert.equal(bnd.isContainerBox([outer, label(3, 300, 220)], outer), true)
+})
+
+test('isContainerBox: empty, own-label-only, filled, class, HLD, oval, locked or partly-overlapping contents are not', () => {
+  const outer = box(1, 0, 0, 400, 300)
+  assert.equal(bnd.isContainerBox([outer], outer), false)
+  assert.equal(bnd.isContainerBox([outer, label(2, 12, 8)], outer), false) // the boundary label
+  assert.equal(bnd.isContainerBox([outer, label(2, 170, 140)], outer), false) // a centred label
+  assert.equal(bnd.isContainerBox([outer, box(2, 350, 100)], outer), false) // sticks out
+  assert.equal(bnd.isContainerBox([outer, box(2, 100, 100, 100, 60, { locked: true })], outer), false)
+  for (const extra of [{ fillColor: '#b2f2bb' }, { classBox: {} }, { hldShape: 'database' }, { ellipse: true }, { diamond: true }, { inkBox: {} }]) {
+    const o = box(1, 0, 0, 400, 300, extra)
+    assert.equal(bnd.isContainerBox([o, box(2, 100, 100)], o), false, JSON.stringify(extra))
+  }
+  const clear = box(1, 0, 0, 400, 300, { fillColor: 'transparent' })
+  assert.equal(bnd.isContainerBox([clear, box(2, 100, 100)], clear), true)
+})
+
+test('hitTarget: the interior of a container falls through, its edge band and contents still hit', () => {
+  const outer = box(1, 0, 0, 400, 300)
+  const inner = box(2, 100, 100)
+  const items = [outer, inner]
+  assert.equal(input.hitTarget(items, { x: 300, y: 250 }, 1), null)
+  assert.equal(input.hitTarget(items, { x: 3, y: 150 }, 1)?.id, 1)
+  assert.equal(input.hitTarget(items, { x: 150, y: 130 }, 1)?.id, 2)
+  assert.equal(input.hitTarget(items, { x: 300, y: 250 }, 1), null)
+  // a plain rectangle with nothing inside is unchanged
+  assert.equal(input.hitTarget([outer], { x: 300, y: 250 }, 1)?.id, 1)
+  // a filled rectangle is unchanged
+  const filled = box(1, 0, 0, 400, 300, { fillColor: '#b2f2bb' })
+  assert.equal(input.hitTarget([filled, inner], { x: 300, y: 250 }, 1)?.id, 1)
+  assert.equal(input.doubleClickTarget(items, { x: 300, y: 250 }, 1), null)
+})
+
+test('the select press, right-click and double-click share the container-aware hit test', () => {
+  assert.match(app, /rectanglePicked\(strokesRef\.current, item, point, viewportRef\.current\.scale\)/)
+  assert.match(app, /hitTarget\(routeConnectors\(strokesRef\.current\), point, viewportRef\.current\.scale, passThroughCode\)/)
+  const src = require_src()
+  assert.match(src, /isContainerBox\(items, item\)/)
+})
+function require_src() {
+  return readFileSync(new URL('../src/desktopInput.ts', import.meta.url), 'utf8')
+}

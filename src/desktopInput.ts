@@ -8,6 +8,7 @@
  */
 
 import { canvasItemKey, getCanvasSelectionBounds, isItemLocked, toItemFrame, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
+import { isContainerBox } from './boundary'
 import { hitInkBoxDivider, hitInkBoxMoveGrip } from './inkClassBox'
 import { itemHitTest } from './lassoSelection'
 import { connectorLabelFontSize, pointOnConnectorLabel } from './connectorLabel'
@@ -335,13 +336,21 @@ export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scal
   }
   return pick('text', (item) => itemHitTest(item, point, 8 / scale))
     ?? (skipCode ? null : pick('code', (item) => itemHitTest(item, point, 8 / scale)))
-    ?? pick('rectangle', (item) => {
-      if (item.kind !== 'rectangle') return false
-      const pad = Math.max(8 / scale, item.strokeWidth * 2)
-      const local = toItemFrame(item, point)
-      return local.x >= item.x - pad && local.x <= item.x + item.width + pad && local.y >= item.y - pad && local.y <= item.y + item.height + pad
-    })
+    ?? pick('rectangle', (item) => item.kind === 'rectangle' && rectanglePicked(routedItems, item, point, scale))
     ?? pick('connector', (item) => item.kind === 'connector' && (itemHitTest(item, point, Math.max(12 / scale, item.strokeWidth * 2)) || pointOnConnectorLabel(item, point, getCachedTextMeasure(connectorLabelFontSize(item), DEFAULT_TEXT_FONT))))
+}
+
+/**
+ * True when the point picks this box: inside its padded bounds, except that a container (an unfilled plain rectangle holding other
+ * items, e.g. a boundary) is picked only by its edge band; its interior falls through to what lies below and to the marquee.
+ * The container check runs only for a box under the point.
+ */
+export function rectanglePicked(items: readonly CanvasItem[], item: RectangleObject, point: Point, scale: number): boolean {
+  const pad = Math.max(8 / scale, item.strokeWidth * 2)
+  const local = toItemFrame(item, point)
+  if (!(local.x >= item.x - pad && local.x <= item.x + item.width + pad && local.y >= item.y - pad && local.y <= item.y + item.height + pad)) return false
+  if (pointInEdgeBand(item, local, Math.max(EDGE_BAND_PX / scale, pad))) return true
+  return !isContainerBox(items, item)
 }
 
 export type ClickTool = 'laser' | 'pen' | 'shape' | 'shapeDraw' | 'text' | 'connector' | 'lasso' | 'classBox' | 'select' | 'eraser'

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
-import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { QUICK_CONNECT_DOUBLE_CLICK_MS, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConnectorHandle, hitConnectorLabel, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
@@ -94,7 +94,7 @@ import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, loadTapUndo, saveNavigationSettings, saveTapUndo } from './navigationSettings'
-import { canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -1009,9 +1009,7 @@ function App() {
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
       if (item.kind !== 'rectangle' || item.locked) continue
-      const pad = Math.max(8 / viewportRef.current.scale, item.strokeWidth * 2)
-      const local = toItemFrame(item, point)
-      if (local.x >= item.x - pad && local.x <= item.x + item.width + pad && local.y >= item.y - pad && local.y <= item.y + item.height + pad) return item
+      if (rectanglePicked(strokesRef.current, item, point, viewportRef.current.scale)) return item
     }
     return null
   }

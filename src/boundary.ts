@@ -44,3 +44,34 @@ export function addBoundary(
   const behind = reorderItems([...items, rectangle], new Set([canvasItemKey(rectangle)]), 'back')
   return { items: [...behind, label], rectangle, label }
 }
+
+/** The label of a plain box sits in its middle; a boundary's own label sits at its top-left corner. */
+const OWN_LABEL_CORNER = 48
+
+function insideBox(box: RectangleBounds, item: RectangleBounds): boolean {
+  return item.x >= box.x && item.y >= box.y && item.x + item.width <= box.x + box.width && item.y + item.height <= box.y + box.height
+}
+
+function isOwnLabel(box: RectangleBounds, text: TextObject): boolean {
+  if (text.x - box.x <= OWN_LABEL_CORNER && text.y - box.y <= OWN_LABEL_CORNER) return true // the "Boundary" label
+  const dx = text.x + text.width / 2 - (box.x + box.width / 2)
+  const dy = text.y + text.height / 2 - (box.y + box.height / 2)
+  return Math.abs(dx) <= box.width * 0.2 && Math.abs(dy) <= box.height * 0.2 // a label centred in the box
+}
+
+/**
+ * True for a "container": an unfilled, unrotated plain rectangle (not a class box, ink box, HLD shape, oval or diamond) that fully
+ * holds at least one other unlocked box, code block or text label that is not its own label. Its interior is not a hit target
+ * (only its edge band and its label are), so a boundary around a group never blocks the marquee, deselect or the items beneath.
+ */
+export function isContainerBox(items: readonly CanvasItem[], box: RectangleObject): boolean {
+  if (box.classBox || box.inkBox || box.hldShape || box.ellipse || box.diamond || box.angle) return false
+  if (box.fillColor && !/^(none|transparent)$/i.test(box.fillColor) && !/^#[0-9a-f]{6}00$/i.test(box.fillColor)) return false
+  for (const item of items) {
+    if (item === box || item.kind === 'opaque' || item.kind === 'stroke' || item.kind === 'connector' || item.locked) continue
+    if (item.kind === 'text') {
+      if (insideBox(box, item) && !isOwnLabel(box, item)) return true
+    } else if ((item.kind === 'rectangle' || item.kind === 'code') && insideBox(box, item)) return true
+  }
+  return false
+}
