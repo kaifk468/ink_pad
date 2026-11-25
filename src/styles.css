@@ -802,7 +802,13 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .command-palette-empty { margin: 0; padding: 16px 10px; color: #6b7280; text-align: center; }
 
 /* Find bar: top centre, just under the history bar; the area around it stays canvas */
-.find-bar { position: absolute; z-index: 4; top: calc(max(16px, env(safe-area-inset-top)) + 64px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; box-sizing: border-box; max-width: calc(100vw - 32px); padding: 4px 6px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .98); box-shadow: 0 3px 12px rgba(31, 39, 52, .16); }
+.find-bar { position: absolute; z-index: 4; top: calc(max(16px, env(safe-area-inset-top)) + 64px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: stretch; gap: 2px; box-sizing: border-box; max-width: calc(100vw - 32px); padding: 4px 6px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .98); box-shadow: 0 3px 12px rgba(31, 39, 52, .16); }
+.find-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.find-row .find-input { flex: 1 1 auto; }
+.find-text-button { flex: none; height: 40px; padding: 0 12px; border: 0; border-radius: 10px; background: #eef1fb; color: #343944; font-size: 14px; cursor: pointer; touch-action: manipulation; white-space: nowrap; }
+.find-text-button:hover:not(:disabled) { background: #e1e6f8; }
+.find-text-button:disabled { opacity: .35; cursor: default; }
+.find-button.is-on { background: #e1e6f8; }
 .find-input { box-sizing: border-box; width: 200px; min-width: 0; height: 40px; padding: 0 10px; border: 1px solid #d9dce2; border-radius: 10px; outline: none; font-size: 16px; color: #343944; background: #fff; }
 .find-input:focus { border-color: #5574ed; }
 .find-count { min-width: 56px; padding: 0 6px; color: #6b7280; font-size: 13px; text-align: center; white-space: nowrap; }

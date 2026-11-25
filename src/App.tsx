@@ -65,6 +65,7 @@ import { EmptyCanvasHint } from './app/EmptyCanvasHint'
 import { ShortcutHelp } from './app/ShortcutHelp'
 import { CommandPalette } from './app/CommandPalette'
 import { FindBar } from './app/FindBar'
+import { replaceAcrossPages, replaceToast } from './canvasReplace'
 import { sameSearchFingerprint, searchCanvas, searchFingerprint, type SearchMatch } from './canvasSearch'
 import { buildDiagramOutline, outlineFileName } from './diagramOutline'
 import { downloadBlob } from './documentStore'
@@ -5093,7 +5094,10 @@ function App() {
   const [findFocusTick, setFindFocusTick] = useState(0)
   const findQueryRef = useRef('')
   const findIndexRef = useRef(-1)
-  const openFind = () => { setFindOpen(true); setFindFocusTick((tick) => tick + 1) }
+  const [findReplaceOpen, setFindReplaceOpen] = useState(false)
+  const [findReplacement, setFindReplacement] = useState('')
+  const findReplacementRef = useRef('')
+  const openFind = (withReplace = false) => { setFindOpen(true); if (withReplace) setFindReplaceOpen(true); setFindFocusTick((tick) => tick + 1) }
   const closeFind = () => setFindOpen(false)
   const findMatches = (query: string): SearchMatch[] => searchCanvas(pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)), query)
   // The bar's count is memoised on the query and a fingerprint of the searchable text of every page, so an ordinary re-render does not search again but an in-place label edit refreshes the count.
@@ -5145,6 +5149,51 @@ function App() {
     if (matches.length === 0) { setFindCurrent(-1); return }
     setFindCurrent(0)
     goToFindMatch(matches[0])
+  }
+  const changeFindReplacement = (text: string) => { findReplacementRef.current = text; setFindReplacement(text) }
+  /** Replaces on all pages, or in one item. Each changed page gets one undo step on its own history (the current page through the normal history path); the result refreshes Find. */
+  const runReplace = (only?: { pageIndex: number; key: string }): { replacements: number; changedItems: number } => {
+    const query = findQueryRef.current
+    if (!query.trim() || penBusy()) return { replacements: 0, changedItems: 0 }
+    if (textEditorRef.current) commitTextEditor()
+    pagesRef.current[pageIndexRef.current].items = strokesRef.current
+    const result = replaceAcrossPages(pagesRef.current, pageIndexRef.current, strokesRef.current, query, findReplacementRef.current, { measureFor: createTextMeasure, fontMeasure: createFontMeasure(), ...(only ? { only } : {}) })
+    if (result.replacements === 0) return { replacements: 0, changedItems: 0 }
+    if (result.currentItems !== strokesRef.current) {
+      saveHistory()
+      strokesRef.current = result.currentItems
+      historyCacheRef.current = null
+      reconcileSelectedItems()
+      setHasInk(strokesRef.current.length > 0)
+    } else {
+      scheduleAutosave() // only other pages changed
+    }
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    return { replacements: result.replacements, changedItems: result.changedItems }
+  }
+  const replaceAllFind = () => {
+    const done = runReplace()
+    showToast(replaceToast(done.replacements, done.changedItems))
+    if (done.replacements === 0) return
+    const matches = findMatches(findQueryRef.current)
+    setFindCurrent(matches.length === 0 ? -1 : 0)
+    if (matches.length > 0) goToFindMatch(matches[0])
+  }
+  const replaceCurrentFind = () => {
+    const matches = findMatches(findQueryRef.current)
+    if (matches.length === 0) return
+    const at = findIndexRef.current >= 0 && findIndexRef.current < matches.length ? findIndexRef.current : 0
+    const current = matches[at]
+    const done = runReplace({ pageIndex: current.pageIndex, key: current.key })
+    showToast(replaceToast(done.replacements, done.changedItems))
+    // The replaced item usually left the list, so the same index is the next match; when it still matches (its replacement contains the query) move on one.
+    const next = findMatches(findQueryRef.current)
+    if (next.length === 0) { setFindCurrent(-1); return }
+    const stay = next[at]
+    const index = stay && stay.key === current.key && stay.pageIndex === current.pageIndex ? (at + 1) % next.length : at % next.length
+    setFindCurrent(index)
+    goToFindMatch(next[index])
   }
   const stepFind = (delta: 1 | -1) => {
     const matches = findMatches(findQueryRef.current)
@@ -5208,6 +5257,7 @@ function App() {
       case 'library': toggleLibrary(); return true
       case 'palette': openPalette(); return true
       case 'find': openFind(); return true
+      case 'findReplace': openFind(true); return true
       case 'zoomIn': if (!navigationSettingsRef.current.zoomLocked) zoomBy(ZOOM_STEP); return true
       case 'zoomOut': if (!navigationSettingsRef.current.zoomLocked) zoomBy(1 / ZOOM_STEP); return true
       case 'zoomReset': zoomToActualSize(); return true
@@ -5270,7 +5320,7 @@ function App() {
       if (!command) return
       const target = event.target as HTMLElement | null
       if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) {
-        if (command.kind === 'palette' || command.kind === 'find') event.preventDefault() // Chrome's Ctrl+K (search bar) and Ctrl+F (find bar) never win, even inside a text field
+        if (command.kind === 'palette' || command.kind === 'find' || command.kind === 'findReplace') event.preventDefault() // Chrome's Ctrl+K (search bar) and Ctrl+F (find bar) never win, even inside a text field
         return
       }
       // Enter on a focused button or link activates it: only a canvas-level Enter edits.
@@ -5599,7 +5649,7 @@ function App() {
       />
       {pageOverviewOpen && <PageOverview count={pageCount} current={pageIndex} names={pagesRef.current.map((slot) => slot.name ?? '')} onRename={renamePage} loadThumbnail={renderPageThumbnail} onGo={(index) => { goToPage(index); setPageOverviewOpen(false) }} onMove={movePageTo} onClose={() => setPageOverviewOpen(false)} />}
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
-      {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} />}
+      {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} replaceOpen={findReplaceOpen} onToggleReplace={() => setFindReplaceOpen((open) => !open)} replacement={findReplacement} onReplacementChange={changeFindReplacement} onReplace={replaceCurrentFind} onReplaceAll={replaceAllFind} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
       {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
       {mermaidOpen && <MermaidDialog onInsert={importMermaid} onClose={() => setMermaidOpen(false)} />}

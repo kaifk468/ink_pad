@@ -189,6 +189,7 @@ export type KeyCommand =
   | { kind: 'library' }
   | { kind: 'palette' }
   | { kind: 'find' }
+  | { kind: 'findReplace' }
   | { kind: 'zoomIn' }
   | { kind: 'zoomOut' }
   | { kind: 'zoomReset' }
@@ -273,6 +274,8 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if (key === 'k' && !event.shiftKey && !event.repeat) return { kind: 'palette' }
     // Ctrl/Cmd+F opens the find bar (never Chrome's own).
     if (key === 'f' && !event.shiftKey && !event.repeat) return { kind: 'find' }
+    // Ctrl/Cmd+H opens find with the replace row (Chrome would open its History).
+    if (key === 'h' && !event.shiftKey && !event.repeat) return { kind: 'findReplace' }
     if (!event.shiftKey && !event.repeat) {
       if (key === 'c') return { kind: 'copy' }
       if (key === 'x') return { kind: 'cut' }
@@ -691,7 +694,7 @@ export function clampMenuPosition(x: number, y: number, width: number, height: n
 }
 
 /** Commands whose browser default (Chrome's find bar for Ctrl+G, the open-file dialog, Ctrl+Alt shortcuts) is always cancelled in Desktop mode, even when the action does nothing. */
-export const ALWAYS_PREVENT_DEFAULT_COMMANDS: ReadonlySet<KeyCommand['kind']> = new Set(['group', 'ungroup', 'library', 'palette', 'find', 'copyStyle', 'pasteStyle'])
+export const ALWAYS_PREVENT_DEFAULT_COMMANDS: ReadonlySet<KeyCommand['kind']> = new Set(['group', 'ungroup', 'library', 'palette', 'find', 'findReplace', 'copyStyle', 'pasteStyle'])
 export function alwaysPreventsDefault(command: KeyCommand, mode: InputMode): boolean {
   return mode === 'desktop' && ALWAYS_PREVENT_DEFAULT_COMMANDS.has(command.kind)
 }
