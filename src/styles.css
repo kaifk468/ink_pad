@@ -281,6 +281,7 @@ button { font: inherit; }
 .dock-divider { width: 1px; height: 30px; margin: 0 4px; background: #e3e6ec; }
 .insert-control { position: relative; display: flex; align-items: center; }
 .insert-tray { position: absolute; z-index: 4; right: 0; bottom: calc(100% + 14px); display: flex; flex-direction: column; width: 272px; padding: 8px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 16px; background: rgba(255, 255, 255, .98); box-shadow: 0 10px 32px rgba(31, 39, 52, .22); white-space: normal; }
+.insert-tray { max-height: calc(100dvh - 120px); overflow-y: auto; }
 .insert-shape-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
 .insert-shape-grid > button { min-height: 46px; gap: 8px; padding: 0 8px; font-size: 13px; }
 .more-shapes-tray { width: 288px; }

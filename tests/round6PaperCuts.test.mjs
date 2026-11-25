@@ -7,7 +7,7 @@ const input = await loadModule('desktopInput.ts')
 const panel = await readFile(new URL('../src/app/ContextPanel.tsx', import.meta.url), 'utf8')
 const css = (await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
 
-const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn'].map((id) => ({ id, label: id === 'loadBalancer' ? 'Load balancer' : id[0].toUpperCase() + id.slice(1) }))
+const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn', 'apiGateway', 'server', 'objectStorage', 'stream', 'worker'].map((id) => ({ id, label: ({ loadBalancer: 'Load balancer', apiGateway: 'API gateway', objectStorage: 'Object storage' })[id] ?? id[0].toUpperCase() + id.slice(1) }))
 // Five grouped HLD boxes joined by labelled connectors: every optional chip block is on.
 const busy = { hasSelection: true, clipboardHasItems: true, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false, canCopyStyle: true, canPasteStyle: true, canSelectSimilar: true, canGroup: true, canUngroup: true, changeShapes: hld, canNumberSteps: true, canSameSize: true, canSelectConnected: true }
 

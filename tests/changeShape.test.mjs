@@ -28,7 +28,7 @@ test('HLD boxes offer the other HLD shapes only', () => {
   const b = hld(1, 'database')
   const offer = changeShapeChoices([b], keys(b))
   assert.equal(offer.family, 'hld')
-  assert.equal(offer.choices.length, 8)
+  assert.equal(offer.choices.length, 13)
   assert.ok(!ids(offer).includes('database'))
   assert.ok(ids(offer).includes('queue'))
   assert.ok(!ids(offer).includes('diamond'))
@@ -106,21 +106,21 @@ test('the right-click menu lists the change-shape rows only when offered, as sha
 
 test('the change-shape choices form ONE chips row with short names, and the menu height covers it', () => {
   const state = { hasSelection: true, clipboardHasItems: false, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false }
-  const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn'].map((id) => ({ id, label: id === 'loadBalancer' ? 'Load balancer' : id[0].toUpperCase() + id.slice(1) }))
+  const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn', 'apiGateway', 'server', 'objectStorage', 'stream', 'worker'].map((id) => ({ id, label: ({ loadBalancer: 'Load balancer', apiGateway: 'API gateway', objectStorage: 'Object storage' })[id] ?? id[0].toUpperCase() + id.slice(1) }))
   const base = input.contextMenuEntries(state)
   const withChips = input.contextMenuEntries({ ...state, changeShapes: hld })
   const rows = input.contextMenuRows(withChips)
   const shapeRow = (list) => list.find((r) => r.chips && r.chips[0].chipGroup === 'Change shape')
   assert.equal(rows.filter((r) => r.chips && r.chips[0].chipGroup === 'Change shape').length, 1)
-  assert.equal(shapeRow(rows).chips.length, 9)
+  assert.equal(shapeRow(rows).chips.length, 14)
   assert.equal(shapeRow(input.contextMenuRows(base)), undefined)
   const plain = input.contextMenuEntries({ ...state, changeShapes: [{ id: 'rectangle', label: 'Rectangle' }, { id: 'diamond', label: 'Diamond' }] })
   assert.deepEqual(plain.filter((e) => e.chipGroup === 'Change shape').map((e) => e.chip), ['Rect', 'Diamond'])
-  // Nine HLD chips wrap onto several lines but stay far below nine full rows (9 x 34).
+  // Fourteen HLD chips wrap onto several lines but stay far below fourteen full rows.
   const extra = input.contextMenuHeight(withChips) - input.contextMenuHeight(base)
-  assert.ok(extra > 60 && extra < 9 * 28 / 2, `extra ${extra}`)
+  assert.ok(extra > 60 && extra < 14 * 28 / 2, `extra ${extra}`)
   assert.ok(input.contextMenuHeight(plain) <= 700 - 16, 'plain shapes fit a 1024x700 screen without scrolling: ' + input.contextMenuHeight(plain))
-  assert.ok(input.contextMenuHeight(withChips) < input.contextMenuHeight(base) + 9 * 28, 'HLD chips take far less than nine rows')
+  assert.ok(input.contextMenuHeight(withChips) < input.contextMenuHeight(base) + 14 * 28, 'HLD chips take far less than nine rows')
   assert.ok(input.chipBlockHeight(shapeRow(rows).chips) < input.chipBlockHeight([...shapeRow(rows).chips, ...shapeRow(rows).chips, ...shapeRow(rows).chips]))
 })
 
@@ -136,7 +136,7 @@ test('wiring: one undo step, menu, panel', () => {
 })
 
 test('a realistic HLD box menu (Style and Order chips) fits 1024x700 without scrolling, with and without step numbers', () => {
-  const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn'].map((id) => ({ id, label: id === 'loadBalancer' ? 'Load balancer' : id[0].toUpperCase() + id.slice(1) }))
+  const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn', 'apiGateway', 'server', 'objectStorage', 'stream', 'worker'].map((id) => ({ id, label: ({ loadBalancer: 'Load balancer', apiGateway: 'API gateway', objectStorage: 'Object storage' })[id] ?? id[0].toUpperCase() + id.slice(1) }))
   const state = { hasSelection: true, clipboardHasItems: true, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false, canCopyStyle: true, canPasteStyle: true, canSelectSimilar: true, canGroup: true, changeShapes: hld, canNumberSteps: false }
   const entries = input.contextMenuEntries(state)
   assert.ok(input.contextMenuHeight(entries) <= 684, 'height ' + input.contextMenuHeight(entries))

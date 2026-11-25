@@ -14,6 +14,7 @@ const p = (x, y) => ({ x, y, pressure: 0.5 })
 const line = (id, points, erase = false) => ({ kind: 'stroke', id, points, color: '#202124', width: 4, erase })
 const make = (shape, id = 1) => shapes.createHldShape(id, 100, 100, 300, 200, '#111', 3, shape)
 const NEW_SHAPES = ['user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn']
+const FIVE = ['apiGateway', 'server', 'objectStorage', 'stream', 'worker']
 const sheet = { width: 1000, height: 800, template: 'blank', backgroundColor: '#fff' }
 
 test('an HLD shape is an ink box with a shape kind and sensible default sizes', () => {
@@ -25,7 +26,7 @@ test('an HLD shape is an ink box with a shape kind and sensible default sizes', 
     assert.ok(size.width > 100 && size.height > 80)
     assert.ok(shapes.HLD_SHAPE_LABELS[shape])
   }
-  assert.deepEqual([...model.HLD_SHAPES], ['database', 'queue', 'service', ...NEW_SHAPES])
+  assert.deepEqual([...model.HLD_SHAPES], ['database', 'queue', 'service', ...NEW_SHAPES, ...FIVE])
 })
 
 test('outlines: a cylinder has a full top ellipse and curved base, a queue has two caps with arrows, a service is a rounded box', () => {
@@ -199,4 +200,102 @@ test('More shapes popover: one desktop dock button, six entries, same handler as
   assert.match(tray, /insert-shape-grid/)
   const hld = tray.slice(tray.indexOf('export const HLD_ENTRIES'), tray.indexOf('export const MORE_HLD_ENTRIES'))
   assert.equal((hld.match(/shape: '/g) ?? []).length, 3, 'the desktop dock keeps its three HLD buttons')
+})
+
+/** Endpoints of every drawing command of an outline (absolute M, L, H, V, A and Z only, as hldOutlinePath writes them). */
+function pathEndpoints(d) {
+  const points = []
+  let cx = 0
+  let cy = 0
+  for (const [, cmd, args] of d.matchAll(/([MLHVAZ])([^MLHVAZ]*)/g)) {
+    const v = args.trim() === '' ? [] : args.trim().split(/[\s,]+/).map(Number)
+    assert.ok(v.every(Number.isFinite), `finite numbers in ${cmd}${args}`)
+    if (cmd === 'M' || cmd === 'L') [cx, cy] = v
+    else if (cmd === 'H') cx = v[0]
+    else if (cmd === 'V') cy = v[0]
+    else if (cmd === 'A') [cx, cy] = [v[5], v[6]]
+    else continue
+    points.push([cx, cy])
+  }
+  return points
+}
+
+test('new HLD shapes: labels, default sizes, kinds and saved values', () => {
+  for (const shape of FIVE) {
+    assert.ok(shapes.HLD_SHAPE_LABELS[shape])
+    assert.ok(shapes.HLD_DEFAULT_SIZE[shape].width > 0 && shapes.HLD_DEFAULT_SIZE[shape].height > 0)
+  }
+  assert.deepEqual(FIVE.map((shape) => shapes.HLD_SHAPE_LABELS[shape]), ['API gateway', 'Server', 'Object storage', 'Stream', 'Worker'])
+})
+
+test('new HLD shape outlines are valid, non-empty and stay inside the box at several sizes', () => {
+  for (const shape of FIVE) {
+    for (const [w, h] of [[32, 32], [96, 64], [190, 110], [300, 200], [460, 130], [900, 500]]) {
+      const x = 40
+      const y = 70
+      const d = shapes.hldOutlinePath({ x, y, width: w, height: h }, shape)
+      assert.ok(d.length > 20 && d.startsWith('M'), `${shape} ${w}x${h} path`)
+      assert.ok(!/NaN|undefined|Infinity/.test(d))
+      for (const [px, py] of pathEndpoints(d)) {
+        assert.ok(px >= x - 0.01 && px <= x + w + 0.01 && py >= y - 0.01 && py <= y + h + 0.01, `${shape} ${w}x${h} point ${px},${py} inside`)
+      }
+    }
+  }
+  const r = { x: 0, y: 0, width: 300, height: 200 }
+  assert.equal(new Set(FIVE.map((shape) => shapes.hldOutlinePath(r, shape))).size, 5, 'each shape has its own outline')
+})
+
+test('new HLD shapes: icon marks match the shape', () => {
+  const r = { x: 0, y: 0, width: 300, height: 200 }
+  assert.equal((shapes.hldOutlinePath(r, 'server').match(/H300/g) ?? []).length >= 2, true, 'rack slot lines')
+  assert.equal((shapes.hldOutlinePath(r, 'server').match(/A2\.4|A5\.5|A\d/g) ?? []).length >= 4 + 6, true, 'rounded box plus three LEDs')
+  assert.equal((shapes.hldOutlinePath(r, 'objectStorage').match(/Z/g) ?? []).length, 1, 'bucket rim')
+  assert.equal((shapes.hldOutlinePath(r, 'worker').match(/Z/g) ?? []).length, 3, 'box, gear and hub')
+  assert.equal((shapes.hldOutlinePath(r, 'stream').match(/L/g) ?? []).length, 2, 'one arrow head')
+})
+
+test('new HLD shapes: label area leaves the icon free', async () => {
+  const fit = await loadModule('textFit.ts')
+  const area = (shape, w, h) => fit.shapeInnerArea({ kind: 'rectangle', id: 1, x: 0, y: 0, width: w, height: h, strokeColor: '#111', strokeWidth: 2, hldShape: shape, inkBox: { top: 0, mid: 0, ink: [] } })
+  const plain = area('service', 300, 200)
+  for (const shape of FIVE) {
+    const a = area(shape, 300, 200)
+    assert.ok(a.width > 0 && a.height > 0, `${shape} still has room`)
+    assert.ok(a.width < plain.width + 1e-9 || a.height < plain.height, `${shape} excludes its icon`)
+    const insets = shapes.hldIconInsets(shape, 300, 200)
+    assert.ok(insets.left + insets.right + insets.top + insets.bottom > 0, `${shape} has insets`)
+  }
+  assert.ok(area('apiGateway', 300, 200).width < 300 - 20 - 30, 'gate strip excluded')
+  assert.ok(area('worker', 300, 200).height < 200 - 20 - 30, 'gear band excluded')
+  assert.ok(area('stream', 300, 200).width < 300 - 20 - 25, 'arrow end excluded')
+  assert.deepEqual(shapes.hldIconInsets('service', 300, 200), { left: 0, right: 0, top: 0, bottom: 0 })
+  for (const shape of FIVE) assert.ok(fit.findFitArea([{ kind: 'rectangle', id: 1, x: 0, y: 0, width: 300, height: 200, strokeColor: '#111', strokeWidth: 2, hldShape: shape, inkBox: { top: 0, mid: 0, ink: [] } }], { x: 150, y: 100 }))
+})
+
+test('new HLD shapes: save, reload and unknown values', () => {
+  const items = FIVE.map((shape, i) => make(shape, i + 1))
+  const text = format.stringifyDocument(format.createDocument({ template: 'blank', background: 'white', items }))
+  const parsed = format.parseDocument(text)
+  assert.equal(parsed.ok, true)
+  assert.deepEqual(parsed.document.items.map((item) => item.hldShape), FIVE)
+  assert.equal(JSON.parse(text).version, format.DOCUMENT_VERSION)
+  const raw = JSON.parse(text)
+  raw.items[0].hldShape = 'cloud'
+  assert.equal(format.parseDocument(JSON.stringify(raw)).document.items[0].hldShape, undefined, 'unknown values are dropped as before')
+  for (const item of parsed.document.items) assert.equal(item.angle, undefined)
+})
+
+
+test('five more HLD shapes: wired into trays, command palette, change shape and the saved format', async () => {
+  const tray = await readFile(new URL('../src/app/InsertTray.tsx', import.meta.url), 'utf8')
+  for (const shape of FIVE) assert.match(tray, new RegExp(`shape: '${shape}'`))
+  const more = tray.slice(tray.indexOf('export const MORE_HLD_ENTRIES'))
+  assert.equal((more.match(/shape: '/g) ?? []).length, 11, 'six round-1 shapes plus the five new ones share the More grid')
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /HLD_SHAPES\.map\(\(shape\) => \(\{ id: `hld:\$\{shape\}`/)
+  const change = await loadModule('changeShape.ts')
+  const choices = change.changeShapeChoices([make('apiGateway', 1)].map((r) => box.addStrokeToInkBox(r, line(9, [p(150, 150), p(250, 160)]))), new Set(['rectangle:1']))
+  assert.deepEqual(choices.choices.map((c) => c.id), [...model.HLD_SHAPES].filter((id) => id !== 'apiGateway'))
+  assert.ok(FIVE.filter((shape) => shape !== 'apiGateway').every((shape) => choices.choices.some((c) => c.id === shape)))
+  assert.deepEqual([...model.HLD_SHAPES].slice(-5), FIVE)
 })

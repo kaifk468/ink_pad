@@ -550,7 +550,7 @@ export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint:
 
 /** Short chip text for a shape name (the full name stays in the tooltip). */
 export function shortShapeLabel(label: string): string {
-  return label === 'Rectangle' ? 'Rect' : label === 'Load balancer' ? 'Load bal.' : label
+  return label === 'Rectangle' ? 'Rect' : label === 'Load balancer' ? 'Load bal.' : label === 'API gateway' ? 'Gateway' : label === 'Object storage' ? 'Storage' : label
 }
 
 /** What the menu needs to know about the page when it opens. */

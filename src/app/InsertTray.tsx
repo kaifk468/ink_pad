@@ -21,7 +21,7 @@ export const HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint: stri
   { shape: 'service', hint: 'a rounded box', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="5"/></svg> },
 ]
 
-/** Six more HLD shapes: a grid in the tablet Insert tray and the desktop "More shapes" popover (the desktop dock stays short). */
+/** Eleven more HLD shapes (user, browser, mobile, cache, load balancer, CDN, API gateway, server, object storage, stream, worker): a grid in the tablet Insert tray and the desktop "More shapes" popover (the desktop dock stays short). */
 export const MORE_HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint: string }> = [
   { shape: 'user', hint: 'a person or client', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3.5"/><path d="M4.5 21v-4c0-3 3.4-4.5 7.5-4.5s7.5 1.5 7.5 4.5v4z"/></svg> },
   { shape: 'browser', hint: 'a browser window', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9h18M6.5 6.8h.01M9 6.8h.01M11.5 6.8h.01"/></svg> },
@@ -29,6 +29,11 @@ export const MORE_HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint:
   { shape: 'cache', hint: 'a cache box', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3.5"/><path d="M9 7.5 6.5 11h2.8L8.6 14.5 13 10.2h-3z"/></svg> },
   { shape: 'loadBalancer', hint: 'a load balancer', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3.5"/><path d="M12 7v2.5M12 9.5 8 13.5M12 9.5v4M12 9.5l4 4"/></svg> },
   { shape: 'cdn', hint: 'a cloud', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5h10.2a3.8 3.8 0 0 0 .6-7.5 5.5 5.5 0 0 0-10.6-1A4.6 4.6 0 0 0 7 18.5z"/></svg> },
+  { shape: 'apiGateway', hint: 'a gateway box (arrows into a gate bar)', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M9 5v14M4.8 9.5h2.6M4.8 14.5h2.6"/></svg> },
+  { shape: 'server', hint: 'a server rack', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M4 9.2h16M4 14.8h16M7.5 6.4h.01M7.5 12h.01M7.5 17.6h.01"/></svg> },
+  { shape: 'objectStorage', hint: 'a bucket', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="2.4"/><path d="M4 6l2 12c.4 1.2 3 2.2 6 2.2s5.6-1 6-2.2l2-12"/></svg> },
+  { shape: 'stream', hint: 'an event log with an arrow', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6.5" width="19" height="11" rx="2.5"/><path d="M7 6.5v3M11 6.5v3M7 17.5v-3M11 17.5v-3M14.5 12h4m-1.6-1.6 1.6 1.6-1.6 1.6"/></svg> },
+  { shape: 'worker', hint: 'a box with a gear', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="4.5"/><circle cx="8.6" cy="9.6" r="1.4"/><path d="M8.6 6.6v1M8.6 11.6v1M5.6 9.6h1M10.6 9.6h1"/></svg> },
 ]
 
 /** The Insert button and the tray that opens upward from the bottom dock. Entries reuse the existing tool handlers. */

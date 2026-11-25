@@ -11,7 +11,7 @@ export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: strin
 export type InkBoxContent = { top: number; mid: number; ink: Stroke[] }
 export type ClassBoxContent = { name: string; attributes: string; methods: string }
 /** HLD shape kinds: Database (cylinder), Queue, Service. A rectangle with one of these is an ink box drawn as that shape. */
-export const HLD_SHAPES = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn'] as const
+export const HLD_SHAPES = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn', 'apiGateway', 'server', 'objectStorage', 'stream', 'worker'] as const
 export type HldShape = (typeof HLD_SHAPES)[number]
 export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; angle?: number; /** Hand-drawn style random seed (integer), written only by diagrams that use the sketchy style. */ seed?: number; /** Optional fill colour under the outline (not on service, typed or ink class boxes). */ fillColor?: string; dash?: LineDash; locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
 /** The fixed list of label fonts. A saved label without `fontFamily` is the original clean sans. */

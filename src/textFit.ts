@@ -1,6 +1,6 @@
 import { toItemFrame } from './canvasModel'
 import type { CanvasItem, RectangleObject, TextFontId, TextObject } from './canvasModel'
-import { balancerMark, browserBar, cacheBolt, hldMobileMargins } from './hldShapes'
+import { balancerMark, browserBar, cacheBolt, hldIconInsets, hldMobileMargins } from './hldShapes'
 import { getTextLineHeight, measureTextSize, updateTextObject, wrapTextLines, type TextMeasure } from './textLayout'
 
 /**
@@ -39,6 +39,11 @@ export function shapeInnerArea(shape: RectangleObject): FitArea {
   else if (shape.hldShape === 'cache') area = { width: w, height: h - cacheBolt(w, h) - 12 }
   else if (shape.hldShape === 'loadBalancer') area = { width: w, height: h - balancerMark(h) - 16 }
   else if (shape.hldShape === 'cdn') area = { width: w * 0.6, height: h * 0.45 }
+  else if (shape.hldShape) {
+    // apiGateway, server, objectStorage, stream, worker: keep the label out of the icon.
+    const inset = hldIconInsets(shape.hldShape, w, h)
+    area = { width: w - inset.left - inset.right, height: h - inset.top - inset.bottom }
+  }
   else area = { width: w, height: h }
   return { width: Math.max(0, area.width - PAD * 2), height: Math.max(0, area.height - PAD * 2) }
 }

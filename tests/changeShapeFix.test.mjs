@@ -16,7 +16,7 @@ const roundTrip = (item) => {
   assert.equal(parsed.ok, true)
   return parsed.document.items[0]
 }
-const HLD = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn']
+const HLD = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn', 'apiGateway', 'server', 'objectStorage', 'stream', 'worker']
 const PLAIN = ['rectangle', 'diamond', 'ellipse']
 
 test('every shape change survives a save/load round trip unchanged (fill and seed go with non-fillable targets)', () => {
