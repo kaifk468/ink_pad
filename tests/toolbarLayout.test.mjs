@@ -156,6 +156,11 @@ test('desktop 1101-1700px: the minimap sits above the wide dock, the base tablet
   assert.match(ruleBody(styles, '.viewport-navigator {'), /bottom:\s*max\(16px,\s*env\(safe-area-inset-bottom\)\)/)
 })
 
+test('the selection panel headings the text size and text alignment buttons', () => {
+  assert.match(context, /<span className="panel-label">Text size<\/span>\}\s*\{\(props\.showTextSizes \|\| props\.textFit\) && <div className="tool-group text-size-group"/)
+  assert.match(context, /<span className="panel-label">Text align<\/span>\}\s*\{props\.textAlign && <div className="tool-group text-align-group"/)
+})
+
 test('the sheet layer and canvas stacking are unchanged', () => {
   assert.match(ruleBody(styles, '.sheet-layer {'), /position:\s*absolute;[\s\S]*pointer-events:\s*none/)
   assert.match(ruleBody(styles, '.drawing-canvas {'), /position:\s*absolute;\s*inset:\s*0/)

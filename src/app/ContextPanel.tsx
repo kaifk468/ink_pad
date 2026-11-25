@@ -350,6 +350,7 @@ export function ContextPanel(props: ContextPanelProps) {
           >Aa<span>{font.label}</span></button>
         ))}
       </div>}
+      {props.textAlign && <span className="panel-label">Text align</span>}
       {props.textAlign && <div className="tool-group text-align-group" role="group" aria-label="Text alignment" onMouseDown={(event) => event.preventDefault()}>
         {TEXT_ALIGN_OPTIONS.map((option) => (
           <button
@@ -378,6 +379,7 @@ export function ContextPanel(props: ContextPanelProps) {
           >{size}</button>
         ))}
       </div>}
+      {(props.showTextSizes || props.textFit) && <span className="panel-label">Text size</span>}
       {(props.showTextSizes || props.textFit) && <div className="tool-group text-size-group" role="group" aria-label="Text size" onMouseDown={props.textFit ? (event) => event.preventDefault() : undefined}>
         {(props.textSizeChoices ?? TEXT_FONT_SIZES).map((size) => (
           <button
