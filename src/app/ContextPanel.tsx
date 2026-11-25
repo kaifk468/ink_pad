@@ -14,6 +14,8 @@ type RelationshipProps = {
   type: ConnectorRelationshipType
   reversed: boolean
   elbow: boolean
+  twoWay: boolean
+  onTwoWay: (twoWay: boolean) => void
   hasLabel: boolean
   onEditLabel: () => void
   onChange: (type: ConnectorRelationshipType) => void
@@ -441,6 +443,12 @@ export function ContextPanel(props: ContextPanelProps) {
           <button type="button" className={relationship.elbow ? '' : 'active'} aria-pressed={!relationship.elbow} onClick={() => relationship.onElbow(false)}>Straight</button>
           <button type="button" className={relationship.elbow ? 'active' : ''} aria-pressed={relationship.elbow} onClick={() => relationship.onElbow(true)}>Elbow</button>
         </div>
+        {relationship.type === 'directed-association' && (
+          <div className="routing-toggle" role="group" aria-label="Arrow ends" title="Draw the arrowhead at one end or at both ends">
+            <button type="button" className={relationship.twoWay ? '' : 'active'} aria-pressed={!relationship.twoWay} onClick={() => relationship.onTwoWay(false)}>One way</button>
+            <button type="button" className={relationship.twoWay ? 'active' : ''} aria-pressed={relationship.twoWay} onClick={() => relationship.onTwoWay(true)}>Both ends</button>
+          </div>
+        )}
         <button type="button" className="relationship-reverse" aria-label={relationship.hasLabel ? 'Edit connector label' : 'Add connector label'} title="Text drawn on the middle of the connector (double-click it, or press Enter)" onClick={relationship.onEditLabel}>
           <span>{relationship.hasLabel ? 'Edit label' : 'Add label'}</span>
         </button>

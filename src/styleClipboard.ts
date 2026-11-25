@@ -1,4 +1,4 @@
-import { canvasItemKey, getConnectorRenderSpec, hasLineDash, hasOutlineWidth, isItemLocked, recolorItems, restrokeItems, setArrowheads, setLineDash, strokeArrowheads } from './canvasModel'
+import { canvasItemKey, getConnectorRenderSpec, hasLineDash, hasOutlineWidth, isItemLocked, recolorItems, restrokeItems, setArrowheads, setLineDash, setSelectedArrowsTwoWay, strokeArrowheads } from './canvasModel'
 import type { Arrowheads, CanvasItem, LineDash, TextFontId } from './canvasModel'
 import { setFillColor } from './shapeFill'
 import { isFillableRectangle } from './sketchy'
@@ -17,6 +17,8 @@ export type StyleSnapshot = {
   dash?: LineDash | 'solid'
   fill?: string | null
   arrowheads?: Arrowheads
+  /** Connector arrow ends: both ends (true) or one (false). Applies only to directed associations; only captured from one. */
+  twoWay?: boolean
   fontSize?: number
   fontFamily?: TextFontId
 }
@@ -39,7 +41,7 @@ export function captureStyle(item: CanvasItem): StyleSnapshot | null {
       return style
     }
     case 'connector':
-      return { color: item.strokeColor, width: item.strokeWidth, dash: item.dash ?? (getConnectorRenderSpec(item).lineStyle === 'dashed' ? 'dashed' : 'solid') }
+      return { color: item.strokeColor, width: item.strokeWidth, dash: item.dash ?? (getConnectorRenderSpec(item).lineStyle === 'dashed' ? 'dashed' : 'solid'), ...(item.relationshipType === 'directed-association' ? { twoWay: item.twoWay === true } : {}) }
     case 'text':
       return { color: item.color, fontSize: item.fontSize, fontFamily: item.fontFamily ?? LEGACY_TEXT_FONT }
     default:
@@ -66,6 +68,7 @@ export function applyStyle(items: CanvasItem[], keys: ReadonlySet<string>, style
   if (style.dash !== undefined) next = setLineDash(next, target, style.dash === 'solid' ? null : style.dash)
   if (style.fill !== undefined) next = setFillColor(next, target, style.fill)
   if (style.arrowheads !== undefined) next = setArrowheads(next, target, style.arrowheads)
+  if (style.twoWay !== undefined) next = setSelectedArrowsTwoWay(next, target, style.twoWay)
   if (style.fontSize !== undefined || style.fontFamily !== undefined) next = applyTextStyle(next, target, style, options)
   return next
 }

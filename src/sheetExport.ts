@@ -1,4 +1,4 @@
-import { lockedRedrawsAfterEraserRun, connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, getConnectorSymbolGeometry, strokeHeadGeometry, itemAngle, itemCenter, rotatedItemBounds } from './canvasModel'
+import { lockedRedrawsAfterEraserRun, connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, strokeHeadGeometry, itemAngle, itemCenter, rotatedItemBounds } from './canvasModel'
 import { routeConnectors } from './connectorRoute'
 import { hldOutlinePath } from './hldShapes'
 import { isSketchyRectangle, plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokeParts } from './sketchy'
@@ -193,6 +193,8 @@ function connectorLineElement(connector: ConnectorObject): string {
   } else if (spec.symbol === 'open-arrow' && geometry && tip) {
     parts.push(`<path d="${connectorPathData(connector, atStart)}" fill="none" ${base}${dash}/>`)
     parts.push(`<path d="M${pt(geometry.sideA)}L${pt(tip)}L${pt(geometry.sideB)}" fill="none" ${base}/>`)
+    const second = getConnectorSecondSymbolGeometry(connector)
+    if (second) parts.push(`<path d="M${pt(second.sideA)}L${pt(second.tip)}L${pt(second.sideB)}" fill="none" ${base}/>`)
   } else if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip) {
     parts.push(`<path d="${connectorPathData(connector, atStart, geometry.far)}" fill="none" ${base}${dash}/>`)
     parts.push(`<path d="M${pt(tip)}L${pt(geometry.sideA)}L${pt(geometry.far)}L${pt(geometry.sideB)}Z" fill="${spec.symbol === 'filled-diamond' ? color : '#ffffff'}" ${base}/>`)

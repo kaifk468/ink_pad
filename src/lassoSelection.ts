@@ -1,4 +1,4 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, toItemFrame } from './canvasModel'
+import { connectorPoints, getConnectorRenderSpec, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, toItemFrame } from './canvasModel'
 import type { CanvasItem, Point, Stroke } from './canvasModel'
 
 const SAMPLE_SPACING = 4
@@ -84,7 +84,9 @@ function connectorSymbolHitTest(item: Extract<CanvasItem, { kind: 'connector' }>
     return pointInPolygon(point, triangle) || triangle.some((vertex, index) => distanceToSegment(point, vertex, triangle[(index + 1) % triangle.length]) <= reach)
   }
   if (spec.symbol === 'open-arrow') {
+    const second = getConnectorSecondSymbolGeometry(item)
     return distanceToSegment(point, tip, sideA) <= reach || distanceToSegment(point, tip, sideB) <= reach
+      || (second !== null && (distanceToSegment(point, second.tip, second.sideA) <= reach || distanceToSegment(point, second.tip, second.sideB) <= reach))
   }
   const diamond = [tip, sideA, far, sideB]
   return pointInPolygon(point, diamond) || diamond.some((vertex, index) => distanceToSegment(point, vertex, diamond[(index + 1) % diamond.length]) <= reach)

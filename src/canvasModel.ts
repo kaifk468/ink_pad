@@ -50,6 +50,8 @@ export type ConnectorObject = {
   labelFontSize?: number
   /** Where along the path the label sits, as a fraction of the path length, 0.05..0.95. Omitted at the middle (0.5) and when there is no label. Saved. */
   labelPosition?: number
+  /** Arrowhead at both ends. Saved only as `true`, only on a directed association. */
+  twoWay?: true
   /** Desktop lock: drawn normally, never selected, edited or erased. Only ever `true`. */
   locked?: true
   /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */
@@ -156,6 +158,12 @@ export function strokeHeadGeometry(stroke: Stroke): ArrowheadGeometry[] {
   return result
 }
 
+/** The end that carries the extra arrowhead of a two-way arrow connector (the end opposite the main head), or null. */
+export function connectorSecondEndpoint(connector: ConnectorObject): 'start' | 'end' | null {
+  if (connector.twoWay !== true || connector.relationshipType !== 'directed-association') return null
+  return connector.reversed ? 'end' : 'start'
+}
+
 export type ConnectorSymbolGeometry = {
   tip: Point
   other: Point
@@ -171,11 +179,18 @@ export function connectorPoints(connector: ConnectorObject): Point[] {
   return connector.routedPath && connector.routedPath.length >= 2 ? connector.routedPath : [connector.start, connector.end]
 }
 
-export function getConnectorSymbolGeometry(connector: ConnectorObject, width = connector.strokeWidth): ConnectorSymbolGeometry | null {
+/** The arrowhead at the opposite end of a two-way arrow connector, or null for any other connector. */
+export function getConnectorSecondSymbolGeometry(connector: ConnectorObject, width = connector.strokeWidth): ConnectorSymbolGeometry | null {
+  const endpoint = connectorSecondEndpoint(connector)
+  return endpoint ? getConnectorSymbolGeometry(connector, width, endpoint) : null
+}
+
+export function getConnectorSymbolGeometry(connector: ConnectorObject, width = connector.strokeWidth, endpointOverride?: 'start' | 'end'): ConnectorSymbolGeometry | null {
   const spec = getConnectorRenderSpec(connector)
-  if (!spec.endpoint || spec.symbol === 'none') return null
+  const endpoint = endpointOverride ?? spec.endpoint
+  if (!endpoint || spec.symbol === 'none') return null
   const path = connectorPoints(connector)
-  const atStart = spec.endpoint === 'start'
+  const atStart = endpoint === 'start'
   const tip = atStart ? path[0] : path[path.length - 1]
   const neighbour = atStart ? path[1] : path[path.length - 2]
   const other = atStart ? path[path.length - 1] : path[0]
@@ -342,8 +357,43 @@ export function appendedItemsForRendering(items: CanvasItem[]): CanvasItem[] {
 
 export function updateConnectorRelationship(items: CanvasItem[], connectorId: number, relationshipType: ConnectorRelationshipType): CanvasItem[] {
   return items.map((item) => item.kind === 'connector' && item.id === connectorId && item.relationshipType !== relationshipType
-    ? { ...item, relationshipType, reversed: relationshipType === 'association' ? false : item.reversed }
+    ? withoutTwoWay({ ...item, relationshipType, reversed: relationshipType === 'association' ? false : item.reversed })
     : item)
+}
+
+function withoutTwoWay(connector: ConnectorObject): ConnectorObject {
+  if (connector.relationshipType === 'directed-association' || connector.twoWay === undefined) return connector
+  const { twoWay: _twoWay, ...rest } = connector
+  return rest
+}
+
+/** Sets or clears the arrowhead at both ends; only an unlocked directed association can have it, anything else is returned unchanged. */
+export function updateConnectorTwoWay(items: CanvasItem[], connectorId: number, twoWay: boolean): CanvasItem[] {
+  return items.map((item) => {
+    if (item.kind !== 'connector' || item.id !== connectorId || item.locked || item.relationshipType !== 'directed-association' || (item.twoWay === true) === twoWay) return item
+    if (twoWay) return { ...item, twoWay: true as const }
+    const { twoWay: _old, ...rest } = item
+    return rest
+  })
+}
+
+/** Sets or clears both-ends on every selected unlocked arrow connector (directed association). Returns the same array when nothing changes. */
+export function setSelectedArrowsTwoWay(items: CanvasItem[], keys: ReadonlySet<string>, twoWay: boolean): CanvasItem[] {
+  let changed = false
+  const next = items.map((item) => {
+    if (item.kind !== 'connector' || !keys.has(canvasItemKey(item))) return item
+    const [updated] = updateConnectorTwoWay([item], item.id, twoWay)
+    if (updated !== item) changed = true
+    return updated
+  })
+  return changed ? next : items
+}
+
+/** What the menu should offer for the selected unlocked arrow connectors: 'both' when any is one-way, 'one' when all are two-way, null when none is selected. */
+export function arrowEndsChoice(items: readonly CanvasItem[], keys: ReadonlySet<string>): 'both' | 'one' | null {
+  const arrows = items.filter((item): item is ConnectorObject => item.kind === 'connector' && !item.locked && item.relationshipType === 'directed-association' && keys.has(canvasItemKey(item)))
+  if (arrows.length === 0) return null
+  return arrows.every((arrow) => arrow.twoWay === true) ? 'one' : 'both'
 }
 
 export function updateConnectorRouting(items: CanvasItem[], connectorId: number, routing: ConnectorRouting): CanvasItem[] {
@@ -656,6 +706,11 @@ export function getCanvasSelectionBounds(items: CanvasItem[], selectedKeys: Read
         include(geometry.sideA.x, geometry.sideA.y, item.strokeWidth / 2)
         include(geometry.sideB.x, geometry.sideB.y, item.strokeWidth / 2)
         include(geometry.far.x, geometry.far.y, item.strokeWidth / 2)
+      }
+      const second = getConnectorSecondSymbolGeometry(item)
+      if (second) {
+        include(second.sideA.x, second.sideA.y, item.strokeWidth / 2)
+        include(second.sideB.x, second.sideB.y, item.strokeWidth / 2)
       }
     } else if (item.kind === 'text') {
       const box = rotatedItemBounds(item)

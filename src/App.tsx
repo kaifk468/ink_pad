@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
-import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { QUICK_CONNECT_DOUBLE_CLICK_MS, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConnectorHandle, hitConnectorLabel, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
@@ -704,6 +704,7 @@ function App() {
   const [selectedConnectorType, setSelectedConnectorType] = useState<ConnectorRelationshipType | null>(null)
   const [selectedConnectorReversed, setSelectedConnectorReversed] = useState(false)
   const [selectedConnectorElbow, setSelectedConnectorElbow] = useState(false)
+  const [selectedConnectorTwoWay, setSelectedConnectorTwoWay] = useState(false)
   const [selectedConnectorLabel, setSelectedConnectorLabel] = useState(false)
   // The eraser mode and size used last are remembered (saved), so holding the S Pen button erases the way the person last chose.
   const [savedEraser] = useState(() => loadEraserPrefs())
@@ -743,6 +744,7 @@ function App() {
     setSelectedConnectorType(connector?.relationshipType ?? null)
     setSelectedConnectorReversed(connector?.reversed ?? false)
     setSelectedConnectorElbow(connector?.routing === 'elbow')
+    setSelectedConnectorTwoWay(connector?.twoWay === true)
     setSelectedConnectorLabel(!!connector?.label)
   }
 
@@ -766,6 +768,7 @@ function App() {
     saveHistory()
     strokesRef.current = updateConnectorRelationship(strokesRef.current, selectedConnectorId, relationshipType)
     setSelectedConnectorType(relationshipType)
+    if (relationshipType !== 'directed-association') setSelectedConnectorTwoWay(false)
     if (relationshipType === 'association') setSelectedConnectorReversed(false)
     renderAll()
   }
@@ -807,6 +810,16 @@ function App() {
     if (next === strokesRef.current) return
     saveHistory()
     strokesRef.current = next
+    renderAll()
+  }
+
+  /** Arrow ends: sets or clears the arrowhead at both ends of every selected unlocked arrow connector. One undo step; nothing happens when none would change. */
+  const setSelectedArrowEnds = (twoWay: boolean) => {
+    const next = setSelectedArrowsTwoWay(strokesRef.current, selectedKeysRef.current, twoWay)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    setSelectedConnectorTwoWay(twoWay)
     renderAll()
   }
 
@@ -4885,6 +4898,8 @@ function App() {
       case 'copyPng': copyAsPng(); break
       case 'copyStyle': copyStyleWithToast(); break
       case 'pasteStyle': pasteStyleWithToast(); break
+      case 'arrowBothEnds': setSelectedArrowEnds(true); break
+      case 'arrowOneEnd': setSelectedArrowEnds(false); break
       case 'exportPng': exportSelectionAs('png'); break
       case 'exportSvg': exportSelectionAs('svg'); break
       case 'saveTemplate': openSaveTemplate(); break
@@ -5062,6 +5077,13 @@ function App() {
       { id: 'arrange:same-height', label: 'Same height', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('height') } },
       { id: 'arrange:same-size', label: 'Same size', group: 'Arrange', keywords: 'width height equal resize boxes match', run: () => { sameSizeSelection('both') } },
     ] : []),
+    ...(() => {
+      const choice = arrowEndsChoice(strokesRef.current, selectedKeysRef.current)
+      return choice === null ? [] : [
+        ...(choice === 'both' ? [{ id: 'arrow:both-ends', label: 'Arrow: both ends', group: 'Edit', keywords: 'arrowhead two way bidirectional double connector', run: () => { setSelectedArrowEnds(true) } }] : []),
+        ...(choice === 'one' ? [{ id: 'arrow:one-end', label: 'Arrow: one end', group: 'Edit', keywords: 'arrowhead one way single direction connector', run: () => { setSelectedArrowEnds(false) } }] : []),
+      ]
+    })(),
     ...(currentSelectionKeys().size > 0 ? [{ id: 'arrange:boundary', label: 'Add boundary', group: 'Arrange', keywords: 'frame group box around zone region trust', run: () => { addBoundaryAroundSelection() } }] : []),
     ...(canSelectConnected(strokesRef.current, currentSelectionKeys()) ? [
       { id: 'select:connected', label: 'Select connected', group: 'Select', keywords: 'neighbours arrows linked attached boxes', run: () => { selectConnectedItems(false) } },
@@ -5374,6 +5396,7 @@ function App() {
             canNumberSteps: stepTargets(strokesRef.current, currentSelectionKeys()).length > 0,
             canSameSize: canSameSize(strokesRef.current, currentSelectionKeys()),
             canSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()),
+            arrowEnds: arrowEndsChoice(strokesRef.current, selectedKeysRef.current),
             canSelectSimilar: (() => { const key = soleSelectedKey(); return key !== null && similarItemKeys(strokesRef.current, key).length > 0 })(),
           })
           const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight)
@@ -5646,7 +5669,7 @@ function App() {
         onPaste={() => { pasteClipboard() }}
         onDuplicate={() => { duplicateSelection() }}
         relationship={selectedConnectorId !== null && selectedConnectorType !== null
-          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, hasLabel: selectedConnectorLabel, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
+          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, hasLabel: selectedConnectorLabel, twoWay: selectedConnectorTwoWay, onTwoWay: setSelectedArrowEnds, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
           : null}
       />
       {pageOverviewOpen && <PageOverview count={pageCount} current={pageIndex} names={pagesRef.current.map((slot) => slot.name ?? '')} onRename={renamePage} loadThumbnail={renderPageThumbnail} onGo={(index) => { goToPage(index); setPageOverviewOpen(false) }} onMove={movePageTo} onClose={() => setPageOverviewOpen(false)} />}

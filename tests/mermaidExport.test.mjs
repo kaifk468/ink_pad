@@ -209,3 +209,23 @@ test('wiring: file panel button and command palette entry', async () => {
   const panel = await readFile(new URL('../src/FilePanel.tsx', import.meta.url), 'utf8')
   assert.match(panel, /onClick=\{props\.onCopyMermaid\}>Copy as Mermaid</)
 })
+
+test('a two-way arrow is written as <--> (<-.-> when dashed); one-way and other types are unchanged', () => {
+  const boxes = [box(1, 0, 0, { width: 100, height: 60 }), box(2, 300, 0, { width: 100, height: 60 })]
+  const text = (extra, type = 'directed-association') => buildMermaid([...boxes, label(5, 20, 20, 'A'), label(6, 320, 20, 'B'), link(3, 1, 2, { relationshipType: type, ...extra })]).text
+  assert.match(text({ twoWay: true }), /n1 <--> n2/)
+  assert.match(text({ twoWay: true, reversed: true }), /n1 <--> n2/)
+  assert.match(text({ twoWay: true, dash: 'dashed' }), /n1 <-\.-> n2/)
+  assert.match(text({ twoWay: true, label: 'sync' }), /n1 <-->\|"sync"\| n2/)
+  assert.match(text({}), /n1 --> n2/)
+  assert.doesNotMatch(text({ twoWay: true }, 'dependency'), /<-->/)
+})
+
+test('two-way arrows round trip through Mermaid text', () => {
+  const boxes = [box(1, 0, 0, { width: 100, height: 60 }), box(2, 300, 0, { width: 100, height: 60 })]
+  const { text } = buildMermaid([...boxes, label(5, 20, 20, 'A'), label(6, 320, 20, 'B'), link(3, 1, 2, { twoWay: true })])
+  const g = parseMermaid(text)
+  assert.equal(g.edges.length, 1)
+  assert.equal(g.edges[0].twoWay, true)
+  assert.equal(g.edges[0].arrow, true)
+})

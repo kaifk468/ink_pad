@@ -416,6 +416,7 @@ function sanitizeItemFields(value: unknown): CanvasItem | null {
       kind: 'connector', id: value.id, start, end, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth,
       relationshipType, reversed: value.reversed === true,
       ...(value.routing === 'elbow' ? { routing: 'elbow' as const } : {}),
+      ...(value.twoWay === true && relationshipType === 'directed-association' ? { twoWay: true as const } : {}),
       ...(isNum(value.bend) && value.bend !== 0 ? { bend: Math.max(-MAX_CONNECTOR_BEND, Math.min(MAX_CONNECTOR_BEND, value.bend)) } : {}),
       ...(value.dash === 'dashed' || value.dash === 'dotted' || value.dash === 'solid' ? { dash: value.dash } : {}),
       ...(startAttachment ? { startAttachment } : {}),

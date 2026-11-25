@@ -1,4 +1,4 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, strokeHeadGeometry } from './canvasModel'
+import { connectorPoints, getConnectorRenderSpec, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, strokeHeadGeometry } from './canvasModel'
 import type { ConnectorObject, Point, RectangleObject, Stroke } from './canvasModel'
 
 /**
@@ -287,7 +287,9 @@ export function sketchyConnectorShape(connector: ConnectorObject, width = connec
     return { line: roughPolyline(withEnd(geometry.base), rng), head: roughClosed([tip, geometry.sideA, geometry.sideB], rng), headClosed: true, headFill: 'white' }
   }
   if (spec.symbol === 'open-arrow' && geometry && tip) {
-    return { line: roughPolyline(path, rng), head: roughPolyline([geometry.sideA, tip, geometry.sideB], rng), headClosed: false, headFill: null }
+    const second = getConnectorSecondSymbolGeometry(connector, width)
+    const secondHead = second ? roughPolyline([second.sideA, second.tip, second.sideB], rng) : ''
+    return { line: roughPolyline(path, rng), head: roughPolyline([geometry.sideA, tip, geometry.sideB], rng) + secondHead, headClosed: false, headFill: null }
   }
   if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip) {
     return { line: roughPolyline(withEnd(geometry.far), rng), head: roughClosed([tip, geometry.sideA, geometry.far, geometry.sideB], rng), headClosed: true, headFill: spec.symbol === 'filled-diamond' ? 'color' : 'white' }

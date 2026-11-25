@@ -1,4 +1,4 @@
-import { rectangleSideMidpoints, connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, strokeHeadGeometry, getConnectorSymbolGeometry, itemAngle, rotatedItemBounds } from '../canvasModel'
+import { rectangleSideMidpoints, connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, strokeHeadGeometry, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, itemAngle, rotatedItemBounds } from '../canvasModel'
 import { hldOutlinePath } from '../hldShapes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextFontId, TextObject } from '../canvasModel'
 import { filterDisplayPoints } from '../oneEuroFilter'
@@ -364,6 +364,14 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
     ctx.lineTo(tip.x, tip.y)
     ctx.lineTo(geometry.sideB.x, geometry.sideB.y)
     ctx.stroke()
+    const second = getConnectorSecondSymbolGeometry(connector, width)
+    if (second) {
+      ctx.beginPath()
+      ctx.moveTo(second.sideA.x, second.sideA.y)
+      ctx.lineTo(second.tip.x, second.tip.y)
+      ctx.lineTo(second.sideB.x, second.sideB.y)
+      ctx.stroke()
+    }
   } else if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip) {
     tracePath(ctx, path, atStart, geometry.far)
     ctx.stroke()

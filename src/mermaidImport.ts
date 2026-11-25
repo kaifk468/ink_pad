@@ -23,7 +23,7 @@ export type { MermaidDiagramResult }
 export type MermaidDirection = 'TD' | 'BT' | 'LR' | 'RL'
 export type MermaidShape = 'rectangle' | 'ellipse' | 'diamond' | 'database' | 'service'
 export type MermaidNode = { id: string; text: string; shape: MermaidShape }
-export type MermaidEdge = { from: string; to: string; label?: string; arrow: boolean; dashed: boolean }
+export type MermaidEdge = { from: string; to: string; label?: string; arrow: boolean; dashed: boolean; /** `<-->`: a head at both ends. Only ever true. */ twoWay?: boolean }
 /** A `subgraph` ... `end` group: `parent` is the index of the enclosing subgraph (or null), `nodes` the ids first defined directly inside it. */
 export type MermaidSubgraph = { id: string; title: string; parent: number | null; nodes: string[] }
 export type MermaidGraph = { nodes: MermaidNode[]; edges: MermaidEdge[]; direction: MermaidDirection; ignoredLines: number; subgraphs?: MermaidSubgraph[] }
@@ -67,7 +67,7 @@ function splitStatements(line: string): string[] {
 }
 
 type Declared = { id: string; text?: string; shape?: MermaidShape }
-type Link = { arrow: boolean; dashed: boolean; label?: string }
+type Link = { arrow: boolean; dashed: boolean; twoWay?: boolean; label?: string }
 
 function parseNode(source: string, start: number): { node: Declared; end: number } | null {
   const idMatch = /^[\w.\u0080-￿]+/.exec(source.slice(start))
@@ -133,8 +133,8 @@ function parseLink(source: string, start: number): { link: Link; end: number } |
   if ((match = /^--[ \t]+(.+?)[ \t]+-{2,}(?:(>)|([ox])(?![\w-]))?/.exec(rest))) return finish(match, { arrow: Boolean(match[2] || match[3]), dashed: false }, 1)
   if ((match = /^-\.[ \t]+(.+?)[ \t]+\.+-(>)?/.exec(rest))) return finish(match, { arrow: Boolean(match[2]), dashed: true }, 1)
   if ((match = /^==[ \t]+(.+?)[ \t]+={2,}(>)?/.exec(rest))) return finish(match, { arrow: Boolean(match[2]), dashed: false }, 1)
-  // Both-ended links. Connectors have no two-headed type, so `<-->`, `<-.->`, `<==>`, `x--x` and `o--o` become plain lines.
-  if ((match = /^<(-{2,}|-\.+-|={2,})>/.exec(rest))) return finish(match, { arrow: false, dashed: match[1].includes('.') })
+  // Both-ended links. `<-->`, `<-.->` and `<==>` become a two-way arrow (a directed association with a head at both ends); `x--x` and `o--o` have no connector type and become plain lines.
+  if ((match = /^<(-{2,}|-\.+-|={2,})>/.exec(rest))) return finish(match, { arrow: true, twoWay: true, dashed: match[1].includes('.') })
   if ((match = /^([ox])(-{2,}|-\.+-|={2,})\1(?![\w-])/.exec(rest))) return finish(match, { arrow: false, dashed: match[2].includes('.') })
   if ((match = /^-\.+-(>)?/.exec(rest))) return finish(match, { arrow: Boolean(match[1]), dashed: true })
   if ((match = /^={2,}(>)?/.exec(rest))) return finish(match, { arrow: Boolean(match[1]), dashed: false })
@@ -217,7 +217,7 @@ export function parseMermaid(text: string): MermaidParse {
     for (const [sources, targets, link] of added) {
       for (const source of sources) for (const target of targets) {
         if (source.id === target.id) { skippedSelf = true; continue }
-        edges.push({ from: source.id, to: target.id, ...(link.label ? { label: link.label } : {}), arrow: link.arrow, dashed: link.dashed })
+        edges.push({ from: source.id, to: target.id, ...(link.label ? { label: link.label } : {}), arrow: link.arrow, dashed: link.dashed, ...(link.twoWay ? { twoWay: true } : {}) })
       }
     }
     return !skippedSelf
@@ -316,7 +316,7 @@ export function buildMermaidItems(graph: MermaidGraph): { items: CanvasItem[]; b
     const from = boxes.get(edge.from) as RectangleObject
     const to = boxes.get(edge.to) as RectangleObject
     const { fromSide, toSide } = facingSides(from, to)
-    sheet.connect(from, fromSide, to, toSide, { type: edge.arrow ? 'directed-association' : 'association', ...(edge.dashed ? { dash: 'dashed' as const } : {}), ...(edge.label ? { label: edge.label } : {}) })
+    sheet.connect(from, fromSide, to, toSide, { type: edge.arrow ? 'directed-association' : 'association', ...(edge.arrow && edge.twoWay ? { twoWay: true as const } : {}), ...(edge.dashed ? { dash: 'dashed' as const } : {}), ...(edge.label ? { label: edge.label } : {}) })
   }
   const frames = buildSubgraphFrames(groups, boxes, sheet.items)
   return { items: [...frames.rectangles, ...sheet.items, ...frames.labels], boxes: nodeList.length, links: graph.edges.length }

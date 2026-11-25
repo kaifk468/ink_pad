@@ -76,7 +76,7 @@ export class Sheet {
   }
 
   /** An arrow between the middle of one side of `from` and the middle of one side of `to`, attached to both boxes. */
-  connect(from: RectangleObject, fromSide: Side, to: RectangleObject, toSide: Side, options: { type?: ConnectorRelationshipType; routing?: ConnectorRouting; label?: string; dash?: 'dashed' } = {}): void {
+  connect(from: RectangleObject, fromSide: Side, to: RectangleObject, toSide: Side, options: { type?: ConnectorRelationshipType; routing?: ConnectorRouting; label?: string; dash?: 'dashed'; twoWay?: true } = {}): void {
     const attach = (box: RectangleObject, side: Side): ConnectorAttachment => ({
       rectangleId: box.id,
       offsetX: side === 'right' ? box.width : side === 'left' ? 0 : box.width / 2,
@@ -86,7 +86,7 @@ export class Sheet {
     const endAttachment = attach(to, toSide)
     const point = (box: RectangleObject, a: ConnectorAttachment): Point => ({ x: box.x + a.offsetX, y: box.y + a.offsetY, pressure: 1 })
     const connector = createConnector(this.connectorId++, point(from, startAttachment), point(to, endAttachment), STROKE_COLOR, CLASS_BOX_DEFAULT_STROKE_WIDTH, startAttachment, endAttachment, options.type ?? 'directed-association')
-    this.items.push({ ...connector, ...(options.routing === 'elbow' ? { routing: 'elbow' as const } : {}), ...(options.dash ? { dash: options.dash } : {}), ...(options.label ? { label: options.label } : {}) })
+    this.items.push({ ...connector, ...(options.routing === 'elbow' ? { routing: 'elbow' as const } : {}), ...(options.twoWay ? { twoWay: options.twoWay } : {}), ...(options.dash ? { dash: options.dash } : {}), ...(options.label ? { label: options.label } : {}) })
   }
 }
 

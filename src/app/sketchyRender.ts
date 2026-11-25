@@ -89,7 +89,7 @@ export function strokeSketchyStroke(ctx: CanvasRenderingContext2D, stroke: Strok
 
 /** Draws a connector in the hand-drawn style (the caller has saved the context and set colour, width and dash). */
 export function drawSketchyConnector(ctx: CanvasRenderingContext2D, connector: ConnectorObject, color: string, width: number): void {
-  const key = [width, [...connector.relationshipType].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7), connector.reversed ? 1 : 0, ...connectorPoints(connector).flatMap((p) => [p.x, p.y])]
+  const key = [width, [...connector.relationshipType].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7), connector.reversed ? 1 : 0, connector.twoWay ? 1 : 0, ...connectorPoints(connector).flatMap((p) => [p.x, p.y])]
   const paths = connectorCache(connector, `c${connector.id}`, key, () => {
     const spec = sketchyConnectorShape(connector, width)
     return { spec, line: new Path2D(spec.line), head: spec.head ? new Path2D(spec.head) : null }

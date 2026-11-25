@@ -43,8 +43,8 @@ function shape(box: RectangleObject, label: string): string {
   return `["${label}"]`
 }
 
-function linkLine(from: number, to: number, arrow: 'forward' | 'none', dashed: boolean, label: string): string {
-  const body = arrow === 'forward' ? (dashed ? '-.->' : '-->') : dashed ? '-.-' : '---'
+function linkLine(from: number, to: number, arrow: 'forward' | 'both' | 'none', dashed: boolean, label: string): string {
+  const body = arrow === 'both' ? (dashed ? '<-.->' : '<-->') : arrow === 'forward' ? (dashed ? '-.->' : '-->') : dashed ? '-.-' : '---'
   return `  n${from} ${body}${label ? `|"${label}"|` : ''} n${to}`
 }
 
@@ -175,7 +175,7 @@ export function buildMermaid(items: readonly CanvasItem[]): MermaidResult {
     const dashed = connector.dash === 'solid' ? false : connector.dash === 'dashed' || connector.dash === 'dotted' ? true : spec.lineStyle === 'dashed'
     const label = connector.label ? mermaidText(connector.label) : ''
     // The marker sits at one end; with none the line only joins the boxes (same rule as the text outline).
-    lines.push(spec.endpoint === null ? linkLine(from, to, 'none', dashed, label) : spec.endpoint === 'end' ? linkLine(from, to, 'forward', dashed, label) : linkLine(to, from, 'forward', dashed, label))
+    lines.push(spec.endpoint === null ? linkLine(from, to, 'none', dashed, label) : connector.twoWay === true && connector.relationshipType === 'directed-association' ? linkLine(from, to, 'both', dashed, label) : spec.endpoint === 'end' ? linkLine(from, to, 'forward', dashed, label) : linkLine(to, from, 'forward', dashed, label))
     links += 1
   }
   const classes = rectangles.some((box) => !isFlowBox(box))

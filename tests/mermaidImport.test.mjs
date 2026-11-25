@@ -217,14 +217,21 @@ test('Copy as Mermaid output round-trips through the importer', () => {
   assert.equal(g.ignoredLines, 0)
 })
 
-test('both-ended links import as plain lines', () => {
-  for (const [text, dashed] of [['A <--> B', false], ['A <-.-> B', true], ['A <==> B', false], ['A x--x B', false], ['A o--o B', false], ['A<-->B', false]]) {
+test('both-ended links: <-->, <-.-> and <==> are two-way arrows, x--x and o--o plain lines', () => {
+  for (const [text, dashed] of [['A <--> B', false], ['A <-.-> B', true], ['A <==> B', false], ['A<-->B', false]]) {
     const g = ok(`graph TD\n${text}`)
     assert.equal(g.edges.length, 1, text)
-    assert.deepEqual([g.edges[0].from, g.edges[0].to, g.edges[0].arrow, g.edges[0].dashed], ['A', 'B', false, dashed], text)
+    assert.deepEqual([g.edges[0].from, g.edges[0].to, g.edges[0].arrow, g.edges[0].dashed, g.edges[0].twoWay], ['A', 'B', true, dashed, true], text)
+    const connector = buildMermaidItems(g).items.find((i) => i.kind === 'connector')
+    assert.equal(connector.relationshipType, 'directed-association', text)
+    assert.equal(connector.twoWay, true, text)
+    assert.equal(connector.dash === 'dashed', dashed, text)
   }
+  for (const text of ['A x--x B', 'A o--o B', 'A --> B']) assert.equal('twoWay' in ok(`graph TD\n${text}`).edges[0], false, text)
+  assert.equal(ok('graph TD\nA x--x B').edges[0].arrow, false)
   assert.equal(ok('graph TD\nA <-->|two way| B').edges[0].label, 'two way')
-  assert.doesNotMatch(exportSource, /'both'/)
+  assert.equal(ok('graph TD\nA <-->|two way| B').edges[0].twoWay, true)
+  assert.equal('twoWay' in buildMermaidItems(ok('graph TD\nA --> B')).items.find((i) => i.kind === 'connector'), false)
 })
 
 test('isMermaidText: lowercase keywords, front matter and comments allowed before the header', () => {
