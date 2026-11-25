@@ -87,7 +87,7 @@ import { PageControls, PageUndoBar } from './app/PageControls'
 import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
-import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
+import { loadNavigationSettings, loadTapUndo, saveNavigationSettings, saveTapUndo } from './navigationSettings'
 import { canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
@@ -337,6 +337,12 @@ function App() {
     setToast((current) => ({ id: (current?.id ?? 0) + 1, text }))
     toastTimerRef.current = window.setTimeout(() => { toastTimerRef.current = null; setToast(null) }, TOAST_MS)
   }
+  // The tap-undo confirmation shows in every mode (the tablet UI has no other sign that the tap did something).
+  const showTapToast = (text: string) => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
+    setToast((current) => ({ id: (current?.id ?? 0) + 1, text }))
+    toastTimerRef.current = window.setTimeout(() => { toastTimerRef.current = null; setToast(null) }, TOAST_MS)
+  }
   const edgeHoldRef = useRef<{ pointerId: number; boxId: number; start: Point; startedAt: number; timer: number } | null>(null)
   // Step 12: snap and alignment guides while dragging boxes and labels. The setting is per device (default on) and works in both input modes.
   const [snapping, setSnapping] = useState(() => loadSnapping())
@@ -350,6 +356,9 @@ function App() {
   // What a drag snaps to (read once when it starts) and the guide lines to draw. Guides live only here: never items, history or saved data.
   const snapStateRef = useRef<{ pointerId: number; moving: Bounds | null; targets: Bounds[] } | null>(null)
   const guidesRef = useRef<Guide[]>([])
+  const [tapUndo, setTapUndo] = useState(() => loadTapUndo())
+  const tapUndoRef = useRef(tapUndo)
+  tapUndoRef.current = tapUndo
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
   // Laser pointer (transient presenting tool): the trail lives only in these refs and on its own overlay canvas, never in items, history or the saved diagram.
   // Present mode: one class on the app root hides the dock, panels, top bar, minimap, page and zoom controls. Plain state, never saved.
@@ -3100,7 +3109,11 @@ function App() {
   }
 
   const finishTouchPointer = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    touchNav.up(event.pointerId)
+    // A cancelled pointer never counts as a tap. Only real touch pointers up can complete a two- or three-finger tap.
+    if (event.type !== 'pointerup' || event.pointerType !== 'touch') { touchNav.up(event.pointerId); return }
+    const tap = touchNav.up(event.pointerId, performance.now())
+    if (!tap || !tapUndoRef.current) return
+    if (tap.fingers === 2) { if (historyRef.current.canUndo) { undo(); showTapToast('Undo') } } else if (historyRef.current.canRedo) { redo(); showTapToast('Redo') }
   }
 
   const finishStroke = useCallback((pointerId: number) => {
@@ -3261,6 +3274,7 @@ function App() {
         const firstStart = touchHandle.startScreen
         cancelConnectorHandleGesture()
         touchNav.down(firstId, firstStart, performance.now())
+        touchNav.cancelTap() // the cancelled handle drag must not turn into an undo
       } else if (touchNav.touchCount() === 0 && activeEndpointRef.current === null && !touchNav.penNear(performance.now()) && startConnectorHandleGesture(event, getPoint(event))) {
         // A single finger on a handle of the selected connector drags it (Select / lasso) when no pen is near or down; every other touch is navigation.
         return
@@ -5303,6 +5317,8 @@ function App() {
           onShortcutHelp={() => setShortcutHelpOpen(true)}
           oneFingerPan={navigationSettings.oneFingerPan}
           onOneFingerPan={(value) => updateNavigationSettings({ oneFingerPan: value })}
+          tapUndo={tapUndo}
+          onTapUndo={(value) => { setTapUndo(value); saveTapUndo(value) }}
           hasInk={hasInk}
           filePanelOpen={filePanelOpen}
           onToggleFilePanel={() => setFilePanelOpen((open) => !open)}

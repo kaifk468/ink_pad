@@ -27,6 +27,8 @@ type TopLeftBarProps = {
   onSnapping: (on: boolean) => void
   oneFingerPan: boolean
   onOneFingerPan: (value: boolean) => void
+  tapUndo: boolean
+  onTapUndo: (value: boolean) => void
   hasInk: boolean
   filePanelOpen: boolean
   onToggleFilePanel: () => void
@@ -173,6 +175,11 @@ export function TopLeftBar(props: TopLeftBarProps) {
             <span className="menu-row-label menu-row-stack"><span>One-finger pan</span><span className="menu-row-sub">Ignored while the pen is near</span></span>
             <span className={`menu-switch${props.oneFingerPan ? ' on' : ''}`} aria-hidden="true"><span /></span>
           </button>}
+          <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.tapUndo} title="Tap with two fingers to undo, three to redo" onClick={() => props.onTapUndo(!props.tapUndo)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
+            <span className="menu-row-label menu-row-stack"><span>Two-finger tap to undo</span><span className="menu-row-sub">Tap with two fingers to undo, three to redo</span></span>
+            <span className={`menu-switch${props.tapUndo ? ' on' : ''}`} aria-hidden="true"><span /></span>
+          </button>
           {props.inputMode === 'desktop' && props.onShortcutHelp && <button className="menu-row shortcut-help-row" type="button" aria-haspopup="dialog" onClick={() => { props.onShortcutHelp?.(); setMenuOpen(false) }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/></svg>
             <span className="menu-row-label">Keyboard shortcuts</span><span className="menu-row-hint">?</span>
