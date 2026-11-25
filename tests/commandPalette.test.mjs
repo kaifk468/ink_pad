@@ -114,6 +114,6 @@ test('diagram rows are findable by folder name and rank after commands of equal 
 test('wiring: diagram rows are built last, open through openStoredDiagram, and the list is refreshed when the palette opens', () => {
   assert.match(app, /\.\.\.diagramPaletteEntries\(library, folders, currentDocId\)\.map/)
   assert.match(app, /void openStoredDiagram\(id\)/)
-  assert.match(app, /if \(paletteOpen\) void refreshLibrary\(\)/)
+  assert.match(app, /if \(paletteOpen\) void refreshLibraryIfStale\(\)/)
   assert.match(app, /onOpenDiagram=\{\(id\) => \{ setLibraryOpen\(false\); void openStoredDiagram\(id\) \}\}/)
 })
