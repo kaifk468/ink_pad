@@ -337,3 +337,56 @@ Follow-ups found this round (ideas for the next round):
 - At 1440x900 the zoom control's + button sits under the dock's left end (pre-existing).
 - Connector label size buttons in the panel have no "Text size" heading (text labels do).
 - Older InkPad builds drop `labelPosition` on save (like earlier round fields): keep the tablet PWA updated.
+
+## Round 6 — 2026-11-26 (branch desktop-20x)
+
+### User journeys walked (friction found, on top of rounds 1-5)
+1. LLD study: an AI chat or a README gives a Mermaid `classDiagram` (classes, fields, methods, inheritance/composition); InkPad's Mermaid import (round 5) reads only flowcharts, so every class box is typed by hand. Sequence diagrams (`sequenceDiagram`, the other interview staple) are drawn line by line.
+2. HLD from text: flowchart `subgraph` blocks (VPC, region, "Payments") are skipped on import; Copy as Mermaid writes a boundary as a box and class boxes as plain boxes, so the text does not round-trip.
+3. Drawing HLD: bidirectional links (WebSocket, replication, sync calls) need two arrows or a plain line; common parts (API gateway, server/VM, object storage, event stream, worker) are still drawn as plain boxes with a typed name.
+4. Multi-page diagrams (HLD / LLD / API on separate pages) show only "2 / 5"; the page overview (round 4) has thumbnails but no names.
+5. Growing a diagram: renaming a component ("OrderSvc" → "Order service") everywhere means finding and editing each label (Find, round 2, only finds).
+6. Writing requirements (functional / non-functional lists on a sticky note): every bullet "- " or "1." is typed by hand on each line.
+7. Round 5 paper cuts: label drag only on an already-selected connector; right-click menu with all chips ~709 px at 700 px; connector label sizes have no "Text size" heading; zoom + under the dock's left end at 1440x900.
+
+### Candidates (problem · who/how often · benefit · risk · size · decision)
+| # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
+|---|---|---|---|---|---|---|---|
+| 135 | Mermaid `classDiagram` import → typed class boxes + UML relationship connectors | LLD class diagrams from text typed by hand | LLD users, weekly | high | low (ordinary items, insert path) | M | picked |
+| 136 | Mermaid flowchart `subgraph` → boundary on import | Grouping lost on import | HLD users from text | medium | low | S | picked |
+| 137 | Copy as Mermaid: boundary → `subgraph`, class boxes → `classDiagram` | Text export doesn't round-trip groups/classes | developers, weekly | medium | low (pure module) | S-M | picked |
+| 138 | Mermaid `sequenceDiagram` import → participants, lifelines, message arrows | Sequence diagrams drawn line by line | LLD/interviews, often | medium-high | low (ordinary items) | M | picked |
+| 139 | Two-way arrow connectors (head at both ends; `<-->` import/export) | Bidirectional links need two arrows | HLD users, most diagrams | medium-high | medium (new saved field) | M | picked |
+| 140 | More HLD shapes: API gateway, Server, Object storage, Stream, Worker | Common parts drawn as plain boxes | HLD users, every diagram | high | low-medium (new hldShape values) | M | picked |
+| 141 | Page names (rename in page overview, shown in strip/overview/palette) (#119) | Pages are just "2 / 5" | multi-page users, often | medium-high | medium (top-level saved key) | M | picked |
+| 142 | Find & replace (Replace field in the Find bar, Ctrl+H) | Renaming a component everywhere | growing diagrams, often | medium-high | low-medium (text re-fit, per-page undo) | M | picked |
+| 143 | List continuation in labels (Enter after "- ", "• ", "1." continues; Enter on an empty bullet ends the list) | Bullets typed on every line | requirements notes, every interview | medium | low (editor only) | S | picked |
+| 144 | Round 5 paper cuts: label drag on an unselected connector, menu ≤ 700 px, connector "Text size" heading, zoom + vs dock at 1440 | small friction | | low-medium | low | S | picked |
+| 145 | Last-used fill / dash for new shapes (Excalidraw) (#120) | restyling every new box | desktop | medium | medium (pen colour interplay, surprise) | M | idea |
+| 146 | Snap to grid (#121) | | desktop | low-medium | medium | M | idea |
+| 147 | Move folders into folders (#122) | | rare | low | medium (Drive) | M | idea |
+| 148 | Curved connectors (#123) | | sometimes | low-medium | medium-high | M-L | idea |
+| 149 | Focus mode: fade everything not connected to the selection while presenting | Explaining one flow in an interview | interviews | medium | medium (renderer) | M | idea |
+| 150 | Mermaid `classDef`/`style` fill colours on import | colours lost | rare | low | low | S | idea |
+| 151 | Alt+Arrow selects the connected neighbour (#125) | | rare | low | low | S | idea |
+| 152 | Shape search in More shapes (#127) | | rare | low | low | S | idea |
+| 153 | Elbow bend clamp (#126) | | rare | low | medium | S | idea |
+| 154 | Library content search (#128) | | sometimes | medium | high | L | idea |
+| 155 | Images on the canvas (#129) | | sometimes | medium | high | L | idea |
+| 156 | Export PNG scale | | | | | | skipped: 1x / 2x PNG already exist |
+| 157 | Zoom presets menu (#130) | | rare | low | low | S | idea |
+| 158 | Insert table (rows/cols) for API/DB schema notes | schemas typed as text | LLD sometimes | medium | medium (new kind or many items) | L | idea |
+| 159 | ER diagram import (`erDiagram`) | DB schema from text | sometimes | medium | low | M | idea (after 135/138) |
+| 160 | Scribble-to-erase / undo toast naming the action / tablet long-press menu (#132-#134) | | | | high | | skipped again (writing path / every history site / touch timing) |
+
+### Acceptance criteria (picked items)
+135. **classDiagram import**: pasting `classDiagram` text into "Insert from Mermaid…" (or desktop Ctrl+V) creates one typed class box per class (name; attributes and methods from `class A { ... }` bodies and `A : +field` lines; `<<interface>>` shown in the name line as «interface»), and connectors for `<|--` (inheritance), `<|..` (realization), `*--` (composition), `o--` (aggregation), `-->` (directed association), `..>` (dependency), `--` / `..` (association), with labels after `:`; laid out with the tidy layout; one undo step; toast "Inserted N classes and M links". Unknown lines counted.
+136. **Subgraphs**: `subgraph id [Title]` … `end` around flowchart nodes becomes a boundary (dashed rectangle, sent behind, labelled with the title) around those nodes after layout; nested subgraphs become nested boundaries; empty subgraphs are skipped.
+137. **Copy as Mermaid**: a boundary rectangle (container per round 5) is written as `subgraph` around the boxes inside it (titled by its label); a page whose boxes are all class boxes is copied as `classDiagram` (members and relationship arrows); re-import gives the same boxes, links and groups.
+138. **sequenceDiagram import**: `participant`/`actor` (with `as` aliases) and participants first named in messages become boxes in a row with dashed vertical lifelines; `->>`, `->`, `-->>`, `-->`, `-x`, `--x` messages become horizontal arrows (dashed for `--`) top to bottom with the message text above; `Note over/left of/right of` becomes a sticky-style label; `loop`/`alt`/`opt`/`end`/`activate` lines are counted as ignored; one undo step; toast with counts.
+139. **Two-way arrow**: an arrow connector (directed association) can have a head at both ends: the panel's connector section (both modes) and the right-click menu offer "Both ends", saved as `twoWay: true` only on directed associations; renderer, sketchy, SVG/PNG/PDF export draw both heads; Mermaid `<-->` imports as two-way and Copy as Mermaid writes `<-->`. One undo step. Old files unchanged.
+140. **More HLD shapes**: API gateway, Server, Object storage, Stream and Worker appear next to the existing HLD shapes (insert tray / HLD tools, both modes) with tooltips; each draws its own outline (canvas, sketchy, SVG), keeps the ink/label area clear of the icon, works with connectors, change shape, templates and export; saved as new `hldShape` values.
+141. **Page names**: in the page overview each thumbnail has a name field (placeholder "Page 3"); the page strip shows "2 / 5 · API" and its tooltip; the palette lists "Go to page: API"; names move with Move earlier/later, Duplicate page ("API copy") and delete; saved as top-level `pageNames` only when a page is named; old files unchanged; renaming saves the diagram.
+142. **Find & replace**: the Find bar has a "Replace" toggle (desktop Ctrl+H opens it) with a replacement field, "Replace" (current match) and "Replace all" (all pages); text labels, connector labels and class box text are changed case-insensitively; labels re-fit; each changed page gets one undo step; a toast says "Replaced 6 in 4 items"; locked items untouched; code blocks skipped.
+143. **Lists**: in a text label or sticky note editor, Enter on a line starting with "- ", "* ", "• " or "1. " / "1) " starts the next line with the same bullet (numbers count up); Enter on a line that is only the bullet removes it and ends the list; Shift+Enter unaffected where it already means something; works with the tablet on-screen keyboard.
+144. **Paper cuts**: pressing on the label of an unselected connector with the Select tool and dragging slides the label (one undo step; a plain click still just selects); the right-click menu with all chip rows fits a 1024x700 window without scrolling; connector label sizes have a "Text size" heading; at 1440x900 the zoom + button is not covered by the dock.
