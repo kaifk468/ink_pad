@@ -1,54 +1,42 @@
-import type { CanvasItem, HldShape, RectangleObject } from './canvasModel'
+import type { CanvasItem, HldShape, RectangleObject, TextObject } from './canvasModel'
 import { HLD_DEFAULT_SIZE } from './hldShapes'
 import { HLD_TEMPLATE_SCALE, Sheet } from './diagramTemplates'
 import { layoutBoxes, type TidyEdge, type TidyNode } from './tidyLayout'
-import { measureTextSize } from './textLayout'
+import { measureTextSize, createTextObject } from './textLayout'
+import { createShapeBox } from './canvasModel'
+import { BOUNDARY_COLOR, BOUNDARY_FONT_SIZE, BOUNDARY_PADDING } from './boundary'
+import { decodeMermaidEntities, facingSides, firstMermaidLine, MAX_MERMAID_NODES, MAX_MERMAID_TEXT, normalizeMermaidSpaces, stripMermaidFrontMatter } from './mermaidCommon'
+import { buildMermaidClassItems, isMermaidClassText, parseMermaidClass } from './mermaidClassImport'
+import { buildMermaidSequence, isMermaidSequenceText, type MermaidDiagramResult } from './mermaidSequenceImport'
+
+export { MAX_MERMAID_NODES, MAX_MERMAID_TEXT, normalizeMermaidSpaces, stripMermaidFrontMatter }
+export type { MermaidDiagramResult }
 
 /**
  * Mermaid import ("Insert from Mermaid…" and pasting Mermaid text): reads a flowchart / graph and builds ordinary canvas items
  * (boxes with centred labels and attached connectors) for the same insert path the templates use. Nothing here is a new item kind.
  * Supported: node shapes `A[t]`, `A(t)`, `A([t])`, `A((t))`, `A{t}`, `A[(t)]` (Database), `A[[t]]` (Service), bare `A`;
  * links `-->`, `---`, `-.->`, `-.-`, `==>`, `--o`, `--x`, chains, `A & B --> C`, and labels (`|t|` or `-- t -->`).
- * Everything else (subgraph, end, classDef, class, style, linkStyle, click, direction) is skipped and counted.
+ * `subgraph` ... `end` (nestable) becomes dashed boundaries around the member boxes; links to a subgraph id are skipped.
+ * Everything else (classDef, class, style, linkStyle, click, direction) is skipped and counted.
  */
 export type MermaidDirection = 'TD' | 'BT' | 'LR' | 'RL'
 export type MermaidShape = 'rectangle' | 'ellipse' | 'diamond' | 'database' | 'service'
 export type MermaidNode = { id: string; text: string; shape: MermaidShape }
 export type MermaidEdge = { from: string; to: string; label?: string; arrow: boolean; dashed: boolean }
-export type MermaidGraph = { nodes: MermaidNode[]; edges: MermaidEdge[]; direction: MermaidDirection; ignoredLines: number }
+/** A `subgraph` ... `end` group: `parent` is the index of the enclosing subgraph (or null), `nodes` the ids first defined directly inside it. */
+export type MermaidSubgraph = { id: string; title: string; parent: number | null; nodes: string[] }
+export type MermaidGraph = { nodes: MermaidNode[]; edges: MermaidEdge[]; direction: MermaidDirection; ignoredLines: number; subgraphs?: MermaidSubgraph[] }
 export type MermaidParse = ({ ok: true } & MermaidGraph) | { ok: false; error: string }
 
-export const MAX_MERMAID_NODES = 150
 const MAX_NODE_TEXT = 200
 /** Statements that are skipped and counted. Keywords are case-sensitive; `end` only as a whole statement, `subgraph` needs a space or the end of the line. */
 const SKIPPED = /^(?:subgraph(?=\s|$)|end\s*;?\s*$|(?:classDef|class|style|linkStyle|click|direction)\s|accTitle\b|accDescr\b)/
 const HEADER = /^(?:graph|flowchart)(?:[ \t]+(?:TD|TB|BT|LR|RL))?[ \t]*(?:;.*)?$/
-/** Mermaid max input read by the importer (characters). */
-export const MAX_MERMAID_TEXT = 50000
-
-/** Unicode spaces (NBSP, en/em spaces, zero-width space, ideographic space ...) become a plain space so they do not end up inside node ids. */
-export function normalizeMermaidSpaces(text: string): string {
-  return text.replace(/[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ')
-}
-
-/** Drops a leading YAML front matter block (`---` ... `---`), which Mermaid allows before the header. */
-export function stripMermaidFrontMatter(text: string): string {
-  const lines = text.split(/\r?\n/)
-  let first = 0
-  while (first < lines.length && lines[first].trim() === '') first += 1
-  if (lines[first]?.trim() !== '---') return text
-  for (let index = first + 1; index < lines.length; index += 1) if (lines[index].trim() === '---') return lines.slice(index + 1).join('\n')
-  return text
-}
-
-/** True when the first line that is not blank, front matter or a %% comment starts with `graph` or `flowchart` (lowercase, as Mermaid requires). */
+/** True when the first line that is not blank, front matter or a %% comment is a `graph` / `flowchart`, `classDiagram` or `sequenceDiagram` header (lowercase, as Mermaid requires). */
 export function isMermaidText(text: string): boolean {
-  for (const raw of stripMermaidFrontMatter(normalizeMermaidSpaces(text).replace(/^\uFEFF/, '')).split(/\r?\n/)) {
-    const line = raw.trim()
-    if (line === '' || line.startsWith('%%')) continue
-    return HEADER.test(line)
-  }
-  return false
+  const line = firstMermaidLine(text)
+  return HEADER.test(line) || isMermaidClassText(line) || isMermaidSequenceText(line)
 }
 
 const SHAPES: ReadonlyArray<{ open: string; close: string; shape: MermaidShape }> = [
@@ -62,19 +50,8 @@ const SHAPES: ReadonlyArray<{ open: string; close: string; shape: MermaidShape }
   { open: '{', close: '}', shape: 'diamond' },
 ]
 
-/** Mermaid entity codes (`#quot;`, `#lt;`, `#gt;`, `#amp;`, `#35;`) back to characters, in one pass so decoded text is never decoded again. */
-function decodeEntities(raw: string): string {
-  return raw.replace(/#(quot|lt|gt|amp|\d{1,7});/g, (whole, code: string) => {
-    if (code === 'quot') return '"'
-    if (code === 'lt') return '<'
-    if (code === 'gt') return '>'
-    if (code === 'amp') return '&'
-    const point = Number(code)
-    return point > 0 && point <= 0x10ffff && !(point >= 0xd800 && point <= 0xdfff) ? String.fromCodePoint(point) : whole
-  })
-}
 function cleanText(raw: string): string {
-  return decodeEntities(raw.replace(/<br\s*\/?>/gi, '\n').replace(/\\n/g, '\n')).split('\n').map((line) => line.trim()).join('\n').trim().slice(0, MAX_NODE_TEXT)
+  return decodeMermaidEntities(raw.replace(/<br\s*\/?>/gi, '\n').replace(/\\n/g, '\n')).split('\n').map((line) => line.trim()).join('\n').trim().slice(0, MAX_NODE_TEXT)
 }
 const unquote = (raw: string): string => { const t = raw.trim(); return t.length >= 2 && t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1) : t }
 
@@ -174,9 +151,14 @@ export function parseMermaid(text: string): MermaidParse {
   let direction: MermaidDirection = 'TD'
   let ignoredLines = 0
   let headerSeen = false
+  const subgraphs: MermaidSubgraph[] = []
+  const open: number[] = []
   const declare = (declared: Declared) => {
     const known = nodes.get(declared.id)
-    if (!known) nodes.set(declared.id, { id: declared.id, text: declared.text || declared.id, shape: declared.shape ?? 'rectangle' })
+    if (!known) {
+      nodes.set(declared.id, { id: declared.id, text: declared.text || declared.id, shape: declared.shape ?? 'rectangle' })
+      if (open.length > 0) subgraphs[open[open.length - 1]].nodes.push(declared.id)
+    }
     else if (declared.shape !== undefined) nodes.set(declared.id, { id: declared.id, text: declared.text || declared.id, shape: declared.shape })
   }
   for (const rawLine of stripMermaidFrontMatter(normalizeMermaidSpaces(text.slice(0, MAX_MERMAID_TEXT)).replace(/^﻿/, '')).split(/\r?\n/)) {
@@ -195,6 +177,19 @@ export function parseMermaid(text: string): MermaidParse {
         continue
       }
     }
+    const group = /^subgraph(?:[ \t]+(.*))?$/.exec(line)
+    if (group) {
+      const rest = (group[1] ?? '').trim().replace(/;$/, '').trim()
+      let id = `subgraph${subgraphs.length + 1}`
+      let title = ''
+      const named = /^([\w.\u0080-\uFFFF-]+)[ \t]*\[(.*)\]$/.exec(rest)
+      if (named) { id = named[1]; title = cleanText(unquote(named[2])) }
+      else if (rest !== '') { title = cleanText(unquote(rest)); if (/^[\w.\u0080-\uFFFF-]+$/.test(rest)) id = rest }
+      subgraphs.push({ id, title: title || id, parent: open.length > 0 ? open[open.length - 1] : null, nodes: [] })
+      open.push(subgraphs.length - 1)
+      continue
+    }
+    if (open.length > 0 && /^end[ \t]*;?[ \t]*$/.test(line)) { open.pop(); continue }
     if (SKIPPED.test(line)) { ignoredLines += 1; continue }
     for (const statement of splitStatements(line)) if (!parseStatement(statement)) ignoredLines += 1
   }
@@ -229,9 +224,19 @@ export function parseMermaid(text: string): MermaidParse {
     }
     return !skippedSelf
   }
+  // Links to or from a subgraph id are not drawn (a link needs a box at both ends).
+  const groupIds = new Set(subgraphs.map((group) => group.id))
+  if (groupIds.size > 0) {
+    const kept = edges.filter((edge) => !groupIds.has(edge.from) && !groupIds.has(edge.to))
+    ignoredLines += edges.length - kept.length
+    edges.length = 0
+    edges.push(...kept)
+    for (const id of groupIds) nodes.delete(id)
+    for (const group of subgraphs) group.nodes = group.nodes.filter((id) => nodes.has(id))
+  }
   if (nodes.size === 0) return { ok: false, error: 'No flowchart nodes found. Start with “flowchart LR” or “graph TD”, then lines like A[Client] --> B[Server].' }
   if (nodes.size > MAX_MERMAID_NODES) return { ok: false, error: `Too many nodes (${nodes.size}); the limit is ${MAX_MERMAID_NODES}.` }
-  return { ok: true, nodes: [...nodes.values()], edges, direction, ignoredLines }
+  return { ok: true, nodes: [...nodes.values()], edges, direction, ignoredLines, subgraphs }
 }
 
 const FONT_SIZE = 24
@@ -253,14 +258,35 @@ function boxSize(node: MermaidNode): { width: number; height: number } {
   return fit(1, 1)
 }
 
+/** Node ids ordered so the members of a subgraph are neighbours (loose nodes first, then each subgraph with its children), which helps the layout keep them together. */
+function orderedNodes(graph: MermaidGraph): MermaidNode[] {
+  const groups = graph.subgraphs ?? []
+  if (groups.length === 0) return graph.nodes
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]))
+  const placed = new Set<string>()
+  const result: MermaidNode[] = []
+  const take = (id: string) => { const node = byId.get(id); if (node && !placed.has(id)) { placed.add(id); result.push(node) } }
+  const walk = (index: number) => {
+    for (const id of groups[index].nodes) take(id)
+    groups.forEach((group, child) => { if (group.parent === index) walk(child) })
+  }
+  const grouped = new Set(groups.flatMap((group) => group.nodes))
+  for (const node of graph.nodes) if (!grouped.has(node.id)) take(node.id)
+  groups.forEach((group, index) => { if (group.parent === null) walk(index) })
+  for (const node of graph.nodes) take(node.id)
+  return result
+}
+
 /** Items for the graph: boxes laid out by the Tidy layout (links flow in the graph's direction), centred labels, attached connectors. Local ids from 1, top-left at (0, 0). */
 export function buildMermaidItems(graph: MermaidGraph): { items: CanvasItem[]; boxes: number; links: number } {
-  const index = new Map(graph.nodes.map((node, position) => [node.id, position + 1]))
-  const sizes = graph.nodes.map(boxSize)
+  const groups = graph.subgraphs ?? []
+  const nodeList = orderedNodes(graph)
+  const index = new Map(nodeList.map((node, position) => [node.id, position + 1]))
+  const sizes = nodeList.map(boxSize)
   const sideways = graph.direction === 'LR' || graph.direction === 'RL'
   const reversed = graph.direction === 'BT' || graph.direction === 'RL'
   // LR and RL lay out the transposed boxes top-down and swap the axes back, so layers run left to right.
-  const tidyNodes: TidyNode[] = graph.nodes.map((_, position) => ({ id: position + 1, x: position * 1000, y: 0, width: sideways ? sizes[position].height : sizes[position].width, height: sideways ? sizes[position].width : sizes[position].height }))
+  const tidyNodes: TidyNode[] = nodeList.map((_, position) => ({ id: position + 1, x: position * 1000, y: 0, width: sideways ? sizes[position].height : sizes[position].width, height: sideways ? sizes[position].width : sizes[position].height }))
   const tidyEdges: TidyEdge[] = graph.edges.map((edge) => {
     const from = index.get(edge.from) as number
     const to = index.get(edge.to) as number
@@ -271,14 +297,19 @@ export function buildMermaidItems(graph: MermaidGraph): { items: CanvasItem[]; b
     const spot = placed.get(position + 1) ?? { x: 0, y: 0 }
     return sideways ? { x: spot.y, y: spot.x } : spot
   }
-  const left = Math.min(...graph.nodes.map((_, position) => at(position).x))
-  const top = Math.min(...graph.nodes.map((_, position) => at(position).y))
+  const left = Math.min(...nodeList.map((_, position) => at(position).x))
+  const top = Math.min(...nodeList.map((_, position) => at(position).y))
+  // Room on the left and top for the boundaries around the outermost boxes, so the whole drawing still starts at (0, 0).
+  const depthOf = (group: number): number => (groups[group].parent === null ? 1 : 1 + depthOf(groups[group].parent as number))
+  const owner = new Map<string, number>()
+  groups.forEach((group, position) => group.nodes.forEach((id) => { if (!owner.has(id)) owner.set(id, position) }))
+  const margin = Math.max(0, ...nodeList.map((node) => (owner.has(node.id) ? depthOf(owner.get(node.id) as number) : 0))) * BOUNDARY_PADDING
   const sheet = new Sheet()
   const boxes = new Map<string, RectangleObject>()
-  graph.nodes.forEach((node, position) => {
+  nodeList.forEach((node, position) => {
     const spot = at(position)
-    const x = Math.round(spot.x - left)
-    const y = Math.round(spot.y - top)
+    const x = Math.round(spot.x - left + margin)
+    const y = Math.round(spot.y - top + margin)
     const { width, height } = sizes[position]
     const hld = HLD_SHAPE_OF[node.shape]
     boxes.set(node.id, hld ? sheet.hld(hld, x, y, node.text, { width, height }, hld === 'database' ? Math.round(20 * HLD_TEMPLATE_SCALE) : 0) : sheet.shaped(node.shape === 'ellipse' ? 'ellipse' : node.shape === 'diamond' ? 'diamond' : 'rectangle', x, y, width, height, node.text))
@@ -286,19 +317,61 @@ export function buildMermaidItems(graph: MermaidGraph): { items: CanvasItem[]; b
   for (const edge of graph.edges) {
     const from = boxes.get(edge.from) as RectangleObject
     const to = boxes.get(edge.to) as RectangleObject
-    const dx = to.x + to.width / 2 - (from.x + from.width / 2)
-    const dy = to.y + to.height / 2 - (from.y + from.height / 2)
-    const horizontal = Math.abs(dx) * 0.6 > Math.abs(dy)
-    const fromSide = horizontal ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'bottom' : 'top')
-    const toSide = horizontal ? (dx >= 0 ? 'left' : 'right') : (dy >= 0 ? 'top' : 'bottom')
+    const { fromSide, toSide } = facingSides(from, to)
     sheet.connect(from, fromSide, to, toSide, { type: edge.arrow ? 'directed-association' : 'association', ...(edge.dashed ? { dash: 'dashed' as const } : {}), ...(edge.label ? { label: edge.label } : {}) })
   }
-  return { items: sheet.items, boxes: graph.nodes.length, links: graph.edges.length }
+  const frames = buildSubgraphFrames(groups, boxes, sheet.items)
+  return { items: [...frames.rectangles, ...sheet.items, ...frames.labels], boxes: nodeList.length, links: graph.edges.length }
 }
 
-/** The toast after inserting: "Inserted 3 boxes and 2 links", plus "(1 line ignored)". */
-export function mermaidInsertMessage(boxes: number, links: number, ignored: number): string {
-  const boxText = `${boxes} ${boxes === 1 ? 'box' : 'boxes'}`
+/** One dashed unfilled rectangle (and a label at its top-left) per non-empty subgraph, inner ones inside outer ones. Rectangles run outer first, so they sit behind the boxes. */
+function buildSubgraphFrames(groups: MermaidSubgraph[], boxes: Map<string, RectangleObject>, existing: CanvasItem[]): { rectangles: RectangleObject[]; labels: TextObject[] } {
+  const frames = new Map<number, RectangleObject>()
+  const labels = new Map<number, TextObject>()
+  let rectangleId = 1 + Math.max(0, ...existing.map((item) => (item.kind === 'rectangle' ? item.id : 0)))
+  let textId = 1 + Math.max(0, ...existing.map((item) => (item.kind === 'text' ? item.id : 0)))
+  const build = (position: number): RectangleObject | null => {
+    const cached = frames.get(position)
+    if (cached) return cached
+    const parts: RectangleObject[] = []
+    for (const id of groups[position].nodes) { const box = boxes.get(id); if (box) parts.push(box) }
+    groups.forEach((group, child) => { if (group.parent === position) { const inner = build(child); if (inner) parts.push(inner) } })
+    if (parts.length === 0) return null
+    const x = Math.min(...parts.map((part) => part.x)) - BOUNDARY_PADDING
+    const y = Math.min(...parts.map((part) => part.y)) - BOUNDARY_PADDING
+    const right = Math.max(...parts.map((part) => part.x + part.width)) + BOUNDARY_PADDING
+    const bottom = Math.max(...parts.map((part) => part.y + part.height)) + BOUNDARY_PADDING
+    const label = createTextObject(textId++, x + 12, y + 8, groups[position].title, BOUNDARY_COLOR, BOUNDARY_FONT_SIZE)
+    const frame: RectangleObject = { ...createShapeBox(rectangleId++, x, y, Math.max(right - x, label.width + 24), bottom - y, BOUNDARY_COLOR, 2, 'rectangle'), dash: 'dashed' }
+    frames.set(position, frame)
+    labels.set(position, label)
+    return frame
+  }
+  groups.forEach((_, position) => { build(position) })
+  const order = [...frames.keys()].sort((a, b) => a - b)
+  return { rectangles: order.map((position) => frames.get(position) as RectangleObject), labels: order.map((position) => labels.get(position) as TextObject) }
+}
+
+/** The toast after inserting: "Inserted 3 boxes and 2 links", plus "(1 line ignored)". Class diagrams say "classes". */
+export function mermaidInsertMessage(boxes: number, links: number, ignored: number, kind: 'flowchart' | 'class' | 'sequence' = 'flowchart'): string {
+  const boxText = kind === 'class' ? `${boxes} ${boxes === 1 ? 'class' : 'classes'}` : `${boxes} ${boxes === 1 ? 'box' : 'boxes'}`
   const linkText = `${links} ${links === 1 ? 'link' : 'links'}`
   return `Inserted ${boxText} and ${linkText}${ignored > 0 ? ` (${ignored} ${ignored === 1 ? 'line' : 'lines'} ignored)` : ''}`
+}
+
+/** Reads Mermaid text of any supported kind (flowchart / graph, classDiagram, sequenceDiagram) by its header and builds the items. */
+export function buildMermaidDiagram(text: string): MermaidDiagramResult {
+  const capped = text.slice(0, MAX_MERMAID_TEXT)
+  const header = firstMermaidLine(capped)
+  if (isMermaidClassText(header)) {
+    const parsed = parseMermaidClass(capped)
+    if (!parsed.ok) return parsed
+    const built = buildMermaidClassItems(parsed)
+    return { ok: true, items: built.items, boxes: built.boxes, links: built.links, ignoredLines: parsed.ignoredLines, kind: 'class' }
+  }
+  if (isMermaidSequenceText(header)) return buildMermaidSequence(capped)
+  const parsed = parseMermaid(capped)
+  if (!parsed.ok) return parsed
+  const built = buildMermaidItems(parsed)
+  return { ok: true, items: built.items, boxes: built.boxes, links: built.links, ignoredLines: parsed.ignoredLines, kind: 'flowchart' }
 }

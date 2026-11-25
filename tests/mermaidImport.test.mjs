@@ -58,11 +58,11 @@ test('edge labels in both spellings', () => {
   assert.equal(g.edges[2].dashed, true)
 })
 
-test('comments, subgraph, style lines are skipped and the unparsed ones counted', () => {
+test('comments, style lines are skipped and the unparsed ones counted', () => {
   const g = ok('%% a comment\nflowchart TD\nsubgraph S\nA-->B\nend\nclassDef x fill:#f00\nclass A x\nstyle B fill:#fff\nlinkStyle 0 stroke:red\nclick A callback\n%% another\nthis is not mermaid ((')
   assert.equal(g.nodes.length, 2)
   assert.equal(g.edges.length, 1)
-  assert.equal(g.ignoredLines, 8)
+  assert.equal(g.ignoredLines, 6) // subgraph / end are now read, not ignored
   assert.equal(ok('graph TD\nA-->B').ignoredLines, 0)
 })
 
@@ -154,7 +154,7 @@ test('wiring: dialog, More menu, palette, template chooser', () => {
   assert.match(app, /navigator\.clipboard\?\.readText/)
   assert.match(app, /aria-label="Mermaid text"/)
   assert.match(app, /key !== 'Escape'/)
-  assert.match(app, /parseMermaid\(text\)/)
+  assert.match(app, /buildMermaidDiagram\(text\)/)
   assert.match(app, /showToast\(mermaidInsertMessage\(/)
 })
 
@@ -184,7 +184,7 @@ test('inline-label links with no space before the target keep their arrow', () =
 test('keywords are case-sensitive: End / Style1 nodes are not skipped, real keywords still are', () => {
   const g = ok('graph TD\nEnd[Done] --> X\nEnd --> Y\nStyle1 --> Z\nsubgraph S\nA --> B\nend\nclass A red\nstyle A fill:#f00\nsubgraphX --> Q')
   assert.deepEqual(g.nodes.map((n) => n.id), ['End', 'X', 'Y', 'Style1', 'Z', 'A', 'B', 'subgraphX', 'Q'])
-  assert.equal(g.ignoredLines, 4)
+  assert.equal(g.ignoredLines, 2) // subgraph / end are now read
   assert.equal(node(g, 'End').text, 'Done')
 })
 
@@ -243,7 +243,7 @@ test('wiring: paste guards, full-text Mermaid detection, handled errors, dialog 
   assert.match(app, /pasteEventRef\.current = \(event\) => \{[\s\S]{0,700}if \(canvasCommandBlocked\(\)\) return\n    event\.preventDefault\(\)/)
   assert.match(app, /const mermaidText = full\.slice\(0, MAX_MERMAID_TEXT\)/)
   assert.match(app, /const text = full\.slice\(0, 2000\)/)
-  assert.match(app, /parsed\.ok && parsed\.edges\.length > 0\) \{\n\s+const error = importMermaid\(mermaidText, at\)\n\s+if \(error\) showToast\(error\)\n\s+return true/)
+  assert.match(app, /parsed\.ok && parsed\.links > 0\) \{\n\s+const error = importMermaid\(mermaidText, at\)\n\s+if \(error\) showToast\(error\)\n\s+return true/)
   assert.doesNotMatch(app, /setTemplateChooserOpen\(false\)\n    setMermaidOpen\(false\)\n    if \(!canvas/)
   assert.match(app, /Could not insert the diagram\.'\n\s+setMermaidOpen\(false\)/)
   assert.match(app, /if \(!tap \|\| !tapUndoRef\.current\) return\n[^\n]*\n\s+if \(editingBlocksCanvas\(\)\) return/)

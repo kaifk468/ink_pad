@@ -72,7 +72,7 @@ import { diagramIdFromEntry, diagramPaletteEntries, shortcutEntryId, shortcutPal
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
 import { MermaidDialog } from './app/MermaidDialog'
-import { buildMermaidItems, isMermaidText, MAX_MERMAID_TEXT, mermaidInsertMessage, parseMermaid } from './mermaidImport'
+import { buildMermaidDiagram, isMermaidText, MAX_MERMAID_TEXT, mermaidInsertMessage } from './mermaidImport'
 import { DIAGRAM_TEMPLATES, buildTemplate } from './diagramTemplates'
 import { addUserTemplate, loadUserTemplates, newTemplateId, removeUserTemplate, saveUserTemplates, userTemplatesBlockedMessage, type UserTemplate } from './userTemplates'
 import { statusLabel } from './FilePanel'
@@ -4600,12 +4600,11 @@ function App() {
 
   // Insert from Mermaid (dialog, command palette and pasted Mermaid text): the same insert path as templates. Returns an error message, or null when inserted.
   const importMermaid = (text: string, at: Point | null = null): string | null => {
-    const parsed = parseMermaid(text)
-    if (!parsed.ok) return parsed.error
-    const built = buildMermaidItems(parsed)
+    const built = buildMermaidDiagram(text)
+    if (!built.ok) return built.error
     if (!insertTemplateItems(built.items, at)) return 'Could not insert the diagram.'
     setMermaidOpen(false) // closed only after a successful insert; on failure the dialog stays open with the message
-    showToast(mermaidInsertMessage(built.boxes, built.links, parsed.ignoredLines))
+    showToast(mermaidInsertMessage(built.boxes, built.links, built.ignoredLines, built.kind))
     return null
   }
   // Desktop paste with an empty in-app clipboard: the browser's paste event carries the system clipboard text. Mermaid text becomes a diagram, other text one label.
@@ -4616,9 +4615,9 @@ function App() {
     // Mermaid is detected and parsed on the whole text (capped at MAX_MERMAID_TEXT); only the plain label below is cut to 2000 characters.
     const mermaidText = full.slice(0, MAX_MERMAID_TEXT)
     if (isMermaidText(mermaidText)) {
-      const parsed = parseMermaid(mermaidText)
+      const parsed = buildMermaidDiagram(mermaidText)
       // Needs at least one link, otherwise it is just text that starts with "graph".
-      if (parsed.ok && parsed.edges.length > 0) {
+      if (parsed.ok && parsed.links > 0) {
         const error = importMermaid(mermaidText, at)
         if (error) showToast(error)
         return true

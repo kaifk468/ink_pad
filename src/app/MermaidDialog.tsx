@@ -8,7 +8,7 @@ type MermaidDialogProps = {
 
 const EXAMPLE = 'flowchart LR\n  A[Client] --> B[(Database)]\n  B -->|reads| C[[Service]]'
 
-/** "Insert from Mermaid…": a text box for flowchart / graph text. Escape, the close button, Cancel or a click outside closes it. */
+/** "Insert from Mermaid…": a text box for flowchart / graph, classDiagram or sequenceDiagram text. Escape, the close button, Cancel or a click outside closes it. */
 export function MermaidDialog({ onInsert, onClose }: MermaidDialogProps) {
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -48,6 +48,7 @@ export function MermaidDialog({ onInsert, onClose }: MermaidDialogProps) {
             onChange={(event) => { setText(event.target.value); setError(null) }}
             onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); submit() } }}
           />
+          <p className="template-empty">Supports flowchart (with subgraphs), classDiagram and sequenceDiagram.</p>
           {error && <p className="template-error" role="alert">{error}</p>}
           <div className="mermaid-actions">
             <button type="button" onClick={paste} title="Paste the text on the clipboard into the box">Paste</button>
