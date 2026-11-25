@@ -72,7 +72,7 @@ import { diagramIdFromEntry, diagramPaletteEntries, shortcutEntryId, shortcutPal
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
 import { MermaidDialog } from './app/MermaidDialog'
-import { buildMermaidItems, isMermaidText, mermaidInsertMessage, parseMermaid } from './mermaidImport'
+import { buildMermaidItems, isMermaidText, MAX_MERMAID_TEXT, mermaidInsertMessage, parseMermaid } from './mermaidImport'
 import { DIAGRAM_TEMPLATES, buildTemplate } from './diagramTemplates'
 import { addUserTemplate, loadUserTemplates, newTemplateId, removeUserTemplate, saveUserTemplates, userTemplatesBlockedMessage, type UserTemplate } from './userTemplates'
 import { statusLabel } from './FilePanel'
@@ -262,7 +262,7 @@ function App() {
   /** A rotate-handle drag on the single selected label or plain shape. */
   const activeRotateRef = useRef<{ pointerId: number; key: string; originalItems: CanvasItem[]; moved: boolean } | null>(null)
   /** A drag or click on a handle of the single selected connector: `which` is an end, or the middle dot (a click toggles straight/elbow). `saved` = its one history step was recorded. `target` = box highlighted as the snap target. */
-  const activeEndpointRef = useRef<{ pointerId: number; pointerType: string; id: number; which: ConnectorHandleKind | 'label'; startScreen: Point; startPoint: Point; startBend: number; startLabelPosition: number; originalItems: CanvasItem[]; dragged: boolean; saved: boolean; target: number | null } | null>(null)
+  const activeEndpointRef = useRef<{ pointerId: number; pointerType: string; id: number; which: ConnectorHandleKind | 'label'; startScreen: Point; startPoint: Point; startBend: number; startLabelPosition: number; routedConnector: ConnectorObject | null; originalItems: CanvasItem[]; dragged: boolean; saved: boolean; target: number | null } | null>(null)
   const activeLassoRef = useRef<{ pointerId: number; points: Point[] } | null>(null)
   const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean; duplicate?: boolean; dup?: DragDup } | null>(null)
   const selectedKeysRef = useRef<Set<string>>(new Set())
@@ -1770,7 +1770,7 @@ function App() {
     if (!which) return false
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
-    activeEndpointRef.current = { pointerId: event.pointerId, pointerType: event.pointerType, id: connector.id, which, startScreen: getScreenPoint(event), startPoint: point, startBend: connector.bend ?? 0, startLabelPosition: connectorLabelPosition(connector), originalItems: strokesRef.current.slice(), dragged: false, saved: false, target: null }
+    activeEndpointRef.current = { pointerId: event.pointerId, pointerType: event.pointerType, id: connector.id, which, startScreen: getScreenPoint(event), startPoint: point, startBend: connector.bend ?? 0, startLabelPosition: connectorLabelPosition(connector), routedConnector: which === 'label' ? (routeConnectors(strokesRef.current).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connector.id) ?? null) : null, originalItems: strokesRef.current.slice(), dragged: false, saved: false, target: null }
     return true
   }
   const moveConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1783,7 +1783,7 @@ function App() {
     if (gesture.which === 'label') {
       // Dragging the label slides it along the routed path (fraction of its length, 0.05..0.95); one undo step per drag.
       event.currentTarget.style.cursor = 'grabbing'
-      const connector = routeConnectors(gesture.originalItems).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === gesture.id)
+      const connector = gesture.routedConnector // routed once at the start of the gesture (originalItems never change during it)
       if (!connector) return
       const next = setConnectorLabelPosition(gesture.originalItems, gesture.id, labelPositionForDrag(connector, gesture.startPoint, getBoundedPoint(event), gesture.startLabelPosition))
       if (next === strokesRef.current || (!gesture.saved && next === gesture.originalItems)) return
@@ -1818,6 +1818,12 @@ function App() {
       saveHistory()
       strokesRef.current = toggleConnectorRouting(gesture.originalItems, gesture.id)
       scheduleAutosave()
+    } else if (gesture.saved && gesture.which === 'label' && connectorLabelPosition(strokesRef.current.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === gesture.id) ?? {}) === gesture.startLabelPosition) {
+      // The label ended exactly where it started: no change, so no history step.
+      strokesRef.current = gesture.originalItems
+      historyRef.current.discardLast()
+      setCanUndo(historyRef.current.canUndo)
+      setCanRedo(historyRef.current.canRedo)
     } else if (gesture.saved) scheduleAutosave()
     if (gesture.which === 'label') applyCanvasCursor()
     renderAll()
@@ -3180,6 +3186,8 @@ function App() {
     if (event.type !== 'pointerup' || event.pointerType !== 'touch') { touchNav.up(event.pointerId); return }
     const tap = touchNav.up(event.pointerId, performance.now())
     if (!tap || !tapUndoRef.current) return
+    // A tap under an open editor or panel must not undo: the editor would later commit its text as an orphan step.
+    if (editingBlocksCanvas()) return
     if (tap.fingers === 2) { if (historyRef.current.canUndo) { undo(); showTapToast('Undo') } } else if (historyRef.current.canRedo) { redo(); showTapToast('Redo') }
   }
 
@@ -4572,7 +4580,6 @@ function App() {
   const insertTemplateItems = (items: CanvasItem[] | null, at: Point | null = null, fitToView = true): boolean => {
     const canvas = canvasRef.current
     setTemplateChooserOpen(false)
-    setMermaidOpen(false)
     if (!canvas || !items) return false
     if (textEditorRef.current) commitTextEditor()
     if (codeEditorRef.current) commitCodeEditor()
@@ -4599,18 +4606,27 @@ function App() {
     if (!parsed.ok) return parsed.error
     const built = buildMermaidItems(parsed)
     if (!insertTemplateItems(built.items, at)) return 'Could not insert the diagram.'
+    setMermaidOpen(false) // closed only after a successful insert; on failure the dialog stays open with the message
     showToast(mermaidInsertMessage(built.boxes, built.links, parsed.ignoredLines))
     return null
   }
   // Desktop paste with an empty in-app clipboard: the browser's paste event carries the system clipboard text. Mermaid text becomes a diagram, other text one label.
+  // Returns true when the paste was handled (including a shown error), false when there was nothing to paste.
   const pasteSystemText = (raw: string, at: Point | null): boolean => {
-    const text = normalizeText(raw).trim().slice(0, 2000)
-    if (text === '') return false
-    if (isMermaidText(text)) {
-      const error = importMermaid(text, at)
-      if (error) showToast(error)
-      return error === null
+    const full = normalizeText(raw).trim()
+    if (full === '') return false
+    // Mermaid is detected and parsed on the whole text (capped at MAX_MERMAID_TEXT); only the plain label below is cut to 2000 characters.
+    const mermaidText = full.slice(0, MAX_MERMAID_TEXT)
+    if (isMermaidText(mermaidText)) {
+      const parsed = parseMermaid(mermaidText)
+      // Needs at least one link, otherwise it is just text that starts with "graph".
+      if (parsed.ok && parsed.edges.length > 0) {
+        const error = importMermaid(mermaidText, at)
+        if (error) showToast(error)
+        return true
+      }
     }
+    const text = full.slice(0, 2000)
     const label = createTextObject(1, 0, 0, text, color, textSize, createTextMeasure(textSize, textFontId), textFontId)
     const done = insertTemplateItems([label], at, false)
     if (done) showToast('Pasted text')
@@ -5122,13 +5138,18 @@ function App() {
   }
   // A panel, dialog or text editor is open: shortcuts and Desktop paste leave the canvas alone.
   const overlayOpen = (): boolean => paletteOpenRef.current || shortcutHelpOpen || templateChooserOpen || mermaidOpen || pageOverviewOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || Boolean(textEditor) || textEditorRef.current !== null || Boolean(classBoxEditor)
+  const editingBlocksCanvas = (): boolean => overlayOpen() || Boolean(codeEditor && liveCodeEditor())
+  const canvasGestureActive = (): boolean => activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeQuickRef.current !== null
+  // Shared by the keyboard commands and the Desktop paste event: an overlay or editor, an open context menu, any canvas gesture or marquee, or fingers down.
+  const canvasCommandBlocked = (): boolean => editingBlocksCanvas() || Boolean(contextMenuRef.current) || canvasGestureActive() || activeMarqueeRef.current !== null || touchNav.touchCount() > 0
   // Desktop Ctrl+V with an empty in-app clipboard is not handled on keydown (so the browser still fires its paste event): this reads the system clipboard text from that event.
   const pasteEventRef = useRef<(event: ClipboardEvent) => void>(() => undefined)
   pasteEventRef.current = (event) => {
     if (inputModeRef.current !== 'desktop' || event.defaultPrevented || clipboardRef.current.length > 0) return
     const target = event.target as HTMLElement | null
-    if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable)) || overlayOpen()) return
-    if (codeEditor && liveCodeEditor()) return
+    if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) return
+    // Same guards as the Ctrl+V keydown path: no paste under a dialog, editor, context menu, gesture, marquee or fingers on the canvas (and then no preventDefault).
+    if (canvasCommandBlocked()) return
     event.preventDefault()
     const at = cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null
     if (!pasteSystemText(event.clipboardData?.getData('text/plain') ?? '', at)) showToast('Nothing to paste')
@@ -5142,9 +5163,8 @@ function App() {
   keyActionsRef.current = (command) => {
     if (command.kind === 'library' && libraryOpen) return true // the Library is already open: only keep the browser's open dialog away
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
-    if (overlayOpen()) return false
-    if (codeEditor && liveCodeEditor()) return false
-    const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeQuickRef.current !== null
+    if (editingBlocksCanvas()) return false
+    const gestureActive = canvasGestureActive()
     if (contextMenuRef.current) {
       // While the menu is open Escape closes it and no other shortcut runs.
       if (command.kind === 'deselect') { closeContextMenu(); return true }

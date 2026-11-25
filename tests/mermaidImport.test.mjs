@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFile } from 'node:fs/promises'
 import { loadModule } from './helpers/loadModule.mjs'
 import { readAppSource } from './helpers/appSource.mjs'
 
@@ -162,9 +163,91 @@ test('wiring: Desktop paste of system text', () => {
   assert.match(app, /clipboardData\?\.getData\('text\/plain'\)/)
   // Ctrl+V with an empty in-app clipboard is left unhandled on keydown so the paste event fires
   assert.match(app, /case 'paste':[\s\S]{0,260}inputModeRef\.current === 'desktop' && clipboardRef\.current\.length === 0\) return false/)
-  assert.match(app, /isTypingTarget\(target\?\.tagName \?\? 'BODY', Boolean\(target\?\.isContentEditable\)\) \|\| overlayOpen\(\)/)
-  assert.match(app, /isMermaidText\(text\)/)
+  assert.match(app, /isTypingTarget\(target\?\.tagName \?\? 'BODY', Boolean\(target\?\.isContentEditable\)\)\) return/)
+  assert.match(app, /isMermaidText\(mermaidText\)/)
   assert.match(app, /\.slice\(0, 2000\)/)
   // the in-app clipboard path is unchanged
   assert.match(app, /const pasteWithToast = \(at\?: Point \| null\): boolean => \{/)
+})
+
+const { buildMermaid } = await loadModule('mermaidExport.ts')
+const exportSource = await readFile(new URL('../src/mermaidExport.ts', import.meta.url), 'utf8')
+
+test('inline-label links with no space before the target keep their arrow', () => {
+  for (const [text, arrow, dashed] of [['A-- text -->B', true, false], ['A-- text ---B', false, false], ['A== text ==>B', true, false], ['A-. text .->B', true, true], ['A-- text --> B', true, false], ['A -. text .-> B', true, true], ['A == text ==> B', true, false], ['A -- text --o B', true, false]]) {
+    const g = ok(`graph TD\n${text}`)
+    assert.equal(g.edges.length, 1, text)
+    assert.deepEqual([g.edges[0].from, g.edges[0].to, g.edges[0].label, g.edges[0].arrow, g.edges[0].dashed], ['A', 'B', 'text', arrow, dashed], text)
+  }
+})
+
+test('keywords are case-sensitive: End / Style1 nodes are not skipped, real keywords still are', () => {
+  const g = ok('graph TD\nEnd[Done] --> X\nEnd --> Y\nStyle1 --> Z\nsubgraph S\nA --> B\nend\nclass A red\nstyle A fill:#f00\nsubgraphX --> Q')
+  assert.deepEqual(g.nodes.map((n) => n.id), ['End', 'X', 'Y', 'Style1', 'Z', 'A', 'B', 'subgraphX', 'Q'])
+  assert.equal(g.ignoredLines, 4)
+  assert.equal(node(g, 'End').text, 'Done')
+})
+
+test('Unicode spaces act as plain spaces (no duplicate nodes)', () => {
+  const g = ok('graph TD\nA --> B\nA　--> C​')
+  assert.deepEqual(g.nodes.map((n) => n.id), ['A', 'B', 'C'])
+  assert.equal(g.edges.length, 2)
+})
+
+test('Mermaid entity codes in labels are decoded', () => {
+  const g = ok('graph TD\nA["say #quot;hi#quot; #35;1 #lt;b#gt; x#amp;y #9731;"] -->|"a#124;b"| B')
+  assert.equal(node(g, 'A').text, 'say "hi" #1 <b> x&y ☃')
+  assert.equal(g.edges[0].label, 'a|b')
+  assert.equal(ok('graph TD\nA["#lt;br/#gt;"]').nodes[0].text, '<br/>')
+})
+
+test('Copy as Mermaid output round-trips through the importer', () => {
+  const box = (id, x, y, extra = {}) => ({ kind: 'rectangle', id, x, y, width: 200, height: 100, strokeColor: '#000', strokeWidth: 3, ...extra })
+  const hldBox = (id, x, y, shape) => box(id, x, y, { inkBox: { top: y + 20, mid: y + 60, ink: [] }, hldShape: shape })
+  const label = (id, b, text) => ({ kind: 'text', id, x: b.x + 60, y: b.y + 38, width: 80, height: 24, text, fontSize: 18, color: '#000' })
+  const link = (id, from, to, extra = {}) => ({ kind: 'connector', id, start: { x: 0, y: 0, pressure: 1 }, end: { x: 1, y: 1, pressure: 1 }, strokeColor: '#000', strokeWidth: 3, relationshipType: 'directed-association', reversed: false, startAttachment: { rectangleId: from, offsetX: 0, offsetY: 0 }, endAttachment: { rectangleId: to, offsetX: 0, offsetY: 0 }, ...extra })
+  const a = box(1, 0, 0), d = box(2, 300, 0, { diamond: true }), e = box(3, 0, 200, { ellipse: true }), db = hldBox(4, 300, 200, 'database'), svc = hldBox(5, 600, 0, 'service')
+  const items = [a, d, e, db, svc, label(10, a, 'say "hi" [x] {y} #1 <c>'), label(11, d, 'ok?'), label(12, e, 'Start'), label(13, db, 'Users'), label(14, svc, 'Auth'),
+    link(20, 1, 2, { label: 'a|b "q"' }), link(21, 2, 4, { dash: 'dashed' }), link(22, 3, 1, { relationshipType: 'association' }), link(23, 4, 5)]
+  const exported = buildMermaid(items)
+  const g = ok(exported.text)
+  assert.deepEqual(g.nodes.map((n) => [n.text, n.shape]).sort(), [['say "hi" [x] {y} #1 <c>', 'rectangle'], ['ok?', 'diamond'], ['Start', 'ellipse'], ['Users', 'database'], ['Auth', 'service']].sort())
+  assert.equal(g.edges.length, exported.links)
+  assert.equal(g.edges.find((edge) => edge.label)?.label, 'a|b "q"')
+  assert.equal(g.ignoredLines, 0)
+})
+
+test('both-ended links import as plain lines', () => {
+  for (const [text, dashed] of [['A <--> B', false], ['A <-.-> B', true], ['A <==> B', false], ['A x--x B', false], ['A o--o B', false], ['A<-->B', false]]) {
+    const g = ok(`graph TD\n${text}`)
+    assert.equal(g.edges.length, 1, text)
+    assert.deepEqual([g.edges[0].from, g.edges[0].to, g.edges[0].arrow, g.edges[0].dashed], ['A', 'B', false, dashed], text)
+  }
+  assert.equal(ok('graph TD\nA <-->|two way| B').edges[0].label, 'two way')
+  assert.doesNotMatch(exportSource, /'both'/)
+})
+
+test('isMermaidText: lowercase keywords, front matter and comments allowed before the header', () => {
+  assert.equal(isMermaidText('Graph TD\nA-->B'), false)
+  assert.equal(isMermaidText('FLOWCHART LR\nA-->B'), false)
+  assert.equal(isMermaidText('---\ntitle: T\n---\nflowchart LR\nA-->B'), true)
+  assert.equal(isMermaidText('---\ntitle: T\n---\n%% c\nflowchart LR'), true)
+  assert.equal(isMermaidText('---\nnot closed\nflowchart LR'), false)
+  const g = ok('---\ntitle: T\n---\nflowchart LR\nA --> B')
+  assert.equal(g.direction, 'LR')
+  assert.equal(g.edges.length, 1)
+})
+
+test('wiring: paste guards, full-text Mermaid detection, handled errors, dialog close, tap undo, label drag', () => {
+  assert.match(app, /const canvasCommandBlocked = \(\): boolean => editingBlocksCanvas\(\) \|\| Boolean\(contextMenuRef\.current\) \|\| canvasGestureActive\(\) \|\| activeMarqueeRef\.current !== null \|\| touchNav\.touchCount\(\) > 0/)
+  assert.match(app, /pasteEventRef\.current = \(event\) => \{[\s\S]{0,700}if \(canvasCommandBlocked\(\)\) return\n    event\.preventDefault\(\)/)
+  assert.match(app, /const mermaidText = full\.slice\(0, MAX_MERMAID_TEXT\)/)
+  assert.match(app, /const text = full\.slice\(0, 2000\)/)
+  assert.match(app, /parsed\.ok && parsed\.edges\.length > 0\) \{\n\s+const error = importMermaid\(mermaidText, at\)\n\s+if \(error\) showToast\(error\)\n\s+return true/)
+  assert.doesNotMatch(app, /setTemplateChooserOpen\(false\)\n    setMermaidOpen\(false\)\n    if \(!canvas/)
+  assert.match(app, /Could not insert the diagram\.'\n\s+setMermaidOpen\(false\)/)
+  assert.match(app, /if \(!tap \|\| !tapUndoRef\.current\) return\n[^\n]*\n\s+if \(editingBlocksCanvas\(\)\) return/)
+  assert.match(app, /routedConnector: which === 'label' \? \(routeConnectors\(strokesRef\.current\)/)
+  assert.match(app, /const connector = gesture\.routedConnector/)
+  assert.match(app, /connectorLabelPosition\([^\n]*\) === gesture\.startLabelPosition\) \{[\s\S]{0,200}historyRef\.current\.discardLast\(\)/)
 })

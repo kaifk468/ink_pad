@@ -20,12 +20,30 @@ export type MermaidParse = ({ ok: true } & MermaidGraph) | { ok: false; error: s
 
 export const MAX_MERMAID_NODES = 150
 const MAX_NODE_TEXT = 200
-const SKIPPED = /^(subgraph|end|classDef|class|style|linkStyle|click|direction|accTitle|accDescr)\b/i
-const HEADER = /^(?:graph|flowchart)[ \t]*(?:TD|TB|BT|LR|RL)?[ \t]*(?:;.*)?$/i
+/** Statements that are skipped and counted. Keywords are case-sensitive; `end` only as a whole statement, `subgraph` needs a space or the end of the line. */
+const SKIPPED = /^(?:subgraph(?=\s|$)|end\s*;?\s*$|(?:classDef|class|style|linkStyle|click|direction)\s|accTitle\b|accDescr\b)/
+const HEADER = /^(?:graph|flowchart)(?:[ \t]+(?:TD|TB|BT|LR|RL))?[ \t]*(?:;.*)?$/
+/** Mermaid max input read by the importer (characters). */
+export const MAX_MERMAID_TEXT = 50000
 
-/** True when the first line that is not blank or a %% comment starts with `graph` or `flowchart`. */
+/** Unicode spaces (NBSP, en/em spaces, zero-width space, ideographic space ...) become a plain space so they do not end up inside node ids. */
+export function normalizeMermaidSpaces(text: string): string {
+  return text.replace(/[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, ' ')
+}
+
+/** Drops a leading YAML front matter block (`---` ... `---`), which Mermaid allows before the header. */
+export function stripMermaidFrontMatter(text: string): string {
+  const lines = text.split(/\r?\n/)
+  let first = 0
+  while (first < lines.length && lines[first].trim() === '') first += 1
+  if (lines[first]?.trim() !== '---') return text
+  for (let index = first + 1; index < lines.length; index += 1) if (lines[index].trim() === '---') return lines.slice(index + 1).join('\n')
+  return text
+}
+
+/** True when the first line that is not blank, front matter or a %% comment starts with `graph` or `flowchart` (lowercase, as Mermaid requires). */
 export function isMermaidText(text: string): boolean {
-  for (const raw of text.split(/\r?\n/)) {
+  for (const raw of stripMermaidFrontMatter(normalizeMermaidSpaces(text).replace(/^\uFEFF/, '')).split(/\r?\n/)) {
     const line = raw.trim()
     if (line === '' || line.startsWith('%%')) continue
     return HEADER.test(line)
@@ -44,8 +62,19 @@ const SHAPES: ReadonlyArray<{ open: string; close: string; shape: MermaidShape }
   { open: '{', close: '}', shape: 'diamond' },
 ]
 
+/** Mermaid entity codes (`#quot;`, `#lt;`, `#gt;`, `#amp;`, `#35;`) back to characters, in one pass so decoded text is never decoded again. */
+function decodeEntities(raw: string): string {
+  return raw.replace(/#(quot|lt|gt|amp|\d{1,7});/g, (whole, code: string) => {
+    if (code === 'quot') return '"'
+    if (code === 'lt') return '<'
+    if (code === 'gt') return '>'
+    if (code === 'amp') return '&'
+    const point = Number(code)
+    return point > 0 && point <= 0x10ffff && !(point >= 0xd800 && point <= 0xdfff) ? String.fromCodePoint(point) : whole
+  })
+}
 function cleanText(raw: string): string {
-  return raw.replace(/<br\s*\/?>/gi, '\n').replace(/\\n/g, '\n').split('\n').map((line) => line.trim()).join('\n').trim().slice(0, MAX_NODE_TEXT)
+  return decodeEntities(raw.replace(/<br\s*\/?>/gi, '\n').replace(/\\n/g, '\n')).split('\n').map((line) => line.trim()).join('\n').trim().slice(0, MAX_NODE_TEXT)
 }
 const unquote = (raw: string): string => { const t = raw.trim(); return t.length >= 2 && t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1) : t }
 
@@ -125,9 +154,13 @@ function parseLink(source: string, start: number): { link: Link; end: number } |
   }
   let match: RegExpExecArray | null
   // Labels written inside the line: `A -- text --> B`, `A -. text .-> B`, `A == text ==> B`
-  if ((match = /^--[ \t]+(.+?)[ \t]+-{2,}([>ox])?(?![\w-])/.exec(rest))) return finish(match, { arrow: Boolean(match[2]), dashed: false }, 1)
-  if ((match = /^-\.[ \t]+(.+?)[ \t]+\.+-(>)?(?![\w-])/.exec(rest))) return finish(match, { arrow: Boolean(match[2]), dashed: true }, 1)
-  if ((match = /^==[ \t]+(.+?)[ \t]+={2,}(>)?(?![\w=])/.exec(rest))) return finish(match, { arrow: Boolean(match[2]), dashed: false }, 1)
+  // The "not followed by a word character" check applies only to the o / x markers (`A --o B` vs `A --oB` = node oB), never to `>`.
+  if ((match = /^--[ \t]+(.+?)[ \t]+-{2,}(?:(>)|([ox])(?![\w-]))?/.exec(rest))) return finish(match, { arrow: Boolean(match[2] || match[3]), dashed: false }, 1)
+  if ((match = /^-\.[ \t]+(.+?)[ \t]+\.+-(>)?/.exec(rest))) return finish(match, { arrow: Boolean(match[2]), dashed: true }, 1)
+  if ((match = /^==[ \t]+(.+?)[ \t]+={2,}(>)?/.exec(rest))) return finish(match, { arrow: Boolean(match[2]), dashed: false }, 1)
+  // Both-ended links. Connectors have no two-headed type, so `<-->`, `<-.->`, `<==>`, `x--x` and `o--o` become plain lines.
+  if ((match = /^<(-{2,}|-\.+-|={2,})>/.exec(rest))) return finish(match, { arrow: false, dashed: match[1].includes('.') })
+  if ((match = /^([ox])(-{2,}|-\.+-|={2,})\1(?![\w-])/.exec(rest))) return finish(match, { arrow: false, dashed: match[2].includes('.') })
   if ((match = /^-\.+-(>)?/.exec(rest))) return finish(match, { arrow: Boolean(match[1]), dashed: true })
   if ((match = /^={2,}(>)?/.exec(rest))) return finish(match, { arrow: Boolean(match[1]), dashed: false })
   if ((match = /^-{2,}(?:(>)|([ox])(?![\w]))?/.exec(rest))) return finish(match, { arrow: Boolean(match[1] || match[2]), dashed: false })
@@ -146,14 +179,14 @@ export function parseMermaid(text: string): MermaidParse {
     if (!known) nodes.set(declared.id, { id: declared.id, text: declared.text || declared.id, shape: declared.shape ?? 'rectangle' })
     else if (declared.shape !== undefined) nodes.set(declared.id, { id: declared.id, text: declared.text || declared.id, shape: declared.shape })
   }
-  for (const rawLine of text.replace(/^﻿/, '').split(/\r?\n/)) {
+  for (const rawLine of stripMermaidFrontMatter(normalizeMermaidSpaces(text.slice(0, MAX_MERMAID_TEXT)).replace(/^﻿/, '')).split(/\r?\n/)) {
     const line = rawLine.trim()
     if (line === '' || line.startsWith('%%')) continue
     if (!headerSeen) {
       headerSeen = true
-      const header = /^(?:graph|flowchart)\b[ \t]*(TD|TB|BT|LR|RL)?\b[ \t]*;?/i.exec(line)
+      const header = /^(?:graph|flowchart)\b[ \t]*(TD|TB|BT|LR|RL)?\b[ \t]*;?/.exec(line)
       if (header) {
-        const word = (header[1] ?? 'TD').toUpperCase()
+        const word = header[1] ?? 'TD'
         direction = word === 'LR' || word === 'RL' || word === 'BT' ? word : 'TD'
         const remainder = line.slice(header[0].length).trim()
         if (remainder === '') continue

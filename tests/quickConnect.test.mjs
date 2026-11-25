@@ -104,7 +104,7 @@ test('quick-connect review fixes are wired in App', () => {
   assert.match(app, /hitQuickConnect\(source, point, viewportRef\.current\.scale, quickInsideSheet\)/)
   assert.match(app, /hitQuickConnect\(quickBox, point, viewportRef\.current\.scale, quickInsideSheet\)/)
   // 3: the press counts as an active gesture everywhere.
-  const gestureLines = app.split('\n').filter((l) => /const (penGestureActive|gestureActive|cancelableGesture|anyGesture) =/.test(l))
+  const gestureLines = app.split('\n').filter((l) => /const (penGestureActive|canvasGestureActive|cancelableGesture|anyGesture) =/.test(l))
   assert.equal(gestureLines.length, 4)
   for (const l of gestureLines) assert.match(l, /activeQuickRef\.current !== null/)
   // 4: buttons stay drawn while pressed, the pressed one highlighted.

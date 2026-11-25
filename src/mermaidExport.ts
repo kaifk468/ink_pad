@@ -39,8 +39,8 @@ function shape(box: RectangleObject, label: string): string {
   return `["${label}"]`
 }
 
-function linkLine(from: number, to: number, arrow: 'forward' | 'both' | 'none', dashed: boolean, label: string): string {
-  const body = arrow === 'both' ? (dashed ? '<-.->' : '<-->') : arrow === 'forward' ? (dashed ? '-.->' : '-->') : dashed ? '-.-' : '---'
+function linkLine(from: number, to: number, arrow: 'forward' | 'none', dashed: boolean, label: string): string {
+  const body = arrow === 'forward' ? (dashed ? '-.->' : '-->') : dashed ? '-.-' : '---'
   return `  n${from} ${body}${label ? `|"${label}"|` : ''} n${to}`
 }
 
