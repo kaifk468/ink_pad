@@ -25,7 +25,18 @@ export function removePageAt<T>(pages: readonly T[], index: number): { pages: T[
   return { pages: next, index: clampPageIndex(at, next.length) }
 }
 
-export const pageLabel = (index: number, count: number): string => `${index + 1} / ${count}`
+/** "2 / 5", or "2 / 5 · API" when the page has a name. */
+export const pageLabel = (index: number, count: number, name?: string): string => `${index + 1} / ${count}${name ? ` · ${name}` : ''}`
+
+/** The name for a duplicate of a page: "<name> copy" (cut so it stays within 40 characters), or no name when the original has none. */
+export function duplicatedPageName(name: string | undefined): string {
+  if (!name) return ''
+  const suffix = ' copy'
+  return `${name.slice(0, 40 - suffix.length).trimEnd()}${suffix}`
+}
+
+/** "API" for a named page, "Page 2" otherwise (palette rows, headings). */
+export const pageDisplayName = (index: number, name: string | undefined): string => name ? name : `Page ${index + 1}`
 
 /** The pages with `page` put at position `at` (so it ends up at that index). Unchanged at the page limit. */
 export function insertPageAt<T>(pages: readonly T[], at: number, page: T): T[] {

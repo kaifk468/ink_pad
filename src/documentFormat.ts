@@ -29,6 +29,8 @@ export type InkPadDocument = {
   updatedAt: string
   /** `spacing` is written only when it is not the standard one; `sheetHeight` only when the page has grown past its first height. */
   page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: true }
+  /** Optional page names, one per page ('' = unnamed). Written only when at least one page has a name. */
+  pageNames?: string[]
   /** `items` is page 1. Pages 2 and on, only when the diagram has more than one page. */
   items: CanvasItem[]
   pages?: Array<{ items: CanvasItem[] }>
@@ -49,6 +51,8 @@ export type DocumentInput = {
   items: CanvasItem[]
   /** Pages 2 and on. */
   extraPages?: CanvasItem[][]
+  /** One name per page ('' = unnamed); written only when at least one is named. */
+  pageNames?: string[]
   /** Reuse finished strokes as they are instead of copying them (committed strokes are never changed afterwards). Used for autosave. */
   shareStrokes?: boolean
 }
@@ -76,9 +80,28 @@ const MAX_TEXT_LENGTH = 2000
 const MIN_FONT_SIZE = 4
 const MAX_FONT_SIZE = 400
 export const DEFAULT_DOCUMENT_TITLE = 'Untitled diagram'
+export const MAX_PAGE_NAME_LENGTH = 40
+
+/** A page name as stored: control characters removed, spaces collapsed, trimmed, at most 40 characters. Anything that is not text is no name. */
+export function cleanPageName(value: unknown): string {
+  return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_PAGE_NAME_LENGTH).trim() : ''
+}
+
+/** One cleaned name per page (padded with '' or cut to `count`). */
+export function normalizePageNames(raw: unknown, count: number): string[] {
+  const list = Array.isArray(raw) ? raw : []
+  return Array.from({ length: count }, (_, index) => cleanPageName(list[index]))
+}
+
+/** The names to save: one per page, or undefined when no page has a name (so unnamed diagrams are saved exactly as before). */
+export function writablePageNames(raw: unknown, count: number): string[] | undefined {
+  const names = normalizePageNames(raw, count)
+  return names.some((name) => name !== '') ? names : undefined
+}
 
 export function createDocument(input: DocumentInput, now = new Date().toISOString()): InkPadDocument {
   const extraPages = (input.extraPages ?? []).slice(0, MAX_DOCUMENT_PAGES - 1)
+  const names = writablePageNames(input.pageNames, 1 + extraPages.length)
   const copy = (item: CanvasItem) => (input.shareStrokes && item.kind === 'stroke' ? item : cloneItem(item))
   return {
     format: DOCUMENT_FORMAT,
@@ -87,6 +110,7 @@ export function createDocument(input: DocumentInput, now = new Date().toISOStrin
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
     page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}), ...grownSheetHeight(input.sheetHeight), ...(input.sketchy === true ? { sketchy: true as const } : {}) },
+    ...(names ? { pageNames: names } : {}),
     items: input.items.map(copy),
     ...(extraPages.length > 0 ? { pages: extraPages.map((items) => ({ items: items.map(copy) })) } : {}),
   }
@@ -127,7 +151,7 @@ export function documentPageCount(document: InkPadDocument): number {
 }
 
 /** An open diagram's content for "did anything change since the last save" checks. */
-export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; items: CanvasItem[]; extraPages?: CanvasItem[][] }
+export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; items: CanvasItem[]; extraPages?: CanvasItem[][]; pageNames?: string[] }
 
 export function sameSignature(a: DocumentSignature | null, b: DocumentSignature | null): boolean {
   if (!a || !b) return false
@@ -136,6 +160,9 @@ export function sameSignature(a: DocumentSignature | null, b: DocumentSignature 
   const aPages = a.extraPages ?? []
   const bPages = b.extraPages ?? []
   if (aPages.length !== bPages.length) return false
+  const aNames = normalizePageNames(a.pageNames, 1 + aPages.length)
+  const bNames = normalizePageNames(b.pageNames, 1 + bPages.length)
+  for (let index = 0; index < aNames.length; index += 1) if (aNames[index] !== bNames[index]) return false
   for (let page = 0; page < aPages.length; page += 1) {
     if (aPages[page].length !== bPages[page].length) return false
     for (let index = 0; index < aPages[page].length; index += 1) if (aPages[page][index] !== bPages[page][index]) return false
@@ -178,7 +205,7 @@ export function documentFileName(title: string): string {
 /** Version migrations: migrations[n] upgrades a version-n payload to n + 1. */
 const migrations: Record<number, (raw: Record<string, unknown>) => Record<string, unknown>> = {}
 
-const KNOWN_DOCUMENT_KEYS = new Set(['format', 'version', 'title', 'createdAt', 'updatedAt', 'page', 'items', 'pages'])
+const KNOWN_DOCUMENT_KEYS = new Set(['format', 'version', 'title', 'createdAt', 'updatedAt', 'page', 'items', 'pages', 'pageNames'])
 const KNOWN_PAGE_KEYS = new Set(['template', 'background', 'spacing', 'sheetHeight', 'sketchy'])
 const lossyParses = new WeakSet<object>()
 
@@ -222,6 +249,7 @@ export function parseDocument(text: string): ParseResult {
     droppedItems += Math.max(0, current.pages.length - (MAX_DOCUMENT_PAGES - 1))
   }
 
+  const names = writablePageNames(current.pageNames, 1 + extraPages.length)
   const now = new Date().toISOString()
   const unknownFields = Object.keys(current).some((key) => !KNOWN_DOCUMENT_KEYS.has(key)) || Object.keys(page).some((key) => !KNOWN_PAGE_KEYS.has(key))
   const parsed: InkPadDocument = {
@@ -237,6 +265,7 @@ export function parseDocument(text: string): ParseResult {
         ...grownSheetHeight(page.sheetHeight),
         ...(page.sketchy === true ? { sketchy: true as const } : {}),
       },
+      ...(names ? { pageNames: names } : {}),
       items: finalItems,
       ...(extraPages.length > 0 ? { pages: extraPages } : {}),
   }

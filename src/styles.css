@@ -378,6 +378,7 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 .page-controls button:disabled { opacity: .35; cursor: default; }
 .page-controls .page-indicator { display: grid; justify-items: center; line-height: 1.1; width: 100%; padding: 2px 0; color: #343944; font-weight: 700; }
 .page-controls .page-indicator span { font-size: 15px; }
+.page-controls .page-indicator .page-indicator-name { max-width: 34px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; font-size: 9px; font-weight: 600; color: #4b5563; }
 .page-controls .page-indicator small { margin-top: 1px; padding-top: 1px; border-top: 1px solid #c9ccd4; min-width: 16px; font-size: 11px; font-weight: 600; color: #6b7280; text-align: center; }
 .page-controls .page-add { color: #354fc2; }
 .page-controls .page-delete { color: #b3261e; }
@@ -837,6 +838,8 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .page-tile-bar button { display: grid; place-items: center; width: 44px; height: 40px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: #343944; cursor: pointer; touch-action: manipulation; }
 .page-tile-bar button:hover:not(:disabled) { background: #f1f2f5; }
 .page-tile-bar button:disabled { opacity: .3; cursor: default; }
+.page-tile-name { box-sizing: border-box; width: 100%; min-height: 32px; padding: 4px 8px; border: 1px solid #d9dce2; border-radius: 8px; background: #fff; color: #343944; font: inherit; font-size: 13px; text-align: center; }
+.page-tile-name::placeholder { color: #9aa1ae; }
 .page-tile-number { font-weight: 700; color: #343944; }
 
 /* Library multi-select */

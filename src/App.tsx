@@ -29,7 +29,7 @@ import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserSta
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
 import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
-import { getNextIds } from './documentFormat'
+import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
 import { thinItems, thinStroke } from './strokeThinning'
@@ -88,7 +88,7 @@ import { useDocuments } from './app/useDocuments'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, fitViewportToBoundsInset, DESKTOP_FIT_INSETS, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
-import { MAX_PAGES, canAddPage, clampPageIndex, duplicatePageItems, insertPageAfter, insertPageAt, movePage, indexAfterMove, removePageAt, writeLastPage } from './pages'
+import { MAX_PAGES, canAddPage, clampPageIndex, duplicatePageItems, duplicatedPageName, insertPageAfter, insertPageAt, movePage, indexAfterMove, removePageAt, writeLastPage } from './pages'
 import { PageControls, PageUndoBar } from './app/PageControls'
 import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
@@ -414,10 +414,12 @@ function App() {
   const workspaceBoundsRef = useRef(workspaceBoundsFor(sheetHeight))
   // Pages of the open diagram. Only the page on screen is live: its items are strokesRef and its undo history is historyRef.
   // The slot of the page on screen is stale on purpose; it is filled in when the page is left. Other pages are plain data.
-  const pagesRef = useRef<Array<{ items: CanvasItem[]; history: CanvasSnapshotHistory | null }>>([{ items: [], history: null }])
+  const pagesRef = useRef<Array<{ items: CanvasItem[]; history: CanvasSnapshotHistory | null; name?: string }>>([{ items: [], history: null }])
   const pageIndexRef = useRef(0)
   const [pageIndex, setPageIndex] = useState(0)
   const [pageCount, setPageCount] = useState(1)
+  // Page names live in the page slots (name?: string); this only makes the screen redraw when one changes.
+  const [, setPageNamesTick] = useState(0)
 
   const {
     filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
@@ -428,18 +430,21 @@ function App() {
   } = useDocuments({
     getItems: () => strokesRef.current,
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
+    getPageNames: () => pagesRef.current.map((slot) => slot.name ?? ''),
     getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current }),
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null || liveCodeEditor(),
     loadDocument: (loaded, startPage) => {
       resetInteractionState()
       dismissDeletedPage()
       // Every page is cloned as plain data; the page to open on (the one you left, remembered on this device) becomes the live one.
-      pagesRef.current = [{ items: cloneCanvasItems(loaded.items), history: null }, ...(loaded.pages ?? []).map((page) => ({ items: cloneCanvasItems(page.items), history: null }))]
+      const loadedNames = normalizePageNames(loaded.pageNames, 1 + (loaded.pages?.length ?? 0))
+      pagesRef.current = [{ items: cloneCanvasItems(loaded.items), history: null }, ...(loaded.pages ?? []).map((page) => ({ items: cloneCanvasItems(page.items), history: null }))].map((slot, index) => (loadedNames[index] ? { ...slot, name: loadedNames[index] } : slot))
       const openIndex = clampPageIndex(startPage, pagesRef.current.length)
       strokesRef.current = pagesRef.current[openIndex].items
       pageIndexRef.current = openIndex
       setPageIndex(openIndex)
       setPageCount(pagesRef.current.length)
+      setPageNamesTick((tick) => tick + 1)
       const nextIds = getNextIds(pagesRef.current.flatMap((slot) => slot.items))
       nextStrokeIdRef.current = nextIds.stroke
       nextRectangleIdRef.current = nextIds.rectangle
@@ -505,6 +510,7 @@ function App() {
     pageIndexRef.current = index
     setPageIndex(index)
     setPageCount(pagesRef.current.length)
+    setPageNamesTick((tick) => tick + 1)
     setCanUndo(historyRef.current.canUndo)
     setCanRedo(historyRef.current.canRedo)
     setHasInk(strokesRef.current.length > 0)
@@ -513,7 +519,8 @@ function App() {
 
   /** Remembers the page on screen (its items and undo history) in its slot. Call before showing another page. */
   const stashCurrentPage = () => {
-    pagesRef.current[pageIndexRef.current] = { items: strokesRef.current, history: historyRef.current }
+    const name = pagesRef.current[pageIndexRef.current]?.name
+    pagesRef.current[pageIndexRef.current] = { items: strokesRef.current, history: historyRef.current, ...(name ? { name } : {}) }
   }
 
   // Reopening a saved diagram lands on the page you left (kept on this device, not in the diagram).
@@ -566,14 +573,14 @@ function App() {
     nextRectangleIdRef.current = copy.counters.rectangle
     nextConnectorIdRef.current = copy.counters.connector
     nextTextIdRef.current = copy.counters.text
-    pagesRef.current = insertPageAfter(pagesRef.current, pageIndexRef.current, { items: copy.items, history: null })
+    pagesRef.current = insertPageAfter(pagesRef.current, pageIndexRef.current, { items: copy.items, history: null, ...(duplicatedPageName(pagesRef.current[pageIndexRef.current]?.name) ? { name: duplicatedPageName(pagesRef.current[pageIndexRef.current]?.name) } : {}) })
     showPageSlot(pageIndexRef.current + 1)
     scheduleAutosave()
     showToast(`Page duplicated (now page ${pageIndexRef.current + 1})${copy.skipped > 0 ? `; ${copy.skipped} ${copy.skipped === 1 ? 'item' : 'items'} this version can't copy ${copy.skipped === 1 ? 'was' : 'were'} left out` : ''}`)
   }
 
   // The page deleted last, kept (items and its undo history) for a few seconds so the Undo bar can put it back.
-  const deletedPageRef = useRef<{ index: number; slot: { items: CanvasItem[]; history: CanvasSnapshotHistory } } | null>(null)
+  const deletedPageRef = useRef<{ index: number; slot: { items: CanvasItem[]; history: CanvasSnapshotHistory; name?: string } } | null>(null)
   const deletedPageTimerRef = useRef<number | null>(null)
   const [deletedPageNumber, setDeletedPageNumber] = useState<number | null>(null)
   function dismissDeletedPage() {
@@ -588,7 +595,8 @@ function App() {
     if (textEditorRef.current) cancelTextEditor()
     resetInteractionState()
     const removedIndex = pageIndexRef.current
-    const removedSlot = { items: strokesRef.current, history: historyRef.current }
+    const removedName = pagesRef.current[removedIndex]?.name
+    const removedSlot = { items: strokesRef.current, history: historyRef.current, ...(removedName ? { name: removedName } : {}) }
     const removed = removePageAt(pagesRef.current, removedIndex)
     pagesRef.current = removed.pages
     showPageSlot(removed.index)
@@ -600,6 +608,17 @@ function App() {
   }
 
   const [pageOverviewOpen, setPageOverviewOpen] = useState(false)
+  /** Names a page (empty text clears it). Document metadata, not canvas undo history: it is just saved. */
+  const renamePage = (index: number, raw: string) => {
+    const slot = pagesRef.current[index]
+    if (!slot) return
+    const name = cleanPageName(raw)
+    if (name === (slot.name ?? '')) return
+    if (name) slot.name = name
+    else delete slot.name
+    setPageNamesTick((tick) => tick + 1)
+    scheduleAutosave()
+  }
   /**
    * Moves page `from` to position `to`: its items and its undo/redo history travel together (they are one slot), the page on screen stays on
    * screen (pageIndex follows it), and the new order is saved. Not part of canvas undo, like add/delete page; move it back with the buttons.
@@ -632,7 +651,7 @@ function App() {
     stashCurrentPage()
     resetInteractionState()
     const at = Math.min(deleted.index, pagesRef.current.length)
-    pagesRef.current = insertPageAt(pagesRef.current, at, { items: deleted.slot.items, history: deleted.slot.history })
+    pagesRef.current = insertPageAt(pagesRef.current, at, { items: deleted.slot.items, history: deleted.slot.history, ...(deleted.slot.name ? { name: deleted.slot.name } : {}) })
     dismissDeletedPage()
     showPageSlot(at)
     scheduleAutosave()
@@ -4993,7 +5012,7 @@ function App() {
   // The "Open: <title>" rows come from the Library list: each time the palette opens, the list is refreshed (rows appear when it arrives).
   useEffect(() => { if (paletteOpen) void refreshLibraryIfStale() }, [paletteOpen])
   // Text outline (Markdown) of the whole diagram: copied to the clipboard or downloaded as a .md file.
-  const currentOutline = (): string => buildDiagramOutline(docTitle, pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)))
+  const currentOutline = (): string => buildDiagramOutline(docTitle, pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)), pagesRef.current.map((slot) => slot.name ?? ''))
   const copyOutline = () => {
     const text = currentOutline()
     const done = () => showToast('Outline copied')
@@ -5033,6 +5052,7 @@ function App() {
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
     { id: 'page:overview', label: 'Page overview', group: 'Pages', keywords: 'pages thumbnails grid reorder move jump', run: () => setPageOverviewOpen(true) },
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
+    ...pagesRef.current.flatMap((slot, index) => (slot.name ? [{ id: `page:go:${index}`, label: `Go to page: ${slot.name}`, group: 'Pages', keywords: `jump open ${index + 1}`, run: () => goToPage(index) }] : [])),
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
     ...(canSameSize(strokesRef.current, currentSelectionKeys()) ? [
       { id: 'arrange:same-width', label: 'Same width', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('width') } },
@@ -5415,7 +5435,7 @@ function App() {
           )}
         </aside>
         <aside className={`viewport-navigator${navigatorMinimized ? ' minimized' : ''}`} aria-label="Canvas navigation">
-          <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDuplicate={duplicatePage} canDuplicate={canAddPage(pageCount)} duplicateHint={canAddPage(pageCount) ? 'Duplicate page: copy this page right after it' : 'Page limit reached'} onDelete={deletePage} onOverview={() => setPageOverviewOpen(true)} />
+          <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDuplicate={duplicatePage} canDuplicate={canAddPage(pageCount)} duplicateHint={canAddPage(pageCount) ? 'Duplicate page: copy this page right after it' : 'Page limit reached'} onDelete={deletePage} onOverview={() => setPageOverviewOpen(true)} name={pagesRef.current[pageIndex]?.name ?? ''} />
           {navigatorMinimized ? (
             <button className="navigator-restore" type="button" aria-label="Show workspace map" title="Show workspace map" onClick={() => setNavigatorMinimized(false)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><rect x="7" y="8.5" width="6" height="5" rx="1"/></svg>
@@ -5577,7 +5597,7 @@ function App() {
           ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, hasLabel: selectedConnectorLabel, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
           : null}
       />
-      {pageOverviewOpen && <PageOverview count={pageCount} current={pageIndex} loadThumbnail={renderPageThumbnail} onGo={(index) => { goToPage(index); setPageOverviewOpen(false) }} onMove={movePageTo} onClose={() => setPageOverviewOpen(false)} />}
+      {pageOverviewOpen && <PageOverview count={pageCount} current={pageIndex} names={pagesRef.current.map((slot) => slot.name ?? '')} onRename={renamePage} loadThumbnail={renderPageThumbnail} onGo={(index) => { goToPage(index); setPageOverviewOpen(false) }} onMove={movePageTo} onClose={() => setPageOverviewOpen(false)} />}
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
       {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}

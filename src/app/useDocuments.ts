@@ -33,6 +33,8 @@ export type DocumentHost = {
   getItems: () => CanvasItem[]
   /** The items of every page in order (page 1 first), including the live items of the page on screen. */
   getPageItems: () => CanvasItem[][]
+  /** The name of every page in order ('' = unnamed), same length as getPageItems. */
+  getPageNames: () => string[]
   getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean }
   /** True while a pen/touch stroke or gesture is in progress; autosave waits for it to end. */
   isInputActive: () => boolean
@@ -162,6 +164,7 @@ export function useDocuments(host: DocumentHost) {
       sketchy: page.sketchy,
       items: hostRef.current.getPageItems()[0] ?? [],
       extraPages: hostRef.current.getPageItems().slice(1),
+      pageNames: hostRef.current.getPageNames(),
       shareStrokes: true,
     })
   }
@@ -174,7 +177,7 @@ export function useDocuments(host: DocumentHost) {
    */
   const currentSignature = (): DocumentSignature => {
     const page = hostRef.current.getPage()
-    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, sketchy: page.sketchy, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()) }
+    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, sketchy: page.sketchy, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()), pageNames: hostRef.current.getPageNames() }
   }
 
   /**

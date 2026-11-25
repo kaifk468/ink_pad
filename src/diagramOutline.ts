@@ -160,7 +160,7 @@ function pageSections(items: readonly CanvasItem[], level: string): string[] {
 }
 
 /** The Markdown outline of a diagram: `# Title`, then (under `## Page n` when there are several pages) Components, Connections, Notes, Classes, Code and a handwriting count. */
-export function buildDiagramOutline(title: string, pages: readonly (readonly CanvasItem[])[]): string {
+export function buildDiagramOutline(title: string, pages: readonly (readonly CanvasItem[])[], pageNames: readonly string[] = []): string {
   const lines: string[] = [`# ${flat(title) || UNTITLED}`, '']
   const several = pages.length > 1
   let any = false
@@ -168,7 +168,7 @@ export function buildDiagramOutline(title: string, pages: readonly (readonly Can
     const body = pageSections(items, several ? '###' : '##')
     if (body.length === 0) return
     any = true
-    if (several) lines.push(`## Page ${index + 1}`, '')
+    if (several) lines.push(`## Page ${index + 1}${flat(pageNames[index] ?? '') ? ` — ${flat(pageNames[index])}` : ''}`, '')
     lines.push(...body)
   })
   if (!any) lines.push('_(empty diagram)_', '')

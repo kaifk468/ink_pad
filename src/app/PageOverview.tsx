@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { MAX_PAGE_NAME_LENGTH } from '../documentFormat'
 import { movePage } from '../pages'
 import { PAGE_PREVIEW_TOO_LARGE } from '../thumbnail'
 
@@ -12,13 +13,17 @@ type PageOverviewProps = {
   onGo: (index: number) => void
   /** Move the page at `from` to `to` (one step earlier or later). */
   onMove: (from: number, to: number) => void
+  /** The page names in page order ('' = unnamed). */
+  names: string[]
+  /** Save a new name for the page (empty clears it). */
+  onRename: (index: number, name: string) => void
   onClose: () => void
 }
 
 const arrow = { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': true, fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
 
 /** Modal grid with a thumbnail and number for every page. Tap a tile to go there; the small arrows move that page earlier or later. Esc, the close button or a click outside closes it. */
-export function PageOverview({ count, current, loadThumbnail, onGo, onMove, onClose }: PageOverviewProps) {
+export function PageOverview({ count, current, loadThumbnail, onGo, onMove, names, onRename, onClose }: PageOverviewProps) {
   // undefined = not drawn yet, null = blank page. Moving a page moves its picture too, so nothing is redrawn.
   const [pictures, setPictures] = useState<Array<string | null | undefined>>(() => Array.from({ length: count }, () => undefined))
   const loadRef = useRef(loadThumbnail)
@@ -45,6 +50,7 @@ export function PageOverview({ count, current, loadThumbnail, onGo, onMove, onCl
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      if (event.target instanceof HTMLInputElement) return // Esc in a name box only reverts that name
       event.preventDefault()
       onClose()
     }
@@ -76,10 +82,42 @@ export function PageOverview({ count, current, loadThumbnail, onGo, onMove, onCl
                 <span className="page-tile-number">{index + 1}</span>
                 <button type="button" aria-label={`Move page ${index + 1} later`} title="Move later" disabled={index === count - 1} onClick={() => move(index, index + 1)}><svg {...arrow}><path d="M9 6l6 6-6 6" /></svg></button>
               </div>
+              <PageNameInput index={index} name={names[index] ?? ''} onRename={onRename} />
             </li>
           ))}
         </ul>
       </section>
     </div>
+  )
+}
+
+/** The name box under a thumbnail: Enter or leaving it saves, Esc puts the saved name back. Keys stay in the box (no canvas shortcuts). */
+function PageNameInput({ index, name, onRename }: { index: number; name: string; onRename: (index: number, name: string) => void }) {
+  const [draft, setDraft] = useState(name)
+  const draftRef = useRef(name)
+  const skipRef = useRef(false)
+  const renameRef = useRef(onRename)
+  renameRef.current = onRename
+  const change = (value: string) => { draftRef.current = value; setDraft(value) }
+  useEffect(() => { change(name) }, [name])
+  // Closing the overview with the box still focused (click outside) unmounts it without a blur: save then.
+  useEffect(() => () => { if (!skipRef.current) renameRef.current(index, draftRef.current) }, [index])
+  return (
+    <input
+      type="text"
+      className="page-tile-name"
+      value={draft}
+      maxLength={MAX_PAGE_NAME_LENGTH}
+      placeholder={`Page ${index + 1}`}
+      aria-label={`Name of page ${index + 1}`}
+      spellCheck={false}
+      onChange={(event) => change(event.target.value)}
+      onBlur={() => { if (skipRef.current) { skipRef.current = false; return } renameRef.current(index, draftRef.current) }}
+      onKeyDown={(event) => {
+        event.stopPropagation()
+        if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur() }
+        else if (event.key === 'Escape') { event.preventDefault(); skipRef.current = true; change(name); event.currentTarget.blur() }
+      }}
+    />
   )
 }
