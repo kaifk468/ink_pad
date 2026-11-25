@@ -9,6 +9,8 @@ export type PendingDelete = {
   id: string
   /** Name shown in the toast. */
   label: string
+  /** More than one diagram deleted together (a batch): the toast reads "Deleted 3 diagrams" instead of the quoted label. */
+  count?: number
   /** Every diagram or folder id to hide from the Library while the delete is pending. */
   hiddenIds: ReadonlySet<string>
   /** Extra live rule (a folder hides whatever is inside it now, not only what was there at confirm time). */
@@ -30,6 +32,36 @@ export type PendingDeleteOptions = {
 /** Ids hidden while a diagram delete is pending: just that diagram. */
 export function hiddenForDiagram(id: string): Set<string> {
   return new Set([id])
+}
+
+/** Toast wording: the quoted name for one item, "3 diagrams" for a batch. */
+export function pendingLabel(item: Pick<PendingDelete, 'label' | 'count'>): string {
+  return item.count !== undefined && item.count > 1 ? `${item.count} diagrams` : `“${item.label}”`
+}
+
+/**
+ * One pending delete for several diagrams: they hide together, share one Undo, and are deleted one after another through the same
+ * single-diagram delete (so each runs in the save chain). Every diagram is attempted even when one fails; the batch then resolves
+ * false (or throws the first error), which makes the survivors visible again while the ones already gone stay gone.
+ */
+export function batchDelete(entries: { id: string; label: string; run: () => Promise<boolean | void> }[]): PendingDelete {
+  return {
+    kind: 'diagram',
+    id: entries[0]?.id ?? '',
+    label: entries.length === 1 ? entries[0].label : `${entries.length} diagrams`,
+    count: entries.length,
+    hiddenIds: new Set(entries.map((entry) => entry.id)),
+    run: async () => {
+      let ok = true
+      let failure: unknown
+      let threw = false
+      for (const entry of entries) {
+        try { if ((await entry.run()) === false) ok = false } catch (error) { ok = false; if (!threw) { threw = true; failure = error } }
+      }
+      if (threw) throw failure
+      return ok
+    },
+  }
 }
 
 /** Ids hidden while a folder delete is pending: the folder, its subfolders and every diagram inside them. */

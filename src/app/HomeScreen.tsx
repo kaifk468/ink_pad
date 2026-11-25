@@ -4,7 +4,8 @@ import { cleanFolderName, flattenFolders, folderPath } from '../folderTree'
 import { NEW_DIAGRAM_PRESETS, RECENT_COUNT, RECENT_MIN_LIBRARY, countInFolder, describeEdited, folderLabel, LIBRARY_SORTS, parseLibrarySort, recentDiagrams, searchLibrary, sortLibrary, type LibraryLayout, type LibrarySort } from '../libraryView'
 import { copyTitle } from '../libraryCopy'
 import { canDragCards, decideDrop, hasFinePointer } from '../libraryDrop'
-import { createPendingDeletes, hiddenForDiagram, hiddenForFolder, hidesInFolder, type PendingDeletes } from '../pendingDelete'
+import { batchDelete, createPendingDeletes, hiddenForDiagram, hiddenForFolder, hidesInFolder, pendingLabel, type PendingDeletes } from '../pendingDelete'
+import { allSelected, deleteConfirmText, effectiveSelection, idsToMove, movedMessage, runMoves, selectAllIds, selectionLabel, toggleSelected } from '../librarySelect'
 import type { PageTemplate } from '../pageTemplates'
 
 type HomeScreenProps = {
@@ -73,6 +74,12 @@ export function HomeScreen(props: HomeScreenProps) {
   latestLists.current = { library: props.library, folders: props.folders }
   const importRef = useRef<HTMLInputElement>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  /** Select mode: cards toggle a checkbox instead of opening; a bar offers Move / Delete for all of them. Diagrams only, not folders. */
+  const [selectMode, setSelectMode] = useState(false)
+  const [selection, setSelection] = useState<ReadonlySet<string>>(() => new Set())
+  const [movingMany, setMovingMany] = useState(false)
+  const [confirmMany, setConfirmMany] = useState(false)
+  const [busyMany, setBusyMany] = useState(false)
   /** 'starred' shows only starred diagrams from every folder. */
   const [view, setView] = useState<'all' | 'starred'>('all')
   const [query, setQuery] = useState('')
@@ -106,7 +113,7 @@ export function HomeScreen(props: HomeScreenProps) {
   failedRef.current = showStatus
   // Closing the Library (or opening a diagram) makes a pending delete real now. A page unload does not: the item simply stays.
   useEffect(() => { pending.start(); return () => { void pending.dispose() } }, [pending])
-  const dragEnabled = canDragCards(Boolean(props.desktop), hasFinePointer())
+  const dragEnabled = canDragCards(Boolean(props.desktop), hasFinePointer()) && !selectMode
   /** The diagram being dragged, and the drop target under the mouse ('root' = All diagrams). Mouse drag and drop only; touch uses the Move dialog. */
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropOver, setDropOver] = useState<string | null>(null)
@@ -135,6 +142,7 @@ export function HomeScreen(props: HomeScreenProps) {
   }
   // Queued deletes finish (in the save chain) before another diagram opens.
   const openDiagram = (id: string) => { void pending.flush().then(() => props.onOpenDiagram(id)) }
+  const exitSelect = () => { setSelectMode(false); setSelection(new Set()); setMovingMany(false); setConfirmMany(false) }
   const deleteWithUndo = (item: { kind: 'diagram' | 'folder'; id: string; label: string; hidden: Set<string>; hides?: (id: string) => boolean; run: () => Promise<boolean> | void }) => {
     clearStatus()
     pending.schedule({ kind: item.kind, id: item.id, label: item.label, hiddenIds: item.hidden, hides: item.hides, run: async () => (await item.run()) !== false })
@@ -153,6 +161,36 @@ export function HomeScreen(props: HomeScreenProps) {
   const starredCount = useMemo(() => library.filter((entry) => starredSet.has(entry.id)).length, [library, starredSet])
   const shown = useMemo(() => sortLibrary(searchLibrary(library, folders, { query, folderId: here, onlyIds: view === 'starred' ? starredSet : undefined }), sort), [library, folders, query, here, view, starredSet, sort])
   const tree = useMemo(() => flattenFolders(folders), [folders])
+  const shownIds = useMemo(() => shown.map((entry) => entry.id), [shown])
+  /** What an action may touch: selected AND visible now (a search or folder change never makes it act on hidden diagrams). */
+  const chosenIds = useMemo(() => effectiveSelection(selection, shownIds), [selection, shownIds])
+  const selectApi = useRef<{ active: boolean; selectAll: () => void; exit: () => void }>({ active: false, selectAll: () => undefined, exit: () => undefined })
+  selectApi.current = { active: selectMode, selectAll: () => setSelection(selectAllIds(shownIds)), exit: exitSelect }
+  // Opening another folder or view starts a fresh selection (select mode itself stays on).
+  useEffect(() => { setSelection(new Set()); setMovingMany(false); setConfirmMany(false) }, [view, here])
+  const moveMany = async (folderId: string | null) => {
+    if (busyMany) return
+    const ids = chosenIds
+    const todo = idsToMove(library, folders, ids, folderId)
+    const destination = folderId ? folders.find((folder) => folder.id === folderId)?.name ?? 'folder' : 'All diagrams'
+    setMovingMany(false)
+    setBusyMany(true)
+    try {
+      const result = await runMoves(todo, (id) => props.onMoveDiagram(id, folderId))
+      const moved = result.moved + (ids.length - todo.length)
+      if (moved > 0 || ids.length === 0) showStatus(movedMessage(moved, ids.length, destination))
+      if (result.failed === 0) exitSelect()
+      else setSelection(new Set(ids))
+    } finally { setBusyMany(false) }
+  }
+  const deleteMany = () => {
+    const ids = chosenIds
+    setConfirmMany(false)
+    if (ids.length === 0) return
+    exitSelect()
+    clearStatus()
+    pending.schedule(batchDelete(ids.map((id) => ({ id, label: titleOf(id), run: async () => (await props.onDeleteDiagram(id)) !== false }))))
+  }
   const confirmFolder = confirmFolderId ? folders.find((folder) => folder.id === confirmFolderId) : undefined
   const moveTarget = movingId ? library.find((entry) => entry.id === movingId) : undefined
 
@@ -165,6 +203,11 @@ export function HomeScreen(props: HomeScreenProps) {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
       const typing = Boolean(target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)))
+      if (selectApi.current.active && !typing && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'a') {
+        event.preventDefault()
+        selectApi.current.selectAll()
+        return
+      }
       if (event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) {
         event.preventDefault()
         searchRef.current?.focus()
@@ -172,6 +215,7 @@ export function HomeScreen(props: HomeScreenProps) {
       }
       if (event.key !== 'Escape') return
       if (newMenuOpenRef.current) setNewMenuOpen(false)
+      else if (selectApi.current.active) selectApi.current.exit()
       else if (target === searchRef.current && searchRef.current?.value) { setQuery(''); event.preventDefault() }
       else closeRef.current()
     }
@@ -218,7 +262,7 @@ export function HomeScreen(props: HomeScreenProps) {
     setMovingId(null)
     void act(() => props.onMoveDiagram(entry.id, folderId), `Moved “${entry.title || 'Untitled diagram'}” to ${folderId ? folders.find((folder) => folder.id === folderId)?.name ?? 'folder' : 'All diagrams'}`)
   }
-  const showRecent = view === 'all' && here === null && !query.trim() && library.length > RECENT_MIN_LIBRARY
+  const showRecent = !selectMode && view === 'all' && here === null && !query.trim() && library.length > RECENT_MIN_LIBRARY
   const recent = useMemo(() => (showRecent ? recentDiagrams(library, RECENT_COUNT) : []), [library, showRecent])
   const trail = folderPath(folders, here)
   const submitRename = () => {
@@ -295,7 +339,7 @@ export function HomeScreen(props: HomeScreenProps) {
 
         {props.notice && <p className="home-notice" role="alert">{props.notice}</p>}
         {pendingItem && <div className="home-undo" role="status">
-          {pendingRunning ? <span>Deleting “{pendingItem.label}”…</span> : <span>Deleted “{pendingItem.label}”</span>}
+          {pendingRunning ? (pendingItem.count && pendingItem.count > 1 ? <span>Deleting {pendingLabel(pendingItem)}…</span> : <span>Deleting “{pendingItem.label}”…</span>) : (pendingItem.count && pendingItem.count > 1 ? <span>Deleted {pendingLabel(pendingItem)}</span> : <span>Deleted “{pendingItem.label}”</span>)}
           {!pendingRunning && <button type="button" onClick={() => { pending.cancel() }}>Undo</button>}
         </div>}
         {status && <p className="home-status" role="status">{status}</p>}
@@ -319,6 +363,31 @@ export function HomeScreen(props: HomeScreenProps) {
           <div className="home-confirm-actions"><button type="button" onClick={() => setMovingId(null)}>Cancel</button></div>
         </div>}
 
+        {selectMode && <div className="home-selectbar" role="toolbar" aria-label="Selected diagrams">
+          <strong>{selectionLabel(chosenIds.length)}</strong>
+          <button type="button" disabled={shownIds.length === 0 || allSelected(selection, shownIds)} onClick={() => setSelection(selectAllIds(shownIds))}>Select all</button>
+          <button type="button" disabled={chosenIds.length === 0 || busyMany} onClick={() => { setConfirmMany(false); setMovingMany(true) }}>Move…</button>
+          <button type="button" className="home-danger" disabled={chosenIds.length === 0 || busyMany} onClick={() => { setMovingMany(false); setConfirmMany(true) }}>Delete</button>
+          <button type="button" onClick={exitSelect}>Cancel</button>
+        </div>}
+        {selectMode && confirmMany && chosenIds.length > 0 && <div className="home-confirm" role="alertdialog" aria-label="Delete selected diagrams">
+          <p>{deleteConfirmText(chosenIds.length)} You can Undo for a few seconds.</p>
+          <div className="home-confirm-actions">
+            <button type="button" className="home-danger" onClick={deleteMany}>Delete</button>
+            <button type="button" onClick={() => setConfirmMany(false)}>Cancel</button>
+          </div>
+        </div>}
+        {selectMode && movingMany && chosenIds.length > 0 && <div className="home-confirm" role="dialog" aria-label={`Move ${chosenIds.length} selected diagrams`}>
+          <p>Move {chosenIds.length} selected diagram{chosenIds.length === 1 ? '' : 's'} to:</p>
+          <ul className="home-move-list">
+            <li><button type="button" onClick={() => void moveMany(null)}>All diagrams (top level)</button></li>
+            {tree.map(({ folder, depth }) => (
+              <li key={folder.id}><button type="button" style={{ paddingLeft: 12 + depth * 18 }} onClick={() => void moveMany(folder.id)}>{folder.name}</button></li>
+            ))}
+          </ul>
+          <div className="home-confirm-actions"><button type="button" onClick={() => setMovingMany(false)}>Cancel</button></div>
+        </div>}
+
         <div className="home-heading-row">
           {renaming && hereFolder
             ? <div className="home-inline-edit">
@@ -334,6 +403,7 @@ export function HomeScreen(props: HomeScreenProps) {
             <button type="button" onClick={() => { setRenaming(true); setDraftName(hereFolder.name) }}>Rename folder</button>
             <button type="button" onClick={() => setConfirmFolderId(hereFolder.id)}>Delete folder</button>
           </span>}
+          <button type="button" className={`home-select-toggle${selectMode ? ' selected' : ''}`} title="Select several diagrams" aria-pressed={selectMode} onClick={() => { if (selectMode) exitSelect(); else setSelectMode(true) }}>{selectMode ? 'Done' : 'Select'}</button>
           <label className="home-sort">
             <span>Sort</span>
             <select aria-label="Sort" value={sort} onChange={(event) => chooseSort(parseLibrarySort(event.target.value))}>
@@ -370,8 +440,11 @@ export function HomeScreen(props: HomeScreenProps) {
             const isStarred = starredSet.has(entry.id)
             const where = folderLabel(folders, entry.folderId && folders.some((folder) => folder.id === entry.folderId) ? entry.folderId : null)
             return (
-              <li key={entry.id} className={`home-card${entry.id === props.currentId ? ' current' : ''}${dragId === entry.id ? ' dragging' : ''}`} draggable={dragEnabled && renamingDiagramId !== entry.id} onDragStart={dragEnabled ? (event) => { setDragId(entry.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', entry.title || 'Untitled diagram') } : undefined} onDragEnd={dragEnabled ? () => { setDragId(null); setDropOver(null) } : undefined}>
-                <button type="button" className="home-card-open" aria-label={`Open ${entry.title || 'Untitled diagram'}`} onClick={() => openDiagram(entry.id)}>
+              <li key={entry.id} className={`home-card${entry.id === props.currentId ? ' current' : ''}${selectMode && selection.has(entry.id) ? ' picked' : ''}${dragId === entry.id ? ' dragging' : ''}`} draggable={dragEnabled && renamingDiagramId !== entry.id} onDragStart={dragEnabled ? (event) => { setDragId(entry.id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', entry.title || 'Untitled diagram') } : undefined} onDragEnd={dragEnabled ? () => { setDragId(null); setDropOver(null) } : undefined}>
+                {selectMode && <label className="home-card-check" title={`Select ${entry.title || 'Untitled diagram'}`}>
+                  <input type="checkbox" aria-label={`Select ${entry.title || 'Untitled diagram'}`} checked={selection.has(entry.id)} onChange={() => setSelection((current) => toggleSelected(current, entry.id))} />
+                </label>}
+                <button type="button" className="home-card-open" aria-label={selectMode ? `Select ${entry.title || 'Untitled diagram'}` : `Open ${entry.title || 'Untitled diagram'}`} aria-pressed={selectMode ? selection.has(entry.id) : undefined} onClick={() => (selectMode ? setSelection((current) => toggleSelected(current, entry.id)) : openDiagram(entry.id))}>
                   <span className="home-card-preview" aria-hidden="true">
                     {props.thumbnails[entry.id]
                       ? <img src={props.thumbnails[entry.id]} alt="" draggable={false} />
@@ -388,7 +461,7 @@ export function HomeScreen(props: HomeScreenProps) {
                   <input type="text" aria-label="Diagram name" autoFocus maxLength={80} value={diagramDraft} onChange={(event) => setDiagramDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') submitDiagramRename(entry.id); if (event.key === 'Escape') { event.stopPropagation(); setRenamingDiagramId(null) } }} />
                   <button type="button" onClick={() => submitDiagramRename(entry.id)}>Save</button>
                 </div>}
-                {renamingDiagramId !== entry.id && <span className="home-card-actions">
+                {renamingDiagramId !== entry.id && !selectMode && <span className="home-card-actions">
                   <button type="button" aria-label={`Rename ${entry.title || 'Untitled diagram'}`} onClick={() => { setRenamingDiagramId(entry.id); setDiagramDraft(entry.title || '') }}>Rename</button>
                   <button type="button" aria-label={`Make a copy of ${entry.title || 'Untitled diagram'}`} title="Make a copy" disabled={copyingId !== null} aria-busy={copyingId === entry.id} onClick={() => void makeCopy(entry.id)}>{copyingId === entry.id ? 'Copying…' : 'Make a copy'}</button>
                   <button type="button" aria-label={`Move${entry.title || 'Untitled diagram'}`} onClick={() => setMovingId(entry.id)}>Move</button>

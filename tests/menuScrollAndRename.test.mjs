@@ -13,6 +13,6 @@ test('scrolling inside the right-click menu does not close it', () => {
 })
 
 test('inline diagram rename replaces the card actions and keeps the title', () => {
-  assert.match(home, /\{renamingDiagramId !== entry\.id && <span className="home-card-actions">/)
+  assert.match(home, /\{renamingDiagramId !== entry\.id && !selectMode && <span className="home-card-actions">/)
   assert.match(home, /<span className="home-card-title">\{entry\.title \|\| 'Untitled diagram'\}<\/span>/)
 })

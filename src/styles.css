@@ -824,3 +824,15 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .page-tile-bar button:hover:not(:disabled) { background: #f1f2f5; }
 .page-tile-bar button:disabled { opacity: .3; cursor: default; }
 .page-tile-number { font-weight: 700; color: #343944; }
+
+/* Library multi-select */
+.home-select-toggle { padding: 0 14px; }
+.home-select-toggle.selected { border-color: var(--home-accent); color: var(--home-accent); }
+.home-selectbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--home-accent); border-radius: 10px; background: var(--home-surface); }
+.home-selectbar strong { margin-right: auto; }
+.home-selectbar button { padding: 0 14px; }
+.home-selectbar button:disabled { opacity: .45; cursor: default; }
+.home-card.picked { border-color: var(--home-accent); box-shadow: 0 0 0 2px var(--home-accent); }
+.home-card-check { position: absolute; top: 8px; left: 8px; z-index: 2; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; background: rgba(255, 255, 255, .95); cursor: pointer; }
+.home-card-check input { width: 28px; height: 28px; margin: 0; cursor: pointer; accent-color: var(--home-accent); }
+.home-list .home-card-check { top: 50%; transform: translateY(-50%); }
