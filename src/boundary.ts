@@ -46,7 +46,7 @@ export function addBoundary(
 }
 
 /** The label of a plain box sits in its middle; a boundary's own label sits at its top-left corner. */
-const OWN_LABEL_CORNER = 48
+export const OWN_LABEL_CORNER = 48
 
 function insideBox(box: RectangleBounds, item: RectangleBounds): boolean {
   return item.x >= box.x && item.y >= box.y && item.x + item.width <= box.x + box.width && item.y + item.height <= box.y + box.height

@@ -5008,7 +5008,8 @@ function App() {
   const copyMermaid = () => {
     const result = buildMermaid(strokesRef.current)
     const text = result.text
-    const done = () => showToast(`Copied ${result.boxes} ${result.boxes === 1 ? 'box' : 'boxes'} and ${result.links} ${result.links === 1 ? 'link' : 'links'} as Mermaid${result.skipped ? '; text and ink skipped' : ''}`)
+    const noun = result.kind === 'class' ? (result.boxes === 1 ? 'class' : 'classes') : result.boxes === 1 ? 'box' : 'boxes'
+    const done = () => showToast(`Copied ${result.boxes} ${noun} and ${result.links} ${result.links === 1 ? 'link' : 'links'} as Mermaid${result.skipped ? '; text and ink skipped' : ''}`)
     const failed = () => showToast('Could not copy Mermaid')
     try {
       navigator.clipboard.writeText(text).then(done, failed)
