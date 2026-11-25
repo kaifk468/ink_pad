@@ -150,6 +150,12 @@ test('corner panels move above the dock on narrow tablets so they never overlap 
   assert.match(body, /\.zoom-controls\s*\{[^}]*bottom:\s*calc\(max\(16px,\s*env\(safe-area-inset-bottom\)\)\s*\+\s*84px\)/)
 })
 
+test('desktop 1101-1700px: the minimap sits above the wide dock, the base tablet rule is unchanged', () => {
+  const body = mediaBody('@media (min-width: 1101px) and (max-width: 1700px)')
+  assert.match(body, /\.app-shell:has\(\.desktop-dock\) \.viewport-navigator\s*\{[^}]*bottom:\s*calc\(max\(16px,\s*env\(safe-area-inset-bottom\)\)\s*\+\s*84px\)/)
+  assert.match(ruleBody(styles, '.viewport-navigator {'), /bottom:\s*max\(16px,\s*env\(safe-area-inset-bottom\)\)/)
+})
+
 test('the sheet layer and canvas stacking are unchanged', () => {
   assert.match(ruleBody(styles, '.sheet-layer {'), /position:\s*absolute;[\s\S]*pointer-events:\s*none/)
   assert.match(ruleBody(styles, '.drawing-canvas {'), /position:\s*absolute;\s*inset:\s*0/)

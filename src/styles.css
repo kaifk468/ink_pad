@@ -517,6 +517,11 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
   .app-shell:has(.desktop-dock) .zoom-controls { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); }
 }
 
+/* Desktop at 1101-1700px: the labelled dock is wide enough for its right end to reach the corner minimap, so the minimap sits above the dock (tablet and narrower layouts already do). */
+@media (min-width: 1101px) and (max-width: 1700px) {
+  .app-shell:has(.desktop-dock) .viewport-navigator { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); }
+}
+
 @media (max-width: 720px) {
   .tool-dock { gap: 2px; padding: 4px 6px; min-height: 60px; }
   .tool-button { min-width: 44px; height: 52px; padding: 3px 3px; }
