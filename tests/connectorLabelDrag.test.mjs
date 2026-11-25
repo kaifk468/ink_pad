@@ -114,3 +114,11 @@ test('wiring: label drag uses the handle gesture, one undo step, Esc cancels', (
   assert.match(app, /if \(activeEndpointRef\.current\) \{ cancelConnectorHandleGesture\(\); handled = true \}/)
   assert.match(app, /connectorLabelCentre\(connector\)/)
 })
+
+test('wiring: a press on the label of an unselected connector selects it and starts the label drag only', () => {
+  assert.match(app, /startConnectorHandleGesture = \(event: React\.PointerEvent<HTMLCanvasElement>, point: Point, labelOnly = false\)/)
+  assert.match(app, /labelOnly \? null : hitConnectorHandle/)
+  assert.match(app, /connector && !textHit && !codeHit && !rectangle && [^\n]*startConnectorHandleGesture\(event, point, true\)\) return/)
+  // The selection is made before the gesture starts, so a plain click only selects (no history step is saved until the drag moves).
+  assert.match(app, /updateSelectedItems\(textHit \? \[canvasItemKey\(textHit\)\][^\n]*\n\s*renderAll\(\)\n[^\n]*\n\s*if \(connector && !textHit/)
+})

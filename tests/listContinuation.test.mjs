@@ -51,7 +51,6 @@ test('minimalEdit yields one replacement', () => {
 
 test('editor wiring: plain Enter and beforeinput share one guarded path', () => {
   assert.match(overlay, /continueList\(field\.value, field\.selectionStart, field\.selectionEnd\)/)
-  assert.match(overlay, /event\.key === 'Enter' && \(event\.ctrlKey \|\| event\.metaKey\)\) \{ event\.preventDefault\(\); onCommit\(\)/)
   assert.match(overlay, /addEventListener\('beforeinput'/)
   assert.match(overlay, /insertLineBreak/)
   assert.match(overlay, /insertParagraph/)

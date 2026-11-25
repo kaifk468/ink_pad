@@ -1780,11 +1780,11 @@ function App() {
     renderAll()
   }
   /** Starts a handle gesture when `point` is on a handle of the selected connector. Returns true when it did. */
-  const startConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>, point: Point): boolean => {
+  const startConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>, point: Point, labelOnly = false): boolean => {
     const connector = soleConnectorWithHandles()
     if (!connector) return false
     // The handles win; otherwise a press on the label of the selected connector drags it along the path (a click without movement does nothing, so double-click still edits).
-    const which: ConnectorHandleKind | 'label' | null = hitConnectorHandle(connector, point, viewportRef.current.scale, event.pointerType) ?? (hitConnectorLabel(connector, point) ? 'label' : null)
+    const which: ConnectorHandleKind | 'label' | null = (labelOnly ? null : hitConnectorHandle(connector, point, viewportRef.current.scale, event.pointerType)) ?? (hitConnectorLabel(connector, point) ? 'label' : null)
     if (!which) return false
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -3653,6 +3653,8 @@ function App() {
       setSelectedRectangle(rectangle?.id ?? null)
       updateSelectedItems(textHit ? [canvasItemKey(textHit)] : codeHit ? [canvasItemKey(codeHit)] : connector ? [canvasItemKey(connector)] : [])
       renderAll()
+      // A press on the label of a connector that was not selected selects it and starts the label drag (a plain click only selects).
+      if (connector && !textHit && !codeHit && !rectangle && (event.pointerType !== 'mouse' || event.button === 0) && startConnectorHandleGesture(event, point, true)) return
       const selectedItem = textHit ?? codeHit ?? rectangle ?? connector
       if (!selectedItem) return
       // A member of a group selects the whole group and a drag moves every member (mouse, pen and touch alike).
