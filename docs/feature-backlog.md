@@ -286,16 +286,16 @@ Follow-ups found this round (ideas for the next round):
 ### Candidates (problem · who/how often · benefit · risk · size · decision)
 | # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
 |---|---|---|---|---|---|---|---|
-| 109 | Import Mermaid flowchart (dialog: More menu, palette, template chooser; Ctrl+V of Mermaid text on desktop) (was #100) | Design already exists as text; redrawn by hand | developers, often | high | low (creates ordinary items via the paste path) | M | picked |
-| 110 | Paste plain text as a text label (desktop, internal clipboard empty) | Pasting text onto the canvas does nothing | desktop, often | medium | low-medium (paste path) | S | picked |
-| 111 | Copy as Mermaid (Export panel, palette) | Diagram can't be pasted into README/issues/NotebookLM as renderable text | developers, weekly | medium-high | low (pure module) | S-M | picked |
-| 112 | Two-finger tap undo, three-finger tap redo (tablet, setting) | Undo needs a trip to the top bar | tablet, constantly | high | medium (touch navigator; pinch/pan must not change) | M | picked |
-| 113 | Make same size (width / height / both) | Equal boxes by eye | everyone, often | medium | low | S | picked |
-| 114 | Add boundary around the selection (dashed labelled container sent behind) | VPC/region/domain boundary takes four steps | HLD users, most diagrams | medium-high | low (ordinary rectangle + label) | S | picked |
-| 115 | Select connected (box + its connectors and neighbours; whole subsystem) | Moving a subsystem means shift-clicking everything | growing diagrams, often | medium | low | S | picked |
-| 116 | Drag a connector label along its path (saved `labelPosition`) (was #99) | Label covers a box or another label | HLD users, often | medium-high | medium (new saved field, select pointer path) | M | picked |
-| 117 | Library multi-select: bulk Move and Delete (with Undo) (was #74/#96) | Organising many diagrams one at a time | everyone, occasionally | medium | medium (pending delete queue) | M | picked |
-| 118 | Round 4 paper cuts: palette library cache, menu height, minimap vs dock, panel headings | small friction | | low-medium | low | S | picked |
+| 109 | Import Mermaid flowchart (dialog: More menu, palette, template chooser; Ctrl+V of Mermaid text on desktop) (was #100) | Design already exists as text; redrawn by hand | developers, often | high | low (creates ordinary items via the paste path) | M | **done** 820c994 (+dad0af2) |
+| 110 | Paste plain text as a text label (desktop, internal clipboard empty) | Pasting text onto the canvas does nothing | desktop, often | medium | low-medium (paste path) | S | **done** 820c994 (+dad0af2) |
+| 111 | Copy as Mermaid (Export panel, palette) | Diagram can't be pasted into README/issues/NotebookLM as renderable text | developers, weekly | medium-high | low (pure module) | S-M | **done** 93ce880 (+dad0af2) |
+| 112 | Two-finger tap undo, three-finger tap redo (tablet, setting) | Undo needs a trip to the top bar | tablet, constantly | high | medium (touch navigator; pinch/pan must not change) | M | **done** b221d0a (+dad0af2) |
+| 113 | Make same size (width / height / both) | Equal boxes by eye | everyone, often | medium | low | S | **done** e8cfd3f |
+| 114 | Add boundary around the selection (dashed labelled container sent behind) | VPC/region/domain boundary takes four steps | HLD users, most diagrams | medium-high | low (ordinary rectangle + label) | S | **done** e8cfd3f (+b834e23 boundary interior click-through) |
+| 115 | Select connected (box + its connectors and neighbours; whole subsystem) | Moving a subsystem means shift-clicking everything | growing diagrams, often | medium | low | S | **done** e8cfd3f |
+| 116 | Drag a connector label along its path (saved `labelPosition`) (was #99) | Label covers a box or another label | HLD users, often | medium-high | medium (new saved field, select pointer path) | M | **done** 0cdf917 (+dad0af2) |
+| 117 | Library multi-select: bulk Move and Delete (with Undo) (was #74/#96) | Organising many diagrams one at a time | everyone, occasionally | medium | medium (pending delete queue) | M | **done** 0e1058b |
+| 118 | Round 4 paper cuts: palette library cache, menu height, minimap vs dock, panel headings | small friction | | low-medium | low | S | **done** a253bbd, e9f1f54, 629e1fa, 0bcc4d2 (+b828266 panel squash) |
 | 119 | Page names (#94) | pages have no titles | sometimes | medium | medium (page-level saved key, documentFormat drops page keys today) | M | idea |
 | 120 | Last-used style for new shapes (Excalidraw) | restyling every new box | desktop | medium | medium (tablet pen colours interplay) | M | idea |
 | 121 | Snap to grid toggle | neat alignment | desktop | low-medium | medium (all drag/resize paths); smart guides exist | M | idea |
@@ -324,3 +324,16 @@ Follow-ups found this round (ideas for the next round):
 116. **Label along the path**: with the Select tool, dragging a connector label slides it along the connector (stays on the path, 5%-95%), it stays there when the boxes move; one undo step; Esc cancels. Saved as `labelPosition` (0.05..0.95, omitted at 0.5); renderer, sketchy, SVG/PNG/PDF export follow. Old files unchanged.
 117. **Library multi-select**: the Library has a "Select" button; in select mode each card shows a checkbox, a bar shows "3 selected · Move… · Delete · Cancel"; Move moves all to one folder (one toast); Delete hides them at once with one "Deleted 3 diagrams · Undo" toast (same deferred delete as round 3). Works with touch and mouse. Esc leaves select mode.
 118. **Paper cuts**: Ctrl+K reuses the library list fetched in the last 30 s; the right-click menu fits at 1024x700 with step chips; the open minimap does not sit under the dock at 1440x900; the panel shows small headings "Text size" and "Align" above those buttons.
+
+### Round 5 result (2026-11-25)
+All 10 picked items built (#109-#118). Independent Opus review: 4 medium + 10 low findings, 12 fixed in dad0af2 (paste guards, Mermaid cut at 2000 chars, `A-- text -->B` forms, tap undo under an open editor, `End` keyword, NBSP, entity round trip, paste error text, front matter / case-sensitive header, dialog insert failure, `<-->`/`x--x`, label drag per-move routing); 2 were notes (boundary exported as a node; tap/drag behaviour changes to confirm on device). Headless walk fixes: a boundary's interior grabbed the boundary on click/drag (b834e23: unfilled plain rectangles that hold other items are picked by their edge band or label only); long desktop panels squashed their buttons (b828266). Details and checklist: project-context.md, 2026-11-25 entry.
+
+Follow-ups found this round (ideas for the next round):
+- Right-click menu with Ungroup + Connected + Step numbers + Size chips is ~709 px: still scrolls slightly at 700 px.
+- Mermaid import: subgraphs are skipped (could become boundaries via #114), long labels are not wrapped, `classDef`/`style` ignored; no two-headed connector type (`<-->` imports as a plain line).
+- Copy as Mermaid exports a boundary rectangle as a node; could emit it as a `subgraph`.
+- Label drag only starts on an already-selected connector (first press selects).
+- Tap-undo thresholds (300 ms, 12 px, 150 ms stagger) are untuned guesses: tune on the Galaxy Tab.
+- At 1440x900 the zoom control's + button sits under the dock's left end (pre-existing).
+- Connector label size buttons in the panel have no "Text size" heading (text labels do).
+- Older InkPad builds drop `labelPosition` on save (like earlier round fields): keep the tablet PWA updated.
