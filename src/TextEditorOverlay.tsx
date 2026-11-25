@@ -28,6 +28,8 @@ export type TextEditorState = {
   connectorId?: number
   /** A label typed into a just-inserted sticky note: committing it adds no undo step of its own (the insert already saved one). */
   mergeHistory?: boolean
+  /** Open with the whole text selected, so typing replaces it (a just-added Boundary label). */
+  selectAll?: boolean
 }
 
 type TextEditorOverlayProps = {
@@ -55,7 +57,8 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
     const field = fieldRef.current
     if (!field) return
     field.focus()
-    field.setSelectionRange(field.value.length, field.value.length)
+    if (editor.selectAll) field.select()
+    else field.setSelectionRange(field.value.length, field.value.length)
   }, [])
   useEffect(() => { onChange(editor.initialText) }, [])
 

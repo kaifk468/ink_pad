@@ -530,6 +530,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
 
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'exportPng' | 'exportSvg'
   | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps' | 'saveTemplate'
+  | 'sameWidth' | 'sameHeight' | 'sameSize' | 'addBoundary' | 'selectConnected'
   | `shape:${string}`
 export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select' | 'flow'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
@@ -565,6 +566,10 @@ export type ContextMenuState = {
   changeShapes?: ReadonlyArray<{ id: string; label: string }>
   /** The selection holds connectors (or boxes joined by them): Number steps / Clear step numbers are offered. */
   canNumberSteps?: boolean
+  /** Two or more unlocked boxes Same size can change are selected (the Same size chips are offered). */
+  canSameSize?: boolean
+  /** One selected box has connectors attached (the Connected chip is offered). */
+  canSelectConnected?: boolean
 }
 
 /**
@@ -573,7 +578,7 @@ export type ContextMenuState = {
  * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
-  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], canNumberSteps = false } = state
+  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], canNumberSteps = false, canSameSize = false, canSelectConnected = false } = state
   const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean, chip?: string, chipGroup?: string): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled, ...(chip !== undefined ? { chip, chipGroup: chipGroup ?? 'Change shape' } : {}) })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
@@ -588,6 +593,8 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     ...(canNumberSteps ? [entry('numberSteps', 'Number steps', '', 'shape', true, 'Number', 'Step numbers'), entry('clearSteps', 'Clear step numbers', '', 'shape', true, 'Clear', 'Step numbers')] : []),
     entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection, 'Front', 'Order'),
     entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection, 'Back', 'Order'),
+    ...(hasSelection ? [entry('addBoundary', 'Add boundary', '', 'arrange', true, 'Boundary', 'Order')] : []),
+    ...(canSameSize ? [entry('sameWidth', 'Same width', '', 'arrange', true, 'Width', 'Size'), entry('sameHeight', 'Same height', '', 'arrange', true, 'Height', 'Size'), entry('sameSize', 'Same width and height', '', 'arrange', true, 'Both', 'Size')] : []),
     ...(canGroup ? [entry('group', 'Group', 'Ctrl+G', 'arrange', true)] : []),
     ...(canUngroup ? [entry('ungroup', 'Ungroup', 'Ctrl+Shift+G', 'arrange', true)] : []),
     entry('zoomSelection', 'Zoom to selection', 'Shift+2', 'arrange', hasSelection),
@@ -597,7 +604,8 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('copyPng', 'Copy as PNG', 'Shift+Alt+C', 'export', hasSelection || pageHasItems),
     // Only offered when something is selected.
     ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true, 'PNG', 'Save selection as'), entry('exportSvg', 'Export selection as SVG', '', 'export', true, 'SVG', 'Save selection as'), entry('saveTemplate', 'Save selection as template…', '', 'export', true, 'Template…', 'Save selection as')] : []),
-    ...(canSelectSimilar ? [entry('selectSimilar', 'Select similar', '', 'select', true)] : []),
+    ...(canSelectSimilar ? [entry('selectSimilar', 'Select similar', '', 'select', true, 'Similar', 'Select')] : []),
+    ...(canSelectConnected ? [entry('selectConnected', 'Select connected', '', 'select', true, 'Connected', 'Select')] : []),
     entry('selectAll', 'Select all', 'Ctrl+A', 'select', pageHasItems),
   ]
 }

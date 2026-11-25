@@ -84,6 +84,10 @@ type ContextPanelProps = {
   /** Tablet: the commands the desktop right-click menu has (Select similar, Copy / Paste style, Number steps). Each button shows only when its handler is given. */
   selectionTools?: { onSelectSimilar?: (() => void) | null; onCopyStyle?: (() => void) | null; onPasteStyle?: (() => void) | null; canPasteStyle?: boolean; onNumberSteps?: (() => void) | null } | null
   group?: { canGroup: boolean; canUngroup: boolean; onGroup: () => void; onUngroup: () => void } | null
+  /** Same size (2+ boxes selected, desktop and tablet): the largest width / height wins. */
+  sameSize?: { onSameSize: (mode: 'width' | 'height' | 'both') => void } | null
+  /** Add boundary (any selection) and Select connected (one box with connectors), desktop and tablet. */
+  boundaryTools?: { onAddBoundary: () => void; onSelectConnected: (() => void) | null } | null
   arrange?: { canAlign: boolean; canDistribute: boolean; onAlign: (op: AlignOp) => void; onDistribute: (op: DistributeOp) => void } | null
   objectEraser?: boolean
   eraserSize?: number
@@ -134,7 +138,7 @@ const TEXT_ALIGN_OPTIONS: ReadonlyArray<{ id: TextAlign | 'left'; label: string;
 
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.sameSize && !props.boundaryTools) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -270,6 +274,18 @@ export function ContextPanel(props: ContextPanelProps) {
           <button className="clear-selection-button" type="button" disabled={!props.arrange.canDistribute} aria-label="Distribute horizontally" title="Equal gaps left to right (3 or more items)" onClick={() => props.arrange?.onDistribute('horizontal')}>Horizontally</button>
           <button className="clear-selection-button" type="button" disabled={!props.arrange.canDistribute} aria-label="Distribute vertically" title="Equal gaps top to bottom (3 or more items)" onClick={() => props.arrange?.onDistribute('vertical')}>Vertically</button>
         </div>
+      </div>}
+      {props.sameSize && <div className="same-size-controls" role="group" aria-label="Same size">
+        <span className="panel-label">Same size</span>
+        <div className="selection-actions">
+          <button className="clear-selection-button" type="button" aria-label="Same width" title="Give the selected boxes the largest width" onClick={() => props.sameSize?.onSameSize('width')}>Width</button>
+          <button className="clear-selection-button" type="button" aria-label="Same height" title="Give the selected boxes the largest height" onClick={() => props.sameSize?.onSameSize('height')}>Height</button>
+          <button className="clear-selection-button" type="button" aria-label="Same width and height" title="Give the selected boxes the largest width and height" onClick={() => props.sameSize?.onSameSize('both')}>Both</button>
+        </div>
+      </div>}
+      {props.boundaryTools && <div className="selection-actions boundary-tools" role="group" aria-label="Boundary and connections">
+        <button className="clear-selection-button" type="button" aria-label="Add boundary" title="Draw a dashed boundary box around the selection" onClick={props.boundaryTools.onAddBoundary}>Add boundary</button>
+        {props.boundaryTools.onSelectConnected && <button className="clear-selection-button" type="button" aria-label="Select connected" title="Select this box, its arrows and the boxes at their other ends" onClick={props.boundaryTools.onSelectConnected}>Select connected</button>}
       </div>}
       {props.showSelectionColor && !props.code && props.onSelectionColor && <div className="selection-color">
         <span className="panel-label">Colour of this object</span>

@@ -24,7 +24,7 @@ const menu = (extra) => input.contextMenuEntries(state(extra))
 test('menu entries: sections, shortcut hints, disabled instead of hidden', () => {
   const entries = menu({ hasSelection: true, clipboardHasItems: true, canEditText: true, canCopyStyle: true, canPasteStyle: true })
   const hints = Object.fromEntries(entries.map((e) => [e.action, e.hint]))
-  assert.deepEqual(hints, { cut: 'Ctrl+X', copy: 'Ctrl+C', paste: 'Ctrl+V', duplicate: 'Ctrl+D', delete: 'Del', editText: 'Enter', copyStyle: 'Ctrl+Alt+C', pasteStyle: 'Ctrl+Alt+V', bringToFront: 'Ctrl+Shift+]', sendToBack: 'Ctrl+Shift+[', zoomSelection: 'Shift+2', lock: 'Ctrl+Shift+L', copyPng: 'Shift+Alt+C', exportPng: '', exportSvg: '', saveTemplate: '', selectAll: 'Ctrl+A' })
+  assert.deepEqual(hints, { cut: 'Ctrl+X', copy: 'Ctrl+C', paste: 'Ctrl+V', duplicate: 'Ctrl+D', delete: 'Del', editText: 'Enter', copyStyle: 'Ctrl+Alt+C', pasteStyle: 'Ctrl+Alt+V', bringToFront: 'Ctrl+Shift+]', sendToBack: 'Ctrl+Shift+[', addBoundary: '', zoomSelection: 'Shift+2', lock: 'Ctrl+Shift+L', copyPng: 'Shift+Alt+C', exportPng: '', exportSvg: '', saveTemplate: '', selectAll: 'Ctrl+A' })
   assert.deepEqual([...new Set(entries.map((e) => e.section))], ['clipboard', 'text', 'shape', 'arrange', 'export', 'select'])
   for (const e of entries) assert.equal(e.disabled, false, e.action)
   const empty = menu({ pageHasItems: false })
@@ -51,9 +51,9 @@ test('menu rows put a separator between sections only, and the height follows th
   const rows = input.contextMenuRows(entries)
   const separators = rows.filter((r) => r.separator).length
   assert.equal(separators, new Set(entries.map((e) => e.section)).size - 1)
-  // Style (Copy, Paste), Order (Front, Back) and "Save selection as" (PNG, SVG, Template…) are chip blocks.
+  // Style (Copy, Paste), Order (Front, Back, Boundary) and "Save selection as" (PNG, SVG, Template…) are chip blocks.
   const chipRows = rows.filter((r) => r.chips)
-  assert.deepEqual(chipRows.map((r) => r.chips.map((e) => e.chip)), [['Copy', 'Paste'], ['Front', 'Back'], ['PNG', 'SVG', 'Template…']])
+  assert.deepEqual(chipRows.map((r) => r.chips.map((e) => e.chip)), [['Copy', 'Paste'], ['Front', 'Back', 'Boundary'], ['PNG', 'SVG', 'Template…']])
   const plainEntries = entries.filter((e) => e.chip === undefined).length
   assert.equal(rows.length, plainEntries + chipRows.length + separators)
   assert.ok(rows[0].entry && rows[rows.length - 1].entry)

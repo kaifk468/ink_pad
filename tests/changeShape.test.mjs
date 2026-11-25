@@ -143,7 +143,7 @@ test('a realistic HLD box menu (Style and Order chips) fits 1024x700 without scr
   // With connectors in the selection the Step numbers chips add a block: that menu may scroll a little on a 700px window (the CSS caps and scrolls it).
   assert.ok(input.contextMenuHeight(input.contextMenuEntries({ ...state, canNumberSteps: true })) <= 720)
   const groups = input.contextMenuRows(entries).filter((r) => r.chips).map((r) => [r.chips[0].chipGroup, r.chips.map((c) => c.chip)])
-  assert.deepEqual(groups.filter(([g]) => g === 'Style' || g === 'Order'), [['Style', ['Copy', 'Paste']], ['Order', ['Front', 'Back']]])
+  assert.deepEqual(groups.filter(([g]) => g === 'Style' || g === 'Order'), [['Style', ['Copy', 'Paste']], ['Order', ['Front', 'Back', 'Boundary']]])
   assert.equal(entries.find((e) => e.action === 'copyStyle').label, 'Copy style')
   assert.equal(entries.find((e) => e.action === 'bringToFront').hint, 'Ctrl+Shift+]')
 })

@@ -9,6 +9,9 @@ import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConn
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
 import { similarItemKeys } from './selectSimilar'
+import { canSameSize, sameSizeItems, type SameSizeMode } from './sameSize'
+import { addBoundary } from './boundary'
+import { canSelectConnected, connectedKeys, linkedKeys } from './selectConnected'
 import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeChoice } from './changeShape'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
@@ -1107,7 +1110,7 @@ function App() {
   // A new empty label at the point (the Text tool's tap and the Desktop double-click on empty canvas): nothing is made until text is typed.
   const openNewTextEditorAt = (point: Point) => openTextEditor({ itemId: null, x: point.x, y: point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
 
-  const editTextItem = (item: TextObject) => openTextEditor({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text, ...(item.align ? { align: item.align } : {}), ...(item.align === 'center' ? { centerOn: { x: item.x + item.width / 2, y: item.y + item.height / 2 } } : {}), ...(item.align === 'right' ? { anchorRight: item.x + item.width } : {}) })
+  const editTextItem = (item: TextObject, selectAll = false) => openTextEditor({ ...(selectAll ? { selectAll: true } : {}), itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text, ...(item.align ? { align: item.align } : {}), ...(item.align === 'center' ? { centerOn: { x: item.x + item.width / 2, y: item.y + item.height / 2 } } : {}), ...(item.align === 'right' ? { anchorRight: item.x + item.width } : {}) })
 
   // Edits the label of a connector in the text overlay, centred on the middle of its drawn path; committing writes connector.label (one undo step).
   const editConnectorLabel = (connectorId: number): boolean => {
@@ -1432,6 +1435,52 @@ function App() {
     updateSelectedItems(keys)
     renderAll()
     showToast(`Selected ${keys.length} similar item${keys.length === 1 ? '' : 's'}`)
+    return true
+  }
+  // Select connected / Select all linked (right-click chip, palette, panel): the box, its connectors and the boxes at their other ends (all the way through, for linked). No history entry.
+  const selectConnectedItems = (transitive: boolean): boolean => {
+    const keys = (transitive ? linkedKeys : connectedKeys)(strokesRef.current, currentSelectionKeys())
+    if (keys.length === 0 || !canSelectConnected(strokesRef.current, currentSelectionKeys())) { showToast('No connected items'); return false }
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    setSelectedRectangle(null)
+    updateSelectedItems(keys)
+    renderAll()
+    showToast(`Selected ${keys.length} connected item${keys.length === 1 ? '' : 's'}`)
+    return true
+  }
+  // Same size (right-click chips, palette, panel): the selected boxes take the largest width and / or height around their centres. Connectors and inside labels follow; one undo step.
+  const sameSizeSelection = (mode: SameSizeMode): boolean => {
+    const result = sameSizeItems(strokesRef.current, currentSelectionKeys(), mode, workspaceBoundsRef.current, createTextMeasure)
+    if (!result) { showToast(canSameSize(strokesRef.current, currentSelectionKeys()) ? 'Already the same size' : 'Select two or more boxes'); return false }
+    saveHistory()
+    strokesRef.current = result.items
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+    bumpSelectionColor((n) => n + 1)
+    showToast(`Made ${result.count} boxes the same ${mode === 'both' ? 'size' : mode}`)
+    return true
+  }
+  // Add boundary (right-click chip, palette, panel): a dashed grey rectangle behind everything around the selection plus a "Boundary" label; one undo step. Desktop opens the editor on the label.
+  const addBoundaryAroundSelection = (): boolean => {
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) return false
+    if (textEditorRef.current) commitTextEditor()
+    const result = addBoundary(strokesRef.current, keys, { rectangle: nextRectangleIdRef.current, text: nextTextIdRef.current }, workspaceBoundsRef.current, { strokeWidth: width, fontFamily: DEFAULT_TEXT_FONT, measure: createTextMeasure(16, DEFAULT_TEXT_FONT) })
+    if (!result) return false
+    nextRectangleIdRef.current += 1
+    nextTextIdRef.current += 1
+    saveHistory()
+    const rectangle = sketchyRef.current ? withSketchSeed(result.rectangle) : result.rectangle
+    strokesRef.current = rectangle === result.rectangle ? result.items : result.items.map((item) => (item === result.rectangle ? rectangle : item))
+    historyCacheRef.current = null
+    setHasInk(true)
+    scheduleAutosave()
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    setSelectedRectangle(null)
+    updateSelectedItems([canvasItemKey(result.label)])
+    if (inputModeRef.current === 'desktop') editTextItem(result.label, true)
+    renderAll()
     return true
   }
   const selectAllItems = (): boolean => {
@@ -4779,6 +4828,11 @@ function App() {
       case 'delete': deleteSelection(); break
       case 'selectAll': selectAllItems(); break
       case 'selectSimilar': selectSimilarItems(); break
+      case 'selectConnected': selectConnectedItems(false); break
+      case 'addBoundary': addBoundaryAroundSelection(); break
+      case 'sameWidth': sameSizeSelection('width'); break
+      case 'sameHeight': sameSizeSelection('height'); break
+      case 'sameSize': sameSizeSelection('both'); break
       case 'numberSteps': numberFlowSteps(); break
       case 'clearSteps': clearFlowSteps(); break
       case 'bringToFront': moveSelectionLayer('front'); break
@@ -4924,6 +4978,16 @@ function App() {
     { id: 'page:overview', label: 'Page overview', group: 'Pages', keywords: 'pages thumbnails grid reorder move jump', run: () => setPageOverviewOpen(true) },
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
+    ...(canSameSize(strokesRef.current, currentSelectionKeys()) ? [
+      { id: 'arrange:same-width', label: 'Same width', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('width') } },
+      { id: 'arrange:same-height', label: 'Same height', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('height') } },
+      { id: 'arrange:same-size', label: 'Same size', group: 'Arrange', keywords: 'width height equal resize boxes match', run: () => { sameSizeSelection('both') } },
+    ] : []),
+    ...(currentSelectionKeys().size > 0 ? [{ id: 'arrange:boundary', label: 'Add boundary', group: 'Arrange', keywords: 'frame group box around zone region trust', run: () => { addBoundaryAroundSelection() } }] : []),
+    ...(canSelectConnected(strokesRef.current, currentSelectionKeys()) ? [
+      { id: 'select:connected', label: 'Select connected', group: 'Select', keywords: 'neighbours arrows linked attached boxes', run: () => { selectConnectedItems(false) } },
+      { id: 'select:linked', label: 'Select all linked', group: 'Select', keywords: 'transitive reachable chain connected everything arrows', run: () => { selectConnectedItems(true) } },
+    ] : []),
     ...(stepTargets(strokesRef.current, currentSelectionKeys()).length > 0 ? [
       { id: 'flow:number', label: 'Number steps', group: 'Select', keywords: 'flow order sequence connectors arrows label 1 2 3', run: () => { numberFlowSteps() } },
       { id: 'flow:clear', label: 'Clear step numbers', group: 'Select', keywords: 'flow order sequence connectors arrows remove', run: () => { clearFlowSteps() } },
@@ -5154,6 +5218,8 @@ function App() {
             canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()),
             changeShapes: changeShapeChoices(strokesRef.current, currentSelectionKeys())?.choices ?? [],
             canNumberSteps: stepTargets(strokesRef.current, currentSelectionKeys()).length > 0,
+            canSameSize: canSameSize(strokesRef.current, currentSelectionKeys()),
+            canSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()),
             canSelectSimilar: (() => { const key = soleSelectedKey(); return key !== null && similarItemKeys(strokesRef.current, key).length > 0 })(),
           })
           const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight)
@@ -5372,6 +5438,8 @@ function App() {
           ? { value: selectionArrowheads(strokesRef.current, currentSelectionKeys()), onChange: changeArrowheads }
           : null}
         changeShape={(() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })()}
+        sameSize={canSameSize(strokesRef.current, currentSelectionKeys()) ? { onSameSize: (mode) => { sameSizeSelection(mode) } } : null}
+        boundaryTools={currentSelectionKeys().size > 0 ? { onAddBoundary: () => { addBoundaryAroundSelection() }, onSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()) ? () => { selectConnectedItems(false) } : null } : null}
         selectionTools={inputMode !== 'desktop' && currentSelectionKeys().size > 0 ? (() => {
           const keys = currentSelectionKeys()
           const sole = soleSelectedKey()
