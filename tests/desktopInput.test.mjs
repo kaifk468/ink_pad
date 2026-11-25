@@ -335,7 +335,8 @@ test('shortcuts are not taken from text fields, dropdowns or editable text; butt
 
 test('App runs a key only outside panels, dialogs, text editing and gestures, and only after the typing check', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /if \(paletteOpenRef\.current \|\| shortcutHelpOpen \|\| templateChooserOpen \|\| pageOverviewOpen \|\| filePanelOpen \|\| storagePanelOpen \|\| libraryOpen \|\| performanceDiagnosticsOpen \|\| textEditor \|\| textEditorRef\.current \|\| classBoxEditor\) return false/)
+  assert.match(app, /overlayOpen = \(\): boolean => paletteOpenRef\.current \|\| shortcutHelpOpen \|\| templateChooserOpen \|\| mermaidOpen \|\| pageOverviewOpen \|\| filePanelOpen \|\| storagePanelOpen \|\| libraryOpen \|\| performanceDiagnosticsOpen \|\| Boolean\(textEditor\) \|\| textEditorRef\.current !== null \|\| Boolean\(classBoxEditor\)/)
+  assert.match(app, /if \(overlayOpen\(\)\) return false/)
   const gesture = app.match(/const gestureActive = ([^\n]+)\n/)[1]
   for (const ref of ['activePointerRef', 'activeConnectorRef', 'activeDragRef', 'activeResizeRef', 'activeDividerRef', 'activeLassoRef', 'lassoDragRef', 'textTapRef', 'classTapRef', 'activeObjectEraserRef', 'minimapDragPointerRef', 'umlToolboxDragRef', 'mousePanRef']) assert.ok(gesture.includes(ref + '.current !== null'), ref)
   assert.match(app, /if \(gestureActive \|\| activeMarqueeRef\.current !== null \|\| touchNav\.touchCount\(\) > 0\) return false/)

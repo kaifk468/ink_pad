@@ -5,6 +5,8 @@ import { MAX_TEMPLATE_NAME_LENGTH, type UserTemplate } from '../userTemplates'
 type TemplateChooserProps = {
   onChoose: (id: string) => void
   onClose: () => void
+  /** Opens the "Insert from Mermaid…" dialog. */
+  onMermaid?: () => void
   /** Templates saved on this device ("My templates"). */
   userTemplates: readonly UserTemplate[]
   onChooseUser: (id: string) => void
@@ -20,7 +22,7 @@ type TemplateChooserProps = {
 const DEVICE_ONLY = 'Saved on this device only (in this browser); not part of the diagram file.'
 
 /** Small list of the starter layouts and the user's own templates. Escape, the close button or a click outside closes it. */
-export function TemplateChooser({ onChoose, onClose, userTemplates, onChooseUser, onDeleteUser, canSave, startSaving = false, onSave }: TemplateChooserProps) {
+export function TemplateChooser({ onChoose, onClose, onMermaid, userTemplates, onChooseUser, onDeleteUser, canSave, startSaving = false, onSave }: TemplateChooserProps) {
   const [saving, setSaving] = useState(startSaving && canSave)
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -51,6 +53,7 @@ export function TemplateChooser({ onChoose, onClose, userTemplates, onChooseUser
             </li>
           ))}
         </ul>
+        {onMermaid && <button type="button" className="template-save-button" title="Turn Mermaid flowchart text into boxes and arrows" onClick={onMermaid}>Insert from Mermaid…</button>}
         <h3 className="template-section-title" title={DEVICE_ONLY}>My templates</h3>
         {userTemplates.length === 0 && <p className="template-empty">None yet. Select items on the canvas, then save them here. {DEVICE_ONLY}</p>}
         <ul className="template-list" aria-label="My templates">

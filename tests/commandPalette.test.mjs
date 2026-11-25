@@ -68,7 +68,7 @@ test('Ctrl/Cmd+K is the palette command: no Shift, no Alt, no repeat, desktop on
 })
 
 test('App wiring: palette is gated like other commands, closed before the command runs, desktop only', () => {
-  assert.match(app, /if \(paletteOpenRef\.current \|\| shortcutHelpOpen/)
+  assert.match(app, /overlayOpen = \(\): boolean => paletteOpenRef\.current \|\| shortcutHelpOpen/)
   assert.match(app, /case 'palette': openPalette\(\); return true/)
   assert.match(app, /closePalette = \(\) => \{ paletteOpenRef\.current = false/)
   assert.match(app, /shortcutKeyInput\(row\)/)

@@ -17,7 +17,7 @@ const LABEL_SIZE = 24
 /** The HLD templates are drawn at this fraction of the shapes' tap-create sizes (a whole template is then about 1000 x 400 units, readable on one screen). */
 export const HLD_TEMPLATE_SCALE = 0.7
 
-class Sheet {
+export class Sheet {
   items: CanvasItem[] = []
   private rectangleId = 1
   private textId = 1
@@ -51,6 +51,14 @@ class Sheet {
     return box
   }
 
+  /** A plain rectangle, ellipse or diamond with `text` as a centred label (Mermaid import). */
+  shaped(form: 'rectangle' | 'ellipse' | 'diamond', x: number, y: number, width: number, height: number, text: string): RectangleObject {
+    const box: RectangleObject = { kind: 'rectangle', id: this.rectangleId++, x, y, width, height, strokeColor: STROKE_COLOR, strokeWidth: CLASS_BOX_DEFAULT_STROKE_WIDTH, ...(form === 'ellipse' ? { ellipse: true as const } : form === 'diamond' ? { diamond: true as const } : {}) }
+    this.items.push(box)
+    this.label(box, text, LABEL_SIZE, 0)
+    return box
+  }
+
   /** A typed class box whose top-left corner is (x, y). */
   classBox(x: number, y: number, name: string, attributes: string, methods: string): RectangleObject {
     const made = createClassBox(this.rectangleId++, 0, 0, { name, attributes, methods }, STROKE_COLOR)
@@ -68,7 +76,7 @@ class Sheet {
   }
 
   /** An arrow between the middle of one side of `from` and the middle of one side of `to`, attached to both boxes. */
-  connect(from: RectangleObject, fromSide: Side, to: RectangleObject, toSide: Side, options: { type?: ConnectorRelationshipType; routing?: ConnectorRouting } = {}): void {
+  connect(from: RectangleObject, fromSide: Side, to: RectangleObject, toSide: Side, options: { type?: ConnectorRelationshipType; routing?: ConnectorRouting; label?: string; dash?: 'dashed' } = {}): void {
     const attach = (box: RectangleObject, side: Side): ConnectorAttachment => ({
       rectangleId: box.id,
       offsetX: side === 'right' ? box.width : side === 'left' ? 0 : box.width / 2,
@@ -78,7 +86,7 @@ class Sheet {
     const endAttachment = attach(to, toSide)
     const point = (box: RectangleObject, a: ConnectorAttachment): Point => ({ x: box.x + a.offsetX, y: box.y + a.offsetY, pressure: 1 })
     const connector = createConnector(this.connectorId++, point(from, startAttachment), point(to, endAttachment), STROKE_COLOR, CLASS_BOX_DEFAULT_STROKE_WIDTH, startAttachment, endAttachment, options.type ?? 'directed-association')
-    this.items.push(options.routing === 'elbow' ? { ...connector, routing: 'elbow' } : connector)
+    this.items.push({ ...connector, ...(options.routing === 'elbow' ? { routing: 'elbow' as const } : {}), ...(options.dash ? { dash: options.dash } : {}), ...(options.label ? { label: options.label } : {}) })
   }
 }
 

@@ -70,6 +70,8 @@ import { downloadBlob } from './documentStore'
 import { diagramIdFromEntry, diagramPaletteEntries, shortcutEntryId, shortcutPaletteEntries, type PaletteEntry } from './commandPalette'
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
+import { MermaidDialog } from './app/MermaidDialog'
+import { buildMermaidItems, isMermaidText, mermaidInsertMessage, parseMermaid } from './mermaidImport'
 import { DIAGRAM_TEMPLATES, buildTemplate } from './diagramTemplates'
 import { addUserTemplate, loadUserTemplates, newTemplateId, removeUserTemplate, saveUserTemplates, userTemplatesBlockedMessage, type UserTemplate } from './userTemplates'
 import { statusLabel } from './FilePanel'
@@ -4566,26 +4568,51 @@ function App() {
   const insertTemplate = (id: string): boolean => insertTemplateItems(buildTemplate(id))
   // "My templates" use the same path: the saved items are plain canvas items with local ids, so pasteItems gives them fresh ones.
   const insertUserTemplate = (id: string): boolean => insertTemplateItems(userTemplates.find((template) => template.id === id)?.items ?? null)
-  const insertTemplateItems = (items: CanvasItem[] | null): boolean => {
+  const insertTemplateItems = (items: CanvasItem[] | null, at: Point | null = null, fitToView = true): boolean => {
     const canvas = canvasRef.current
     setTemplateChooserOpen(false)
+    setMermaidOpen(false)
     if (!canvas || !items) return false
     if (textEditorRef.current) commitTextEditor()
     if (codeEditorRef.current) commitCodeEditor()
     const rect = canvas.getBoundingClientRect()
-    const centre = screenToCanvasPoint({ x: rect.width / 2, y: rect.height / 2, pressure: 1 }, viewportRef.current)
+    const centre = at ?? screenToCanvasPoint({ x: rect.width / 2, y: rect.height / 2, pressure: 1 }, viewportRef.current)
     const result = pasteItems(items, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET, workspaceBoundsRef.current, centre, strokesRef.current)
     if (!result) return false
     const done = insertPasted(sketchyRef.current ? { ...result, items: withSketchSeeds(result.items) } : result)
     if (done) {
       // A template larger than the view is zoomed out to fit (never zoomed in), so the whole layout is visible at once.
       const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), new Set(result.keys))
-      if (bounds && !navigationSettingsRef.current.zoomLocked) {
+      if (fitToView && bounds && !navigationSettingsRef.current.zoomLocked) {
         const insets = inputModeRef.current === 'desktop' ? DESKTOP_FIT_INSETS : { top: 72, right: 24, bottom: 96, left: 24 }
         applyViewport(fitViewportToBoundsInset(bounds, rect.width, rect.height, insets, viewportRef.current.scale))
       }
       renderAll()
     }
+    return done
+  }
+
+  // Insert from Mermaid (dialog, command palette and pasted Mermaid text): the same insert path as templates. Returns an error message, or null when inserted.
+  const importMermaid = (text: string, at: Point | null = null): string | null => {
+    const parsed = parseMermaid(text)
+    if (!parsed.ok) return parsed.error
+    const built = buildMermaidItems(parsed)
+    if (!insertTemplateItems(built.items, at)) return 'Could not insert the diagram.'
+    showToast(mermaidInsertMessage(built.boxes, built.links, parsed.ignoredLines))
+    return null
+  }
+  // Desktop paste with an empty in-app clipboard: the browser's paste event carries the system clipboard text. Mermaid text becomes a diagram, other text one label.
+  const pasteSystemText = (raw: string, at: Point | null): boolean => {
+    const text = normalizeText(raw).trim().slice(0, 2000)
+    if (text === '') return false
+    if (isMermaidText(text)) {
+      const error = importMermaid(text, at)
+      if (error) showToast(error)
+      return error === null
+    }
+    const label = createTextObject(1, 0, 0, text, color, textSize, createTextMeasure(textSize, textFontId), textFontId)
+    const done = insertTemplateItems([label], at, false)
+    if (done) showToast('Pasted text')
     return done
   }
 
@@ -4905,6 +4932,7 @@ function App() {
 
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
   const [templateChooserOpen, setTemplateChooserOpen] = useState(false)
+  const [mermaidOpen, setMermaidOpen] = useState(false)
   // "My templates": saved on this device only (localStorage). Re-read each time the chooser opens; `templateSaveMode` opens it with the name field showing.
   const [userTemplates, setUserTemplates] = useState<UserTemplate[]>(() => loadUserTemplates())
   const [templateSaveMode, setTemplateSaveMode] = useState(false)
@@ -4971,6 +4999,7 @@ function App() {
     ...HLD_SHAPES.map((shape) => ({ id: `hld:${shape}`, label: HLD_SHAPE_LABELS[shape], group: 'Shapes', keywords: 'hld system design add', run: () => toggleHldShapeTool(shape) })),
     ...DIAGRAM_TEMPLATES.map((template) => ({ id: `template:${template.id}`, label: `Template: ${template.name}`, group: 'Templates', keywords: `insert starter layout ${template.description}`, run: () => { insertTemplate(template.id) } })),
     ...(alignTargetKeys().size > 0 ? (['left', 'center', 'right'] as const).map((align) => ({ id: `align:${align}`, label: `Align text ${align === 'center' ? 'centre' : align}`, group: 'Edit', keywords: 'text label alignment justify', run: () => pickTextAlign(align) })) : []),
+    { id: 'mermaid:insert', label: 'Insert from Mermaid…', group: 'Templates', keywords: 'import flowchart graph diagram text paste', run: () => setMermaidOpen(true) },
     { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout my templates saved', run: () => setTemplateChooserOpen(true) },
     ...(selectionKeysWithBox().size > 0 ? [{ id: 'template:save', label: 'Save selection as template…', group: 'Templates', keywords: 'my templates store reuse', run: openSaveTemplate }] : []),
     { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2).then((error) => { if (error) showToast(error) }) },
@@ -5077,11 +5106,29 @@ function App() {
     setFindCurrent(next)
     goToFindMatch(matches[next])
   }
+  // A panel, dialog or text editor is open: shortcuts and Desktop paste leave the canvas alone.
+  const overlayOpen = (): boolean => paletteOpenRef.current || shortcutHelpOpen || templateChooserOpen || mermaidOpen || pageOverviewOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || Boolean(textEditor) || textEditorRef.current !== null || Boolean(classBoxEditor)
+  // Desktop Ctrl+V with an empty in-app clipboard is not handled on keydown (so the browser still fires its paste event): this reads the system clipboard text from that event.
+  const pasteEventRef = useRef<(event: ClipboardEvent) => void>(() => undefined)
+  pasteEventRef.current = (event) => {
+    if (inputModeRef.current !== 'desktop' || event.defaultPrevented || clipboardRef.current.length > 0) return
+    const target = event.target as HTMLElement | null
+    if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable)) || overlayOpen()) return
+    if (codeEditor && liveCodeEditor()) return
+    event.preventDefault()
+    const at = cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null
+    if (!pasteSystemText(event.clipboardData?.getData('text/plain') ?? '', at)) showToast('Nothing to paste')
+  }
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => pasteEventRef.current(event)
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [])
   const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
   keyActionsRef.current = (command) => {
     if (command.kind === 'library' && libraryOpen) return true // the Library is already open: only keep the browser's open dialog away
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
-    if (paletteOpenRef.current || shortcutHelpOpen || templateChooserOpen || pageOverviewOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
+    if (overlayOpen()) return false
     if (codeEditor && liveCodeEditor()) return false
     const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeQuickRef.current !== null
     if (contextMenuRef.current) {
@@ -5130,7 +5177,10 @@ function App() {
       case 'copyPng': return copyAsPng()
       case 'copyStyle': return copyStyleWithToast()
       case 'pasteStyle': return pasteStyleWithToast()
-      case 'paste': return pasteWithToast(inputModeRef.current === 'desktop' && cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null)
+      case 'paste':
+        // Desktop, nothing copied in the app: no preventDefault, the browser's paste event brings the system clipboard text (see pasteEventRef).
+        if (inputModeRef.current === 'desktop' && clipboardRef.current.length === 0) return false
+        return pasteWithToast(inputModeRef.current === 'desktop' && cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null)
       case 'duplicate': return duplicateWithToast()
       case 'deleteSelection': return deleteSelection()
       case 'selectAll': return selectAllItems()
@@ -5267,7 +5317,7 @@ function App() {
           const block = strokesRef.current.find((candidate) => candidate.kind === 'code' && candidate.id === codeEditor.id)
           return block?.kind === 'code' ? <CodeEditorOverlay key={codeEditor.id} item={block} viewport={viewportRef.current} onChange={(value) => { codeEditorValueRef.current = value }} onCommit={commitCodeEditor} /> : null
         })()}
-        {!hasInk && !textEditor && !codeEditor && !classBoxEditor && !libraryOpen && !filePanelOpen && !storagePanelOpen && !shortcutHelpOpen && !templateChooserOpen && <EmptyCanvasHint desktop={inputMode === 'desktop'} onTemplates={() => setTemplateChooserOpen(true)} />}
+        {!hasInk && !textEditor && !codeEditor && !classBoxEditor && !libraryOpen && !filePanelOpen && !storagePanelOpen && !shortcutHelpOpen && !templateChooserOpen && !mermaidOpen && <EmptyCanvasHint desktop={inputMode === 'desktop'} onTemplates={() => setTemplateChooserOpen(true)} />}
         <aside
           ref={umlToolboxRef}
           className={`uml-toolbox${umlToolboxMinimized ? ' minimized' : ''}${inputMode === 'desktop' ? ' desktop' : ''}`}
@@ -5500,7 +5550,8 @@ function App() {
       {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
       {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
-      {templateChooserOpen && <TemplateChooser onChoose={insertTemplate} onClose={() => setTemplateChooserOpen(false)} userTemplates={userTemplates} onChooseUser={insertUserTemplate} onDeleteUser={deleteUserTemplate} canSave={selectedItemCount > 0 || hasSelectedRectangle} startSaving={templateSaveMode} onSave={saveSelectionAsTemplate} />}
+      {mermaidOpen && <MermaidDialog onInsert={importMermaid} onClose={() => setMermaidOpen(false)} />}
+      {templateChooserOpen && <TemplateChooser onChoose={insertTemplate} onClose={() => setTemplateChooserOpen(false)} onMermaid={() => { setTemplateChooserOpen(false); setMermaidOpen(true) }} userTemplates={userTemplates} onChooseUser={insertUserTemplate} onDeleteUser={deleteUserTemplate} canSave={selectedItemCount > 0 || hasSelectedRectangle} startSaving={templateSaveMode} onSave={saveSelectionAsTemplate} />}
       <ZoomControls desktop={inputMode === 'desktop'} onResetZoom={zoomToActualSize} zoomPercent={zoomPercent} locked={zoomLockActive} onToggleLock={() => updateNavigationSettings({ zoomLocked: !zoomLockActive })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
         desktop={inputMode === 'desktop'}
@@ -5538,6 +5589,7 @@ function App() {
         toolLock={toolLock}
         onToolLock={toggleToolLock}
         onTemplates={() => setTemplateChooserOpen(true)}
+        onMermaid={() => setMermaidOpen(true)}
         laserActive={laserMode}
         onLaser={toggleLaserTool}
         presentActive={presentMode}

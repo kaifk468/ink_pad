@@ -14,6 +14,8 @@ type MoreTrayProps = {
   findTitle?: string
   /** Opens the template chooser. */
   onTemplates: () => void
+  /** Opens the "Insert from Mermaid…" dialog. */
+  onMermaid?: () => void
   /** Laser pointer (both modes): a transient red trail for presenting; nothing is saved. */
   onLaser?: () => void
   laserActive?: boolean
@@ -30,7 +32,7 @@ type MoreTrayProps = {
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, onPageOverview, canDuplicatePage = true }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onMermaid, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, onPageOverview, canDuplicatePage = true }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -78,6 +80,9 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, on
         <button className="insert-entry" type="button" aria-label="Insert template" title="Insert a starter layout in the middle of the view" onClick={() => { onTemplates(); setOpen(false) }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 9h17M9 9v11.5"/></svg><span>Insert template…</span>
         </button>
+        {onMermaid && <button className="insert-entry" type="button" aria-label="Insert from Mermaid" title="Turn Mermaid flowchart text into boxes and arrows" onClick={() => { onMermaid(); setOpen(false) }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="6" height="5" rx="1.2"/><rect x="14.5" y="15" width="6" height="5" rx="1.2"/><path d="M6.5 9v6h8M12.5 13l2 2-2 2"/></svg><span>Insert from Mermaid…</span>
+        </button>}
         {onFind && <>
           <div className="insert-tray-heading">Search</div>
           <button className="insert-entry" type="button" aria-label="Find" title={findTitle ?? 'Find text on the canvas'} onClick={() => { onFind(); setOpen(false) }}>
