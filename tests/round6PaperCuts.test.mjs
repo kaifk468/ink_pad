@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { readFile } from 'node:fs/promises'
+import { loadModule } from './helpers/loadModule.mjs'
+
+const input = await loadModule('desktopInput.ts')
+const panel = await readFile(new URL('../src/app/ContextPanel.tsx', import.meta.url), 'utf8')
+const css = (await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')).replace(/\r\n/g, '\n')
+
+const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn'].map((id) => ({ id, label: id === 'loadBalancer' ? 'Load balancer' : id[0].toUpperCase() + id.slice(1) }))
+// Five grouped HLD boxes joined by labelled connectors: every optional chip block is on.
+const busy = { hasSelection: true, clipboardHasItems: true, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false, canCopyStyle: true, canPasteStyle: true, canSelectSimilar: true, canGroup: true, canUngroup: true, changeShapes: hld, canNumberSteps: true, canSameSize: true, canSelectConnected: true }
+
+test('right-click menu: the busiest selection fits a 1024x700 window without scrolling (measured 646 px in Chromium)', () => {
+  const entries = input.contextMenuEntries(busy)
+  assert.ok(input.contextMenuHeight(entries) <= 684, 'height ' + input.contextMenuHeight(entries))
+  // The estimate never undershoots the measured 646 px by much, so the check above is meaningful.
+  assert.ok(input.contextMenuHeight(entries) >= 600)
+})
+
+test('right-click menu: Group, Ungroup, Zoom, Lock and Select all became chips, every command is still there', () => {
+  const entries = input.contextMenuEntries(busy)
+  const rows = input.contextMenuRows(entries)
+  const groups = Object.fromEntries(rows.filter((r) => r.chips).map((r) => [r.chips[0].chipGroup, r.chips.map((c) => c.chip)]))
+  assert.deepEqual(groups.Selection, ['Group', 'Ungroup', 'Zoom', 'Lock'])
+  assert.deepEqual(groups.Select, ['Similar', 'Connected', 'All'])
+  for (const action of ['group', 'ungroup', 'zoomSelection', 'lock', 'selectAll', 'selectConnected', 'numberSteps', 'clearSteps', 'sameWidth', 'sameHeight', 'sameSize', 'copyPng', 'exportPng', 'exportSvg', 'saveTemplate']) {
+    assert.ok(entries.some((e) => e.action === action), action)
+  }
+  // Labels (tooltips) and shortcut hints stay on the chip entries.
+  const group = entries.find((e) => e.action === 'group')
+  assert.equal(group.label, 'Group')
+  assert.equal(group.hint, 'Ctrl+G')
+  assert.equal(entries.find((e) => e.action === 'zoomSelection').label, 'Zoom to selection')
+  assert.equal(entries.find((e) => e.action === 'selectAll').hint, 'Ctrl+A')
+  // Select all is disabled on an empty page, Zoom without a selection.
+  const empty = input.contextMenuEntries({ ...busy, hasSelection: false, pageHasItems: false, canGroup: false, canUngroup: false })
+  assert.equal(empty.find((e) => e.action === 'selectAll').disabled, true)
+  assert.equal(empty.find((e) => e.action === 'zoomSelection').disabled, true)
+  // Unlock stays a normal row.
+  assert.equal(input.contextMenuEntries({ ...busy, lockedTarget: true }).find((e) => e.action === 'unlock').chip, undefined)
+})
+
+test('connector label size buttons carry a Text size heading', () => {
+  assert.match(panel, /\{props\.connectorLabelSize && <span className="panel-label">Text size<\/span>\}\s*\{props\.connectorLabelSize && <div className="tool-group text-size-group" role="group" aria-label="Arrow label size">/)
+})
+
+test('desktop 1101-1700px: the zoom control sits above the dock together with the minimap', () => {
+  const block = css.match(/@media \(min-width: 1101px\) and \(max-width: 1700px\) \{\n([\s\S]*?)\n\}/)
+  assert.ok(block, 'media block')
+  assert.match(block[1], /\.app-shell:has\(\.desktop-dock\) \.zoom-controls \{ bottom: calc\(max\(16px, env\(safe-area-inset-bottom\)\) \+ 84px\); \}/)
+  assert.match(block[1], /\.app-shell:has\(\.desktop-dock\) \.viewport-navigator \{ bottom: calc\(max\(16px, env\(safe-area-inset-bottom\)\) \+ 84px\); \}/)
+})

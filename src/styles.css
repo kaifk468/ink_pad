@@ -518,8 +518,9 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
   .app-shell:has(.desktop-dock) .zoom-controls { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); }
 }
 
-/* Desktop at 1101-1700px: the labelled dock is wide enough for its right end to reach the corner minimap, so the minimap sits above the dock (tablet and narrower layouts already do). */
+/* Desktop at 1101-1700px: the labelled dock is wide enough for its ends to reach the corner minimap and the zoom control, so both sit above the dock (tablet and narrower layouts already do). */
 @media (min-width: 1101px) and (max-width: 1700px) {
+  .app-shell:has(.desktop-dock) .zoom-controls { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); }
   .app-shell:has(.desktop-dock) .viewport-navigator { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); }
 }
 
@@ -729,7 +730,7 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .canvas-context-menu button { display: flex; align-items: center; justify-content: space-between; gap: 16px; box-sizing: border-box; min-height: 28px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: #202124; font: inherit; text-align: left; cursor: pointer; }
 .canvas-context-menu button:hover:not(:disabled), .canvas-context-menu button:focus-visible { background: #eef1fc; outline: none; }
 .canvas-context-menu button:disabled { color: #a0a6b2; cursor: default; }
-.canvas-context-separator { height: 1px; margin: 4px 6px; background: rgba(36, 42, 52, .12); }
+.canvas-context-separator { height: 1px; margin: 3px 6px; background: rgba(36, 42, 52, .12); }
 .canvas-context-chips { display: flex; flex-direction: column; gap: 0; padding: 2px 6px 3px; }
 .canvas-context-chips.inline { flex-direction: row; align-items: center; gap: 6px; }
 .canvas-context-chips.inline .canvas-context-chips-caption { flex: none; }

@@ -366,6 +366,7 @@ export function ContextPanel(props: ContextPanelProps) {
           </button>
         ))}
       </div>}
+      {props.connectorLabelSize && <span className="panel-label">Text size</span>}
       {props.connectorLabelSize && <div className="tool-group text-size-group" role="group" aria-label="Arrow label size">
         {TEXT_FONT_SIZES_DESKTOP.map((size) => (
           <button

@@ -607,10 +607,11 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection, 'Back', 'Order'),
     ...(hasSelection ? [entry('addBoundary', 'Add boundary', '', 'arrange', true, 'Boundary', 'Order')] : []),
     ...(canSameSize ? [entry('sameWidth', 'Same width', '', 'arrange', true, 'Width', 'Size'), entry('sameHeight', 'Same height', '', 'arrange', true, 'Height', 'Size'), entry('sameSize', 'Same width and height', '', 'arrange', true, 'Both', 'Size')] : []),
-    ...(canGroup ? [entry('group', 'Group', 'Ctrl+G', 'arrange', true)] : []),
-    ...(canUngroup ? [entry('ungroup', 'Ungroup', 'Ctrl+Shift+G', 'arrange', true)] : []),
-    entry('zoomSelection', 'Zoom to selection', 'Shift+2', 'arrange', hasSelection),
-    ...(hasSelection && !lockedTarget ? [entry('lock', 'Lock', 'Ctrl+Shift+L', 'arrange', true)] : []),
+    // Group, Ungroup, Zoom and Lock share one chip block (one row of chips instead of four rows); Unlock stays a row.
+    ...(canGroup ? [entry('group', 'Group', 'Ctrl+G', 'arrange', true, 'Group', 'Selection')] : []),
+    ...(canUngroup ? [entry('ungroup', 'Ungroup', 'Ctrl+Shift+G', 'arrange', true, 'Ungroup', 'Selection')] : []),
+    entry('zoomSelection', 'Zoom to selection', 'Shift+2', 'arrange', hasSelection, 'Zoom', 'Selection'),
+    ...(hasSelection && !lockedTarget ? [entry('lock', 'Lock', 'Ctrl+Shift+L', 'arrange', true, 'Lock', 'Selection')] : []),
     ...(lockedTarget ? [entry('unlock', 'Unlock', '', 'arrange', true)] : []),
     ...(!hasSelection && !lockedTarget && anyLocked ? [entry('unlockAll', 'Unlock all', '', 'arrange', true)] : []),
     entry('copyPng', 'Copy as PNG', 'Shift+Alt+C', 'export', hasSelection || pageHasItems),
@@ -618,7 +619,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true, 'PNG', 'Save selection as'), entry('exportSvg', 'Export selection as SVG', '', 'export', true, 'SVG', 'Save selection as'), entry('saveTemplate', 'Save selection as template…', '', 'export', true, 'Template…', 'Save selection as')] : []),
     ...(canSelectSimilar ? [entry('selectSimilar', 'Select similar', '', 'select', true, 'Similar', 'Select')] : []),
     ...(canSelectConnected ? [entry('selectConnected', 'Select connected', '', 'select', true, 'Connected', 'Select')] : []),
-    entry('selectAll', 'Select all', 'Ctrl+A', 'select', pageHasItems),
+    entry('selectAll', 'Select all', 'Ctrl+A', 'select', pageHasItems, 'All', 'Select'),
   ]
 }
 
@@ -646,7 +647,7 @@ export const CONTEXT_MENU_WIDTH = 248
 const MENU_PADDING = 6 + 1 // vertical padding plus border, per side
 const MENU_ENTRY_HEIGHT = 28
 const MENU_GAP = 2
-const MENU_SEPARATOR_HEIGHT = 1 + 4 + 4 // line plus its vertical margin
+const MENU_SEPARATOR_HEIGHT = 1 + 3 + 3 // line plus its vertical margin
 const CHIP_CAPTION_HEIGHT = 16
 const CHIP_HEIGHT = 26
 const CHIP_GAP = 4
