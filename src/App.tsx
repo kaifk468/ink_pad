@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
@@ -4938,6 +4938,14 @@ function App() {
       : event.key === 'ArrowDown' ? (current + 1) % buttons.length : (current <= 0 ? buttons.length - 1 : current - 1)
     buttons[next].focus()
   }
+  // The height estimate can be a little low (chip wrapping, fonts): after layout, a menu that still runs past the bottom edge is moved up to fit.
+  useLayoutEffect(() => {
+    const menu = contextMenuElementRef.current
+    if (!contextMenu || !menu) return
+    const rect = menu.getBoundingClientRect()
+    const overflow = rect.bottom - (window.innerHeight - 8)
+    if (overflow > 0) menu.style.top = `${Math.max(8, rect.top - overflow)}px`
+  }, [contextMenu])
   // Opening the menu puts focus on its first enabled row so the keyboard works at once.
   useEffect(() => {
     if (contextMenu) contextMenuElementRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()

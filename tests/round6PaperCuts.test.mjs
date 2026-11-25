@@ -51,3 +51,9 @@ test('desktop 1101-1700px: the zoom control sits above the dock together with th
   assert.match(block[1], /\.app-shell:has\(\.desktop-dock\) \.zoom-controls \{ bottom: calc\(max\(16px, env\(safe-area-inset-bottom\)\) \+ 84px\); \}/)
   assert.match(block[1], /\.app-shell:has\(\.desktop-dock\) \.viewport-navigator \{ bottom: calc\(max\(16px, env\(safe-area-inset-bottom\)\) \+ 84px\); \}/)
 })
+
+test('right-click menu is moved up after layout when it runs past the bottom edge', async () => {
+  const { readAppSource } = await import('./helpers/appSource.mjs')
+  const source = await readAppSource()
+  assert.match(source, /useLayoutEffect\(\(\) => \{\s*const menu = contextMenuElementRef\.current[\s\S]*?rect\.bottom - \(window\.innerHeight - 8\)[\s\S]*?menu\.style\.top =/)
+})
