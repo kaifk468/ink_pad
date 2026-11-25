@@ -271,3 +271,56 @@ Follow-ups found this round (ideas for the next round):
 - Labels from older templates/diagrams have no `align`: editing them to two lines keeps them left-aligned (use the Centre button).
 - Older InkPad builds drop `labelFontSize` and `align` on save (like earlier round fields): keep the tablet PWA updated.
 - Palette refreshes the library list on every Ctrl+K (a network list call with Drive).
+
+## Round 5 — 2026-11-25 (branch desktop-20x)
+
+### User journeys walked (friction found, on top of rounds 1-4)
+1. Start a new diagram: developers often already have the design as text (a Mermaid flowchart from a README, notes or an AI chat) and must redraw every box and arrow by hand; pasting plain text onto the canvas does nothing.
+2. Export and share: the outline (round 3) is prose; a README, GitHub issue or NotebookLM note wants the diagram as Mermaid text that renders again elsewhere.
+3. Tablet writing: undo/redo means moving the pen to the top bar every time; GoodNotes, Notability and Procreate users expect a two-finger tap to undo and a three-finger tap to redo.
+4. Rearrange and tidy: making five service boxes the same size means resizing each by eye; drawing a VPC / region / "Payments domain" boundary means drawing a dashed rectangle, sending it back and adding a label in four steps; moving a whole subsystem means shift-clicking every box and arrow.
+5. Connector labels sit at the middle of the path and cover a box or another label on short or crossing connectors; there is no way to slide them along.
+6. Library: tidying up after an interview season means moving or deleting diagrams one at a time.
+7. Paper cuts from round 4: the palette re-lists the library on every Ctrl+K (a network call with Drive); the right-click menu with step-number chips still scrolls at 1024x700; at 1440x900 an open minimap sits partly under the dock; text size / alignment panel buttons have no heading.
+
+### Candidates (problem · who/how often · benefit · risk · size · decision)
+| # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
+|---|---|---|---|---|---|---|---|
+| 109 | Import Mermaid flowchart (dialog: More menu, palette, template chooser; Ctrl+V of Mermaid text on desktop) (was #100) | Design already exists as text; redrawn by hand | developers, often | high | low (creates ordinary items via the paste path) | M | picked |
+| 110 | Paste plain text as a text label (desktop, internal clipboard empty) | Pasting text onto the canvas does nothing | desktop, often | medium | low-medium (paste path) | S | picked |
+| 111 | Copy as Mermaid (Export panel, palette) | Diagram can't be pasted into README/issues/NotebookLM as renderable text | developers, weekly | medium-high | low (pure module) | S-M | picked |
+| 112 | Two-finger tap undo, three-finger tap redo (tablet, setting) | Undo needs a trip to the top bar | tablet, constantly | high | medium (touch navigator; pinch/pan must not change) | M | picked |
+| 113 | Make same size (width / height / both) | Equal boxes by eye | everyone, often | medium | low | S | picked |
+| 114 | Add boundary around the selection (dashed labelled container sent behind) | VPC/region/domain boundary takes four steps | HLD users, most diagrams | medium-high | low (ordinary rectangle + label) | S | picked |
+| 115 | Select connected (box + its connectors and neighbours; whole subsystem) | Moving a subsystem means shift-clicking everything | growing diagrams, often | medium | low | S | picked |
+| 116 | Drag a connector label along its path (saved `labelPosition`) (was #99) | Label covers a box or another label | HLD users, often | medium-high | medium (new saved field, select pointer path) | M | picked |
+| 117 | Library multi-select: bulk Move and Delete (with Undo) (was #74/#96) | Organising many diagrams one at a time | everyone, occasionally | medium | medium (pending delete queue) | M | picked |
+| 118 | Round 4 paper cuts: palette library cache, menu height, minimap vs dock, panel headings | small friction | | low-medium | low | S | picked |
+| 119 | Page names (#94) | pages have no titles | sometimes | medium | medium (page-level saved key, documentFormat drops page keys today) | M | idea |
+| 120 | Last-used style for new shapes (Excalidraw) | restyling every new box | desktop | medium | medium (tablet pen colours interplay) | M | idea |
+| 121 | Snap to grid toggle | neat alignment | desktop | low-medium | medium (all drag/resize paths); smart guides exist | M | idea |
+| 122 | Move folders into folders (#97) | restructure | rare | low | medium (Drive) | M | idea |
+| 123 | Curved connectors (#95) | nicer arrows | sometimes | low-medium | medium-high | M-L | idea |
+| 124 | Frames / sections (#101) | large boards | sometimes | medium | high | L | idea (boundary #114 covers the drawing part) |
+| 125 | Alt+Arrow selects the connected neighbour (#102) | keyboard walking | rare | low | low | S | idea |
+| 126 | Elbow bend clamp (#93) | | rare | low | medium | S | idea |
+| 127 | Shape search in More shapes (#98) | | rare | low | low | S | idea |
+| 128 | Library content search (#104) | find by label | sometimes | medium | high (loads every file) | L | idea |
+| 129 | Images on the canvas (paste a screenshot) | reference screenshots | sometimes | medium | high (new item kind, storage size, Drive) | L | idea |
+| 130 | Zoom presets menu on the % readout | | rare | low | low | S | idea (Shift+1/2, Ctrl+0 exist) |
+| 131 | Export PNG scale (#80) | | rare | low | low | S | idea |
+| 132 | Scribble-to-erase (#17/#48/#78/#106) | | | | high (writing path) | | skipped again |
+| 133 | Undo toast naming the action (#42/#79/#107) | | | | high | | skipped again |
+| 134 | Tablet long-press menu (#70/#105) | | | | high | | skipped again (tablet panel has the commands) |
+
+### Acceptance criteria (picked items)
+109. **Mermaid import**: "Insert from Mermaid…" (More menu both modes, command palette, template chooser) opens a dialog with a text area (and a Paste button); the user pastes `flowchart LR` / `graph TD` text and presses Insert; the nodes become boxes (`A[Text]` rectangle, `A(Text)`/`A([Text])` rounded→rectangle, `A((Text))` ellipse, `A{Text}` diamond, `A[(Text)]` Database HLD shape, `A[[Text]]` Service) with centred labels, edges `-->`, `---`, `-.->`, `==>` become attached connectors (arrow / plain / dashed), `-->|label|` and `-- label -->` become connector labels; laid out left-to-right or top-to-bottom as the header says; placed in the middle of the view, selected, one undo step, view fits it. Unknown lines are ignored and the dialog says how many; text with no edges or nodes shows an error and inserts nothing. On desktop, Ctrl+V of text that starts with `graph`/`flowchart` (internal clipboard empty) does the same.
+110. **Text paste**: on desktop with the internal clipboard empty, Ctrl+V of plain text (not Mermaid) creates a text label at the pointer (or view centre) with that text (first 2000 characters), selected; one undo step. Internal clipboard paste unchanged.
+111. **Copy as Mermaid**: Export panel "Copy as Mermaid" and the palette copy the current page as `flowchart LR` text: one node per box (label text, shape bracket by kind: diamond `{}`, ellipse `(())`, database `[()]`, others `[]`), one edge per connector between two boxes (label as `|text|`, dashed `-.->`, no arrow `---`); a toast confirms with the count; free text and ink are skipped (toast says so). Re-importing it with #109 gives the same boxes and links.
+112. **Tap undo/redo**: on the tablet, a quick two-finger tap (both fingers down and up within ~300 ms, hardly moved, no zoom applied) undoes one step and a three-finger tap redoes; a small toast says "Undo" / "Redo". A setting in the menu ("Two-finger tap to undo", on by default, remembered) turns it off. Pinch zoom, three-finger pan, pen writing and palm rejection behave exactly as before; nothing fires while the pen is down or near.
+113. **Same size**: with 2+ boxes selected, right-click → "Same size" chips (Width / Height / Both), the panel's arrange section and the palette make every selected box take the size of the largest selected box (Both = width and height), keeping each box's centre; connectors follow, labels inside follow; one undo step; locked items untouched.
+114. **Boundary**: with items selected, right-click → "Add boundary", the panel and the palette add a dashed, unfilled rounded rectangle around them with padding, sent behind everything, and a label "Boundary" at its top-left that opens for typing on desktop; one undo step. It is an ordinary rectangle and text label (no new kind).
+115. **Select connected**: right-click a box → "Select connected" (and the palette) selects the box, every connector touching it and the boxes at their other ends; pressing it again (or Shift variant "Select all linked") grows to everything reachable. No undo entry.
+116. **Label along the path**: with the Select tool, dragging a connector label slides it along the connector (stays on the path, 5%-95%), it stays there when the boxes move; one undo step; Esc cancels. Saved as `labelPosition` (0.05..0.95, omitted at 0.5); renderer, sketchy, SVG/PNG/PDF export follow. Old files unchanged.
+117. **Library multi-select**: the Library has a "Select" button; in select mode each card shows a checkbox, a bar shows "3 selected · Move… · Delete · Cancel"; Move moves all to one folder (one toast); Delete hides them at once with one "Deleted 3 diagrams · Undo" toast (same deferred delete as round 3). Works with touch and mouse. Esc leaves select mode.
+118. **Paper cuts**: Ctrl+K reuses the library list fetched in the last 30 s; the right-click menu fits at 1024x700 with step chips; the open minimap does not sit under the dock at 1440x900; the panel shows small headings "Text size" and "Align" above those buttons.
