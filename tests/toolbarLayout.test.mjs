@@ -166,3 +166,7 @@ test('the sheet layer and canvas stacking are unchanged', () => {
   assert.match(ruleBody(styles, '.drawing-canvas {'), /position:\s*absolute;\s*inset:\s*0/)
   assert.ok(app.indexOf('className="sheet-layer"') < app.indexOf('className={`drawing-canvas'))
 })
+
+test('a long desktop panel scrolls instead of squashing its buttons', () => {
+  assert.match(styles, /\.context-panel\.desktop-left > \* \{ flex-shrink: 0; \}/)
+})
