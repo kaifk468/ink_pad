@@ -50,6 +50,7 @@ import { AccountButton } from './app/AccountButton'
 import { ContextPanel } from './app/ContextPanel'
 import { applyStyle, captureStyle, type StyleSnapshot } from './styleClipboard'
 import { clearSteps, numberSteps, stepTargets } from './flowSteps'
+import { buildMermaid } from './mermaidExport'
 import { selectionFillColor, selectionHasFillable, setFillColor, matchingOutline } from './shapeFill'
 import { withSketchSeed, withSketchSeeds } from './sketchy'
 import { addLaserPoint, laserOnTouchDown, laserSegments, laserVisible, PEN_TOOL_FLAGS, pruneLaser, toolToRestoreAfterLaser, type LaserPoint, type ToolFlags } from './laserPointer'
@@ -4990,6 +4991,18 @@ function App() {
       failed()
     }
   }
+  // Current page as a Mermaid flowchart on the clipboard.
+  const copyMermaid = () => {
+    const result = buildMermaid(strokesRef.current)
+    const text = result.text
+    const done = () => showToast(`Copied ${result.boxes} ${result.boxes === 1 ? 'box' : 'boxes'} and ${result.links} ${result.links === 1 ? 'link' : 'links'} as Mermaid${result.skipped ? '; text and ink skipped' : ''}`)
+    const failed = () => showToast('Could not copy Mermaid')
+    try {
+      navigator.clipboard.writeText(text).then(done, failed)
+    } catch {
+      failed()
+    }
+  }
   const downloadOutline = () => {
     downloadBlob(new Blob([currentOutline()], { type: 'text/markdown' }), outlineFileName(docTitle))
     showToast('Outline downloaded')
@@ -5022,6 +5035,7 @@ function App() {
       { id: 'flow:clear', label: 'Clear step numbers', group: 'Select', keywords: 'flow order sequence connectors arrows remove', run: () => { clearFlowSteps() } },
     ] : []),
     { id: 'export:outline-copy', label: 'Copy as text outline', group: 'Export', keywords: 'markdown summary list copy', run: copyOutline },
+    { id: 'export:mermaid-copy', label: 'Copy as Mermaid', group: 'Export', keywords: 'flowchart diagram text copy markdown', run: copyMermaid },
     { id: 'export:outline-download', label: 'Download outline (.md)', group: 'Export', keywords: 'markdown text summary file', run: downloadOutline },
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
     { id: 'setting:snapping', label: 'Toggle snapping', group: 'Settings', keywords: 'snap guides align', run: () => updateSnapping(!snappingRef.current) },
@@ -5658,6 +5672,7 @@ function App() {
         onExportDocument={exportDocumentFile}
         onImportFile={(file) => void importDocumentFile(file)}
         onCopyOutline={copyOutline}
+        onCopyMermaid={copyMermaid}
         onDownloadOutline={downloadOutline}
         onExportSvg={() => void exportSvgFile()}
         onExportPng={(scale) => void exportPngFile(scale)}

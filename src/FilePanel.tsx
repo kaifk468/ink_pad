@@ -15,6 +15,8 @@ type FilePanelProps = {
   onExportSvg: () => void
   /** Text outline of the whole diagram (Markdown): copy it, or download a .md file. */
   onCopyOutline: () => void
+  /** The current page as a Mermaid flowchart on the clipboard. */
+  onCopyMermaid: () => void
   onDownloadOutline: () => void
   onExportPng: (scale: 1 | 2) => void
   /** Export and Copy as PNG leave out the sheet colour and page style. */
@@ -120,6 +122,7 @@ export function FilePanel(props: FilePanelProps) {
         <h3>Text outline</h3>
         <div className="file-panel-actions">
           <button type="button" disabled={!props.canOutline} title="Copy a Markdown outline of every page: components, connections, notes, classes and code" onClick={props.onCopyOutline}>Copy as text outline</button>
+          <button type="button" disabled={!props.canExport} title="Copy the current page as a Mermaid flowchart: boxes and the links between them" onClick={props.onCopyMermaid}>Copy as Mermaid</button>
           <button type="button" disabled={!props.canOutline} title="Save the outline as a Markdown file named after the diagram" onClick={props.onDownloadOutline}>Download outline (.md)</button>
         </div>
 
