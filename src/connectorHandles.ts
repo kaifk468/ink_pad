@@ -1,5 +1,5 @@
 import { bendableMiddle, routeConnectors } from './connectorRoute'
-import { connectorLabelFontSize, connectorLabelLayout } from './connectorLabel'
+import { connectorLabelFontSize, connectorLabelLayout, pointOnConnectorLabel } from './connectorLabel'
 import { pathLength, pathMidpoint, pointAlongPath } from './pathGeometry'
 import { DEFAULT_TEXT_FONT, getCachedTextMeasure, type TextMeasure } from './textLayout'
 import { MAX_CONNECTOR_BEND, canvasItemKey, connectorPoints, snapConnectorEndpoint, updateConnectorRouting, type CanvasItem, type ConnectorObject, type Point, type SnappedConnectorEndpoint } from './canvasModel'
@@ -82,6 +82,11 @@ export function hitConnectorHandle(connector: ConnectorObject, point: Point, sca
   const dStart = distance(handles.start)
   if (dEnd <= radius || dStart <= radius) return dEnd <= dStart ? 'end' : 'start'
   return distance(handles.middle) <= radius ? 'middle' : null
+}
+
+/** Whether `point` is on the label pad of the connector (a press there starts a label drag; the handles win where they overlap). */
+export function hitConnectorLabel(connector: ConnectorObject, point: Point, measure?: TextMeasure): boolean {
+  return pointOnConnectorLabel(connector, point, measure ?? getCachedTextMeasure(connectorLabelFontSize(connector), DEFAULT_TEXT_FONT))
 }
 
 /** Where an end dragged to `point` lands: on the outline of the box under it (or within `tolerance` of it), else null (free). */

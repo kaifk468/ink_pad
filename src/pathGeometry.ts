@@ -32,3 +32,33 @@ export function pathMidpoint(path: Point[]): Point {
   if (total === 0) return { ...path[0] }
   return pointAlongPath(path, total / 2).point
 }
+
+/** The point at `fraction` (0..1) of a path's length. */
+export function pointAtPathFraction(path: readonly Point[], fraction: number): Point {
+  const total = pathLength(path)
+  if (path.length === 0) return { x: 0, y: 0, pressure: 1 }
+  if (total === 0) return { ...path[0] }
+  return pointAlongPath(path, total * Math.max(0, Math.min(1, fraction))).point
+}
+
+/** Where along a path (0..1 of its length) the point on the path nearest to `point` lies. 0 for an empty or zero-length path. */
+export function pathFractionNearest(path: readonly Point[], point: { x: number; y: number }): number {
+  const total = pathLength(path)
+  if (total === 0) return 0
+  let best = Infinity
+  let bestArc = 0
+  let arc = 0
+  for (let i = 1; i < path.length; i += 1) {
+    const ax = path[i - 1].x
+    const ay = path[i - 1].y
+    const dx = path[i].x - ax
+    const dy = path[i].y - ay
+    const length = Math.hypot(dx, dy)
+    if (length <= 0) continue
+    const t = Math.max(0, Math.min(1, ((point.x - ax) * dx + (point.y - ay) * dy) / (length * length)))
+    const distance = Math.hypot(point.x - (ax + dx * t), point.y - (ay + dy * t))
+    if (distance < best) { best = distance; bestArc = arc + length * t }
+    arc += length
+  }
+  return bestArc / total
+}

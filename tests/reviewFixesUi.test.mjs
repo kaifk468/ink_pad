@@ -30,9 +30,9 @@ test('bend drag is relative: pressing off the segment does not jump it', () => {
   assert.match(app, /startPoint: point, startBend: connector\.bend \?\? 0/)
 })
 
-test('the connector label editor opens on the path midpoint, not the moved middle dot', () => {
+test('the connector label editor opens on the label centre (path middle unless dragged), not the moved middle dot', () => {
   const body = app.slice(app.indexOf('const editConnectorLabel'), app.indexOf('const openClassBoxEditor'))
-  assert.match(body, /const centre = pathMidpoint\(connectorPoints\(connector\)\)/)
+  assert.match(body, /const centre = connectorLabelCentre\(connector\)/)
   assert.equal(body.includes('connectorHandlePositions'), false)
 })
 

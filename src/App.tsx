@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
-import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, connectorPoints } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { QUICK_CONNECT_DOUBLE_CLICK_MS, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
-import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, pathMidpoint, bendForDrag, hitConnectorHandle, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
+import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConnectorHandle, hitConnectorLabel, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
 import { similarItemKeys } from './selectSimilar'
@@ -74,7 +74,7 @@ import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
 import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
-import { connectorLabelFontSize, pointOnConnectorLabel, setConnectorLabel, setConnectorLabelFontSize } from './connectorLabel'
+import { connectorLabelCentre, connectorLabelFontSize, connectorLabelPosition, labelPositionForDrag, pointOnConnectorLabel, setConnectorLabel, setConnectorLabelFontSize, setConnectorLabelPosition } from './connectorLabel'
 import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, keepAlignAnchor, stepFontSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
 import type { TextAlign, TextFontId } from './canvasModel'
@@ -256,7 +256,7 @@ function App() {
   /** A rotate-handle drag on the single selected label or plain shape. */
   const activeRotateRef = useRef<{ pointerId: number; key: string; originalItems: CanvasItem[]; moved: boolean } | null>(null)
   /** A drag or click on a handle of the single selected connector: `which` is an end, or the middle dot (a click toggles straight/elbow). `saved` = its one history step was recorded. `target` = box highlighted as the snap target. */
-  const activeEndpointRef = useRef<{ pointerId: number; pointerType: string; id: number; which: ConnectorHandleKind; startScreen: Point; startPoint: Point; startBend: number; originalItems: CanvasItem[]; dragged: boolean; saved: boolean; target: number | null } | null>(null)
+  const activeEndpointRef = useRef<{ pointerId: number; pointerType: string; id: number; which: ConnectorHandleKind | 'label'; startScreen: Point; startPoint: Point; startBend: number; startLabelPosition: number; originalItems: CanvasItem[]; dragged: boolean; saved: boolean; target: number | null } | null>(null)
   const activeLassoRef = useRef<{ pointerId: number; points: Point[] } | null>(null)
   const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean; duplicate?: boolean; dup?: DragDup } | null>(null)
   const selectedKeysRef = useRef<Set<string>>(new Set())
@@ -1113,7 +1113,7 @@ function App() {
   const editConnectorLabel = (connectorId: number): boolean => {
     const connector = routeConnectors(strokesRef.current).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
     if (!connector || connector.locked) return false
-    const centre = pathMidpoint(connectorPoints(connector))
+    const centre = connectorLabelCentre(connector)
     openTextEditor({ itemId: null, connectorId, x: centre.x, y: centre.y, fontSize: connectorLabelFontSize(connector), fontFamily: DEFAULT_TEXT_FONT, color: connector.strokeColor, initialText: connector.label ?? '', centerOn: { x: centre.x, y: centre.y } })
     return true
   }
@@ -1713,11 +1713,12 @@ function App() {
   const startConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>, point: Point): boolean => {
     const connector = soleConnectorWithHandles()
     if (!connector) return false
-    const which = hitConnectorHandle(connector, point, viewportRef.current.scale, event.pointerType)
+    // The handles win; otherwise a press on the label of the selected connector drags it along the path (a click without movement does nothing, so double-click still edits).
+    const which: ConnectorHandleKind | 'label' | null = hitConnectorHandle(connector, point, viewportRef.current.scale, event.pointerType) ?? (hitConnectorLabel(connector, point) ? 'label' : null)
     if (!which) return false
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
-    activeEndpointRef.current = { pointerId: event.pointerId, pointerType: event.pointerType, id: connector.id, which, startScreen: getScreenPoint(event), startPoint: point, startBend: connector.bend ?? 0, originalItems: strokesRef.current.slice(), dragged: false, saved: false, target: null }
+    activeEndpointRef.current = { pointerId: event.pointerId, pointerType: event.pointerType, id: connector.id, which, startScreen: getScreenPoint(event), startPoint: point, startBend: connector.bend ?? 0, startLabelPosition: connectorLabelPosition(connector), originalItems: strokesRef.current.slice(), dragged: false, saved: false, target: null }
     return true
   }
   const moveConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1727,6 +1728,18 @@ function App() {
     const now = getScreenPoint(event)
     if (!gesture.dragged && Math.hypot(now.x - gesture.startScreen.x, now.y - gesture.startScreen.y) < CONNECTOR_CLICK_SLOP_PX) return
     gesture.dragged = true
+    if (gesture.which === 'label') {
+      // Dragging the label slides it along the routed path (fraction of its length, 0.05..0.95); one undo step per drag.
+      event.currentTarget.style.cursor = 'grabbing'
+      const connector = routeConnectors(gesture.originalItems).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === gesture.id)
+      if (!connector) return
+      const next = setConnectorLabelPosition(gesture.originalItems, gesture.id, labelPositionForDrag(connector, gesture.startPoint, getBoundedPoint(event), gesture.startLabelPosition))
+      if (next === strokesRef.current || (!gesture.saved && next === gesture.originalItems)) return
+      if (!gesture.saved) { saveHistory(); gesture.saved = true }
+      strokesRef.current = next
+      renderAll()
+      return
+    }
     if (gesture.which === 'middle') {
       // Dragging the middle dot of an elbow connector moves its middle segment (one undo step); on any other connector it does nothing.
       const bend = bendForDrag(gesture.originalItems, gesture.id, gesture.startPoint, getBoundedPoint(event), gesture.startBend)
@@ -1754,6 +1767,7 @@ function App() {
       strokesRef.current = toggleConnectorRouting(gesture.originalItems, gesture.id)
       scheduleAutosave()
     } else if (gesture.saved) scheduleAutosave()
+    if (gesture.which === 'label') applyCanvasCursor()
     renderAll()
   }
   /** Escape or pointercancel mid-gesture: put the original items back and forget the history step the drag recorded. */
@@ -1768,6 +1782,7 @@ function App() {
       setCanRedo(historyRef.current.canRedo)
       scheduleAutosave()
     }
+    if (gesture.which === 'label') applyCanvasCursor()
     renderAll()
   }
   const setSelectedItemAngle = (radians: number) => {

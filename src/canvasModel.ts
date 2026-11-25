@@ -48,6 +48,8 @@ export type ConnectorObject = {
   label?: string
   /** Label text size (canvas units), 10..48. Omitted at the default size (18). Saved. */
   labelFontSize?: number
+  /** Where along the path the label sits, as a fraction of the path length, 0.05..0.95. Omitted at the middle (0.5) and when there is no label. Saved. */
+  labelPosition?: number
   /** Desktop lock: drawn normally, never selected, edited or erased. Only ever `true`. */
   locked?: true
   /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */
