@@ -5,7 +5,7 @@ import { layoutBoxes, type TidyEdge, type TidyNode } from './tidyLayout'
 import { measureTextSize, createTextObject } from './textLayout'
 import { createShapeBox } from './canvasModel'
 import { BOUNDARY_COLOR, BOUNDARY_FONT_SIZE, BOUNDARY_PADDING } from './boundary'
-import { decodeMermaidEntities, facingSides, firstMermaidLine, MAX_MERMAID_NODES, MAX_MERMAID_TEXT, normalizeMermaidSpaces, stripMermaidFrontMatter } from './mermaidCommon'
+import { cleanMermaidText, facingSides, firstMermaidLine, MAX_MERMAID_NODES, MAX_MERMAID_TEXT, normalizeMermaidSpaces, stripMermaidFrontMatter } from './mermaidCommon'
 import { buildMermaidClassItems, isMermaidClassText, parseMermaidClass } from './mermaidClassImport'
 import { buildMermaidSequence, isMermaidSequenceText, type MermaidDiagramResult } from './mermaidSequenceImport'
 
@@ -29,7 +29,6 @@ export type MermaidSubgraph = { id: string; title: string; parent: number | null
 export type MermaidGraph = { nodes: MermaidNode[]; edges: MermaidEdge[]; direction: MermaidDirection; ignoredLines: number; subgraphs?: MermaidSubgraph[] }
 export type MermaidParse = ({ ok: true } & MermaidGraph) | { ok: false; error: string }
 
-const MAX_NODE_TEXT = 200
 /** Statements that are skipped and counted. Keywords are case-sensitive; `end` only as a whole statement, `subgraph` needs a space or the end of the line. */
 const SKIPPED = /^(?:subgraph(?=\s|$)|end\s*;?\s*$|(?:classDef|class|style|linkStyle|click|direction)\s|accTitle\b|accDescr\b)/
 const HEADER = /^(?:graph|flowchart)(?:[ \t]+(?:TD|TB|BT|LR|RL))?[ \t]*(?:;.*)?$/
@@ -50,9 +49,8 @@ const SHAPES: ReadonlyArray<{ open: string; close: string; shape: MermaidShape }
   { open: '{', close: '}', shape: 'diamond' },
 ]
 
-function cleanText(raw: string): string {
-  return decodeMermaidEntities(raw.replace(/<br\s*\/?>/gi, '\n').replace(/\\n/g, '\n')).split('\n').map((line) => line.trim()).join('\n').trim().slice(0, MAX_NODE_TEXT)
-}
+const cleanText = cleanMermaidText
+export { cleanMermaidText as cleanText }
 const unquote = (raw: string): string => { const t = raw.trim(); return t.length >= 2 && t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1) : t }
 
 /** Splits a line at `;` outside quotes. */
@@ -354,8 +352,10 @@ function buildSubgraphFrames(groups: MermaidSubgraph[], boxes: Map<string, Recta
 
 /** The toast after inserting: "Inserted 3 boxes and 2 links", plus "(1 line ignored)". Class diagrams say "classes". */
 export function mermaidInsertMessage(boxes: number, links: number, ignored: number, kind: 'flowchart' | 'class' | 'sequence' = 'flowchart'): string {
-  const boxText = kind === 'class' ? `${boxes} ${boxes === 1 ? 'class' : 'classes'}` : `${boxes} ${boxes === 1 ? 'box' : 'boxes'}`
-  const linkText = `${links} ${links === 1 ? 'link' : 'links'}`
+  const boxText = kind === 'class' ? `${boxes} ${boxes === 1 ? 'class' : 'classes'}`
+    : kind === 'sequence' ? `${boxes} ${boxes === 1 ? 'participant' : 'participants'}`
+    : `${boxes} ${boxes === 1 ? 'box' : 'boxes'}`
+  const linkText = kind === 'sequence' ? `${links} ${links === 1 ? 'message' : 'messages'}` : `${links} ${links === 1 ? 'link' : 'links'}`
   return `Inserted ${boxText} and ${linkText}${ignored > 0 ? ` (${ignored} ${ignored === 1 ? 'line' : 'lines'} ignored)` : ''}`
 }
 

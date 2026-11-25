@@ -53,3 +53,9 @@ export function decodeMermaidEntities(raw: string): string {
     return point > 0 && point <= 0x10ffff && !(point >= 0xd800 && point <= 0xdfff) ? String.fromCodePoint(point) : whole
   })
 }
+
+const MAX_NODE_TEXT = 200
+/** Node / label text: `<br>` and `\\n` become line breaks, entities decoded, lines trimmed, capped at 200 characters. */
+export function cleanMermaidText(raw: string): string {
+  return decodeMermaidEntities(raw.replace(/<br\s*\/?>/gi, '\n').replace(/\\n/g, '\n')).split('\n').map((line) => line.trim()).join('\n').trim().slice(0, MAX_NODE_TEXT)
+}

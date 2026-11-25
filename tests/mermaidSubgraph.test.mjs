@@ -89,7 +89,9 @@ test('dispatcher routes by header', () => {
   assert.equal(buildMermaidDiagram('classDiagram\n').ok, false)
   assert.equal(buildMermaidDiagram('graph TD\n').ok, false)
   const sequence = buildMermaidDiagram('sequenceDiagram\nA->>B: hi')
-  assert.ok(sequence.ok ? sequence.kind === 'sequence' : typeof sequence.error === 'string')
+  assert.equal(sequence.ok && sequence.kind, 'sequence')
+  assert.equal(sequence.boxes, 2)
+  assert.equal(mermaidInsertMessage(2, 1, 0, 'sequence'), 'Inserted 2 participants and 1 message')
 })
 
 test('class diagrams say classes in the toast', () => {
