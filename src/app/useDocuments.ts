@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CanvasItem } from '../canvasModel'
 import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, isLossyParse, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
 import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
+import { shouldRefreshLibrary } from '../libraryRefresh'
 import { copyStoredDiagram as copyDiagramOnBackend } from '../libraryCopy'
 import { PAGE_PREVIEW_TOO_LARGE, THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
 import { moveStarred, readStarred, starsToUpload, toggleStarred, writeStarred } from '../starred'
@@ -218,8 +219,16 @@ export function useDocuments(host: DocumentHost) {
   /** A diagram came back from the safety copy at startup; the storage's own copy must not replace it. */
   const restoredRef = useRef(false)
 
+  /** When the library list last came from the storage; every in-app change (save, create, rename, move, delete) calls refreshLibrary, which renews it. */
+  const libraryListedAtRef = useRef<number | null>(null)
+  /** For the command palette: reuses a list fetched in the last 30 s. */
+  const refreshLibraryIfStale = async () => {
+    if (shouldRefreshLibrary(libraryListedAtRef.current, Date.now())) await refreshLibrary()
+  }
+
   const refreshLibrary = async () => {
     const backend = backendRef.current
+    libraryListedAtRef.current = null
     if (backend.listCached) {
       // show the last known list at once; the fresh one replaces it when it arrives
       try {
@@ -232,6 +241,7 @@ export function useDocuments(host: DocumentHost) {
       if (backendRef.current !== backend) return
       setLibrary(listed.documents)
       setFolders(listed.folders)
+      libraryListedAtRef.current = Date.now()
       void uploadLocalStars(backend, listed.documents)
     } catch {
       // Keep the list already shown (Drive offline, a failed refresh); the Library's own notice and status say why it could not refresh.
@@ -1207,7 +1217,7 @@ export function useDocuments(host: DocumentHost) {
   }, [])
 
   return {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,

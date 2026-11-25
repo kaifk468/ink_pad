@@ -420,7 +420,7 @@ function App() {
   const [pageCount, setPageCount] = useState(1)
 
   const {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram,
     scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
@@ -4994,7 +4994,7 @@ function App() {
   const openPalette = () => { paletteOpenRef.current = true; setPaletteOpen(true) }
   const closePalette = () => { paletteOpenRef.current = false; setPaletteOpen(false) }
   // The "Open: <title>" rows come from the Library list: each time the palette opens, the list is refreshed (rows appear when it arrives).
-  useEffect(() => { if (paletteOpen) void refreshLibrary() }, [paletteOpen])
+  useEffect(() => { if (paletteOpen) void refreshLibraryIfStale() }, [paletteOpen])
   // Text outline (Markdown) of the whole diagram: copied to the clipboard or downloaded as a .md file.
   const currentOutline = (): string => buildDiagramOutline(docTitle, pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)))
   const copyOutline = () => {
