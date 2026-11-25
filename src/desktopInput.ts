@@ -632,13 +632,13 @@ export function contextMenuRows(entries: readonly ContextMenuEntry[]): ContextMe
 /** Menu geometry in px; the stylesheet uses the same numbers (.canvas-context-menu). */
 export const CONTEXT_MENU_WIDTH = 248
 const MENU_PADDING = 6 + 1 // vertical padding plus border, per side
-const MENU_ENTRY_HEIGHT = 34
+const MENU_ENTRY_HEIGHT = 28
 const MENU_GAP = 2
 const MENU_SEPARATOR_HEIGHT = 1 + 4 + 4 // line plus its vertical margin
 const CHIP_CAPTION_HEIGHT = 16
 const CHIP_HEIGHT = 26
 const CHIP_GAP = 4
-const CHIP_ROW_PADDING = 2 + 4 // top and bottom padding of the chip block
+const CHIP_ROW_PADDING = 2 + 3 // top and bottom padding of the chip block
 const CHIP_AREA_WIDTH = CONTEXT_MENU_WIDTH - 2 * MENU_PADDING - 12 // inside the menu padding and the chip block's side padding
 
 const CAPTION_GAP = 6

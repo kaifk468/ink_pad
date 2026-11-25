@@ -57,7 +57,7 @@ test('menu rows put a separator between sections only, and the height follows th
   const plainEntries = entries.filter((e) => e.chip === undefined).length
   assert.equal(rows.length, plainEntries + chipRows.length + separators)
   assert.ok(rows[0].entry && rows[rows.length - 1].entry)
-  assert.equal(input.contextMenuHeight(entries), 14 + plainEntries * 34 + chipRows.reduce((sum, r) => sum + input.chipBlockHeight(r.chips), 0) + separators * 9 + (rows.length - 1) * 2)
+  assert.equal(input.contextMenuHeight(entries), 14 + plainEntries * 28 + chipRows.reduce((sum, r) => sum + input.chipBlockHeight(r.chips), 0) + separators * 9 + (rows.length - 1) * 2)
   assert.ok(input.contextMenuHeight(menu({ hasSelection: true })) > input.contextMenuHeight(menu({})))
   assert.equal(input.CONTEXT_MENU_WIDTH, 248)
 })

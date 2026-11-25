@@ -118,9 +118,9 @@ test('the change-shape choices form ONE chips row with short names, and the menu
   assert.deepEqual(plain.filter((e) => e.chipGroup === 'Change shape').map((e) => e.chip), ['Rect', 'Diamond'])
   // Nine HLD chips wrap onto several lines but stay far below nine full rows (9 x 34).
   const extra = input.contextMenuHeight(withChips) - input.contextMenuHeight(base)
-  assert.ok(extra > 60 && extra < 9 * 34 / 2, `extra ${extra}`)
+  assert.ok(extra > 60 && extra < 9 * 28 / 2, `extra ${extra}`)
   assert.ok(input.contextMenuHeight(plain) <= 700 - 16, 'plain shapes fit a 1024x700 screen without scrolling: ' + input.contextMenuHeight(plain))
-  assert.ok(input.contextMenuHeight(withChips) < input.contextMenuHeight(base) + 9 * 34, 'HLD chips take far less than nine rows')
+  assert.ok(input.contextMenuHeight(withChips) < input.contextMenuHeight(base) + 9 * 28, 'HLD chips take far less than nine rows')
   assert.ok(input.chipBlockHeight(shapeRow(rows).chips) < input.chipBlockHeight([...shapeRow(rows).chips, ...shapeRow(rows).chips, ...shapeRow(rows).chips]))
 })
 
@@ -140,8 +140,11 @@ test('a realistic HLD box menu (Style and Order chips) fits 1024x700 without scr
   const state = { hasSelection: true, clipboardHasItems: true, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false, canCopyStyle: true, canPasteStyle: true, canSelectSimilar: true, canGroup: true, changeShapes: hld, canNumberSteps: false }
   const entries = input.contextMenuEntries(state)
   assert.ok(input.contextMenuHeight(entries) <= 684, 'height ' + input.contextMenuHeight(entries))
-  // With connectors in the selection the Step numbers chips add a block: that menu may scroll a little on a 700px window (the CSS caps and scrolls it).
-  assert.ok(input.contextMenuHeight(input.contextMenuEntries({ ...state, canNumberSteps: true })) <= 720)
+  // Step numbers chips (connectors selected), the Size chips (2+ boxes) and both together still fit a 700px window.
+  for (const extra of [{ canNumberSteps: true }, { canSameSize: true }, { canNumberSteps: true, canSameSize: true }]) {
+    const h = input.contextMenuHeight(input.contextMenuEntries({ ...state, ...extra }))
+    assert.ok(h <= 684, JSON.stringify(extra) + ' height ' + h)
+  }
   const groups = input.contextMenuRows(entries).filter((r) => r.chips).map((r) => [r.chips[0].chipGroup, r.chips.map((c) => c.chip)])
   assert.deepEqual(groups.filter(([g]) => g === 'Style' || g === 'Order'), [['Style', ['Copy', 'Paste']], ['Order', ['Front', 'Back', 'Boundary']]])
   assert.equal(entries.find((e) => e.action === 'copyStyle').label, 'Copy style')
