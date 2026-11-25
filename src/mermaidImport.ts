@@ -151,12 +151,13 @@ export function parseMermaid(text: string): MermaidParse {
   let headerSeen = false
   const subgraphs: MermaidSubgraph[] = []
   const open: number[] = []
+  // Every id mentioned inside an open subgraph (declared or not). A closing subgraph claims its ids first (like Mermaid), so a node
+  // belongs to the first block that closes around a mention of it.
+  const mentioned = new Map<number, Set<string>>()
+  const claimedIds = new Set<string>()
   const declare = (declared: Declared) => {
     const known = nodes.get(declared.id)
-    if (!known) {
-      nodes.set(declared.id, { id: declared.id, text: declared.text || declared.id, shape: declared.shape ?? 'rectangle' })
-      if (open.length > 0) subgraphs[open[open.length - 1]].nodes.push(declared.id)
-    }
+    if (!known) nodes.set(declared.id, { id: declared.id, text: declared.text || declared.id, shape: declared.shape ?? 'rectangle' })
     else if (declared.shape !== undefined) nodes.set(declared.id, { id: declared.id, text: declared.text || declared.id, shape: declared.shape })
   }
   for (const rawLine of stripMermaidFrontMatter(normalizeMermaidSpaces(text.slice(0, MAX_MERMAID_TEXT)).replace(/^﻿/, '')).split(/\r?\n/)) {
@@ -184,12 +185,26 @@ export function parseMermaid(text: string): MermaidParse {
       if (named) { id = named[1]; title = cleanText(unquote(named[2])) }
       else if (rest !== '') { title = cleanText(unquote(rest)); if (/^[\w.\u0080-\uFFFF-]+$/.test(rest)) id = rest }
       subgraphs.push({ id, title: title || id, parent: open.length > 0 ? open[open.length - 1] : null, nodes: [] })
+      mentioned.set(subgraphs.length - 1, new Set())
       open.push(subgraphs.length - 1)
       continue
     }
-    if (open.length > 0 && /^end[ \t]*;?[ \t]*$/.test(line)) { open.pop(); continue }
+    if (open.length > 0 && /^end[ \t]*;?[ \t]*$/.test(line)) {
+      const closing = open.pop() as number
+      const ids = [...(mentioned.get(closing) ?? [])].filter((id) => !claimedIds.has(id))
+      for (const id of ids) claimedIds.add(id)
+      subgraphs[closing].nodes = ids
+      continue
+    }
     if (SKIPPED.test(line)) { ignoredLines += 1; continue }
     for (const statement of splitStatements(line)) if (!parseStatement(statement)) ignoredLines += 1
+  }
+  // A subgraph left open at the end of the text still owns what it mentions.
+  while (open.length > 0) {
+    const closing = open.pop() as number
+    const ids = [...(mentioned.get(closing) ?? [])].filter((id) => !claimedIds.has(id))
+    for (const id of ids) claimedIds.add(id)
+    subgraphs[closing].nodes = ids
   }
   function parseStatement(statement: string): boolean {
     if (statement.startsWith('%%')) return true
@@ -212,7 +227,10 @@ export function parseMermaid(text: string): MermaidParse {
       from = next.nodes
       position = next.end
     }
-    for (const declared of declaredAll) declare(declared)
+    for (const declared of declaredAll) {
+      declare(declared)
+      for (const index of open) mentioned.get(index)?.add(declared.id)
+    }
     let skippedSelf = false
     for (const [sources, targets, link] of added) {
       for (const source of sources) for (const target of targets) {

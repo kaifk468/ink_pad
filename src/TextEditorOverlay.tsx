@@ -75,8 +75,12 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
     // execCommand keeps the browser's own undo stack and fires the input event React listens to.
     let done = false
     try { done = edit.text ? document.execCommand('insertText', false, edit.text) : document.execCommand('delete') } catch { done = false }
-    if (!done || field.value !== result.value) {
+    if (!done) {
       field.setRangeText(edit.text, edit.from, edit.to, 'end')
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    } else if (field.value !== result.value) {
+      // execCommand changed the text, but not to the expected value: never apply the range edit on top of it, replace the whole value.
+      field.setRangeText(result.value, 0, field.value.length, 'end')
       field.dispatchEvent(new Event('input', { bubbles: true }))
     }
     field.setSelectionRange(result.caret, result.caret)
@@ -131,7 +135,7 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
         else if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229 && (event.ctrlKey || event.metaKey || (editor.connectorId !== undefined && !event.shiftKey))) { event.preventDefault(); onCommit() }
         else if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
           // Plain Enter inserts a newline here (connector labels commit above), so it may continue a list.
-          if (editor.connectorId === undefined && applyListEnter(event.currentTarget)) event.preventDefault()
+          if (editor.connectorId === undefined && applyListEnter(event.currentTarget)) { event.preventDefault(); skipBeforeInput.current = true } // a following beforeinput for this same Enter must not continue the list again; keyup resets
         } else if (event.key === 'Enter') {
           // Shift/Alt+Enter is a plain line break; the beforeinput path must not continue the list for it.
           skipBeforeInput.current = true

@@ -13,7 +13,7 @@ import { layoutBoxes, type TidyEdge, type TidyNode } from './tidyLayout'
  */
 export type MermaidClass = { id: string; name: string; annotation?: string; attributes: string[]; methods: string[] }
 /** `from` -> `to` is the connector direction as built: the symbol (triangle, arrow head) is at `to`, a diamond at `from` for aggregation / composition. */
-export type MermaidRelation = { from: string; to: string; type: ConnectorRelationshipType; dashed: boolean; label?: string }
+export type MermaidRelation = { from: string; to: string; type: ConnectorRelationshipType; dashed: boolean; label?: string; twoWay?: true }
 export type MermaidClassParse = { ok: true; classes: MermaidClass[]; relations: MermaidRelation[]; ignoredLines: number } | { ok: false; error: string }
 
 const MAX_MEMBER_LENGTH = 120
@@ -111,10 +111,11 @@ export function parseMermaidClass(text: string): MermaidClassParse {
       const text = label ? cleanMember(label) : ''
       const labelPart = text ? { label: text.slice(0, 200) } : {}
       // Connector start -> end; the renderer puts triangles and arrow heads at the end, diamonds at the start.
-      const make = (from: MermaidClass, to: MermaidClass, type: ConnectorRelationshipType, dash = false): void => {
-        relations.push({ from: from.id, to: to.id, type, dashed: dash, ...labelPart })
+      const make = (from: MermaidClass, to: MermaidClass, type: ConnectorRelationshipType, dash = false, twoWay = false): void => {
+        relations.push({ from: from.id, to: to.id, type, dashed: dash, ...(twoWay ? { twoWay: true as const } : {}), ...labelPart })
       }
-      if (leftHead && rightHead) make(left, right, 'association', dashed)
+      if (leftHead === '<' && rightHead === '>' && !dashed) make(left, right, 'directed-association', false, true)
+      else if (leftHead && rightHead) make(left, right, 'association', dashed)
       else if (leftHead === '<|') make(right, left, dashed ? 'realization' : 'inheritance')
       else if (rightHead === '|>') make(left, right, dashed ? 'realization' : 'inheritance')
       else if (leftHead === '*') make(left, right, 'composition')
@@ -167,7 +168,7 @@ export function buildMermaidClassItems(parsed: { classes: MermaidClass[]; relati
     const from = boxes.get(relation.from) as RectangleObject
     const to = boxes.get(relation.to) as RectangleObject
     const { fromSide, toSide } = facingSides(from, to)
-    sheet.connect(from, fromSide, to, toSide, { type: relation.type, ...(relation.dashed ? { dash: 'dashed' as const } : {}), ...(relation.label ? { label: relation.label } : {}) })
+    sheet.connect(from, fromSide, to, toSide, { type: relation.type, ...(relation.twoWay ? { twoWay: true as const } : {}), ...(relation.dashed ? { dash: 'dashed' as const } : {}), ...(relation.label ? { label: relation.label } : {}) })
   }
   return { items: sheet.items, boxes: parsed.classes.length, links: parsed.relations.length }
 }

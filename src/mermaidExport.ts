@@ -67,9 +67,14 @@ function classDiagram(items: readonly CanvasItem[], classBoxes: RectangleObject[
   const lines = ['classDiagram']
   for (const box of classBoxes) {
     const content = box.classBox!
-    const id = classIdentifier(content.name, taken)
+    const nameLines = content.name.split(/\r?\n/)
+    const id = classIdentifier(/^«.+»$/.test(nameLines[0].trim()) && nameLines.length > 1 ? nameLines.slice(1).join(' ') : content.name, taken)
     ids.set(box.id, id)
-    lines.push(`  class ${id} {`)
+    const [first = '', ...others] = content.name.split(/\r?\n/)
+    const note = /^«(.+)»$/.exec(first.trim())
+    const display = (note ? others : [first, ...others]).map((part) => part.trim()).filter(Boolean).join(' ').replace(/"/g, "'")
+    lines.push(display && display.replace(/[<>]/g, '~') !== id ? `  class ${id}["${display}"] {` : `  class ${id} {`)
+    if (note) lines.push(`    <<${note[1].trim()}>>`)
     for (const member of [...content.attributes.split(/\r?\n/), ...content.methods.split(/\r?\n/)]) {
       const line = member.replace(/\s+/g, ' ').trim()
       if (line) lines.push(`    ${line}`)
@@ -94,9 +99,9 @@ function classDiagram(items: readonly CanvasItem[], classBoxes: RectangleObject[
       case 'realization': line = `${marked} <|.. ${other}`; break
       case 'composition': line = `${marked} *-- ${other}`; break
       case 'aggregation': line = `${marked} o-- ${other}`; break
-      case 'directed-association': line = `${other} --> ${marked}`; break
+      case 'directed-association': line = connector.twoWay === true ? `${from} <--> ${to}` : `${other} --> ${marked}`; break
       case 'dependency': line = `${other} ..> ${marked}`; break
-      default: line = `${from} -- ${to}`
+      default: line = `${from} ${connector.dash === 'dashed' ? '..' : '--'} ${to}`
     }
     lines.push(`  ${line}${label ? ` : ${label}` : ''}`)
     links += 1

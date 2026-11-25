@@ -3667,7 +3667,7 @@ function App() {
       updateSelectedItems(textHit ? [canvasItemKey(textHit)] : codeHit ? [canvasItemKey(codeHit)] : connector ? [canvasItemKey(connector)] : [])
       renderAll()
       // A press on the label of a connector that was not selected selects it and starts the label drag (a plain click only selects).
-      if (connector && !textHit && !codeHit && !rectangle && (event.pointerType !== 'mouse' || event.button === 0) && startConnectorHandleGesture(event, point, true)) return
+      if (connector && !textHit && !codeHit && !rectangle && (event.pointerType !== 'mouse' || event.button === 0) && !duplicatePress(event) && expandSelectionState({ keys: [canvasItemKey(connector)], rectangleId: null }).keys.length === 1 && startConnectorHandleGesture(event, point, true)) return
       const selectedItem = textHit ?? codeHit ?? rectangle ?? connector
       if (!selectedItem) return
       // A member of a group selects the whole group and a drag moves every member (mouse, pen and touch alike).
@@ -4651,8 +4651,8 @@ function App() {
     const mermaidText = full.slice(0, MAX_MERMAID_TEXT)
     if (isMermaidText(mermaidText)) {
       const parsed = buildMermaidDiagram(mermaidText)
-      // Needs at least one link, otherwise it is just text that starts with "graph".
-      if (parsed.ok && parsed.links > 0) {
+      // A flowchart needs at least one link, otherwise it is just text that starts with "graph"; a class or sequence header is unambiguous.
+      if (parsed.ok && (parsed.links > 0 || ((parsed.kind === 'class' || parsed.kind === 'sequence') && parsed.boxes > 0))) {
         const error = importMermaid(mermaidText, at)
         if (error) showToast(error)
         return true

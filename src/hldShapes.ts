@@ -70,18 +70,18 @@ const workerRadius = (w: number, h: number) => Math.max(8, Math.min(Math.min(w, 
 const workerCorner = (w: number, h: number) => Math.min(Math.min(w, h) * 0.22, 36)
 const workerGearCentre = (w: number, h: number) => workerRadius(w, h) + workerCorner(w, h) * 0.3 + 6
 
-/** Space the icon of a newer HLD shape takes inside the box: label text should stay out of it. */
+/** Space the icon of a newer HLD shape takes inside the box: label text should stay out of it. Labels are centred in the box, so insets are symmetric (each side takes the larger one). */
 export function hldIconInsets(shape: HldShape, width: number, height: number): { left: number; right: number; top: number; bottom: number } {
   const none = { left: 0, right: 0, top: 0, bottom: 0 }
   switch (shape) {
-    case 'apiGateway': return { ...none, left: gatewayStrip(width) }
-    case 'server': return { ...none, left: serverLedX(width) * 2 }
+    case 'apiGateway': { const side = gatewayStrip(width); return { ...none, left: side, right: side } }
+    case 'server': { const side = serverLedX(width) * 2; return { ...none, left: side, right: side } }
     case 'objectStorage': {
       const ry = bucketRy(height)
       return { left: bucketInset(width), right: bucketInset(width), top: ry * 1.5, bottom: ry * 1.5 }
     }
-    case 'stream': return { ...none, right: streamArrow(width), top: streamTick(height), bottom: streamTick(height) }
-    case 'worker': return { ...none, top: workerGearCentre(width, height) + workerRadius(width, height) }
+    case 'stream': { const side = streamArrow(width); return { ...none, left: side, right: side, top: streamTick(height), bottom: streamTick(height) } }
+    case 'worker': { const band = workerGearCentre(width, height) + workerRadius(width, height); return { ...none, top: band, bottom: band } }
     default: return none
   }
 }

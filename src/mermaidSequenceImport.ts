@@ -130,7 +130,11 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
     if (step.kind !== 'message') continue
     const a = Math.min(column.get(step.from) as number, column.get(step.to) as number)
     const b = Math.max(column.get(step.from) as number, column.get(step.to) as number)
-    if (a === b) continue
+    if (a === b) {
+      // A self message draws its label to the right of the loop: it must end before the next lifeline.
+      if (a < gaps.length) gaps[a] = Math.max(gaps[a], LOOP_WIDTH + 16 + labelWidth(step))
+      continue
+    }
     const span = gaps.slice(a, b).reduce((sum, gap) => sum + gap, 0)
     const need = labelWidth(step)
     if (span < need) for (let index = a; index < b; index += 1) gaps[index] += (need - span) / (b - a)

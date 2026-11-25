@@ -152,7 +152,7 @@ test('class-only page becomes a classDiagram with members', () => {
   assert.equal(r.kind, 'class')
   assert.equal(r.text, [
     'classDiagram', '  class Order {', '    +id: int', '    -total: Money', '    +pay(): void', '  }',
-    '  class Order_Item {', '  }', '  class Repo~T~ {', '  }', '  class Order_2 {', '  }', '',
+    '  class Order_Item["Order Item"] {', '  }', '  class Repo~T~ {', '  }', '  class Order_2["Order"] {', '  }', '',
   ].join('\n'))
   assert.equal(r.boxes, 4)
   assert.equal(r.skipped, false)

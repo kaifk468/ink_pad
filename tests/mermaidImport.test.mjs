@@ -250,7 +250,7 @@ test('wiring: paste guards, full-text Mermaid detection, handled errors, dialog 
   assert.match(app, /pasteEventRef\.current = \(event\) => \{[\s\S]{0,700}if \(canvasCommandBlocked\(\)\) return\n    event\.preventDefault\(\)/)
   assert.match(app, /const mermaidText = full\.slice\(0, MAX_MERMAID_TEXT\)/)
   assert.match(app, /const text = full\.slice\(0, 2000\)/)
-  assert.match(app, /parsed\.ok && parsed\.links > 0\) \{\n\s+const error = importMermaid\(mermaidText, at\)\n\s+if \(error\) showToast\(error\)\n\s+return true/)
+  assert.match(app, /parsed\.ok && \(parsed\.links > 0 \|\| [^\n]*\)\) \{\n\s+const error = importMermaid\(mermaidText, at\)\n\s+if \(error\) showToast\(error\)\n\s+return true/)
   assert.doesNotMatch(app, /setTemplateChooserOpen\(false\)\n    setMermaidOpen\(false\)\n    if \(!canvas/)
   assert.match(app, /Could not insert the diagram\.'\n\s+setMermaidOpen\(false\)/)
   assert.match(app, /if \(!tap \|\| !tapUndoRef\.current\) return\n[^\n]*\n\s+if \(editingBlocksCanvas\(\)\) return/)

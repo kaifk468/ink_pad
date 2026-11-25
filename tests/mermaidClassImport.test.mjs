@@ -12,7 +12,7 @@ const ok = (text) => {
   return r
 }
 const cls = (g, id) => g.classes.find((c) => c.id === id)
-const rel = (r) => [r.from, r.to, r.type, r.dashed]
+const rel = (r) => [r.from, r.to, r.type, r.dashed, ...(r.twoWay ? ['twoWay'] : [])]
 
 test('classes, bodies, member lines, methods vs attributes', () => {
   const g = ok('classDiagram\nclass A\nclass B {\n  +name: String\n  -count int\n  +run() void\n  +add(x, y)$ int\n}\nA : +id: int\nA : +go()\nC : +x')
@@ -59,7 +59,7 @@ test('relationship mapping: connector start -> end', () => {
     ['B <.. A', ['A', 'B', 'dependency', false]],
     ['A -- B', ['A', 'B', 'association', false]],
     ['A .. B', ['A', 'B', 'association', true]],
-    ['A <--> B', ['A', 'B', 'association', false]],
+    ['A <--> B', ['A', 'B', 'directed-association', false, 'twoWay']],
   ]
   for (const [line, expected] of cases) assert.deepEqual(rel(ok(`classDiagram\n${line}`).relations[0]), expected, line)
 })

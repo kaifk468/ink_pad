@@ -48,7 +48,7 @@ export function shapeInnerArea(shape: RectangleObject): FitArea {
   return { width: Math.max(0, area.width - PAD * 2), height: Math.max(0, area.height - PAD * 2) }
 }
 
-function isFitShape(item: CanvasItem): item is RectangleObject {
+export function isFitShape(item: CanvasItem): item is RectangleObject {
   if (item.kind !== 'rectangle' || item.classBox) return false
   if (item.hldShape) return !!item.inkBox
   return !item.inkBox

@@ -1,7 +1,7 @@
 import { CanvasSnapshotHistory, canvasItemKey, isItemLocked, resizeRectangleItems, type CanvasItem, type RectangleObject, type TextObject } from './canvasModel'
 import { fitClassBoxBounds, normalizeClassBoxContent, type FontMeasure } from './classBoxLayout'
 import { cleanConnectorLabel, setConnectorLabel } from './connectorLabel'
-import { contains, refitLabelToShape, type MeasureFor } from './textFit'
+import { contains, isFitShape, refitLabelToShape, type MeasureFor } from './textFit'
 import { isBlankText, keepAlignAnchor, updateTextObject } from './textLayout'
 
 export type ReplaceOptions = {
@@ -27,12 +27,12 @@ export function replaceInText(text: string, query: string, replacement: string):
   return { text: next, count }
 }
 
-/** The topmost shape under the label centre that is a plain shape (class boxes and ink boxes do not auto-fit labels). */
+/** The topmost shape under the label centre that is a fit shape (a plain box or an HLD shape; class boxes and plain ink boxes do not auto-fit labels). */
 function shapeUnder(items: readonly CanvasItem[], label: TextObject): RectangleObject | null {
   const anchor = { x: label.x + label.width / 2, y: label.y + label.height / 2 }
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index]
-    if (item.kind === 'rectangle' && contains(item, anchor)) return item.classBox || item.inkBox ? null : item
+    if (item.kind === 'rectangle' && contains(item, anchor)) return isFitShape(item) ? item : null
   }
   return null
 }
