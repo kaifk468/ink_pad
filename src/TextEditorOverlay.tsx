@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { TextAlign, TextFontId } from './canvasModel'
 import { TEXT_LINE_HEIGHT, measureTextSize, textFontFamily, type TextMeasure } from './textLayout'
+import { continueList, minimalEdit } from './listContinuation'
 import { editorFit, type FitEditorState } from './textFit'
 
 export type TextEditorState = {
@@ -62,6 +63,43 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
   }, [])
   useEffect(() => { onChange(editor.initialText) }, [])
 
+  // Enter on a list line continues (or ends) the list. Returns true when the key was consumed.
+  const skipBeforeInput = useRef(false)
+  const editorRef = useRef(editor)
+  editorRef.current = editor
+  const applyListEnter = (field: HTMLTextAreaElement): boolean => {
+    const result = continueList(field.value, field.selectionStart, field.selectionEnd)
+    if (!result) return false
+    const edit = minimalEdit(field.value, result.value)
+    field.setSelectionRange(edit.from, edit.to)
+    // execCommand keeps the browser's own undo stack and fires the input event React listens to.
+    let done = false
+    try { done = edit.text ? document.execCommand('insertText', false, edit.text) : document.execCommand('delete') } catch { done = false }
+    if (!done || field.value !== result.value) {
+      field.setRangeText(edit.text, edit.from, edit.to, 'end')
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    field.setSelectionRange(result.caret, result.caret)
+    return true
+  }
+  // Android on-screen keyboards often send no usable keydown Enter, only beforeinput.
+  useEffect(() => {
+    const field = fieldRef.current
+    if (!field) return
+    const onBeforeInput = (event: InputEvent) => {
+      if (event.inputType !== 'insertLineBreak' && event.inputType !== 'insertParagraph') return
+      if (skipBeforeInput.current) { skipBeforeInput.current = false; return }
+      if (event.isComposing || !event.cancelable || editorRef.current.connectorId !== undefined) return
+      if (continueList(field.value, field.selectionStart, field.selectionEnd)) {
+        event.preventDefault()
+        skipBeforeInput.current = true
+        try { applyListEnter(field) } finally { skipBeforeInput.current = false }
+      }
+    }
+    field.addEventListener('beforeinput', onBeforeInput)
+    return () => field.removeEventListener('beforeinput', onBeforeInput)
+  }, [])
+
   return (
     <textarea
       ref={fieldRef}
@@ -91,7 +129,15 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
       onKeyDown={(event) => {
         if (event.key === 'Escape') { event.preventDefault(); onCancel() }
         else if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229 && (event.ctrlKey || event.metaKey || (editor.connectorId !== undefined && !event.shiftKey))) { event.preventDefault(); onCommit() }
+        else if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+          // Plain Enter inserts a newline here (connector labels commit above), so it may continue a list.
+          if (editor.connectorId === undefined && applyListEnter(event.currentTarget)) event.preventDefault()
+        } else if (event.key === 'Enter') {
+          // Shift/Alt+Enter is a plain line break; the beforeinput path must not continue the list for it.
+          skipBeforeInput.current = true
+        }
       }}
+      onKeyUp={(event) => { if (event.key === 'Enter') skipBeforeInput.current = false }}
     />
   )
 }
