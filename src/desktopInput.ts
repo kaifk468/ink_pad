@@ -195,6 +195,7 @@ export type KeyCommand =
   | { kind: 'zoomReset' }
   | { kind: 'zoomFit' }
   | { kind: 'zoomSelection' }
+  | { kind: 'focus' }
   | { kind: 'pagePrev' }
   | { kind: 'pageNext' }
   | { kind: 'help' }
@@ -290,6 +291,8 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
   if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
     if (event.code === 'Digit1' || event.code === 'Numpad1') return event.repeat ? null : { kind: 'zoomFit' }
     if (event.code === 'Digit2' || event.code === 'Numpad2') return event.repeat ? null : { kind: 'zoomSelection' }
+    // Shift+F fades everything not linked to the selection (focus mode).
+    if (event.code === 'KeyF') return event.repeat ? null : { kind: 'focus' }
   }
   // Alt+Z hides or shows the toolbars (present mode). The physical key decides: Alt changes `key` on a Mac.
   if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.code === 'KeyZ' || (!event.code && key === 'z'))) return event.repeat ? null : { kind: 'presentMode' }
@@ -541,7 +544,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
 }
 
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'exportPng' | 'exportSvg'
-  | 'editText' | 'zoomSelection' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps' | 'saveTemplate'
+  | 'editText' | 'zoomSelection' | 'focus' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps' | 'saveTemplate'
   | 'sameWidth' | 'sameHeight' | 'sameSize' | 'addBoundary' | 'selectConnected' | 'arrowBothEnds' | 'arrowOneEnd' | 'cornersRound' | 'cornersSharp'
   | `shape:${string}`
 export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select' | 'flow'
@@ -617,6 +620,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     ...(canGroup ? [entry('group', 'Group', 'Ctrl+G', 'arrange', true, 'Group', 'Selection')] : []),
     ...(canUngroup ? [entry('ungroup', 'Ungroup', 'Ctrl+Shift+G', 'arrange', true, 'Ungroup', 'Selection')] : []),
     entry('zoomSelection', 'Zoom to selection', 'Shift+2', 'arrange', hasSelection, 'Zoom', 'Selection'),
+    entry('focus', 'Focus on selection (fade the rest)', 'Shift+F', 'arrange', hasSelection, 'Focus', 'Selection'),
     ...(hasSelection && !lockedTarget ? [entry('lock', 'Lock', 'Ctrl+Shift+L', 'arrange', true, 'Lock', 'Selection')] : []),
     ...(lockedTarget ? [entry('unlock', 'Unlock', '', 'arrange', true)] : []),
     ...(!hasSelection && !lockedTarget && anyLocked ? [entry('unlockAll', 'Unlock all', '', 'arrange', true)] : []),

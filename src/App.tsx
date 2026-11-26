@@ -12,6 +12,7 @@ import { similarItemKeys } from './selectSimilar'
 import { canSameSize, sameSizeItems, type SameSizeMode } from './sameSize'
 import { addBoundary } from './boundary'
 import { canSelectConnected, connectedKeys, linkedKeys } from './selectConnected'
+import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
 import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeChoice } from './changeShape'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
@@ -223,7 +224,7 @@ function App() {
   // Where the browser predicts the pen will be in the next few milliseconds (drawn ahead of the ink, never saved).
   const predictedPointsRef = useRef<Point[]>([])
   const drawModeRef = useRef<DrawMode>(DIRECT_MAX_VISIBLE_POINTS <= 0 ? 'cached' : 'direct')
-  const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
+  const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number; focus: ReadonlySet<string> | null } | null>(null)
   const minimapRenderedAtRef = useRef(0)
   // What the saved minimap ink picture was drawn for (canvas size and map geometry); the ink is redrawn when this changes.
   const minimapInkKeyRef = useRef('')
@@ -374,6 +375,12 @@ function App() {
   // Laser pointer (transient presenting tool): the trail lives only in these refs and on its own overlay canvas, never in items, history or the saved diagram.
   // Present mode: one class on the app root hides the dock, panels, top bar, minimap, page and zoom controls. Plain state, never saved.
   const [presentMode, setPresentMode] = useState(false)
+  // Focus mode (view only, never saved): focusRef holds the keys drawn faded (null = off, the normal path); the kept keys decide when it ends.
+  const [focusActive, setFocusActive] = useState(false)
+  const focusRef = useRef<ReadonlySet<string> | null>(null)
+  const focusKeptRef = useRef<ReadonlySet<string> | null>(null)
+  const focusDrawnRef = useRef(new Set<CanvasItem>())
+  const focusCheckedItemsRef = useRef<CanvasItem[] | null>(null)
   const presentModeRef = useRef(false)
   presentModeRef.current = presentMode
   const [laserMode, setLaserMode] = useState(false)
@@ -906,6 +913,28 @@ function App() {
     for (const point of points) laserTrailRef.current = addLaserPoint(laserTrailRef.current, point.clientX, point.clientY, now)
     if (laserFrameRef.current === null) laserFrameRef.current = requestAnimationFrame(drawLaser)
   }
+  const exitFocus = () => {
+    if (focusRef.current === null) return
+    focusRef.current = null
+    focusKeptRef.current = null
+    focusCheckedItemsRef.current = null
+    setFocusActive(false)
+    historyCacheRef.current = null
+    renderAll()
+  }
+  // Another page or another diagram: the focus belongs to the page it was started on.
+  useEffect(() => { exitFocus() }, [pageIndex, currentDocId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const startFocus = (): boolean => {
+    const kept = focusSet(strokesRef.current, currentSelectionKeys())
+    if (kept.size === 0) { showToast('Select something to focus on'); return false }
+    focusKeptRef.current = kept
+    focusRef.current = fadedKeysOf(strokesRef.current, kept)
+    focusCheckedItemsRef.current = strokesRef.current
+    setFocusActive(true)
+    historyCacheRef.current = null
+    renderAll()
+    return true
+  }
   const togglePresentMode = () => {
     setOptionsFor(null); setEraserMenuOpen(false)
     setPresentMode((value) => !value)
@@ -1264,7 +1293,10 @@ function App() {
 
   setConnectorLabelBackground(PAGE_BACKGROUND_COLORS[pageBackground])
   const drawItem = useCallback((ctx: CanvasRenderingContext2D, item: CanvasItem) => {
-    drawItemToCanvas(ctx, item, strokeDisplayMode, sketchy)
+    const faded = focusRef.current
+    // Focus on: a faded box that several connectors redraw is drawn once (a second faded pass would darken it). Off: nothing extra.
+    if (faded !== null && faded.has(canvasItemKey(item))) { if (focusDrawnRef.current.has(item)) return; focusDrawnRef.current.add(item) }
+    drawItemToCanvas(ctx, item, strokeDisplayMode, sketchy, faded)
   }, [strokeDisplayMode, sketchy])
 
   const drawMinimapItems = useCallback((ctx: CanvasRenderingContext2D, geometry: MinimapGeometry) => {
@@ -2193,6 +2225,13 @@ function App() {
     const nothingEdited = editingTextId === null && editingCodeId === null
     const items = strokesRef.current
     const liveStroke = activeStrokeRef.current
+    // Focus ends when every kept item is gone (checked only when the items changed, never while a stroke is being written).
+    if (focusKeptRef.current !== null && liveStroke === null && focusCheckedItemsRef.current !== items) {
+      focusCheckedItemsRef.current = items
+      const remaining = pruneFocus(items, focusKeptRef.current)
+      if (remaining === null) { focusRef.current = null; focusKeptRef.current = null; focusCheckedItemsRef.current = null; historyCacheRef.current = null; setFocusActive(false) }
+      else focusKeptRef.current = remaining
+    }
     const penStrokeFrame = !benchmarkBackground && nothingEdited && liveStroke !== null && liveStroke.kind === 'stroke' && !liveStroke.erase
     const gestureFrame = !benchmarkBackground && nothingEdited && viewportGestureRef.current
     // The picture of everything already on the page is kept between frames and between strokes. A finished pen stroke is
@@ -2224,7 +2263,7 @@ function App() {
     const cache = historyCacheRef.current
     const historyLayerNow = historyLayerRef.current
     const cacheBase = cacheAllowed && cache !== null && historyLayerNow !== null
-      && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height && cache.mode === strokeDisplayMode
+      && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height && cache.mode === strokeDisplayMode && cache.focus === focusRef.current
     const viewportSame = cacheBase && cache!.scale === viewport.scale && cache!.offsetX === viewport.offsetX && cache!.offsetY === viewport.offsetY
     let itemsMatch = cacheBase && sameItems(cache!.snapshot, items, items.length)
     // One item added on top since the picture was made (a stroke, or a recognized rectangle or line, a connector, a text
@@ -2371,6 +2410,7 @@ function App() {
       target.restore()
     } else {
       const redrawStartedAt = DRAW_READOUT_ENABLED && cacheAllowed ? performance.now() : 0
+      if (focusRef.current !== null) focusDrawnRef.current.clear() // focus on: faded items are drawn once per full redraw (see drawItem)
       canvasItemsForRendering(routeConnectors(items)).forEach((item) => { if (!isItemVisible(item, view)) return; if ((editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) && (editingCodeId === null || item.kind !== 'code' || item.id !== editingCodeId)) drawItem(target, item) })
       if (redrawStartedAt) {
         // Time of this full redraw (zoom, pan, undo, erase, opening a diagram): JS drawing time, and time until the next frame starts.
@@ -2387,7 +2427,7 @@ function App() {
           historyContext.setTransform(1, 0, 0, 1, 0, 0)
           historyContext.clearRect(0, 0, historyLayer.width, historyLayer.height)
           historyContext.drawImage(inkLayer, 0, 0)
-          historyCacheRef.current = { snapshot: items.slice(), mode: strokeDisplayMode, scale: viewport.scale, offsetX: viewport.offsetX, offsetY: viewport.offsetY, dpr, width: canvas.width, height: canvas.height }
+          historyCacheRef.current = { snapshot: items.slice(), mode: strokeDisplayMode, scale: viewport.scale, offsetX: viewport.offsetX, offsetY: viewport.offsetY, dpr, width: canvas.width, height: canvas.height, focus: focusRef.current }
         }
       } else {
         historyCacheRef.current = null
@@ -4965,6 +5005,7 @@ function App() {
       case 'selectAll': selectAllItems(); break
       case 'selectSimilar': selectSimilarItems(); break
       case 'selectConnected': selectConnectedItems(false); break
+      case 'focus': startFocus(); break
       case 'addBoundary': addBoundaryAroundSelection(); break
       case 'sameWidth': sameSizeSelection('width'); break
       case 'sameHeight': sameSizeSelection('height'); break
@@ -5158,6 +5199,8 @@ function App() {
       ]
     })(),
     ...(currentSelectionKeys().size > 0 ? [{ id: 'arrange:boundary', label: 'Add boundary', group: 'Arrange', keywords: 'frame group box around zone region trust', run: () => { addBoundaryAroundSelection() } }] : []),
+    ...(currentSelectionKeys().size > 0 ? [{ id: 'view:focus', label: 'Focus on selection', group: 'View', keywords: 'fade dim highlight spotlight present explain isolate linked', run: () => { startFocus() } }] : []),
+    ...(focusActive ? [{ id: 'view:focus-exit', label: 'Exit focus', group: 'View', keywords: 'focus fade dim leave stop', run: exitFocus }] : []),
     ...(canSelectConnected(strokesRef.current, currentSelectionKeys()) ? [
       { id: 'select:connected', label: 'Select connected', group: 'Select', keywords: 'neighbours arrows linked attached boxes', run: () => { selectConnectedItems(false) } },
       { id: 'select:linked', label: 'Select all linked', group: 'Select', keywords: 'transitive reachable chain connected everything arrows', run: () => { selectConnectedItems(true) } },
@@ -5338,6 +5381,8 @@ function App() {
     if (command.kind === 'deselect') {
       // Esc leaves the laser first (it has no selection or gesture of its own).
       if (laserModeRef.current && !cancelableGesture) { leaveLaser(); return true }
+      // Then focus mode ends (before the selection is cleared); a drag in progress is cancelled first.
+      if (focusRef.current !== null && !cancelableGesture && !gestureActive && touchNav.touchCount() === 0) { exitFocus(); return true }
       const action = escapeAction({ cancelableGesture, anyGesture: gestureActive || touchNav.touchCount() > 0, hasSelection: selectedKeysRef.current.size > 0 || selectedRectangleIdRef.current !== null })
       if (action === 'cancelGesture') return cancelActiveGesture()
       if (action === 'none') {
@@ -5360,6 +5405,7 @@ function App() {
       case 'zoomReset': zoomToActualSize(); return true
       case 'zoomFit': zoomToFitDesktop(); return true
       case 'zoomSelection': zoomToSelection(); return true
+      case 'focus': return startFocus()
       case 'pagePrev': goToPage(pageIndexRef.current - 1); return true
       case 'pageNext': goToPage(pageIndexRef.current + 1); return true
       case 'presentMode': togglePresentMode(); return true
@@ -5691,7 +5737,7 @@ function App() {
         corners={(() => { const choice = cornersChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { rounded: choice === 'sharp', onChange: setSelectedCorners } })()}
         changeShape={(() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })()}
         sameSize={canSameSize(strokesRef.current, currentSelectionKeys()) ? { onSameSize: (mode) => { sameSizeSelection(mode) } } : null}
-        boundaryTools={currentSelectionKeys().size > 0 ? { onAddBoundary: () => { addBoundaryAroundSelection() }, onSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()) ? () => { selectConnectedItems(false) } : null } : null}
+        boundaryTools={currentSelectionKeys().size > 0 ? { onFocus: () => { startFocus() }, onAddBoundary: () => { addBoundaryAroundSelection() }, onSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()) ? () => { selectConnectedItems(false) } : null } : null}
         selectionTools={inputMode !== 'desktop' && currentSelectionKeys().size > 0 ? (() => {
           const keys = currentSelectionKeys()
           const sole = soleSelectedKey()
@@ -5802,6 +5848,7 @@ function App() {
         onPageOverview={() => setPageOverviewOpen(true)}
         canDuplicatePage={canAddPage(pageCount)}
       />
+      {focusActive && <button className="focus-chip" type="button" title="Exit focus (Esc)" onClick={exitFocus}>Focused · Exit</button>}
       {presentMode && <button className="show-toolbars-pill" type="button" title="Show the toolbars (Alt+Z or Esc)" onClick={() => setPresentMode(false)}>Show toolbars</button>}
       {classBoxEditor && <ClassBoxDialog
         key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}

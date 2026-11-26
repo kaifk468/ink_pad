@@ -1,4 +1,4 @@
-import { rectangleSideMidpoints, connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, strokeHeadGeometry, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, itemAngle, rotatedItemBounds } from '../canvasModel'
+import { canvasItemKey, rectangleSideMidpoints, connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, strokeHeadGeometry, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, itemAngle, rotatedItemBounds } from '../canvasModel'
 import { hldOutlinePath } from '../hldShapes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextFontId, TextObject } from '../canvasModel'
 import { filterDisplayPoints } from '../oneEuroFilter'
@@ -13,6 +13,7 @@ import type { MinimapGeometry } from '../viewport'
 import { isSketchyRectangle } from '../sketchy'
 import { drawSketchyConnector, fillRectangle, strokeSketchyRectangle, strokeSketchyStroke } from './sketchyRender'
 import { drawCode, drawOpaque } from './codeRenderer'
+import { FOCUS_FADE_ALPHA } from '../focusMode'
 
 /** Canvas drawing for every item kind. Pure functions of (context, item, settings): no React state. */
 
@@ -458,7 +459,18 @@ export function drawConnectorEndLabels(ctx: CanvasRenderingContext2D, connector:
   ctx.restore()
 }
 
-export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, strokeDisplayMode: StrokeDisplayMode, sketchy = false): void {
+/**
+ * Draws one item. `focusFaded` is the focus-mode set of keys to draw faded (null when focus is off, the normal case: nothing extra happens).
+ * Ink added after focus started is not in it, so a live or new stroke is never faded.
+ */
+export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, strokeDisplayMode: StrokeDisplayMode, sketchy = false, focusFaded: ReadonlySet<string> | null = null): void {
+  if (focusFaded !== null && focusFaded.has(canvasItemKey(item))) {
+    ctx.save()
+    ctx.globalAlpha *= FOCUS_FADE_ALPHA
+    drawItem(ctx, item, strokeDisplayMode, sketchy)
+    ctx.restore()
+    return
+  }
   if (item.kind === 'rectangle') drawRectangle(ctx, item, strokeDisplayMode, sketchy)
   else if (item.kind === 'text') drawText(ctx, item)
   else if (item.kind === 'connector') { drawConnector(ctx, item, item.strokeColor, item.strokeWidth, sketchy); drawConnectorLabel(ctx, item); drawConnectorEndLabels(ctx, item) }

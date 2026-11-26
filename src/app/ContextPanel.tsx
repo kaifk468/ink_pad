@@ -95,7 +95,7 @@ type ContextPanelProps = {
   /** Same size (2+ boxes selected, desktop and tablet): the largest width / height wins. */
   sameSize?: { onSameSize: (mode: 'width' | 'height' | 'both') => void } | null
   /** Add boundary (any selection) and Select connected (one box with connectors), desktop and tablet. */
-  boundaryTools?: { onAddBoundary: () => void; onSelectConnected: (() => void) | null } | null
+  boundaryTools?: { onFocus: () => void; onAddBoundary: () => void; onSelectConnected: (() => void) | null } | null
   arrange?: { canAlign: boolean; canDistribute: boolean; onAlign: (op: AlignOp) => void; onDistribute: (op: DistributeOp) => void } | null
   objectEraser?: boolean
   eraserSize?: number
@@ -292,6 +292,7 @@ export function ContextPanel(props: ContextPanelProps) {
         </div>
       </div>}
       {props.boundaryTools && <div className="selection-actions boundary-tools" role="group" aria-label="Boundary and connections">
+        <button className="clear-selection-button" type="button" aria-label="Focus on selection" title="Fade everything not linked to the selection (view only; Esc exits)" onClick={props.boundaryTools.onFocus}>Focus</button>
         <button className="clear-selection-button" type="button" aria-label="Add boundary" title="Draw a dashed boundary box around the selection" onClick={props.boundaryTools.onAddBoundary}>Add boundary</button>
         {props.boundaryTools.onSelectConnected && <button className="clear-selection-button" type="button" aria-label="Select connected" title="Select this box, its arrows and the boxes at their other ends" onClick={props.boundaryTools.onSelectConnected}>Select connected</button>}
       </div>}
