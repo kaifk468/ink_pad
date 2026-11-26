@@ -93,3 +93,17 @@ test('diamond: rectangles, rough squares and circles are not diamonds', () => {
   const round = recognition.recognizeClosedShapeStroke(stroke(circle), 5)
   assert.ok(round?.ellipse && !round.diamond)
 })
+
+test('a pen end deep inside a box attaches to the middle of the side facing the other end (round 8 walk)', () => {
+  // boxes 160x100 like the walk; the line ends equally far from the top, bottom and left of box 2
+  const wide = [box(1, 300, 200, 160, 100), box(2, 700, 200, 160, 100)]
+  const line = pen.penConnectorFor(wide, 'line', p(420, 250), p(750, 250), style, 36)
+  assert.equal(line.startAttachment.rectangleId, 1)
+  assert.deepEqual([line.startAttachment.offsetX, line.startAttachment.offsetY], [160, 50])
+  assert.deepEqual([line.endAttachment.offsetX, line.endAttachment.offsetY], [0, 50])
+  // a box below: the facing side is the top
+  const stacked = [box(1, 0, 0, 160, 100), box(2, 0, 300, 160, 100)]
+  const down = pen.penConnectorFor(stacked, 'arrow', p(80, 50), p(30, 330), style, 36)
+  assert.deepEqual([down.startAttachment.offsetX, down.startAttachment.offsetY], [80, 100])
+  assert.deepEqual([down.endAttachment.offsetX, down.endAttachment.offsetY], [80, 0])
+})
