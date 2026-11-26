@@ -178,7 +178,7 @@ test('without markers: detection', () => {
   assert.equal(isPlantUmlText(SEQUENCE_SAMPLE), true)
   assert.equal(isPlantUmlText('class Foo\nclass Bar\nFoo <|-- Bar'), true)
   assert.equal(isPlantUmlText('participant Alice\nAlice -> Bob: hi'), true)
-  assert.equal(isPlantUmlText('interface Repo {\n  +find()\n}'), true)
+  assert.equal(isPlantUmlText('interface Repo {\n  +find()\n}'), false, 'a lone unmarked declaration with a body could be code (round 8)')
   assert.equal(isPlantUmlText("' c\n@startuml\nA -> B\n@enduml"), true)
 })
 
@@ -222,4 +222,15 @@ test('wiring: dialog text and palette keywords mention PlantUML; paste uses the 
   assert.match(dialog, /PlantUML class and sequence/)
   assert.match(app, /id: 'mermaid:insert'[^\n]*plantuml/)
   assert.match(app, /isMermaidText\(mermaidText\)/)
+})
+
+test('round 8 fix: unmarked TypeScript, Java and Kotlin code stays plain text; marked or linked PlantUML still imports', () => {
+  const ts = 'interface Props {\n  name: string\n  age: number\n}'
+  const java = 'class Order {\n  private int id;\n  public void pay() {\n  }\n}'
+  const kotlin = 'enum Color {\n  RED,\n  GREEN\n}'
+  const tsClass = 'class Cart {\n  items: string[] = []\n}'
+  for (const code of [ts, java, kotlin, tsClass]) assert.equal(isPlantUmlText(code), false, code)
+  assert.equal(isPlantUmlText('@startuml\nclass Order {\n  +id: int\n}\n@enduml'), true)
+  assert.equal(isPlantUmlText('class A\nclass B\nA --> B'), true)
+  assert.equal(isPlantUmlText('class A {\n}\nclass B {\n}'), true)
 })

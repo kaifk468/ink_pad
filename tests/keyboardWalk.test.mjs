@@ -3,7 +3,7 @@ import test from 'node:test'
 import { loadModule } from './helpers/loadModule.mjs'
 import { readAppSource } from './helpers/appSource.mjs'
 
-const { walkOrder, walkStep, linkedNeighbour, revealViewport } = await loadModule('keyboardWalk.ts')
+const { walkOrder, walkStep, walkCurrentKey, linkedNeighbour, revealViewport } = await loadModule('keyboardWalk.ts')
 const { keyCommand, ALWAYS_PREVENT_DEFAULT_COMMANDS } = await loadModule('desktopInput.ts')
 const { DESKTOP_SHORTCUTS } = await loadModule('desktopShortcuts.ts')
 const app = await readAppSource()
@@ -23,15 +23,36 @@ test('reading order: rows top to bottom, left to right; ink, locked and erase ar
   assert.deepEqual(walkOrder([]), [])
 })
 
-test('Tab / Shift+Tab step and wrap; nothing selected starts at the first / last', () => {
+test('Tab / Shift+Tab step without wrapping; nothing selected starts at the first / last; past the ends leaves', () => {
   const items = [box(1, 0, 0), box(2, 200, 0), box(3, 400, 0)]
-  assert.equal(walkStep(items, null, 1), 'rectangle:1')
-  assert.equal(walkStep(items, null, -1), 'rectangle:3')
-  assert.equal(walkStep(items, 'rectangle:1', 1), 'rectangle:2')
-  assert.equal(walkStep(items, 'rectangle:3', 1), 'rectangle:1')
-  assert.equal(walkStep(items, 'rectangle:1', -1), 'rectangle:3')
-  assert.equal(walkStep(items, 'gone:9', 1), 'rectangle:1')
+  assert.deepEqual(walkStep(items, null, 1), { key: 'rectangle:1' })
+  assert.deepEqual(walkStep(items, null, -1), { key: 'rectangle:3' })
+  assert.deepEqual(walkStep(items, 'rectangle:1', 1), { key: 'rectangle:2' })
+  assert.deepEqual(walkStep(items, 'rectangle:3', 1), { leave: true })
+  assert.deepEqual(walkStep(items, 'rectangle:1', -1), { leave: true })
+  assert.deepEqual(walkStep(items, 'gone:9', 1), { key: 'rectangle:1' })
   assert.equal(walkStep([stroke(1)], null, 1), null)
+})
+
+test('walking skips the other members of the current group and continues from the walked key', () => {
+  const items = [box(1, 0, 0), box(2, 200, 0, 100, 60, { group: 7 }), box(3, 400, 0, 100, 60, { group: 7 }), box(4, 600, 0)]
+  assert.deepEqual(walkStep(items, 'rectangle:2', 1), { key: 'rectangle:4' })
+  assert.deepEqual(walkStep(items, 'rectangle:3', -1), { key: 'rectangle:1' })
+  assert.deepEqual(walkStep(items, 'rectangle:1', 1), { key: 'rectangle:2' })
+  const group = new Set(['rectangle:2', 'rectangle:3'])
+  assert.equal(walkCurrentKey(items, group, 'rectangle:2'), 'rectangle:2', 'the selection is the walked key whole group')
+  assert.equal(walkCurrentKey(items, group, null), null)
+  assert.equal(walkCurrentKey(items, new Set(['rectangle:2']), 'rectangle:2'), 'rectangle:2', 'a lone selected key is the sole key')
+  assert.equal(walkCurrentKey(items, new Set(['rectangle:1', 'rectangle:4']), 'rectangle:1'), null)
+  assert.equal(walkCurrentKey(items, new Set(['rectangle:4']), 'rectangle:1'), 'rectangle:4', 'a click elsewhere wins over the remembered key')
+  assert.equal(walkCurrentKey(items, new Set(['rectangle:1']), 'rectangle:1'), 'rectangle:1')
+})
+
+test('walk wiring: the last walked key is tracked, leaving clears the selection and is not handled, Alt+Arrow on a button is prevented', () => {
+  assert.match(app, /walkedKeyRef/)
+  assert.match(app, /walkCurrentKey\(strokesRef\.current, currentSelectionKeys\(\), walkedKeyRef\.current\)/)
+  assert.match(app, /'leave' in result[^\n]*applySelectionState\(\{ keys: \[\], rectangleId: null \}\)[^\n]*return false/)
+  assert.match(app, /command\.kind === 'walkLinked'\) event\.preventDefault\(\); return \}/)
 })
 
 test('Alt+Arrow picks the linked box nearest the direction by angle', () => {

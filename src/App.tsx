@@ -11,7 +11,7 @@ import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dr
 import { similarItemKeys } from './selectSimilar'
 import { canSameSize, sameSizeItems, type SameSizeMode } from './sameSize'
 import { canSwapPositions, swapPositionsItems } from './swapPositions'
-import { linkedNeighbour, revealViewport, walkItemBounds, walkStep } from './keyboardWalk'
+import { linkedNeighbour, revealViewport, walkCurrentKey, walkItemBounds, walkStep } from './keyboardWalk'
 import { addBoundary } from './boundary'
 import { canSelectConnected, connectedKeys, linkedKeys } from './selectConnected'
 import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
@@ -1662,10 +1662,19 @@ function App() {
     }
     return true
   }
-  const walkTo = (step: 1 | -1): boolean => walkSelect(walkStep(strokesRef.current, soleSelectedKey(), step))
+  const walkedKeyRef = useRef<string | null>(null)
+  const walkSelectTracked = (key: string | null): boolean => { const ok = walkSelect(key); if (ok) walkedKeyRef.current = key; return ok }
+  /** Tab / Shift+Tab. Past the last (first) stop the selection is cleared and false is returned so the browser moves focus. */
+  const walkTo = (step: 1 | -1): boolean => {
+    if (!selectionMode) return false
+    const result = walkStep(strokesRef.current, walkCurrentKey(strokesRef.current, currentSelectionKeys(), walkedKeyRef.current), step)
+    if (result === null) return false
+    if ('leave' in result) { walkedKeyRef.current = null; applySelectionState({ keys: [], rectangleId: null }); return false }
+    return walkSelectTracked(result.key)
+  }
   const walkLinked = (direction: 'right' | 'left' | 'up' | 'down'): boolean => {
     const from = soleSelectedKey()
-    return from !== null && walkSelect(linkedNeighbour(strokesRef.current, from, direction))
+    return from !== null && walkSelectTracked(linkedNeighbour(strokesRef.current, from, direction))
   }
   // Select connected / Select all linked (right-click chip, palette, panel): the box, its connectors and the boxes at their other ends (all the way through, for linked). No history entry.
   const selectConnectedItems = (transitive: boolean): boolean => {
@@ -5398,8 +5407,8 @@ function App() {
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
     ...(currentSelectionKeys().size > 0 ? movePaletteEntries(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)).map((row) => ({ id: row.id, label: row.label, group: 'Pages', keywords: 'move selection send items to page', run: () => { moveSelectionToPageNow(row.target) } })) : []),
     ...pagesRef.current.flatMap((slot, index) => (slot.name ? [{ id: `page:go:${index}`, label: `Go to page: ${slot.name}`, group: 'Pages', keywords: `jump open ${index + 1}`, run: () => goToPage(index) }] : [])),
-    { id: 'select:next', label: 'Select next item', group: 'Select', keywords: 'tab walk keyboard step forward reading order', run: () => { if (!walkTo(1)) showToast('Switch to the Select tool first') } },
-    { id: 'select:previous', label: 'Select previous item', group: 'Select', keywords: 'shift tab walk keyboard step back reading order', run: () => { if (!walkTo(-1)) showToast('Switch to the Select tool first') } },
+    { id: 'select:next', label: 'Select next item', group: 'Select', keywords: 'tab walk keyboard step forward reading order', run: () => { if (!walkTo(1) && !selectionMode) showToast('Switch to the Select tool first') } },
+    { id: 'select:previous', label: 'Select previous item', group: 'Select', keywords: 'shift tab walk keyboard step back reading order', run: () => { if (!walkTo(-1) && !selectionMode) showToast('Switch to the Select tool first') } },
     ...(soleSelectedKey() !== null ? (['right', 'left', 'up', 'down'] as const).map((direction) => ({ id: `select:linked-${direction}`, label: `Select linked box: ${direction}`, group: 'Select', keywords: 'alt arrow walk neighbour connected keyboard', run: () => { if (!walkLinked(direction)) showToast('No linked box that way') } })) : []),
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
     ...(canSwapPositions(strokesRef.current, currentSelectionKeys()) ? [{ id: 'arrange:swap', label: 'Swap positions', group: 'Arrange', keywords: 'exchange switch two boxes places', run: () => { swapPositionsSelection() } }] : []),
@@ -5703,7 +5712,7 @@ function App() {
         return
       }
       // Tab and Alt+Arrow walk the items only from the canvas: on a focused button, link or panel Tab keeps moving focus.
-      if ((command.kind === 'walk' || command.kind === 'walkLinked') && !['BODY', 'CANVAS', 'MAIN', 'SECTION'].includes((target?.tagName ?? 'BODY').toUpperCase())) return
+      if ((command.kind === 'walk' || command.kind === 'walkLinked') && !['BODY', 'CANVAS', 'MAIN', 'SECTION'].includes((target?.tagName ?? 'BODY').toUpperCase())) { if (command.kind === 'walkLinked') event.preventDefault(); return } // Alt+Left/Right on a focused button must not navigate Back
       // Enter on a focused button or link activates it: only a canvas-level Enter edits.
       if (command.kind === 'edit' && ['BUTTON', 'A'].includes((target?.tagName ?? '').toUpperCase())) return
       const handled = keyActionsRef.current(command)

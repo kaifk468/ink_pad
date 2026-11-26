@@ -71,7 +71,7 @@ test('element shapes: types, fills, dashes, rounded, bound labels, arrows and bi
   assert.match(byId.b6.text, /Order[\s\S]*\+id: int[\s\S]*\+pay\(\)/)
   const arrow = byId.c1
   assert.equal(arrow.type, 'arrow')
-  assert.equal(arrow.elbowed, true)
+  assert.equal(arrow.elbowed, false, 'elbow connectors export as plain bound arrows (an elbow arrow without fixedPoint loses its bindings in Excalidraw)')
   assert.equal(arrow.strokeStyle, 'dotted')
   assert.equal(arrow.startBinding.elementId, 'r1')
   assert.equal(arrow.endBinding.elementId, 'r2')
@@ -108,7 +108,7 @@ test('round trip through the importer keeps boxes, labels and connectors', () =>
   assert.equal(connectors.length, 2)
   const calls = connectors.find((c) => c.label === 'calls')
   assert.ok(calls)
-  assert.equal(calls.routing, 'elbow')
+  assert.notEqual(calls.routing, 'elbow', 'the exported arrow is a plain bound arrow')
   assert.ok(calls.startAttachment && calls.endAttachment)
   assert.equal(connectors.filter((c) => c.twoWay).length, 1)
   assert.equal(back.items.filter((i) => i.kind === 'stroke').length, 2)
@@ -148,4 +148,17 @@ test('wired into the export panel and the palette', async () => {
   assert.match(app, /id: 'export:excalidraw-copy'/)
   assert.match(app, /buildExcalidrawClipboard\(strokesRef\.current, selectionKeysWithBox\(\)\)/)
   assert.match(app, /onDownloadExcalidraw=\{downloadExcalidraw\}/)
+})
+
+test('round 8 fix: an elbow connector exports as a bound plain arrow along its routed path; a bent arrow stroke keeps every point', () => {
+  const routed = link(7, 1, 4, { routing: 'elbow', end: { x: 400, y: 350, pressure: 1 }, endAttachment: { rectangleId: 4, offsetX: 0, offsetY: 50 } }) // A (top left) to D (lower right): the routed path bends
+  const bent = { kind: 'stroke', id: 9, points: [{ x: 0, y: 0, pressure: 1 }, { x: 50, y: 0, pressure: 1 }, { x: 50, y: 80, pressure: 1 }], color: '#000', width: 3, erase: false, shape: 'arrow', arrowheads: 'end' }
+  const straight = { ...bent, id: 10, points: [bent.points[0], bent.points[2]] }
+  const byId = Object.fromEntries(buildExcalidrawElements([A, B, D, routed, bent, straight]).elements.map((e) => [e.id, e]))
+  assert.equal(byId.c7.elbowed, false)
+  assert.ok(byId.c7.points.length >= 3, 'the points follow the routed elbow path')
+  assert.equal(byId.c7.startBinding.elementId, 'r1')
+  assert.equal(byId.c7.endBinding.elementId, 'r4')
+  assert.deepEqual(byId.s9.points, [[0, 0], [50, 0], [50, 80]])
+  assert.equal(byId.s10.points.length, 2)
 })

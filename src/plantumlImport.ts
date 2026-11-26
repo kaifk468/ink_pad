@@ -385,7 +385,7 @@ function buildSequence(lines: string[]): MermaidDiagramResult {
 
 /**
  * True for PlantUML text: it starts with `@startuml`, or (without markers) its first line is a class / participant declaration and the
- * rest reads as a diagram (a link, a member body or at least two boxes, with fewer unreadable lines than readable ones).
+ * rest reads as a diagram (a relationship link or at least two boxes; a lone `{` body is not enough, with fewer unreadable lines than readable ones).
  * Plain text and Mermaid never match.
  */
 export function isPlantUmlText(text: string): boolean {
@@ -394,7 +394,8 @@ export function isPlantUmlText(text: string): boolean {
   if (lines.length < 2 || !(STRICT_CLASS_FIRST.test(lines[0]) || STRICT_SEQ_FIRST.test(lines[0]))) return false
   const built = buildPlantUml(text, lines)
   if (!built.ok) return false
-  return (built.links > 0 || built.boxes >= 2 || lines.some((line) => line.endsWith('{'))) && built.ignoredLines * 2 <= lines.length
+  // A lone `class X {` / `interface X {` is just as likely TypeScript, Java or Kotlin code: unmarked text needs a relationship arrow or two declarations.
+  return (built.links > 0 || built.boxes >= 2) && built.ignoredLines * 2 <= lines.length
 }
 
 /** Reads PlantUML class or sequence text and builds the same items the Mermaid importers build. */

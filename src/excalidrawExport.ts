@@ -226,7 +226,8 @@ function strokeElement(stroke: Stroke): El {
   const geometry = pointsRelative(points)
   if (stroke.shape === 'arrow' || stroke.shape === 'line') {
     const heads = strokeArrowheads(stroke)
-    const ends = [points[0], points[points.length - 1]]
+    // A bent arrow (3+ points, round 8) keeps every point; a straight arrow or line is its two ends.
+    const ends = stroke.shape === 'arrow' && points.length >= 3 ? points : [points[0], points[points.length - 1]]
     const two = pointsRelative(ends)
     return base(`s${stroke.id}`, stroke.shape, two.x, two.y, two.width, two.height, {
       strokeColor: stroke.color,
@@ -291,7 +292,9 @@ function connectorElements(connector: ConnectorObject, rectangleIds: ReadonlySet
     endBinding,
     startArrowhead: startHead,
     endArrowhead: endHead,
-    elbowed: connector.routing === 'elbow',
+    // Never elbowed: Excalidraw's restore drops the bindings of an elbow arrow that has no fixedPoint, so an elbow connector is written as an ordinary
+    // bound arrow whose points follow the routed path (re-importing it gives a plain polyline connector, not an elbow one).
+    elbowed: false,
     boundElements: bound.length > 0 ? bound : null,
   }, connector.group)
   // Multiplicity texts beside the ends.

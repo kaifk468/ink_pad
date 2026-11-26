@@ -40,16 +40,45 @@ export function walkOrder(items: readonly CanvasItem[]): string[] {
   return rows.flatMap((row) => row.sort((a, b) => a.cx - b.cx || a.cy - b.cy || a.kind - b.kind || a.id - b.id)).map((entry) => entry.key)
 }
 
+/** What a Tab step does: select `key`, or `leave` (the end of the order was passed: clear the selection and let the browser move focus). Null when the page has no stop. */
+export type WalkResult = { key: string } | { leave: true } | null
+
+const groupOfKey = (items: readonly CanvasItem[], key: string): number | undefined => {
+  const item = items.find((candidate) => canvasItemKey(candidate) === key)
+  return item && item.kind !== 'opaque' ? item.group : undefined
+}
+
 /**
- * The key Tab (step 1) or Shift+Tab (step -1) selects. `current` is the sole selected key, or null (nothing, or several items selected):
- * then Tab picks the first stop and Shift+Tab the last. Wraps around at the ends. Null when the page has no stop.
+ * Tab (step 1) or Shift+Tab (step -1). `current` is the walked key, or null (nothing walked): then Tab picks the first stop and Shift+Tab the last.
+ * No wrap: stepping past the last stop (or before the first) leaves the walk. Other members of the current key's group are skipped, because
+ * walking to a group member selects the whole group.
  */
-export function walkStep(items: readonly CanvasItem[], current: string | null, step: 1 | -1): string | null {
+export function walkStep(items: readonly CanvasItem[], current: string | null, step: 1 | -1): WalkResult {
   const order = walkOrder(items)
   if (order.length === 0) return null
   const index = current === null ? -1 : order.indexOf(current)
-  if (index < 0) return step === 1 ? order[0] : order[order.length - 1]
-  return order[(index + step + order.length) % order.length]
+  if (index < 0) return { key: step === 1 ? order[0] : order[order.length - 1] }
+  const group = groupOfKey(items, current as string)
+  for (let i = index + step; i >= 0 && i < order.length; i += step) {
+    if (group !== undefined && groupOfKey(items, order[i]) === group) continue
+    return { key: order[i] }
+  }
+  return { leave: true }
+}
+
+/**
+ * The key a walk step starts from. `selection` is the current selection keys; `lastWalked` the key the previous step selected. When the selection is
+ * exactly that key's group (several items after group expansion) the walk continues from it; otherwise the sole selected key, or null.
+ */
+export function walkCurrentKey(items: readonly CanvasItem[], selection: ReadonlySet<string>, lastWalked: string | null): string | null {
+  if (lastWalked !== null && selection.has(lastWalked)) {
+    const group = groupOfKey(items, lastWalked)
+    if (group === undefined) return selection.size === 1 ? lastWalked : null
+    const members = new Set<string>([lastWalked])
+    for (const item of items) if (item.kind !== 'opaque' && item.group === group && item.locked !== true) members.add(canvasItemKey(item))
+    if (members.size === selection.size && [...members].every((key) => selection.has(key))) return lastWalked
+  }
+  return selection.size === 1 ? [...selection][0] : null
 }
 
 const DIRECTION_VECTORS: Record<WalkDirection, [number, number]> = { right: [1, 0], left: [-1, 0], up: [0, -1], down: [0, 1] }
