@@ -88,7 +88,7 @@ test('Excalidraw / Mermaid system text beats in-app items unless InkPad wrote it
   assert.match(app, /clipboardRef\.current\.length > 0\) \{[\s\S]{0,400}!isOwnClipboardText\(systemText, lastWrittenTextRef\.current\) && pasteSystemText\(systemText, at, true\)\) return\s*pasteWithToast\(at\)/)
   assert.match(app, /if \(structuredOnly\) return false/)
   assert.match(app, /isTypingTarget\(target\?\.tagName \?\? 'BODY', Boolean\(target\?\.isContentEditable\)\)\) return/)
-  assert.equal((app.match(/lastWrittenTextRef\.current = text/g) ?? []).length, 2)
+  assert.equal((app.match(/lastWrittenTextRef\.current = text/g) ?? []).length, 3) // outline, Mermaid, Excalidraw copies
 })
 
 test('leftover widened-type casts are gone', async () => {

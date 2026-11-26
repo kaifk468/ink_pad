@@ -53,6 +53,7 @@ import { ContextPanel } from './app/ContextPanel'
 import { applyStyle, captureStyle, type StyleSnapshot } from './styleClipboard'
 import { clearSteps, numberSteps, stepTargets } from './flowSteps'
 import { buildMermaid } from './mermaidExport'
+import { buildExcalidrawClipboard, buildExcalidrawFile, excalidrawExportMessage, excalidrawFileName } from './excalidrawExport'
 import { selectionFillColor, selectionHasFillable, setFillColor, matchingOutline } from './shapeFill'
 import { withSketchSeed, withSketchSeeds } from './sketchy'
 import { addLaserPoint, laserOnTouchDown, laserSegments, laserVisible, PEN_TOOL_FLAGS, pruneLaser, toolToRestoreAfterLaser, type LaserPoint, type ToolFlags } from './laserPointer'
@@ -5185,6 +5186,28 @@ function App() {
       failed()
     }
   }
+  // Excalidraw export: the selection when something is selected, else the current page.
+  const downloadExcalidraw = () => {
+    const keys = selectionKeysWithBox()
+    const built = buildExcalidrawFile(strokesRef.current, keys, PAGE_BACKGROUND_COLORS[pageBackgroundRef.current])
+    if (built.count === 0) { showToast(excalidrawExportMessage(built, 'Saved', false)); return }
+    downloadBlob(new Blob([built.text], { type: 'application/json' }), excalidrawFileName(docTitle))
+    showToast(excalidrawExportMessage(built, 'Saved', keys.size > 0))
+  }
+  const copyExcalidraw = () => {
+    const keys = selectionKeysWithBox()
+    const built = buildExcalidrawClipboard(strokesRef.current, selectionKeysWithBox())
+    if (built.count === 0) { showToast(excalidrawExportMessage(built, 'Copied', false)); return }
+    const text = built.text
+    lastWrittenTextRef.current = text
+    const done = () => showToast(excalidrawExportMessage(built, 'Copied', keys.size > 0))
+    const failed = () => showToast('Could not copy for Excalidraw')
+    try {
+      navigator.clipboard.writeText(text).then(done, failed)
+    } catch {
+      failed()
+    }
+  }
   const downloadOutline = () => {
     downloadBlob(new Blob([currentOutline()], { type: 'text/markdown' }), outlineFileName(docTitle))
     showToast('Outline downloaded')
@@ -5234,6 +5257,8 @@ function App() {
       { id: 'flow:clear', label: 'Clear step numbers', group: 'Select', keywords: 'flow order sequence connectors arrows remove', run: () => { clearFlowSteps() } },
     ] : []),
     { id: 'export:outline-copy', label: 'Copy as text outline', group: 'Export', keywords: 'markdown summary list copy', run: copyOutline },
+    { id: 'export:excalidraw-file', label: 'Download .excalidraw', group: 'Export', keywords: 'excalidraw export file save diagram json', run: downloadExcalidraw },
+    ...(inputMode === 'desktop' ? [{ id: 'export:excalidraw-copy', label: 'Copy for Excalidraw', group: 'Export', keywords: 'excalidraw export clipboard paste copy diagram', run: copyExcalidraw }] : []),
     { id: 'export:mermaid-copy', label: 'Copy as Mermaid', group: 'Export', keywords: 'flowchart diagram text copy markdown', run: copyMermaid },
     { id: 'export:outline-download', label: 'Download outline (.md)', group: 'Export', keywords: 'markdown text summary file', run: downloadOutline },
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
@@ -5943,6 +5968,8 @@ function App() {
         onCopyOutline={copyOutline}
         onCopyMermaid={copyMermaid}
         onDownloadOutline={downloadOutline}
+        onDownloadExcalidraw={downloadExcalidraw}
+        onCopyExcalidraw={inputMode === 'desktop' ? copyExcalidraw : undefined}
         onExportSvg={() => void exportSvgFile()}
         onExportPng={(scale) => void exportPngFile(scale)}
         transparent={transparentExport}

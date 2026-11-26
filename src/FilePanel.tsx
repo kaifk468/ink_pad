@@ -18,6 +18,9 @@ type FilePanelProps = {
   /** The current page as a Mermaid flowchart on the clipboard. */
   onCopyMermaid: () => void
   onDownloadOutline: () => void
+  /** The selection (or the current page) as an Excalidraw file; the clipboard version (desktop only) pastes into excalidraw.com. */
+  onDownloadExcalidraw: () => void
+  onCopyExcalidraw?: () => void
   onExportPng: (scale: 1 | 2) => void
   /** Export and Copy as PNG leave out the sheet colour and page style. */
   transparent: boolean
@@ -124,6 +127,12 @@ export function FilePanel(props: FilePanelProps) {
           <button type="button" disabled={!props.canOutline} title="Copy a Markdown outline of every page: components, connections, notes, classes and code" onClick={props.onCopyOutline}>Copy as text outline</button>
           <button type="button" disabled={!props.canExport} title="Copy the current page as a Mermaid flowchart: boxes and the links between them" onClick={props.onCopyMermaid}>Copy as Mermaid</button>
           <button type="button" disabled={!props.canOutline} title="Save the outline as a Markdown file named after the diagram" onClick={props.onDownloadOutline}>Download outline (.md)</button>
+        </div>
+
+        <h3>Excalidraw</h3>
+        <div className="file-panel-actions">
+          <button type="button" disabled={!props.canExport} title="Save the selection (or the current page) as an Excalidraw file" onClick={props.onDownloadExcalidraw}>Download .excalidraw</button>
+          {props.onCopyExcalidraw && <button type="button" disabled={!props.canExport} title="Copy the selection (or the current page) so it pastes into excalidraw.com" onClick={props.onCopyExcalidraw}>Copy for Excalidraw</button>}
         </div>
 
         <h3>NotebookLM</h3>
