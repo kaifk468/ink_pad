@@ -6139,6 +6139,9 @@ function App() {
             onNumberSteps: stepTargets(strokesRef.current, keys).length > 0 ? () => { numberFlowSteps() } : null,
           }
         })() : null}
+        movePages={inputMode !== 'desktop' && currentSelectionKeys().size > 0
+          ? { chips: moveMenuChips(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)), onMove: (action) => { const target = parseMoveAction(action); if (target !== null) moveSelectionToPageNow(target) } }
+          : null}
         layer={inputMode === 'desktop' && (selectedItemCount > 0 || hasSelectedRectangle) ? { onMove: (move) => { moveSelectionLayer(move) } } : null}
         arrange={inputMode === 'desktop' && canAlign(strokesRef.current, currentSelectionKeys())
           ? { canAlign: true, canDistribute: canDistribute(strokesRef.current, currentSelectionKeys()), onAlign: alignSelection, onDistribute: distributeSelection }

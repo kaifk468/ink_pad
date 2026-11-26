@@ -17,6 +17,14 @@ const link = (id, a, b, extra = {}) => ({
   ...(b !== undefined ? { endAttachment: { rectangleId: b, offsetX: 5, offsetY: 6 } } : {}),
   ...extra,
 })
+test('tablet context panel shows a Move to page row that runs the same move action', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const panel = await readFile(new URL('../src/app/ContextPanel.tsx', import.meta.url), 'utf8')
+  assert.match(panel, /movePages\?: \{ chips: Array<\{ action: string; chip: string; label: string \}>; onMove/)
+  assert.match(panel, /aria-label="Move to page"[\s\S]*?props\.movePages\.chips\.map[\s\S]*?\+ New page/)
+  assert.match(app, /movePages=\{inputMode !== 'desktop' && currentSelectionKeys\(\)\.size > 0\s*\?\s*\{ chips: moveMenuChips\([\s\S]*?parseMoveAction\(action\)[\s\S]*?moveSelectionToPageNow\(target\)/)
+})
+
 const counters = { stroke: 100, rectangle: 100, connector: 100, text: 100 }
 const keyset = (...keys) => new Set(keys)
 

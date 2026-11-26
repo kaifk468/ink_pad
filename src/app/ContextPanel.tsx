@@ -120,6 +120,8 @@ type ContextPanelProps = {
   changeShape?: { choices: Array<{ id: string; label: string }>; onChange: (id: string) => void } | null
   /** Tablet: the commands the desktop right-click menu has (Select similar, Copy / Paste style, Number steps). Each button shows only when its handler is given. */
   selectionTools?: { onSelectSimilar?: (() => void) | null; onCopyStyle?: (() => void) | null; onPasteStyle?: (() => void) | null; canPasteStyle?: boolean; onNumberSteps?: (() => void) | null } | null
+  /** Tablet: Move to page chips (the other pages, then a new page); `onMove` gets the chip's `movePage:` action. */
+  movePages?: { chips: Array<{ action: string; chip: string; label: string }>; onMove: (action: string) => void } | null
   group?: { canGroup: boolean; canUngroup: boolean; onGroup: () => void; onUngroup: () => void } | null
   /** Flip selection (2+ unlocked items, or one stroke / connector; desktop and tablet). */
   flip?: { onFlip: (axis: 'horizontal' | 'vertical') => void } | null
@@ -300,6 +302,12 @@ export function ContextPanel(props: ContextPanelProps) {
         {props.selectionTools.onCopyStyle && <button className="clear-selection-button" type="button" aria-label="Copy style" title="Copy this item's colours and line style" onClick={props.selectionTools.onCopyStyle}>Copy style</button>}
         {props.selectionTools.onPasteStyle && <button className="clear-selection-button" type="button" aria-label="Paste style" title="Apply the copied style to the selection" disabled={!props.selectionTools.canPasteStyle} onClick={props.selectionTools.onPasteStyle}>Paste style</button>}
         {props.selectionTools.onNumberSteps && <button className="clear-selection-button" type="button" aria-label="Number steps" title="Number the selected arrows 1, 2, 3 in flow order" onClick={props.selectionTools.onNumberSteps}>Number steps</button>}
+      </div>}
+      {props.movePages && props.movePages.chips.length > 0 && <div className="move-page-controls" role="group" aria-label="Move to page">
+        <span className="panel-label">Move to page</span>
+        <div className="selection-actions">
+          {props.movePages.chips.map((chip) => <button key={chip.action} className="clear-selection-button" type="button" aria-label={chip.label} title={chip.label} onClick={() => props.movePages?.onMove(chip.action)}>{chip.action === 'movePage:new' ? '+ New page' : chip.chip}</button>)}
+        </div>
       </div>}
       {props.arrange && <div className="arrange-controls" role="group" aria-label="Align and distribute">
         <span className="panel-label">Align</span>
