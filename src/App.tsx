@@ -51,6 +51,7 @@ import { ClassBoxDialog } from './ClassBoxDialog'
 import { AccountButton } from './app/AccountButton'
 import { ContextPanel } from './app/ContextPanel'
 import { applyStyle, captureStyle, type StyleSnapshot } from './styleClipboard'
+import { applyNewShapeStyle, loadNewShapeStyle, newShapeStyleFrom, saveNewShapeStyle, withNewShapeDash, type NewShapeStyle } from './newShapeStyle'
 import { clearSteps, numberSteps, stepTargets } from './flowSteps'
 import { buildMermaid } from './mermaidExport'
 import { buildExcalidrawClipboard, buildExcalidrawFile, excalidrawExportMessage, excalidrawFileName } from './excalidrawExport'
@@ -347,13 +348,19 @@ function App() {
   contextMenuRef.current = contextMenu
   const contextMenuElementRef = useRef<HTMLDivElement>(null)
   // A small message at the bottom centre (Desktop mode only; the tablet UI stays quiet). It is always position: fixed, so it never shifts the layout.
-  const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
+  const [toast, setToast] = useState<{ id: number; text: string; action?: { label: string; run: () => void } } | null>(null)
   const toastTimerRef = useRef<number | null>(null)
   const showToast = (text: string) => {
     if (inputModeRef.current !== 'desktop') return
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
     setToast((current) => ({ id: (current?.id ?? 0) + 1, text }))
     toastTimerRef.current = window.setTimeout(() => { toastTimerRef.current = null; setToast(null) }, TOAST_MS)
+  }
+  // A toast with one action button (shown in every mode; stays a little longer so it can be tapped).
+  const showActionToast = (text: string, action?: { label: string; run: () => void }) => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
+    setToast((current) => ({ id: (current?.id ?? 0) + 1, text, ...(action ? { action } : {}) }))
+    toastTimerRef.current = window.setTimeout(() => { toastTimerRef.current = null; setToast(null) }, action ? TOAST_MS * 2.5 : TOAST_MS)
   }
   // The tap-undo confirmation shows in every mode (the tablet UI has no other sign that the tap did something).
   const showTapToast = (text: string) => {
@@ -694,6 +701,11 @@ function App() {
   const [lineDashDefault, setLineDashDefaultState] = useState<'solid' | LineDash>(() => loadLineDashDefault())
   const lineDashDefaultRef = useRef(lineDashDefault)
   lineDashDefaultRef.current = lineDashDefault
+  // "Use as default for new shapes": fill, line style, width and corners new boxes start with (per device; the outline colour keeps following the pen).
+  const [newShapeStyle, setNewShapeStyleState] = useState<NewShapeStyle | null>(() => loadNewShapeStyle())
+  const newShapeStyleRef = useRef(newShapeStyle)
+  newShapeStyleRef.current = newShapeStyle
+  const styleNewShape = <T extends CanvasItem>(item: T): T => applyNewShapeStyle(item, newShapeStyleRef.current)
   const [, bumpSelectionColor] = useState(0)
   const [selectionMode, setSelectionMode] = useState(false)
   const [textMode, setTextMode] = useState(false)
@@ -1993,6 +2005,8 @@ function App() {
     if (keys.size === 0) {
       setLineDashDefaultState(dash)
       saveLineDashDefault(dash)
+      // The newer choice wins: a stored default shape style takes the new line style too.
+      if (newShapeStyleRef.current) storeNewShapeStyle(withNewShapeDash(newShapeStyleRef.current, dash))
       return
     }
     const next = setLineDash(strokesRef.current, keys, dash === 'solid' ? null : dash)
@@ -3345,6 +3359,7 @@ function App() {
         stroke = recognizedShape.kind === 'rectangle' || (recognizedShape.kind === 'stroke' && recognizedShape.shape)
           ? recognizedShape
           : heldLongEnough ? recognizeLine(heldStroke) : heldStroke
+        stroke = styleNewShape(stroke)
       }
       const lineTool = shapeToolRef.current === 'line' || shapeToolRef.current === 'arrow' ? shapeToolRef.current : null
       // Desktop Arrow tool with a mouse: a drag that starts or ends on a plain or HLD shape makes an attached arrow connector instead of a stroke.
@@ -3566,7 +3581,8 @@ function App() {
       saveHistory()
       const plainBox = createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)
       const dashedBox = lineDashDefaultRef.current !== 'solid' ? { ...plainBox, dash: lineDashDefaultRef.current } : plainBox
-      const box = sketchyRef.current ? withSketchSeed(dashedBox) : dashedBox
+      const styledBox = styleNewShape(dashedBox)
+      const box = sketchyRef.current ? withSketchSeed(styledBox) : styledBox
       strokesRef.current.push(box)
       setHasInk(true)
       activeResizeRef.current = {
@@ -3593,7 +3609,7 @@ function App() {
       event.currentTarget.setPointerCapture(event.pointerId)
       saveHistory()
       const newBox = hldShapeTool
-        ? createHldShape(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, hldShapeTool)
+        ? styleNewShape(createHldShape(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, hldShapeTool))
         : createInkClassBox(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH)
       const box = sketchyRef.current ? withSketchSeed(newBox) : newBox
       strokesRef.current.push(box)
@@ -4617,6 +4633,28 @@ function App() {
   // Copy as PNG: the selection, or the whole page when nothing is selected. Called straight from the key or click so the clipboard write keeps the gesture.
   // Copy style / Paste style (Ctrl+Alt+C / Ctrl+Alt+V, right-click menu): the stored style is session memory only.
   const copiedStyleRef = useRef<StyleSnapshot | null>(null)
+  function storeNewShapeStyle(style: NewShapeStyle | null) {
+    newShapeStyleRef.current = style
+    setNewShapeStyleState(style)
+    saveNewShapeStyle(style)
+  }
+  const defaultStyleSource = (): RectangleObject | null => {
+    const source = soleStyleSource()
+    return source && newShapeStyleFrom(source) ? (source as RectangleObject) : null
+  }
+  const resetDefaultShapeStyle = (): boolean => {
+    if (!newShapeStyleRef.current) { showActionToast('No default shape style set'); return true }
+    storeNewShapeStyle(null)
+    showActionToast('New shapes use the normal style')
+    return true
+  }
+  const useAsDefaultShapeStyle = (): boolean => {
+    const style = newShapeStyleFrom(defaultStyleSource())
+    if (!style) { showActionToast('Select one shape first'); return true }
+    storeNewShapeStyle(style)
+    showActionToast('New shapes use this style', { label: 'Reset', run: () => { resetDefaultShapeStyle() } })
+    return true
+  }
   const soleStyleSource = (): CanvasItem | null => {
     const keys = currentSelectionKeys()
     if (keys.size === 0) return null
@@ -5021,6 +5059,7 @@ function App() {
       case 'arrowOneEnd': setSelectedArrowEnds(false); break
       case 'cornersRound': setSelectedCorners(true); break
       case 'cornersSharp': setSelectedCorners(false); break
+      case 'useAsDefaultStyle': useAsDefaultShapeStyle(); break
       case 'exportPng': exportSelectionAs('png'); break
       case 'exportSvg': exportSelectionAs('svg'); break
       case 'saveTemplate': openSaveTemplate(); break
@@ -5260,6 +5299,8 @@ function App() {
     { id: 'export:outline-copy', label: 'Copy as text outline', group: 'Export', keywords: 'markdown summary list copy', run: copyOutline },
     { id: 'export:excalidraw-file', label: 'Download .excalidraw', group: 'Export', keywords: 'excalidraw export file save diagram json', run: downloadExcalidraw },
     ...(inputMode === 'desktop' ? [{ id: 'export:excalidraw-copy', label: 'Copy for Excalidraw', group: 'Export', keywords: 'excalidraw export clipboard paste copy diagram', run: copyExcalidraw }] : []),
+    { id: 'style:use-as-default', label: 'Use as default for new shapes', group: 'Edit', keywords: 'default style new shape fill line width corners remember', run: () => { useAsDefaultShapeStyle() } },
+    ...(newShapeStyle ? [{ id: 'style:reset-default', label: 'Reset default shape style', group: 'Edit', keywords: 'default style new shapes normal clear', run: () => { resetDefaultShapeStyle() } }] : []),
     { id: 'export:mermaid-copy', label: 'Copy as Mermaid', group: 'Export', keywords: 'flowchart diagram text copy markdown', run: copyMermaid },
     { id: 'export:outline-download', label: 'Download outline (.md)', group: 'Export', keywords: 'markdown text summary file', run: downloadOutline },
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
@@ -5575,6 +5616,7 @@ function App() {
             canSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()),
             arrowEnds: arrowEndsChoice(strokesRef.current, selectedKeysRef.current),
             corners: cornersChoice(strokesRef.current, currentSelectionKeys()),
+            canSetDefaultStyle: defaultStyleSource() !== null,
             canSelectSimilar: (() => { const key = soleSelectedKey(); return key !== null && similarItemKeys(strokesRef.current, key).length > 0 })(),
           })
           const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight)
@@ -5600,7 +5642,7 @@ function App() {
             </div>
           )
         })()}
-        <div className={`app-toast${toast ? ' app-toast-visible' : ''}`} role="status" aria-live="polite">{toast?.text ?? ''}</div>
+        <div className={`app-toast${toast ? ' app-toast-visible' : ''}`} role="status" aria-live="polite">{toast?.text ?? ''}{toast?.action && <button type="button" className="app-toast-action" onClick={() => { const run = toast.action?.run; setToast(null); run?.() }}>{toast.action.label}</button>}</div>
         {DRAW_READOUT_ENABLED && (
           <div className="draw-readouts" aria-hidden="true">
             <div className="draw-readout">{DRAW_FLAGS_TEXT}</div>
@@ -5792,6 +5834,7 @@ function App() {
         arrowheads={inputMode === 'desktop' && selectionHasArrowheads(strokesRef.current, currentSelectionKeys())
           ? { value: selectionArrowheads(strokesRef.current, currentSelectionKeys()), onChange: changeArrowheads }
           : null}
+        newShapeDefault={currentSelectionKeys().size > 0 || newShapeStyle ? { canSet: defaultStyleSource() !== null, isSet: newShapeStyle !== null, onSet: () => { useAsDefaultShapeStyle() }, onReset: () => { resetDefaultShapeStyle() } } : null}
         corners={(() => { const choice = cornersChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { rounded: choice === 'sharp', onChange: setSelectedCorners } })()}
         changeShape={(() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })()}
         sameSize={canSameSize(strokesRef.current, currentSelectionKeys()) ? { onSameSize: (mode) => { sameSizeSelection(mode) } } : null}

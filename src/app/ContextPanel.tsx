@@ -111,6 +111,8 @@ type ContextPanelProps = {
   /** Desktop: align (2+ items) and distribute (3+ items). */
   /** Selected plain rectangles: Sharp / Round corners (`rounded` true when all selected are round). */
   corners?: { rounded: boolean; onChange: (rounded: boolean) => void } | null
+  /** "Use as default for new shapes" (one shape selected, `canSet`) and "Reset default shape style" (when a default exists). */
+  newShapeDefault?: { canSet: boolean; isSet: boolean; onSet: () => void; onReset: () => void } | null
   /** Desktop: the shapes the selected boxes can change to (Change shape). */
   changeShape?: { choices: Array<{ id: string; label: string }>; onChange: (id: string) => void } | null
   /** Tablet: the commands the desktop right-click menu has (Select similar, Copy / Paste style, Number steps). Each button shows only when its handler is given. */
@@ -170,7 +172,7 @@ const TEXT_ALIGN_OPTIONS: ReadonlyArray<{ id: TextAlign | 'left'; label: string;
 
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !props.sameSize && !props.boundaryTools) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !(props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet)) && !props.sameSize && !props.boundaryTools) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -334,6 +336,10 @@ export function ContextPanel(props: ContextPanelProps) {
         </div>
         <ColorChoices value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" onChange={(hex, commit) => props.fill?.onFill(hex, commit)} />
         {props.fill.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null) && <button className="clear-selection-button" type="button" title="Use the darker outline that goes with this fill" onClick={() => { const hex = props.fill?.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null); if (hex) props.fill?.onMatchOutline(hex) }}>Matching outline</button>}
+      </div>}
+      {props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet) && <div className="selection-actions selection-tools" role="group" aria-label="Default shape style">
+        {props.newShapeDefault.canSet && <button className="clear-selection-button" type="button" aria-label="Use as default for new shapes" title="New shapes start with this shape's fill, line style, width and corners" onClick={props.newShapeDefault.onSet}>Use as default</button>}
+        {props.newShapeDefault.isSet && <button className="clear-selection-button" type="button" aria-label="Reset default shape style" title="New shapes go back to the normal style" onClick={props.newShapeDefault.onReset}>Reset default</button>}
       </div>}
       {props.corners && <div className="corners-controls" role="group" aria-label="Corners">
         <span className="panel-label">Corners</span>

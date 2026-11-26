@@ -543,7 +543,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
   return item.kind === 'rectangle' && item.classBox && !item.inkBox && !item.ellipse && !item.diamond ? { kind: 'classBox', id: item.id } : null
 }
 
-export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'exportPng' | 'exportSvg'
+export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'useAsDefaultStyle' | 'exportPng' | 'exportSvg'
   | 'editText' | 'zoomSelection' | 'focus' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps' | 'saveTemplate'
   | 'sameWidth' | 'sameHeight' | 'sameSize' | 'addBoundary' | 'selectConnected' | 'arrowBothEnds' | 'arrowOneEnd' | 'cornersRound' | 'cornersSharp' | 'shapesMore'
   | `shape:${string}`
@@ -589,6 +589,8 @@ export type ContextMenuState = {
   canCopyStyle?: boolean
   /** A style is stored and something is selected. */
   canPasteStyle?: boolean
+  /** Exactly one plain or HLD shape is selected: "Use as default for new shapes" is offered. */
+  canSetDefaultStyle?: boolean
   /** Exactly one text label, code block or class box is selected (Enter would edit it). */
   canEditText: boolean
   /** The right-click landed on a locked item (it cannot be selected, so the menu offers Unlock for it). */
@@ -623,7 +625,7 @@ export type ContextMenuState = {
  * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
-  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], changeShapesExpanded = false, canNumberSteps = false, canSameSize = false, canSelectConnected = false, arrowEnds = null, corners = null } = state
+  const { canCopyStyle = false, canPasteStyle = false, canSetDefaultStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], changeShapesExpanded = false, canNumberSteps = false, canSameSize = false, canSelectConnected = false, arrowEnds = null, corners = null } = state
   const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean, chip?: string, chipGroup?: string): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled, ...(chip !== undefined ? { chip, chipGroup: chipGroup ?? 'Change shape' } : {}) })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
@@ -634,6 +636,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     ...(canEditText ? [entry('editText', 'Edit text', 'Enter', 'text', true)] : []),
     entry('copyStyle', 'Copy style', 'Ctrl+Alt+C', 'shape', canCopyStyle, 'Copy', 'Style'),
     entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'shape', canPasteStyle, 'Paste', 'Style'),
+    ...(canSetDefaultStyle ? [entry('useAsDefaultStyle', 'Use as default for new shapes', '', 'shape', true, 'Default', 'Style')] : []),
     ...(arrowEnds === 'both' ? [entry('arrowBothEnds', 'Arrow: both ends', '', 'shape', true, 'Two-way', 'Style')] : arrowEnds === 'one' ? [entry('arrowOneEnd', 'Arrow: one end', '', 'shape', true, 'One-way', 'Style')] : []),
     ...(corners === 'round' ? [entry('cornersRound', 'Corners: round', '', 'shape', true, 'Round', 'Style')] : corners === 'sharp' ? [entry('cornersSharp', 'Corners: sharp', '', 'shape', true, 'Sharp', 'Style')] : []),
     ...compactChangeShapes(changeShapes, changeShapesExpanded).map((choice) => entry(`shape:${choice.id}`, `Change shape to ${choice.label}`, '', 'shape', true, shortShapeLabel(choice.label))),
