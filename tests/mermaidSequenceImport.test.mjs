@@ -43,6 +43,13 @@ test('participants, aliases, actors and implicit order', () => {
   assert.equal(lifelines(r).length, 4)
 })
 
+test('cross and async arrows (-x, --x, -), --)) are messages; double dash is dashed', () => {
+  const r = build('sequenceDiagram\nA-xB: lost\nA--xB: lost dashed\nA-)B: async\nA--)B: async dashed\nA->>B: plain')
+  assert.equal(r.links, 5)
+  assert.equal(r.ignoredLines, 0)
+  assert.deepEqual(arrows(r).map((s) => [s.dash ?? 'solid', s.arrowheads]), [['solid', 'end'], ['dashed', 'end'], ['solid', 'end'], ['dashed', 'end'], ['solid', 'end']])
+})
+
 test('alias declared after first use keeps order', () => {
   const r = build('sequenceDiagram\nA->>B: x\nparticipant B as Bob')
   assert.deepEqual(texts(r).slice(0, 2).map((t) => t.text), ['A', 'Bob'])

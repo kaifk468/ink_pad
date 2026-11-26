@@ -234,3 +234,31 @@ test('round 8 fix: unmarked TypeScript, Java and Kotlin code stays plain text; m
   assert.equal(isPlantUmlText('class A\nclass B\nA --> B'), true)
   assert.equal(isPlantUmlText('class A {\n}\nclass B {\n}'), true)
 })
+
+test('sequence: database, queue and actor participants use HLD shapes; other kinds stay plain boxes', () => {
+  const r = buildPlantUml('@startuml\nactor Customer\nparticipant Web\ndatabase "Orders DB" as DB\nqueue Jobs\nentity E\ncollections C\nboundary B\ncontrol K\nCustomer -> Web: order\nWeb -> DB: save\nWeb -> Jobs: enqueue\n@enduml')
+  assert.equal(r.ok, true)
+  const boxes = r.items.filter((i) => i.kind === 'rectangle')
+  const shapeOf = (label) => { const t = r.items.find((i) => i.kind === 'text' && i.text === label); return boxes.find((b) => t.x >= b.x && t.x <= b.x + b.width && t.y >= b.y && t.y <= b.y + b.height)?.hldShape }
+  assert.equal(shapeOf('Customer'), 'user')
+  assert.equal(shapeOf('Orders DB'), 'database')
+  assert.equal(shapeOf('Jobs'), 'queue')
+  for (const plain of ['Web', 'E', 'C', 'B', 'K']) assert.equal(shapeOf(plain), undefined, plain)
+  assert.equal(r.boxes, 8)
+  assert.equal(r.links, 3)
+  assert.equal(r.ignoredLines, 0)
+  assert.equal(r.items.filter((i) => i.kind === 'stroke' && i.color === '#6b7280').length, 8)
+})
+
+test('sequence: lost / open / async / dashed async arrow forms are messages', () => {
+  const heads = (arrow) => {
+    const r = buildPlantUml(`@startuml\nA ${arrow} B: m\n@enduml`)
+    assert.equal(r.ok, true, arrow)
+    assert.equal(r.links, 1, arrow)
+    assert.equal(r.ignoredLines, 0, arrow)
+    const s = r.items.find((i) => i.kind === 'stroke' && i.color !== '#6b7280')
+    return [s.dash ?? 'solid', s.arrowheads]
+  }
+  for (const arrow of ['->x', '->o', '-\\', '->>', '->>o']) assert.deepEqual(heads(arrow), ['solid', 'end'], arrow)
+  for (const arrow of ['-->>', '-->x', '-->o']) assert.deepEqual(heads(arrow), ['dashed', 'end'], arrow)
+})

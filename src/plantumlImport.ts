@@ -28,7 +28,7 @@ const STRICT_SEQ_FIRST = new RegExp(`^(?:${SEQ_KEYWORDS})\\s+(?:"[^"]+"(?:\\s+as
 const CLASS_RELATION = new RegExp(`^(${REF})\\s*(?:"([^"]*)"\\s*)?(<\\||\\*|o|<|\\^|\\+)?((?:-|\\.)+(?:\\[[^\\]]*\\])?(?:(?:left|right|up|down|[lrud])(?![\\p{L}\\p{N}_]))?(?:-|\\.)*)(\\|>|\\*|o|>|\\^|\\+)?\\s*(?:"([^"]*)"\\s*)?(${REF})\\s*(?::\\s*(.*))?$`, 'u')
 const CLASS_ONLY_LINE = /<\||\|>|\*--|--\*|\bo--|--o\b|\.\.>|<\.\.|(?:^|\s)(?:--|\.\.)(?:\s|$)/
 const MEMBER_LINE = new RegExp(`^(${REF})\\s*:\\s*(.+)$`, 'u')
-const SEQ_MESSAGE = new RegExp(`^(${REF})\\s*(<<?)?(-+(?:\\[[^\\]]*\\])?-*)(>>?|\\\\\\\\?|//?|x(?=\\s)|o(?=\\s))?\\s*(?:\\+\\+|--|\\*\\*|!!)?\\s*(${REF})(?:\\s*(?:\\+\\+|--|\\*\\*|!!))?\\s*(?::\\s*(.*))?$`, 'u')
+const SEQ_MESSAGE = new RegExp(`^(${REF})\\s*(<<?)?(-+(?:\\[[^\\]]*\\])?-*)(>>?(?:[xo](?=\\s))?|\\\\\\\\?|//?|x(?=\\s)|o(?=\\s))?\\s*(?:\\+\\+|--|\\*\\*|!!)?\\s*(${REF})(?:\\s*(?:\\+\\+|--|\\*\\*|!!))?\\s*(?::\\s*(.*))?$`, 'u')
 const SEQ_NOTE = new RegExp(`^[rh]?note\\s+(left|right|over|across)(?:\\s+of)?\\s*(${REF})?(?:\\s*,\\s*(${REF}))?\\s*(?:#\\w+\\s*)?(?::\\s*(.*))?$`, 'iu')
 const FRAME = /^(alt|loop|opt|par|break|critical|group)(?:\s+(.*))?$/
 const DIVIDER = /^(else|and|also)(?:\s+(.*))?$/
@@ -325,6 +325,7 @@ function buildSequence(lines: string[]): MermaidDiagramResult {
       const participant = ensure(id)
       if (!participant) { ignored += 1; continue }
       participant.actor = declared[1] === 'actor'
+      if (declared[1] === 'database' || declared[1] === 'queue') participant.shape = declared[1] // entity / collections / boundary / control stay plain boxes
       if (text) participant.text = cleanText(text) || id
       continue
     }

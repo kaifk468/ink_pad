@@ -40,7 +40,8 @@ const FRAME_DIVIDER = /^(else|and|option)(?:\s+(.*))?$/
 const FRAME_END = /^end$/
 const AUTONUMBER = /^autonumber(?:\s|$)/
 
-export type SequenceParticipant = { id: string; text: string; actor: boolean }
+/** `shape` is an HLD shape for the participant box (PlantUML database / queue); `actor` is the User shape. Neither: a plain box. */
+export type SequenceParticipant = { id: string; text: string; actor: boolean; shape?: 'database' | 'queue' }
 export type SequenceMessage = { kind: 'message'; from: string; to: string; text: string; dashed: boolean; head: boolean }
 export type SequenceNote = { kind: 'note'; side: 'over' | 'left' | 'right'; a: string; b?: string; text: string }
 export type SequenceMarker = { kind: 'open'; frame: number } | { kind: 'divider'; frame: number; text: string } | { kind: 'close'; frame: number }
@@ -145,12 +146,16 @@ export type SequenceModel = { participants: SequenceParticipant[]; steps: Sequen
 export function buildSequenceItems(model: SequenceModel): MermaidSequenceBuild {
   const { participants, steps, frameDefs, title, numbered, messageCount, ignored } = model
   // ---- Boxes: sizes, then centre x of each lifeline (relative, first box centred on 0).
-  const userSize = { width: Math.round(HLD_DEFAULT_SIZE.user.width * HLD_TEMPLATE_SCALE), height: Math.round(HLD_DEFAULT_SIZE.user.height * HLD_TEMPLATE_SCALE) }
+  const hldSize = (shape: 'user' | 'database' | 'queue') => ({ width: Math.round(HLD_DEFAULT_SIZE[shape].width * HLD_TEMPLATE_SCALE), height: Math.round(HLD_DEFAULT_SIZE[shape].height * HLD_TEMPLATE_SCALE) })
+  const hldKind = (participant: SequenceParticipant): 'user' | 'database' | 'queue' | null => (participant.actor ? 'user' : participant.shape ?? null)
   const sizes = participants.map((participant) => {
     const label = measureTextSize(participant.text, BOX_FONT)
     const width = Math.max(MIN_BOX_WIDTH, Math.ceil((label.width + 48) / 10) * 10)
     const height = Math.max(BOX_HEIGHT, Math.ceil((label.height + 36) / 10) * 10)
-    return participant.actor ? { width: Math.max(userSize.width, width), height: Math.max(userSize.height, height + 40) } : { width, height }
+    const kind = hldKind(participant)
+    if (!kind) return { width, height }
+    const base = hldSize(kind)
+    return { width: Math.max(base.width, width), height: Math.max(base.height, height + (kind === 'user' ? 40 : kind === 'database' ? 60 : 0)) }
   })
   const column = new Map(participants.map((participant, index) => [participant.id, index]))
   const gaps = participants.slice(1).map((_, index) => Math.max(MIN_CENTRE_GAP, (sizes[index].width + sizes[index + 1].width) / 2 + 60))
@@ -197,8 +202,9 @@ export function buildSequenceItems(model: SequenceModel): MermaidSequenceBuild {
   const boxTop = title ? Math.ceil(titleSize.height) + 40 : 0
   const boxes: RectangleObject[] = participants.map((participant, index) => {
     const x = Math.round(centres[index] - sizes[index].width / 2)
-    return participant.actor
-      ? sheet.hld('user', x, boxTop, participant.text, sizes[index], Math.round(50 * HLD_TEMPLATE_SCALE))
+    const kind = hldKind(participant)
+    return kind
+      ? sheet.hld(kind, x, boxTop, participant.text, sizes[index], Math.round((kind === 'user' ? 50 : kind === 'database' ? 20 : 0) * HLD_TEMPLATE_SCALE))
       : sheet.shaped('rectangle', x, boxTop, sizes[index].width, sizes[index].height, participant.text)
   })
   const boxBottom = Math.max(...boxes.map((box) => box.y + box.height))
