@@ -17,6 +17,7 @@ import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, tog
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
+import { shapeKeywords } from './shapeSearch'
 import { HLD_DEFAULT_SIZE, HLD_SHAPES, HLD_SHAPE_LABELS, createHldShape, isHldTapCreate, type HldShape } from './hldShapes'
 import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
 import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, hitInkBoxMoveGrip, inkBoxMoveGrip, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
@@ -5125,7 +5126,7 @@ function App() {
   }
   /** Extra palette entries beyond the keyboard shortcuts. Add one line here to make a new command searchable (a later template list can append its own). */
   const paletteExtras = (): Array<PaletteEntry & { run: () => void }> => [
-    ...HLD_SHAPES.map((shape) => ({ id: `hld:${shape}`, label: HLD_SHAPE_LABELS[shape], group: 'Shapes', keywords: 'hld system design add', run: () => toggleHldShapeTool(shape) })),
+    ...HLD_SHAPES.map((shape) => ({ id: `hld:${shape}`, label: `Insert shape: ${HLD_SHAPE_LABELS[shape]}`, group: 'Shapes', keywords: `hld system design add ${shapeKeywords(shape)}`, run: () => toggleHldShapeTool(shape) })),
     ...DIAGRAM_TEMPLATES.map((template) => ({ id: `template:${template.id}`, label: `Template: ${template.name}`, group: 'Templates', keywords: `insert starter layout ${template.description}`, run: () => { insertTemplate(template.id) } })),
     ...(alignTargetKeys().size > 0 ? (['left', 'center', 'right'] as const).map((align) => ({ id: `align:${align}`, label: `Align text ${align === 'center' ? 'centre' : align}`, group: 'Edit', keywords: 'text label alignment justify', run: () => pickTextAlign(align) })) : []),
     { id: 'excalidraw:import', label: 'Import Excalidraw file…', group: 'Templates', keywords: 'excalidraw open diagram json import paste', run: () => excalidrawFileRef.current?.click() },

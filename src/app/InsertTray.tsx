@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { HLD_SHAPE_LABELS } from '../hldShapes'
 import type { HldShape } from '../hldShapes'
+import { searchShapes } from '../shapeSearch'
 
 type InsertTrayProps = {
   textActive: boolean
@@ -39,16 +40,22 @@ export const MORE_HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint:
 /** The Insert button and the tray that opens upward from the bottom dock. Entries reuse the existing tool handlers. */
 export function InsertTray({ textActive, classActive, shapeActive, hldActive, onHldShape, onText, onTextOptions, onClass, onShapes, onSticky }: InsertTrayProps) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
   const lastTapRef = useRef(0)
+  const searchRef = useRef<HTMLInputElement>(null)
   const anyActive = textActive || classActive || shapeActive || hldActive !== null
 
   useEffect(() => {
-    if (!open) return
+    if (!open) { setQuery(''); return }
     const onPointerDown = (event: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
     }
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (searchRef.current && searchRef.current.value) { setQuery(''); event.stopPropagation() } else setOpen(false)
+      }
+    }
     window.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('keydown', onKey)
     return () => {
@@ -58,6 +65,23 @@ export function InsertTray({ textActive, classActive, shapeActive, hldActive, on
   }, [open])
 
   const choose = (action: () => void) => () => { action(); setOpen(false) }
+  const searching = query.trim() !== ''
+  const matches = searching ? searchShapes(query) : []
+  const insertById = (id: string) => {
+    if (id === 'text') onText()
+    else if (id === 'shapes') onShapes()
+    else if (id === 'sticky') onSticky()
+    else if (id === 'classBox') onClass()
+    else onHldShape(id as HldShape)
+    setOpen(false)
+  }
+  const basicEntries: Record<string, { label: string; title: string; selected: boolean; icon: JSX.Element }> = {
+    text: { label: 'Text label', title: 'Tap the sheet with the S Pen to type a label; tap a label to edit it', selected: textActive, icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7V4.5h14V7M12 4.5V19.5M8.5 19.5h7"/></svg> },
+    shapes: { label: 'Shapes and arrows', title: 'Straight lines and rectangles recognize on hold automatically. Toggle for arrows.', selected: shapeActive, icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="10" height="10" rx="1"/><path d="M10 19h9m0 0-4-4m4 4-4 4"/></svg> },
+    sticky: { label: 'Sticky note', title: 'Add a yellow sticky note in the middle of the view; write in it with the S Pen', selected: false, icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v10l-5 5H5z"/><path d="M14 19.5v-5h5"/></svg> },
+    classBox: { label: 'Typed class box', title: 'Tap the sheet with the S Pen to add a typed UML class box; tap a box or rectangle to edit it', selected: classActive, icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9.5h16M4 14.5h16"/></svg> },
+  }
+  const hldById = (id: string) => [...HLD_ENTRIES, ...MORE_HLD_ENTRIES].find((entry) => entry.shape === id)
 
   return (
     <div ref={rootRef} className="insert-control">
@@ -78,6 +102,33 @@ export function InsertTray({ textActive, classActive, shapeActive, hldActive, on
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8.5v7M8.5 12h7"/></svg><span>Insert</span>
       </button>
       {open && <div className="insert-tray" role="group" aria-label="Insert tray">
+        {/* Not focused on open on the tablet: that would pop the on-screen keyboard every time the tray opens. */}
+        <input
+          ref={searchRef}
+          className="shape-search-field"
+          type="search"
+          aria-label="Search shapes"
+          placeholder="Search shapes (redis, kafka…)"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter' && matches[0]) { event.preventDefault(); insertById(matches[0].id) } }}
+        />
+        {searching && matches.length === 0 && <div className="shape-search-empty" role="status">No shape matches</div>}
+        {searching && matches.length > 0 && <div className="insert-shape-results" role="group" aria-label="Matching shapes">
+          {matches.map(({ id, alias }) => {
+            const basic = basicEntries[id]
+            const hld = hldById(id)
+            const label = basic?.label ?? (hld ? HLD_SHAPE_LABELS[hld.shape] : id)
+            const icon = basic?.icon ?? hld?.icon
+            const selected = basic ? basic.selected : hldActive === id
+            return (
+              <button className={`insert-entry${selected ? ' selected' : ''}`} type="button" key={id} aria-label={label} title={basic?.title ?? `Tap or drag with the S Pen to add ${hld?.hint ?? 'a shape'} you write in`} onClick={() => insertById(id)}>
+                {icon}<span>{label}{alias && <small className="shape-search-alias">{alias}</small>}</span>
+              </button>
+            )
+          })}
+        </div>}
+        {!searching && <>
         <div className="insert-tray-heading">Basic</div>
         <button className={`insert-entry${textActive ? ' selected' : ''}`} type="button" aria-label="Text" aria-pressed={textActive} title="Tap the sheet with the S Pen to type a label; tap a label to edit it" onClick={choose(onText)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7V4.5h14V7M12 4.5V19.5M8.5 19.5h7"/></svg><span>Text label</span>
@@ -105,6 +156,7 @@ export function InsertTray({ textActive, classActive, shapeActive, hldActive, on
             </button>
           ))}
         </div>
+        </>}
       </div>}
     </div>
   )

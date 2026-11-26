@@ -285,6 +285,12 @@ button { font: inherit; }
 .insert-shape-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
 .insert-shape-grid > button { min-height: 46px; gap: 8px; padding: 0 8px; font-size: 13px; }
 .more-shapes-tray { width: 288px; }
+.shape-search-field { box-sizing: border-box; width: 100%; min-height: 40px; margin-bottom: 6px; padding: 0 12px; border: 1px solid #d6dae2; border-radius: 10px; background: #fff; color: #343944; font-size: 14px; }
+.shape-search-field:focus { outline: 2px solid #354fc2; outline-offset: 0; }
+.shape-search-empty { padding: 12px 10px; color: #6a707c; font-size: 13px; }
+.insert-shape-results { display: flex; flex-direction: column; }
+.insert-entry span { display: flex; flex-direction: column; min-width: 0; }
+.shape-search-alias { color: #6a707c; font-size: 11px; font-weight: 600; line-height: 1.2; }
 .insert-tray-heading { padding: 8px 10px 4px; color: #6a707c; font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .insert-entry { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: #343944; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
 .insert-entry svg { flex: 0 0 22px; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
