@@ -402,3 +402,56 @@ Follow-ups found this round (ideas for the next round):
 - Two-way arrows: no hit-test on the second head (selection uses the line).
 - Tablet Insert tray now scrolls at 800 px tall with 14 HLD shapes.
 - Find & replace skips a page waiting in the "Page deleted" undo bar.
+
+## Round 7 — 2026-11-26 (branch desktop-20x)
+
+### User journeys walked (friction found, on top of rounds 1-6)
+1. LLD class diagrams: multiplicities ("1", "*", "0..1") at each end of an association can only be faked with free text labels that do not follow the boxes; Mermaid `A "1" --> "*" B` drops them; `namespace` blocks and `note for` lines are skipped.
+2. DB schema / LLD: `erDiagram` (entities, attributes with PK/FK, crow's-foot relationships) — the other text format AI chats and READMEs produce — is not read at all; state machines (`stateDiagram-v2`, order or payment lifecycles, a common LLD interview question) neither.
+3. Sequence diagrams from text: moving a participant leaves its lifeline behind; `loop` / `alt` / `opt` frames (retry, success/failure) are dropped, though they carry the meaning of the flow.
+4. Switching tools: diagrams already drawn in Excalidraw (the most common whiteboard in interviews) cannot be brought in; copying shapes from excalidraw.com and pasting does nothing.
+5. Drawing HLD: services are usually drawn as rounded boxes; InkPad has only sharp rectangles. Finding "Redis" or "Kafka" among 14 HLD shapes means knowing InkPad's generic names (Cache, Stream); the tablet Insert tray scrolls.
+6. Explaining a design in an interview: there is no way to make one component and its links stand out while talking about it (everything else stays at full strength).
+7. Round 6 paper cuts: the right-click Change shape row has 14 HLD chips (five lines); page names truncate to "API de…" in the page strip; the second arrowhead of a two-way arrow is not clickable.
+
+### Candidates (problem · who/how often · benefit · risk · size · decision)
+| # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
+|---|---|---|---|---|---|---|---|
+| 161 | Connector end labels (multiplicity / cardinality at each end, `startLabel` / `endLabel`) | Multiplicities faked with loose text that does not follow boxes | LLD users, every class/ER diagram | high | medium (new saved fields, renderer) | M | picked |
+| 162 | Rounded corners for rectangles (`rounded: true`, Sharp / Round) | Service boxes cannot be drawn rounded | HLD users, most diagrams | medium | medium (new saved field, renderer) | S-M | picked |
+| 163 | Mermaid `erDiagram` import (entities, attributes, crow's-foot cardinalities as end labels) | DB schema from text typed by hand | LLD users, often | high | low (ordinary items) | M | picked |
+| 164 | Mermaid `stateDiagram` import (states, start/end, transitions with events, composite states as boundaries, choice) | State machines drawn by hand | LLD interviews, sometimes | medium-high | low | M | picked |
+| 165 | Sequence import: lifeline moves with its participant (grouped); `loop`/`alt`/`opt`/`par`/`critical`/`break` frames as labelled boundaries with `else` dividers | Moving a participant breaks the diagram; frames lost | sequence users, every import | medium-high | low | S-M | picked |
+| 166 | classDiagram import: cardinalities, `namespace` → boundary, `note for` → sticky; Copy as Mermaid writes cardinalities; Mermaid `(x)` ↔ rounded rectangle | Class text loses parts on import/export | LLD users | medium | low | S-M | picked |
+| 167 | Excalidraw import: paste from excalidraw.com (desktop Ctrl+V) and open a `.excalidraw` file (both modes) | Existing Excalidraw diagrams cannot be brought in | people switching tools, interviews | high | low-medium (ordinary items, paste path) | M | picked |
+| 168 | Shape search with tech names (Redis → Cache, Kafka → Stream, S3 → Object storage…) in More shapes, Insert tray and palette | Finding the right HLD shape among 14 | everyone, every diagram | medium | low | S | picked |
+| 169 | Focus mode: fade everything not linked to the selection (view only, Esc exits) (#149) | Making one component stand out while explaining | interviews, presenting | medium | medium (renderer cache) | M | picked |
+| 170 | Round 6 paper cuts: compact HLD change-shape row, page strip names, second arrowhead hit-test | small friction | | low-medium | low | S | picked |
+| 171 | Last-used fill / corners for new shapes (#145) | restyling every new box | desktop | medium | medium (tablet colour interplay) | M | idea ("Line style for new shapes" exists; extend later) |
+| 172 | Copy as Mermaid for sequence pages | sequence round-trip | sometimes | medium | medium (detect lifelines) | M | idea (needs 165 groups first) |
+| 173 | Move selection to another page | splitting a growing diagram | sometimes | medium | medium (per-page undo) | M | idea (cut / paste works) |
+| 174 | Snap to grid (#146) | | desktop | low-medium | medium | M | idea |
+| 175 | Move folders into folders (#147) | | rare | low | medium (Drive) | M | idea |
+| 176 | Curved connectors (#148) | | sometimes | low-medium | medium-high | M-L | idea |
+| 177 | Mermaid `classDef` / `style` fills (#150) | colours lost | rare | low | low | S | idea |
+| 178 | Alt+Arrow selects the connected neighbour (#151) | | rare | low | low | S | idea |
+| 179 | Library content search (#154) | find "the one with Kafka" | sometimes | medium | high (loads every file) | L | idea |
+| 180 | Images on the canvas (#155) | screenshots | sometimes | medium | high (new kind, storage, Drive) | L | idea |
+| 181 | Insert table for API / DB schema (#158) | | sometimes | medium | medium | L | idea (163 covers schemas) |
+| 182 | Excalidraw export (.excalidraw) | share with Excalidraw users | sometimes | medium | low-medium | M | idea (after 167) |
+| 183 | Dark UI theme | night study | sometimes | low-medium | medium (all CSS) | L | idea |
+| 184 | Sequence `-x` / `-)` arrow heads | | rare | low | low | S | idea |
+| 185 | Tidy layout | | | | | | skipped: already built (Tidy selected / Tidy all) |
+| 186 | Scribble-to-erase / tablet long-press menu / undo toast naming the action (#160) | | | | high | | skipped again (writing path / touch timing / every history site) |
+
+### Acceptance criteria (picked items)
+161. **End labels**: with an attached connector selected, the panel (both modes) has "End labels" with two short fields (start, end; placeholder "1", "*"); typing "1" and "0..*" shows them next to each end, just outside the box and beside the line, in the connector's colour; they follow when boxes move or the connector reroutes (straight and elbow); visible in sketchy mode and SVG/PNG/PDF export; one undo step per committed edit; clearing a field removes it. Saved as `startLabel` / `endLabel` (trimmed, ≤ 24 chars, omitted when empty). Old files unchanged.
+162. **Rounded corners**: a plain rectangle (not class, ink or HLD boxes) can be switched Sharp / Round in the panel (both modes), the right-click Style row and the palette; the corners are round on canvas, in sketchy style and in exports; hit-testing unchanged; one undo step; saved as `rounded: true`.
+163. **erDiagram**: pasting `erDiagram` text into "Insert from Mermaid…" (or desktop Ctrl+V) creates one class-style box per entity (name; attribute lines like "PK id: int"), relationship connectors labelled with the verb, cardinality end labels from the crow's-foot ends (`||` 1, `|o`/`o|` 0..1, `}|`/`|{` 1..*, `}o`/`o{` 0..*), dashed for `..`; tidy layout; one undo step; toast "Inserted 3 entities and 2 relationships".
+164. **stateDiagram**: `stateDiagram` / `stateDiagram-v2` text creates rounded state boxes, a small filled start circle for `[*] -->`, an end circle for `--> [*]`, arrows with the event label, `state "Long" as A`, `state X { … }` as a boundary around its states, `<<choice>>` as a small diamond, notes as sticky notes; tidy layout; one undo step; toast with counts.
+165. **Sequence**: after importing, dragging a participant moves its lifeline with it (they are one group); `loop`, `alt`, `opt`, `par`, `critical`, `break` blocks become dashed labelled boundaries ("loop: every 5 s") around their messages, `else` / `and` become a dashed divider with its text; nesting works; toast counts frames.
+166. **classDiagram**: `A "1" --> "*" B` imports with end labels; `namespace Billing { class Invoice }` becomes a boundary titled Billing; `note for A "text"` becomes a sticky note near A; Copy as Mermaid writes end labels back as `"1"` / `"*"`; flowchart `A(Text)` imports as a rounded rectangle and a rounded rectangle exports as `(Text)`.
+167. **Excalidraw**: copying shapes on excalidraw.com and pressing Ctrl+V in Desktop mode inserts them (rectangles, diamonds, ellipses with fill and dashed/dotted style, round corners, text, text inside containers as centred labels, arrows bound to shapes as attached connectors with their labels, other arrows/lines/freedraw as strokes, frames as boundaries); "Import Excalidraw file…" (More menu both modes, palette) opens a `.excalidraw` file the same way; inserted like a template (centred, selected, one undo step); toast "Imported 12 shapes from Excalidraw (2 skipped)". Images and embeds are skipped and counted.
+168. **Shape search**: More shapes (desktop) and the tablet Insert tray have a search field; typing "redis", "kafka", "s3", "nginx", "postgres", "lambda" filters to the matching shape(s) and shows the matched word; Enter inserts the first; the palette lists "Insert shape: Cache" findable by the same words.
+169. **Focus**: with items selected, "Focus" (right-click, panel both modes, palette, desktop key) fades every item that is not selected, a connector of a selected box, or the box at its other end, to about 20 %; a "Focused · Exit" chip shows at the top; Esc, the chip or an empty selection change exits; nothing is saved or added to undo; drawing still works; exports are unaffected.
+170. **Paper cuts**: the right-click Change shape row shows the basic shapes plus at most one line of HLD chips with "More…" opening the rest; the page strip shows up to ~12 characters of the page name and the full name on hover/tooltip; clicking the start arrowhead of a two-way arrow selects the connector.
