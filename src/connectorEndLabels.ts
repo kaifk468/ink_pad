@@ -1,4 +1,4 @@
-import { canvasItemKey, connectorPoints, getCanvasSelectionBounds, type CanvasItem, type ConnectorObject } from './canvasModel'
+import { canvasItemKey, connectorPoints, connectorSecondEndpoint, getConnectorRenderSpec, getConnectorSymbolGeometry, getCanvasSelectionBounds, type CanvasItem, type ConnectorObject } from './canvasModel'
 import { pathLength, pointAlongPath } from './pathGeometry'
 import { connectorLabelFontSize } from './connectorLabel'
 import { DEFAULT_TEXT_FONT, getCachedTextMeasure, measureTextSize, type TextMeasure } from './textLayout'
@@ -9,6 +9,18 @@ export const END_LABEL_ALONG = 14
 export const END_LABEL_SIDE = 10
 export const END_LABEL_SCALE = 0.85
 export const END_LABEL_MIN_FONT_SIZE = 10
+/** Gap between the far point of a UML symbol and the near edge of the end label. */
+export const END_LABEL_SYMBOL_GAP = 4
+
+/** How far along the path from the end the UML symbol at that end reaches (0 when that end has none). */
+function symbolReach(connector: ConnectorObject, end: ConnectorEnd): number {
+  if (getConnectorRenderSpec(connector).endpoint !== end && connectorSecondEndpoint(connector) !== end) return 0
+  const geometry = getConnectorSymbolGeometry(connector, undefined, end)
+  if (!geometry) return 0
+  const spec = getConnectorRenderSpec(connector)
+  const point = spec.symbol.includes('diamond') ? geometry.far : geometry.base
+  return Math.hypot(point.x - geometry.tip.x, point.y - geometry.tip.y)
+}
 
 export type ConnectorEnd = 'start' | 'end'
 
@@ -44,7 +56,11 @@ export function connectorEndLabelLayouts(connector: ConnectorObject, measure?: T
     const dir0 = pointAlongPath(path, end === 'start' ? base : total - base).direction
     // Wide labels are pushed further along the line so their near edge stays 4 units outside the box (never over its border).
     const extent = Math.abs(dir0.x) * size.width + Math.abs(dir0.y) * size.height
-    const along = Math.min(base + Math.max(0, extent / 2 - END_LABEL_ALONG + 4), total / 2)
+    let along = base + Math.max(0, extent / 2 - END_LABEL_ALONG + 4)
+    // A UML symbol at this end (diamond, triangle, open arrowhead) would cover the text, so the label starts beyond it.
+    const reach = symbolReach(connector, end)
+    if (reach > 0) along = Math.max(along, reach + END_LABEL_SYMBOL_GAP + extent / 2)
+    along = Math.min(along, total / 2)
     const { point, direction } = pointAlongPath(path, end === 'start' ? along : total - along)
     // Direction pointing away from the end, into the line.
     const away = end === 'start' ? direction : { x: -direction.x, y: -direction.y }
