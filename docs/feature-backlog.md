@@ -482,16 +482,16 @@ Follow-ups found this round (ideas for the next round):
 ### Candidates (problem · who/how often · benefit · risk · size · decision)
 | # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
 |---|---|---|---|---|---|---|---|
-| 187 | Pen arrows/lines from box to box become attached connectors (Shapes mode arrow, hold-to-straighten line) | Pen arrows don't follow moved boxes | tablet, every diagram | high | medium (stroke finish path; only recognized shapes change) | M | picked |
-| 188 | Diamond recognition (Shapes mode and hold) | Pen diamonds stay ink | tablet flowcharts, often | medium | low-medium (could steal rectangles; strict test) | S-M | picked |
-| 189 | Excalidraw export: `.excalidraw` file + "Copy for Excalidraw" clipboard | Diagrams can't go to Excalidraw users | interviews, sharing, sometimes | medium-high | low (pure module, export only) | M | picked |
-| 190 | Copy as Mermaid for sequence pages (#172) | Sequence pages export as a box flowchart | sequence users | medium | medium (lifeline detection) | M | picked |
-| 191 | "Use as default style for new shapes" (explicit; fill, dash, corners, width) (#171) | Restyling every new box | desktop + tablet, daily | medium-high | medium (all creation paths) | M | picked |
-| 192 | Move selection to another page (#173) | Splitting a growing diagram | sometimes | medium | medium (per-page undo; toast Undo reverses both) | M | picked |
-| 193 | PlantUML import (class + sequence) | Second text format not read | text-first users, sometimes | medium | low (ordinary items, reuse builders) | M | picked |
-| 194 | Keyboard walk: Tab / Shift+Tab cycle items, Alt+Arrow goes to the linked neighbour (#27, #178) | No keyboard walking | desktop keyboard users | low-medium | low | S | picked |
-| 195 | Import polish: Mermaid `classDef`/`style`/`:::` fills; Excalidraw bent arrows keep their head | Colours and heads lost on import | importers, sometimes | medium | low | S | picked |
-| 196 | Paper cuts: Swap two boxes (connectors follow), focus fades the minimap | small friction | | low-medium | low | S | picked |
+| 187 | Pen arrows/lines from box to box become attached connectors (Shapes mode arrow, hold-to-straighten line) | Pen arrows don't follow moved boxes | tablet, every diagram | high | medium (stroke finish path; only recognized shapes change) | M | **done** f5f195b (+16ff70b, 4d64ff3) |
+| 188 | Diamond recognition (Shapes mode and hold) | Pen diamonds stay ink | tablet flowcharts, often | medium | low-medium (could steal rectangles; strict test) | S-M | **done** f5f195b |
+| 189 | Excalidraw export: `.excalidraw` file + "Copy for Excalidraw" clipboard | Diagrams can't go to Excalidraw users | interviews, sharing, sometimes | medium-high | low (pure module, export only) | M | **done** 99b1d84 (+1be3124) |
+| 190 | Copy as Mermaid for sequence pages (#172) | Sequence pages export as a box flowchart | sequence users | medium | medium (lifeline detection) | M | **done** 6a97dbb |
+| 191 | "Use as default style for new shapes" (explicit; fill, dash, corners, width) (#171) | Restyling every new box | desktop + tablet, daily | medium-high | medium (all creation paths) | M | **done** f136589 (+16ff70b; quick create keeps cloning its source box, decision) |
+| 192 | Move selection to another page (#173) | Splitting a growing diagram | sometimes | medium | medium (per-page undo; toast Undo reverses both) | M | **done** 6f85ec9 (+16ff70b, d974444) |
+| 193 | PlantUML import (class + sequence) | Second text format not read | text-first users, sometimes | medium | low (ordinary items, reuse builders) | M | **done** 4c85486 (+1be3124) |
+| 194 | Keyboard walk: Tab / Shift+Tab cycle items, Alt+Arrow goes to the linked neighbour (#27, #178) | No keyboard walking | desktop keyboard users | low-medium | low | S | **done** ca9b76b (+1be3124) |
+| 195 | Import polish: Mermaid `classDef`/`style`/`:::` fills; Excalidraw bent arrows keep their head | Colours and heads lost on import | importers, sometimes | medium | low | S | **done** bd78821 |
+| 196 | Paper cuts: Swap two boxes (connectors follow), focus fades the minimap | small friction | | low-medium | low | S | **done** d94883b |
 | 197 | Copy as Mermaid for ER / state pages | round trip of round 7 imports | sometimes | low-medium | medium (detection ambiguity with class pages) | M | idea |
 | 198 | Snap to grid (#174) | | desktop | low-medium | medium (all drag paths) | M | idea (smart guides exist) |
 | 199 | Curved connectors (#176) | | sometimes | low-medium | medium-high | M-L | idea |
@@ -521,3 +521,15 @@ Follow-ups found this round (ideas for the next round):
 194. **Keyboard walk**: desktop, Select tool, nothing being edited: Tab selects the next item (shapes, text, connectors in reading order: top-to-bottom, left-to-right), Shift+Tab the previous, and the view pans to keep it visible; Alt+Arrow from a selected box selects the box linked to it in that direction (nearest by angle). Listed in ? help and the palette. No undo entry.
 195. **Import polish**: Mermaid `classDef name fill:#f9f,stroke:#333,stroke-dasharray`, `class A,B name`, `A:::name` and `style A fill:…` colour the imported boxes (fill, outline, dash); bad values are ignored. Excalidraw arrows with 3+ points keep their arrowhead (on the last segment) and stay one item.
 196. **Paper cuts**: with exactly two boxes selected, "Swap positions" (right-click, palette) swaps their centres (sizes kept), their attached connectors and inside labels follow, one undo step; in focus mode the minimap shows faded items like the canvas.
+
+### Round 8 result (2026-11-26)
+All 10 picked items built (#187-#196) by seven Sonnet agents in parallel worktrees (all from 57182b6, cherry-picked; three small merge conflicts in mermaidImport.ts imports, the App.tsx palette list and desktopInput.ts menu state resolved by union). Independent Opus review: 1 high (a pen connector switched the tablet user to Select and turned Shapes mode off), 6 medium (pen arrows inside a box or boundary made self-loops / attached to the boundary; move-to-page Undo bar could drop a label typed after the move; default style skipped for hold-to-snap shapes; keyboard walk stuck on groups; Excalidraw elbow arrows likely unbound on excalidraw.com; move-to-page left box labels behind), 5 low (Tab could not leave the canvas; Alt+Left on a focused button navigated Back; bent arrows exported straight; quick create ignores the default style; unmarked TypeScript/Java `interface X {` pasted as a UML box). All fixed in 16ff70b / 1be3124 except quick create, kept as a decision (a quick-created box matches the box it grows from). Walk fixes: a pen line ending deep inside a box attached to its bottom side (4d64ff3, now the side facing the other end); "Moved N items" showed twice (toast + Undo bar) (d974444).
+
+Follow-ups found this round (ideas for the next round):
+- Desktop Arrow tool has the same "end inside a box attaches to the nearest side" behaviour that 4d64ff3 fixed for the pen.
+- Excalidraw export writes elbow connectors as bound polyline arrows (elbowed false); re-import gives plain connectors. Add `fixedPoint` elbow export once verified against excalidraw.com.
+- Mermaid/PlantUML insert at the pointer can overlap existing boxes (pre-existing; consider placing beside the current content).
+- PlantUML: participant kinds (database, queue…) all import as plain boxes; `->o` / `o->` arrows not handled; nested packages keep only the innermost.
+- Sequence Copy as Mermaid relies on geometry (no saved marker); heavily edited pages may drop messages (counted in the toast).
+- Move to page is desktop-only (right-click and palette); a tablet entry (panel / More tray) is an idea.
+- PlantUML dialog: an unmarked single `class X {` in the Mermaid/PlantUML dialog now needs `@startuml` (shared detector).
