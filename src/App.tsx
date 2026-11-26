@@ -4683,8 +4683,8 @@ function App() {
     const mermaidText = full.slice(0, MAX_MERMAID_TEXT)
     if (isMermaidText(mermaidText)) {
       const parsed = buildMermaidDiagram(mermaidText)
-      // A flowchart needs at least one link, otherwise it is just text that starts with "graph"; a class or sequence header is unambiguous.
-      if (parsed.ok && (parsed.links > 0 || ((parsed.kind === 'class' || parsed.kind === 'sequence') && parsed.boxes > 0))) {
+      // A flowchart needs at least one link, otherwise it is just text that starts with "graph"; any other diagram header is unambiguous.
+      if (parsed.ok && (parsed.links > 0 || (parsed.kind !== 'flowchart' && parsed.boxes > 0))) {
         const error = importMermaid(mermaidText, at)
         if (error) showToast(error)
         return true

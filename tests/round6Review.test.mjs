@@ -105,8 +105,8 @@ test('8. HLD icon insets are symmetric', () => {
   assert.ok(shapes.hldIconInsets('worker', 300, 200).bottom > 0)
 })
 
-test('9. desktop paste accepts class and sequence headers without links', () => {
-  assert.match(app, /parsed\.links > 0 \|\| \(\(parsed\.kind === 'class' \|\| parsed\.kind === 'sequence'\) && parsed\.boxes > 0\)/)
+test('9. desktop paste accepts class, sequence, er and state headers without links', () => {
+  assert.match(app, /parsed\.links > 0 \|\| \(parsed\.kind !== 'flowchart' && parsed\.boxes > 0\)/)
   const one = buildMermaidDiagram('classDiagram\n class Solo')
   assert.equal(one.ok && one.links, 0)
   assert.equal(one.kind, 'class')

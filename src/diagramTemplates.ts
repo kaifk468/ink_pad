@@ -67,6 +67,20 @@ export class Sheet {
     return box
   }
 
+  /** A rectangle with no label (Mermaid state circles, bars, boundaries, notes); `extra` adds shape fields such as `ellipse`, `fillColor`, `dash`. */
+  bare(x: number, y: number, width: number, height: number, extra: Partial<RectangleObject> = {}): RectangleObject {
+    const box: RectangleObject = { kind: 'rectangle', id: this.rectangleId++, x, y, width, height, strokeColor: STROKE_COLOR, strokeWidth: CLASS_BOX_DEFAULT_STROKE_WIDTH, ...extra }
+    this.items.push(box)
+    return box
+  }
+
+  /** A free text label whose top-left is (x, y). */
+  caption(x: number, y: number, text: string, color: string, fontSize: number): TextObject {
+    const label = createTextObject(this.textId++, x, y, text, color, fontSize)
+    this.items.push(label)
+    return label
+  }
+
   /** A text label whose centre is the box centre (plus `drop` down), so it lies fully inside the box; centred like labels typed inside a shape. */
   private label(box: RectangleObject, text: string, fontSize: number, drop: number): TextObject {
     const made = createTextObject(this.textId++, 0, 0, text, STROKE_COLOR, fontSize)

@@ -7,6 +7,7 @@ import { createShapeBox } from './canvasModel'
 import { BOUNDARY_COLOR, BOUNDARY_FONT_SIZE, BOUNDARY_PADDING } from './boundary'
 import { cleanMermaidText, facingSides, firstMermaidLine, MAX_MERMAID_NODES, MAX_MERMAID_TEXT, normalizeMermaidSpaces, stripMermaidFrontMatter } from './mermaidCommon'
 import { buildMermaidClassItems, isMermaidClassText, parseMermaidClass } from './mermaidClassImport'
+import { buildMermaidEr, isMermaidErText } from './mermaidErImport'
 import { buildMermaidSequence, isMermaidSequenceText, type MermaidDiagramResult } from './mermaidSequenceImport'
 
 export { MAX_MERMAID_NODES, MAX_MERMAID_TEXT, normalizeMermaidSpaces, stripMermaidFrontMatter }
@@ -35,7 +36,7 @@ const HEADER = /^(?:graph|flowchart)(?:[ \t]+(?:TD|TB|BT|LR|RL))?[ \t]*(?:;.*)?$
 /** True when the first line that is not blank, front matter or a %% comment is a `graph` / `flowchart`, `classDiagram` or `sequenceDiagram` header (lowercase, as Mermaid requires). */
 export function isMermaidText(text: string): boolean {
   const line = firstMermaidLine(text)
-  return HEADER.test(line) || isMermaidClassText(line) || isMermaidSequenceText(line)
+  return HEADER.test(line) || isMermaidClassText(line) || isMermaidSequenceText(line) || isMermaidErText(line)
 }
 
 const SHAPES: ReadonlyArray<{ open: string; close: string; shape: MermaidShape }> = [
@@ -432,11 +433,16 @@ function buildSubgraphFrames(groups: MermaidSubgraph[], boxes: Map<string, Recta
 }
 
 /** The toast after inserting: "Inserted 3 boxes and 2 links", plus "(1 line ignored)". Class diagrams say "classes". */
-export function mermaidInsertMessage(boxes: number, links: number, ignored: number, kind: 'flowchart' | 'class' | 'sequence' = 'flowchart'): string {
+export function mermaidInsertMessage(boxes: number, links: number, ignored: number, kind: 'flowchart' | 'class' | 'sequence' | 'er' | 'state' = 'flowchart'): string {
   const boxText = kind === 'class' ? `${boxes} ${boxes === 1 ? 'class' : 'classes'}`
     : kind === 'sequence' ? `${boxes} ${boxes === 1 ? 'participant' : 'participants'}`
+    : kind === 'er' ? `${boxes} ${boxes === 1 ? 'entity' : 'entities'}`
+    : kind === 'state' ? `${boxes} ${boxes === 1 ? 'state' : 'states'}`
     : `${boxes} ${boxes === 1 ? 'box' : 'boxes'}`
-  const linkText = kind === 'sequence' ? `${links} ${links === 1 ? 'message' : 'messages'}` : `${links} ${links === 1 ? 'link' : 'links'}`
+  const linkText = kind === 'sequence' ? `${links} ${links === 1 ? 'message' : 'messages'}`
+    : kind === 'er' ? `${links} ${links === 1 ? 'relationship' : 'relationships'}`
+    : kind === 'state' ? `${links} ${links === 1 ? 'transition' : 'transitions'}`
+    : `${links} ${links === 1 ? 'link' : 'links'}`
   return `Inserted ${boxText} and ${linkText}${ignored > 0 ? ` (${ignored} ${ignored === 1 ? 'line' : 'lines'} ignored)` : ''}`
 }
 
@@ -451,6 +457,7 @@ export function buildMermaidDiagram(text: string): MermaidDiagramResult {
     return { ok: true, items: built.items, boxes: built.boxes, links: built.links, ignoredLines: parsed.ignoredLines, kind: 'class' }
   }
   if (isMermaidSequenceText(header)) return buildMermaidSequence(capped)
+  if (isMermaidErText(header)) return buildMermaidEr(capped)
   const parsed = parseMermaid(capped)
   if (!parsed.ok) return parsed
   const built = buildMermaidItems(parsed)

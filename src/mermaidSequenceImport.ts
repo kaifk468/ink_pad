@@ -246,5 +246,5 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
 
 /** Result of any Mermaid importer (flowchart, class, sequence); the dispatcher in mermaidImport.ts returns it. */
 export type MermaidDiagramResult =
-  | { ok: true; items: CanvasItem[]; boxes: number; links: number; ignoredLines: number; kind: 'flowchart' | 'class' | 'sequence' }
+  | { ok: true; items: CanvasItem[]; boxes: number; links: number; ignoredLines: number; kind: 'flowchart' | 'class' | 'sequence' | 'er' | 'state' }
   | { ok: false; error: string }
