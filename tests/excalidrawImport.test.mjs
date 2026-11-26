@@ -236,8 +236,8 @@ test('malformed and empty input', () => {
 })
 
 test('wiring: paste detects Excalidraw first, file import in More tray and palette', async () => {
-  assert.match(app, /isExcalidrawText\(full\)[\s\S]{0,120}importExcalidraw\(full, at\)[\s\S]*?const mermaidText = full\.slice/)
-  assert.match(app, /const importExcalidraw = [\s\S]*?buildExcalidrawItems\(text\)[\s\S]*?insertTemplateItems\(built\.items, at\)[\s\S]*?excalidrawInsertMessage/)
+  assert.match(app, /isExcalidrawText\(full\)[\s\S]{0,160}importExcalidraw\(excalidraw, at\)[\s\S]*?const mermaidText = full\.slice/)
+  assert.match(app, /const importExcalidraw = [\s\S]*?buildExcalidrawItems\(source\)[\s\S]*?insertTemplateItems\(built\.items, at\)[\s\S]*?excalidrawInsertMessage/)
   assert.match(app, /type="file" accept="\.excalidraw,application\/json" hidden/)
   assert.match(app, /id: 'excalidraw:import', label: 'Import Excalidraw file…'/)
   assert.match(app, /onExcalidraw=\{\(\) => excalidrawFileRef\.current\?\.click\(\)\}/)

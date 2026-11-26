@@ -301,11 +301,7 @@ export function buildMermaidStateItems(parsed: { states: StateNode[]; transition
     else if (node.kind === 'choice') rectangles.set(node.id, sheet.bare(box.x, box.y, box.width, box.height, { diamond: true }))
     else if (node.kind === 'fork') rectangles.set(node.id, sheet.bare(box.x, box.y, box.width, box.height, { fillColor: INK }))
     else {
-      // `rounded` is the optional corner style added by the rounded-rectangle work; typed loosely so this builds before and after it.
-      const made = sheet.shaped('rectangle', box.x, box.y, box.width, box.height, stateText(node))
-      const rounded = { ...made, rounded: true } as unknown as RectangleObject
-      sheet.items[sheet.items.indexOf(made)] = rounded
-      rectangles.set(node.id, rounded)
+      rectangles.set(node.id, sheet.shaped('rounded', box.x, box.y, box.width, box.height, stateText(node)))
     }
   }
   const seen = new Map<string, number>()

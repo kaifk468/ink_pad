@@ -89,12 +89,12 @@ test('ids are unique per kind and items round-trip through documentFormat', () =
     const ids = r.items.filter((i) => i.kind === kind).map((i) => i.id)
     assert.equal(new Set(ids).size, ids.length, kind)
   }
-  // startLabel / endLabel are persisted by the connector-label format work; compare without them so this test holds either way.
-  const bare = (item) => { const { startLabel, endLabel, ...rest } = item; return rest }
+  assert.ok(r.items.some((i) => i.kind === 'connector' && i.startLabel && i.endLabel), 'cardinalities are on the built connectors')
+  const bare = (item) => item
   const saved = doc.createDocument({ template: 'blank', background: 'white', items: r.items })
   const parsed = doc.parseDocument(doc.stringifyDocument(saved))
-  assert.deepEqual((parsed.document ?? parsed).items.map(bare), r.items.map(bare))
-  for (const item of r.items) assert.deepEqual(bare(doc.sanitizeItem(JSON.parse(JSON.stringify(item)))), bare(item))
+  assert.deepEqual((parsed.document ?? parsed).items, r.items)
+  for (const item of r.items) assert.deepEqual(doc.sanitizeItem(JSON.parse(JSON.stringify(item))), item)
 })
 
 test('dispatcher, detection and toast', () => {

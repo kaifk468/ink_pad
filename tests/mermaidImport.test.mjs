@@ -161,8 +161,8 @@ test('wiring: dialog, More menu, palette, template chooser', () => {
 test('wiring: Desktop paste of system text', () => {
   assert.match(app, /window\.addEventListener\('paste', onPaste\)/)
   assert.match(app, /clipboardData\?\.getData\('text\/plain'\)/)
-  // Ctrl+V with an empty in-app clipboard is left unhandled on keydown so the paste event fires
-  assert.match(app, /case 'paste':[\s\S]{0,260}inputModeRef\.current === 'desktop' && clipboardRef\.current\.length === 0\) return false/)
+  // Desktop Ctrl+V is left unhandled on keydown so the paste event fires and decides between system text and the in-app items
+  assert.match(app, /case 'paste':[\s\S]{0,360}inputModeRef\.current === 'desktop'\) return false/)
   assert.match(app, /isTypingTarget\(target\?\.tagName \?\? 'BODY', Boolean\(target\?\.isContentEditable\)\)\) return/)
   assert.match(app, /isMermaidText\(mermaidText\)/)
   assert.match(app, /\.slice\(0, 2000\)/)

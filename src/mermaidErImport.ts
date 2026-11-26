@@ -135,10 +135,7 @@ export function buildMermaidErItems(parsed: { entities: ErEntity[]; relations: E
     const from = boxes.get(relation.from) as RectangleObject
     const to = boxes.get(relation.to) as RectangleObject
     const { fromSide, toSide } = facingSides(from, to)
-    sheet.connect(from, fromSide, to, toSide, { type: 'association', ...(relation.dashed ? { dash: 'dashed' as const } : {}), ...(relation.label ? { label: relation.label } : {}) })
-    const last = sheet.items.length - 1
-    // `startLabel` / `endLabel` are optional connector fields added by the connector-end-label work; typed loosely so this builds before and after it.
-    sheet.items[last] = { ...sheet.items[last], startLabel: relation.startLabel, endLabel: relation.endLabel } as unknown as CanvasItem
+    sheet.connect(from, fromSide, to, toSide, { type: 'association', ...(relation.dashed ? { dash: 'dashed' as const } : {}), ...(relation.label ? { label: relation.label } : {}), ...(relation.startLabel ? { startLabel: relation.startLabel } : {}), ...(relation.endLabel ? { endLabel: relation.endLabel } : {}) })
   }
   return { items: sheet.items, boxes: parsed.entities.length, links: parsed.relations.length }
 }

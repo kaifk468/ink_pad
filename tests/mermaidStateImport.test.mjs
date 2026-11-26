@@ -161,7 +161,8 @@ test('ids are unique per kind and items survive saving and loading', () => {
     const ids = r.items.filter((i) => i.kind === kind).map((i) => i.id)
     assert.equal(new Set(ids).size, ids.length, kind)
   }
-  const bare = (item) => { const { rounded, startLabel, endLabel, ...rest } = item; return rest }
+  assert.ok(r.items.some((i) => i.kind === 'rectangle' && i.rounded === true), 'rounded states are on the built boxes')
+  const bare = (item) => item
   const saved = doc.createDocument({ template: 'blank', background: 'white', items: r.items })
   const parsed = doc.parseDocument(doc.stringifyDocument(saved))
   assert.deepEqual((parsed.document ?? parsed).items.map(bare), r.items.map(bare))

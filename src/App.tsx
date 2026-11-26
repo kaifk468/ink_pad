@@ -76,6 +76,8 @@ import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
 import { MermaidDialog } from './app/MermaidDialog'
 import { buildExcalidrawItems, excalidrawInsertMessage, isExcalidrawText } from './excalidrawImport'
+import type { ExcalidrawResult } from './excalidrawImport'
+import { isOwnClipboardText } from './systemPaste'
 import { buildMermaidDiagram, isMermaidText, MAX_MERMAID_TEXT, mermaidInsertMessage } from './mermaidImport'
 import { DIAGRAM_TEMPLATES, buildTemplate } from './diagramTemplates'
 import { addUserTemplate, loadUserTemplates, newTemplateId, removeUserTemplate, saveUserTemplates, userTemplatesBlockedMessage, type UserTemplate } from './userTemplates'
@@ -331,6 +333,8 @@ function App() {
   // Step 10: the in-app clipboard (a deep copy of the copied items; never the system clipboard, never saved). It outlives page changes,
   // so a paste works on any page, and in another diagram opened later; every paste takes fresh ids from the shared counters.
   const clipboardRef = useRef<CanvasItem[]>([])
+  // The last text InkPad itself wrote to the system clipboard (Copy Mermaid, Copy outline); a paste of exactly that text does not override in-app items.
+  const lastWrittenTextRef = useRef<string | null>(null)
   const pasteCountRef = useRef(0)
   const [clipboardCount, setClipboardCount] = useState(0)
   // Step 11: the right-click menu (Desktop only), at the pointer in screen coordinates.
@@ -4718,16 +4722,19 @@ function App() {
     return null
   }
   // Excalidraw JSON (pasted clipboard text or an opened .excalidraw file): the same insert path as templates. Returns an error message, or null when inserted.
-  const importExcalidraw = (text: string, at: Point | null = null): string | null => {
-    const built = buildExcalidrawItems(text)
+  // `source` may be an already built result (the paste check parses once).
+  const importExcalidraw = (source: string | ExcalidrawResult, at: Point | null = null): string | null => {
+    const built = typeof source === 'string' ? buildExcalidrawItems(source) : source
     if (!built.ok) return built.error
     if (!insertTemplateItems(built.items, at)) return 'Could not insert the drawing.'
     showToast(excalidrawInsertMessage(built.shapes, built.skipped))
     return null
   }
   const excalidrawFileRef = useRef<HTMLInputElement>(null)
+  const MAX_EXCALIDRAW_FILE_BYTES = 20 * 1024 * 1024
   const openExcalidrawFile = (file: File | undefined) => {
     if (!file) return
+    if (file.size > MAX_EXCALIDRAW_FILE_BYTES) { showToast('File too large'); return }
     file.text().then((text) => {
       const error = importExcalidraw(text)
       if (error) showToast(error)
@@ -4735,13 +4742,14 @@ function App() {
   }
   // Desktop paste with an empty in-app clipboard: the browser's paste event carries the system clipboard text. Mermaid text becomes a diagram, other text one label.
   // Returns true when the paste was handled (including a shown error), false when there was nothing to paste.
-  const pasteSystemText = (raw: string, at: Point | null): boolean => {
+  const pasteSystemText = (raw: string, at: Point | null, structuredOnly = false): boolean => {
     const full = normalizeText(raw).trim()
     if (full === '') return false
     // Mermaid is detected and parsed on the whole text (capped at MAX_MERMAID_TEXT); only the plain label below is cut to 2000 characters.
     // Excalidraw clipboard JSON comes first: it is inserted as shapes (a failed parse falls through to plain text).
-    if (isExcalidrawText(full) && buildExcalidrawItems(full).ok) {
-      const error = importExcalidraw(full, at)
+    const excalidraw = isExcalidrawText(full) ? buildExcalidrawItems(full) : null
+    if (excalidraw?.ok) {
+      const error = importExcalidraw(excalidraw, at)
       if (error) showToast(error)
       return true
     }
@@ -4755,6 +4763,7 @@ function App() {
         return true
       }
     }
+    if (structuredOnly) return false // plain text never beats the in-app items
     const text = full.slice(0, 2000)
     const label = createTextObject(1, 0, 0, text, color, textSize, createTextMeasure(textSize, textFontId), textFontId)
     const done = insertTemplateItems([label], at, false)
@@ -5142,6 +5151,7 @@ function App() {
   const currentOutline = (): string => buildDiagramOutline(docTitle, pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)), pagesRef.current.map((slot) => slot.name ?? ''))
   const copyOutline = () => {
     const text = currentOutline()
+    lastWrittenTextRef.current = text
     const done = () => showToast('Outline copied')
     const failed = () => showToast('Could not copy the outline')
     try {
@@ -5154,6 +5164,7 @@ function App() {
   const copyMermaid = () => {
     const result = buildMermaid(strokesRef.current)
     const text = result.text
+    lastWrittenTextRef.current = text
     const noun = result.kind === 'class' ? (result.boxes === 1 ? 'class' : 'classes') : result.boxes === 1 ? 'box' : 'boxes'
     const done = () => showToast(`Copied ${result.boxes} ${noun} and ${result.links} ${result.links === 1 ? 'link' : 'links'} as Mermaid${result.skipped ? '; text and ink skipped' : ''}`)
     const failed = () => showToast('Could not copy Mermaid')
@@ -5354,14 +5365,21 @@ function App() {
   // Desktop Ctrl+V with an empty in-app clipboard is not handled on keydown (so the browser still fires its paste event): this reads the system clipboard text from that event.
   const pasteEventRef = useRef<(event: ClipboardEvent) => void>(() => undefined)
   pasteEventRef.current = (event) => {
-    if (inputModeRef.current !== 'desktop' || event.defaultPrevented || clipboardRef.current.length > 0) return
+    if (inputModeRef.current !== 'desktop' || event.defaultPrevented) return
     const target = event.target as HTMLElement | null
     if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) return
     // Same guards as the Ctrl+V keydown path: no paste under a dialog, editor, context menu, gesture, marquee or fingers on the canvas (and then no preventDefault).
     if (canvasCommandBlocked()) return
     event.preventDefault()
     const at = cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null
-    if (!pasteSystemText(event.clipboardData?.getData('text/plain') ?? '', at)) showToast('Nothing to paste')
+    const systemText = event.clipboardData?.getData('text/plain') ?? ''
+    if (clipboardRef.current.length > 0) {
+      // In-app items win over plain text, but Excalidraw JSON or Mermaid copied elsewhere wins over them (unless InkPad wrote that text itself).
+      if (!isOwnClipboardText(systemText, lastWrittenTextRef.current) && pasteSystemText(systemText, at, true)) return
+      pasteWithToast(at)
+      return
+    }
+    if (!pasteSystemText(systemText, at)) showToast('Nothing to paste')
   }
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => pasteEventRef.current(event)
@@ -5425,9 +5443,9 @@ function App() {
       case 'copyStyle': return copyStyleWithToast()
       case 'pasteStyle': return pasteStyleWithToast()
       case 'paste':
-        // Desktop, nothing copied in the app: no preventDefault, the browser's paste event brings the system clipboard text (see pasteEventRef).
-        if (inputModeRef.current === 'desktop' && clipboardRef.current.length === 0) return false
-        return pasteWithToast(inputModeRef.current === 'desktop' && cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null)
+        // Desktop: no preventDefault, the browser's paste event brings the system clipboard text (see pasteEventRef), which decides between it and the in-app items.
+        if (inputModeRef.current === 'desktop') return false
+        return pasteWithToast(null)
       case 'duplicate': return duplicateWithToast()
       case 'deleteSelection': return deleteSelection()
       case 'selectAll': return selectAllItems()

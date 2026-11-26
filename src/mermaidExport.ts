@@ -41,7 +41,7 @@ function shape(box: RectangleObject, label: string): string {
   if (box.ellipse) return `(("${label}"))`
   if (box.hldShape === 'database') return `[("${label}")]`
   if (box.hldShape === 'service') return `[["${label}"]]`
-  if (!box.hldShape && (box as RectangleObject & { rounded?: true }).rounded === true) return `("${label}")`
+  if (!box.hldShape && box.rounded === true) return `("${label}")`
   return `["${label}"]`
 }
 
@@ -64,7 +64,6 @@ export function classIdentifier(name: string, taken: Set<string>): string {
 }
 
 /** Cardinality text a connector may carry next to its start / end box (added by the connector format; read here as optional strings). */
-type Cardinalities = { startLabel?: string; endLabel?: string }
 const cardinalityText = (text: string | undefined): string => (text ? text.replace(/\s+/g, ' ').replace(/"/g, "'").trim() : '')
 
 /** A sticky note (plain rectangle with the sticky fill): in a class diagram it is a `note`. */
@@ -114,9 +113,8 @@ function classDiagram(items: readonly CanvasItem[], classBoxes: RectangleObject[
     const other = spec.endpoint === 'start' ? to : from
     const label = connector.label ? mermaidText(connector.label).replace(/<br\/>/g, ' ') : ''
     // Cardinalities stay next to their own class: `A "1" --> "*" B`. The start label belongs to the connector's start box (`from`), the end label to `to`.
-    const cards = connector as ConnectorObject & Cardinalities
-    const startCard = cardinalityText(cards.startLabel)
-    const endCard = cardinalityText(cards.endLabel)
+    const startCard = cardinalityText(connector.startLabel)
+    const endCard = cardinalityText(connector.endLabel)
     const edge = (l: string, op: string, r: string): string => {
       const cardOf = (id: string): string => (id === from ? startCard : endCard)
       const leftCard = l === r ? '' : cardOf(l)
