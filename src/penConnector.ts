@@ -3,6 +3,27 @@ import { isContainerBox } from './boundary'
 import { isFlowBox } from './diagramFlow'
 
 /**
+ * An end placed inside a box attaches to the middle of the side that faces the other end (not the nearest side, which for a line
+ * drawn into the middle of a box is often the top or bottom; found in the round 8 walk). Ends on or near the outline, ends whose
+ * other end is in the same box and rotated boxes keep `found`. Used by the pen recognizer and the desktop Arrow / Line tool.
+ */
+export function facingSideSnap<T extends { point: Point; attachment: { rectangleId: number; offsetX: number; offsetY: number } } | null>(boxes: readonly RectangleObject[], found: T, point: Point, other: Point): T {
+  if (!found) return found
+  const inside = (box: RectangleObject, p: { x: number; y: number }) => !box.angle && p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height
+  const box = boxes.find((item) => item.id === found.attachment.rectangleId)
+  if (!box || !inside(box, point) || inside(box, other)) return found
+  const cx = box.x + box.width / 2
+  const cy = box.y + box.height / 2
+  const dx = (other.x - cx) / Math.max(1, box.width / 2)
+  const dy = (other.y - cy) / Math.max(1, box.height / 2)
+  const side = Math.abs(dx) >= Math.abs(dy)
+    ? { x: dx < 0 ? box.x : box.x + box.width, y: cy }
+    : { x: cx, y: dy < 0 ? box.y : box.y + box.height }
+  const sidePoint = { ...found.point, x: side.x, y: side.y }
+  return { point: sidePoint, attachment: { ...found.attachment, offsetX: side.x - box.x, offsetY: side.y - box.y } } as T
+}
+
+/**
  * Pen and touch: a recognized (straightened) arrow or line stroke becomes an attached connector when it touches boxes.
  * - Arrow (Shapes mode): tail or tip on a box -> directed connector (a free end stays a free point).
  * - Line (hold to straighten): only when both ends are on two different boxes -> plain association connector (no arrowhead).
@@ -34,24 +55,8 @@ export function penConnectorFor(
     }
     return found
   }
-  // A pen end drawn deep inside a box attaches to the middle of the side that faces the other end (not the nearest
-  // side, which for a line drawn into the middle of a box is often the top or bottom; found in the round 8 walk).
-  const facing = (found: ReturnType<typeof snap>, point: Point, other: Point): ReturnType<typeof snap> => {
-    if (!found) return found
-    const box = boxes.find((item) => item.id === found.attachment.rectangleId)
-    if (!box || !inside(box, point) || inside(box, other)) return found
-    const cx = box.x + box.width / 2
-    const cy = box.y + box.height / 2
-    const dx = (other.x - cx) / Math.max(1, box.width / 2)
-    const dy = (other.y - cy) / Math.max(1, box.height / 2)
-    const side = Math.abs(dx) >= Math.abs(dy)
-      ? { x: dx < 0 ? box.x : box.x + box.width, y: cy }
-      : { x: cx, y: dy < 0 ? box.y : box.y + box.height }
-    const sidePoint = { ...found.point, x: side.x, y: side.y }
-    return { point: sidePoint, attachment: { ...found.attachment, offsetX: side.x - box.x, offsetY: side.y - box.y } }
-  }
-  const startSnap = facing(snap(tail), tail, tip)
-  const endSnap = facing(snap(tip), tip, tail)
+  const startSnap = facingSideSnap(boxes, snap(tail), tail, tip)
+  const endSnap = facingSideSnap(boxes, snap(tip), tip, tail)
   // Both ends on the same box would be a self-loop: keep the stroke.
   if (startSnap && endSnap && startSnap.attachment.rectangleId === endSnap.attachment.rectangleId) return null
   if (shape === 'line') {

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
-import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
 import { QUICK_CONNECT_DOUBLE_CLICK_MS, TABLET_QUICK_CONNECT_TAP_SLOP_PX, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConnectorHandle, hitConnectorLabel, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
@@ -94,7 +94,7 @@ import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
-import { penConnectorFor } from './penConnector'
+import { facingSideSnap, penConnectorFor } from './penConnector'
 import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
 import { selectionBoundsWithEndLabels, setConnectorEndLabel } from './connectorEndLabels'
 import { cornersChoice, setRoundedCorners } from './roundedCorners'
@@ -264,6 +264,9 @@ function App() {
     relationshipType: ConnectorRelationshipType
     startAttachment?: ConnectorObject['startAttachment']
     endAttachment?: ConnectorObject['endAttachment']
+    /** Where the press began and what it snapped to, before the side rule (Desktop Arrow / Line). */
+    rawStart?: Point
+    snappedStart?: SnappedConnectorEndpoint | null
   } | null>(null)
   const shapePreviewRef = useRef<CanvasItem | null>(null)
   const selectedRectangleIdRef = useRef<number | null>(null)
@@ -3429,6 +3432,25 @@ function App() {
     const snapped = snapConnectorEndpoint(point, strokesRef.current, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale, inputModeRef.current === 'desktop')
     return snapped && isPointWithinBounds(snapped.point, workspaceBoundsRef.current) ? snapped : null
   }
+  /**
+   * Sets both ends of the Arrow / Line connector being drawn. Desktop: an end inside a box (not on or near the outline) attaches to the
+   * middle of the side facing the other end, the same rule as the pen (facingSideSnap); other ends keep the snap they have.
+   */
+  const placeConnectorEnds = (gesture: NonNullable<typeof activeConnectorRef.current>, rawEnd: Point) => {
+    let endSnap = snapConnectorEndpointWithinWorkspace(rawEnd)
+    let startSnap = gesture.snappedStart ?? null
+    if (inputModeRef.current === 'desktop' && gesture.rawStart) {
+      const boxes = strokesRef.current.filter((item): item is RectangleObject => item.kind === 'rectangle')
+      const facedStart = facingSideSnap(boxes, startSnap, gesture.rawStart, rawEnd)
+      const facedEnd = facingSideSnap(boxes, endSnap, rawEnd, gesture.rawStart)
+      if (facedStart && isPointWithinBounds(facedStart.point, workspaceBoundsRef.current)) startSnap = facedStart
+      if (facedEnd && isPointWithinBounds(facedEnd.point, workspaceBoundsRef.current)) endSnap = facedEnd
+    }
+    gesture.start = startSnap?.point ?? gesture.rawStart ?? gesture.start
+    gesture.startAttachment = startSnap?.attachment
+    gesture.end = endSnap?.point ?? rawEnd
+    gesture.endAttachment = endSnap?.attachment
+  }
 
   const fitCanvasView = () => {
     const canvas = canvasRef.current
@@ -3913,6 +3935,8 @@ function App() {
         end: point,
         relationshipType: umlConnectorType ?? 'association',
         startAttachment: snappedStart?.attachment,
+        rawStart: point,
+        snappedStart,
       }
       renderAll()
       return
@@ -4206,9 +4230,7 @@ function App() {
     if (activeConnector?.pointerId === event.pointerId) {
       event.preventDefault()
       const point = getBoundedPoint(event)
-      const snappedEnd = snapConnectorEndpointWithinWorkspace(point)
-      activeConnector.end = snappedEnd?.point ?? point
-      activeConnector.endAttachment = snappedEnd?.attachment
+      placeConnectorEnds(activeConnector, point)
       scheduleRender()
       return
     }
@@ -4438,9 +4460,7 @@ function App() {
     const activeConnector = activeConnectorRef.current
     if (activeConnector?.pointerId === event.pointerId) {
       const point = getBoundedPoint(event)
-      const snappedEnd = snapConnectorEndpointWithinWorkspace(point)
-      activeConnector.end = snappedEnd?.point ?? point
-      activeConnector.endAttachment = snappedEnd?.attachment
+      placeConnectorEnds(activeConnector, point)
       if (Math.hypot(activeConnector.end.x - activeConnector.start.x, activeConnector.end.y - activeConnector.start.y) >= 2) {
         saveHistory()
         strokesRef.current.push(createConnector(

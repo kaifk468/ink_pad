@@ -55,7 +55,7 @@ test('expanded header and minimized button both provide draggable pointer captur
 test('selected relationship type flows through pen preview and snapped connector creation', () => {
   assert.match(appSource, /if \(connectorMode \|\| umlConnectorType !== null\)/)
   assert.match(appSource, /const snappedStart = snapConnectorEndpointWithinWorkspace\(point\)/)
-  assert.match(appSource, /const snappedEnd = snapConnectorEndpointWithinWorkspace\(point\)/)
+  assert.match(appSource, /placeConnectorEnds\(activeConnector, point\)[\s\S]*?let endSnap = snapConnectorEndpointWithinWorkspace\(rawEnd\)|let endSnap = snapConnectorEndpointWithinWorkspace\(rawEnd\)[\s\S]*?placeConnectorEnds\(activeConnector, point\)/)
   assert.match(appSource, /relationshipType: umlConnectorType \?\? 'association'/)
   assert.match(appSource, /activeConnector\.relationshipType,[\s\S]*?\)\)/)
   assert.match(appSource, /setUmlConnectorType\(relationshipType\)[\s\S]*?setConnectorMode\(false\)/)
