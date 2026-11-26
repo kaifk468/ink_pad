@@ -4,7 +4,7 @@ import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
 import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
-import { QUICK_CONNECT_DOUBLE_CLICK_MS, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
+import { QUICK_CONNECT_DOUBLE_CLICK_MS, TABLET_QUICK_CONNECT_TAP_SLOP_PX, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConnectorHandle, hitConnectorLabel, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
@@ -330,7 +330,7 @@ function App() {
   // Desktop quick-connect buttons: the hovered one, and the press in progress (a click, not a drag, makes the connected shape).
   const quickHoverRef = useRef<QuickConnectDirection | null>(null)
   const quickClickAtRef = useRef(-Infinity)
-  const activeQuickRef = useRef<{ pointerId: number; direction: QuickConnectDirection; startScreen: Point; dragged: boolean } | null>(null)
+  const activeQuickRef = useRef<{ pointerId: number; direction: QuickConnectDirection; pointerType: string; startScreen: Point; dragged: boolean } | null>(null)
   const hoverPointRef = useRef<Point | null>(null)
   // Desktop paste target: the last mouse position over the canvas (screen coordinates, converted at paste time so a pan or zoom keeps it right); null while the mouse is off the canvas.
   const cursorPointRef = useRef<Point | null>(null)
@@ -2024,28 +2024,36 @@ function App() {
   }
   /**
    * The one selected plain or HLD box that shows the quick-connect buttons: Desktop Select mode, not locked, not rotated, big enough on
-   * screen, with no gesture or editor active. Null otherwise. Only mouse input starts a press (pen and touch never use the buttons).
+   * screen, with no gesture or editor active. Null otherwise. Desktop: only the mouse starts a press. Tablet: a pen or one-finger tap
+   * does (bigger buttons), and the buttons hide while a finger is down for navigation.
    */
   /** Buttons whose centre is off the page are hidden (and not hit): the page-bounds check would drop the press anyway. */
   const quickInsideSheet = (point: Point) => isPointWithinBounds(point, sheetBoundsRef.current)
   const quickConnectSource = (): RectangleObject | null => {
-    if (inputModeRef.current !== 'desktop' || !selectionMode) return null
+    if (!selectionMode) return null
+    const tablet = inputModeRef.current === 'tablet'
+    if (tablet && touchNav.touchCount() > 0) return null
     if (textEditorRef.current || codeEditorRef.current || activeMarqueeRef.current || activePointerRef.current !== null || activeConnectorRef.current || activeDragRef.current || activeResizeRef.current || activeRotateRef.current || activeEndpointRef.current || activeDividerRef.current || activeLassoRef.current || lassoDragRef.current || mousePanRef.current) return null
     const keys = currentSelectionKeys()
     if (keys.size !== 1) return null
     const item = strokesRef.current.find((candidate) => keys.has(canvasItemKey(candidate)))
     if (!item || item.kind !== 'rectangle' || !isFlowBox(item) || isItemLocked(item) || itemAngle(item) !== 0) return null
-    return quickConnectFits(item, viewportRef.current.scale) ? item : null
+    return quickConnectFits(item, viewportRef.current.scale, tablet) ? item : null
   }
   /** Starts a quick-connect press when a mouse pointer lands on one of the buttons. A click (not a drag) runs Ctrl+Arrow for that side. */
   const startQuickConnectPress = (event: React.PointerEvent<HTMLCanvasElement>, point: Point): boolean => {
-    if (event.pointerType !== 'mouse' || event.button !== 0 || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return false
+    const tablet = inputModeRef.current === 'tablet'
+    // Desktop: the mouse (main button, no modifier). Tablet: the pen (not while its button erases) or a lone finger with no pen near.
+    const allowed = tablet
+      ? (event.pointerType === 'pen' && !isPenButtonHeld(event.nativeEvent)) || (event.pointerType === 'touch' && touchNav.touchCount() === 0 && !touchNav.penNear(performance.now()))
+      : event.pointerType === 'mouse' && event.button === 0 && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
+    if (!allowed) return false
     const source = quickConnectSource()
-    const direction = source ? hitQuickConnect(source, point, viewportRef.current.scale, quickInsideSheet) : null
+    const direction = source ? hitQuickConnect(source, point, viewportRef.current.scale, quickInsideSheet, tablet) : null
     if (!direction) return false
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
-    activeQuickRef.current = { pointerId: event.pointerId, direction, startScreen: getScreenPoint(event), dragged: false }
+    activeQuickRef.current = { pointerId: event.pointerId, direction, pointerType: event.pointerType, startScreen: getScreenPoint(event), dragged: false }
     // The press must not join a double-click pair (its second click would undo the new shape or open a label editor).
     clickPairRef.current = null
     clickBeforeRef.current = null
@@ -2058,7 +2066,7 @@ function App() {
     if (!press) return
     event.preventDefault()
     const now = getScreenPoint(event)
-    if (Math.hypot(now.x - press.startScreen.x, now.y - press.startScreen.y) >= CONNECTOR_CLICK_SLOP_PX) press.dragged = true
+    if (Math.hypot(now.x - press.startScreen.x, now.y - press.startScreen.y) >= (press.pointerType === 'mouse' ? CONNECTOR_CLICK_SLOP_PX : TABLET_QUICK_CONNECT_TAP_SLOP_PX)) press.dragged = true
   }
   const finishQuickConnectPress = () => {
     const press = activeQuickRef.current
@@ -2865,12 +2873,13 @@ function App() {
       // Desktop quick-connect buttons: round, a constant size on screen, with an arrow pointing out; the hovered one is filled stronger and shows a hint.
       const scale = viewportRef.current.scale
       const hovered = activeQuickRef.current?.direction ?? quickHoverRef.current
+      const tabletButtons = inputModeRef.current === 'tablet'
       ctx.save()
       ctx.lineWidth = 1.5 / scale
       ctx.strokeStyle = '#5269df'
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
-      for (const button of quickConnectButtons(quickSource, scale, quickInsideSheet)) {
+      for (const button of quickConnectButtons(quickSource, scale, quickInsideSheet, tabletButtons)) {
         const { x, y } = button.center
         const r = button.radius
         const k = r * 0.4
@@ -2888,7 +2897,7 @@ function App() {
         ctx.lineTo(x - dx * k + dy * k, y - dy * k + dx * k)
         ctx.stroke()
         ctx.strokeStyle = '#5269df'
-        if (button.direction === hovered) {
+        if (button.direction === hovered && !tabletButtons) {
           const text = quickConnectHint(button.direction)
           ctx.font = `${12 / scale}px system-ui, sans-serif`
           ctx.textBaseline = 'middle'
@@ -3719,9 +3728,23 @@ function App() {
     moveEraserCursor(event)
     // A pen landing cancels a connector handle gesture a finger owns (palm rejection: the pen wins).
     if (event.pointerType === 'pen' && activeEndpointRef.current?.pointerType === 'touch') cancelConnectorHandleGesture()
+    // A pen landing ends a finger's quick-connect press (the pen wins).
+    if (event.pointerType === 'pen' && activeQuickRef.current?.pointerType === 'touch') cancelQuickConnectPress()
     if (event.pointerType === 'pen') touchNav.penDown()
     if (event.pointerType === 'touch') {
       event.preventDefault()
+      const touchQuick = activeQuickRef.current?.pointerType === 'touch' ? activeQuickRef.current : null
+      if (touchQuick) {
+        // A second finger ends the button press (nothing is made) and both fingers go to navigation (pinch, three-finger pan).
+        const firstId = touchQuick.pointerId
+        const firstStart = touchQuick.startScreen
+        cancelQuickConnectPress()
+        touchNav.down(firstId, firstStart, performance.now())
+        touchNav.cancelTap()
+      } else if (selectionMode && !laserModeRef.current && touchNav.touchCount() === 0 && startQuickConnectPress(event, getPoint(event))) {
+        // A lone finger on a quick-connect button (tablet Select, one plain or HLD box selected): a tap makes the connected box; it is never navigation.
+        return
+      }
       const touchHandle = activeEndpointRef.current?.pointerType === 'touch' ? activeEndpointRef.current : null
       if (touchHandle) {
         // A second finger ends the handle drag (originals restored, no history step) and both fingers go to navigation (pinch, three-finger pan).
