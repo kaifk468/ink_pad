@@ -1,3 +1,4 @@
+import { spreadConnectorAttachments } from './spreadAttachments'
 import type { CanvasItem, RectangleObject } from './canvasModel'
 import { getClassBoxGeometry } from './classBoxLayout'
 import { Sheet } from './diagramTemplates'
@@ -137,7 +138,7 @@ export function buildMermaidErItems(parsed: { entities: ErEntity[]; relations: E
     const { fromSide, toSide } = facingSides(from, to)
     sheet.connect(from, fromSide, to, toSide, { type: 'association', ...(relation.dashed ? { dash: 'dashed' as const } : {}), ...(relation.label ? { label: relation.label } : {}), ...(relation.startLabel ? { startLabel: relation.startLabel } : {}), ...(relation.endLabel ? { endLabel: relation.endLabel } : {}) })
   }
-  return { items: sheet.items, boxes: parsed.entities.length, links: parsed.relations.length }
+  return { items: spreadConnectorAttachments(sheet.items), boxes: parsed.entities.length, links: parsed.relations.length }
 }
 
 /** Parses and builds an erDiagram in one step (the dispatcher's entry). */

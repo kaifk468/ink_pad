@@ -1,3 +1,4 @@
+import { spreadConnectorAttachments } from './spreadAttachments'
 import type { CanvasItem, ConnectorRelationshipType, RectangleBounds, RectangleObject } from './canvasModel'
 import { BOUNDARY_PADDING } from './boundary'
 import { getClassBoxGeometry } from './classBoxLayout'
@@ -281,5 +282,5 @@ export function buildMermaidClassItems(parsed: { classes: MermaidClass[]; relati
     noteRects.push(at)
   }
   const frames = buildSubgraphFrames(groups, boxes, sheet.items)
-  return { items: [...frames.rectangles, ...sheet.items, ...frames.labels], boxes: classes.length, links: parsed.relations.length }
+  return { items: spreadConnectorAttachments([...frames.rectangles, ...sheet.items, ...frames.labels]), boxes: classes.length, links: parsed.relations.length }
 }

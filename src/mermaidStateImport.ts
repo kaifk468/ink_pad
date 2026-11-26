@@ -1,3 +1,4 @@
+import { spreadConnectorAttachments } from './spreadAttachments'
 import type { CanvasItem, RectangleObject } from './canvasModel'
 import { BOUNDARY_COLOR, BOUNDARY_FONT_SIZE, BOUNDARY_PADDING } from './boundary'
 import { Sheet } from './diagramTemplates'
@@ -324,7 +325,7 @@ export function buildMermaidStateItems(parsed: { states: StateNode[]; transition
     sheet.connect(from, fromSide, to, toSide, { type: 'directed-association', ...(transition.label ? { label: transition.label } : {}) })
     links += 1
   }
-  return { items: sheet.items, boxes: parsed.states.filter((node) => node.kind !== 'start' && node.kind !== 'end').length, links }
+  return { items: spreadConnectorAttachments(sheet.items), boxes: parsed.states.filter((node) => node.kind !== 'start' && node.kind !== 'end').length, links }
 }
 
 /** Parses and builds a state diagram in one step (the dispatcher's entry). */

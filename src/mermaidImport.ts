@@ -1,3 +1,4 @@
+import { spreadConnectorAttachments } from './spreadAttachments'
 import type { CanvasItem, HldShape, RectangleObject } from './canvasModel'
 import { HLD_DEFAULT_SIZE } from './hldShapes'
 import { HLD_TEMPLATE_SCALE, Sheet } from './diagramTemplates'
@@ -338,7 +339,7 @@ export function buildMermaidItems(graph: MermaidGraph): { items: CanvasItem[]; b
     sheet.connect(from, fromSide, to, toSide, { type: edge.arrow ? 'directed-association' : 'association', ...(edge.arrow && edge.twoWay ? { twoWay: true as const } : {}), ...(edge.dashed ? { dash: 'dashed' as const } : {}), ...(edge.label ? { label: edge.label } : {}) })
   }
   const frames = buildSubgraphFrames(groups, boxes, sheet.items)
-  return { items: [...frames.rectangles, ...sheet.items, ...frames.labels], boxes: nodeList.length, links: graph.edges.length }
+  return { items: spreadConnectorAttachments([...frames.rectangles, ...sheet.items, ...frames.labels]), boxes: nodeList.length, links: graph.edges.length }
 }
 
 /** The toast after inserting: "Inserted 3 boxes and 2 links", plus "(1 line ignored)". Class diagrams say "classes". */
