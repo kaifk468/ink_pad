@@ -18,6 +18,9 @@ type RelationshipProps = {
   onTwoWay: (twoWay: boolean) => void
   hasLabel: boolean
   onEditLabel: () => void
+  /** Insert box into connector: offered when the selected connector is unlocked. */
+  canInsertBox: boolean
+  onInsertBox: () => void
   onChange: (type: ConnectorRelationshipType) => void
   onReverse: () => void
   onElbow: (elbow: boolean) => void
@@ -500,6 +503,9 @@ export function ContextPanel(props: ContextPanelProps) {
         </div>
         <button type="button" className="relationship-reverse" aria-label={relationship.hasLabel ? 'Edit connector label' : 'Add connector label'} title="Text drawn on the middle of the connector (double-click it, or press Enter)" onClick={relationship.onEditLabel}>
           <span>{relationship.hasLabel ? 'Edit label' : 'Add label'}</span>
+        </button>
+        <button type="button" className="relationship-reverse" aria-label="Insert box" title="Put a box on the middle of this connector" disabled={!relationship.canInsertBox} onClick={relationship.onInsertBox}>
+          <span>Insert box</span>
         </button>
       </div>}
     </aside>

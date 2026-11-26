@@ -11,6 +11,7 @@ import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dr
 import { similarItemKeys } from './selectSimilar'
 import { canSameSize, sameSizeItems, type SameSizeMode } from './sameSize'
 import { canSwapPositions, swapPositionsItems } from './swapPositions'
+import { canInsertBoxIntoConnector, insertBoxIntoConnector } from './insertIntoConnector'
 import { linkedNeighbour, revealViewport, walkCurrentKey, walkItemBounds, walkStep } from './keyboardWalk'
 import { addBoundary } from './boundary'
 import { canSelectConnected, connectedKeys, linkedKeys } from './selectConnected'
@@ -1647,6 +1648,37 @@ function App() {
     scheduleAutosave()
     bumpSelectionColor((n) => n + 1)
     showToast('Swapped the two boxes')
+    return true
+  }
+  // Insert box into connector (right-click row, panel button, palette): a plain rectangle on the middle of the one selected connector; the connector now ends on it and a new one runs on to the old end. One undo step; desktop opens the box for typing, the tablet leaves it selected.
+  const soleConnectorId = (): number | null => {
+    const key = soleSelectedKey()
+    const match = key ? /^connector:(\d+)$/.exec(key) : null
+    return match ? Number(match[1]) : null
+  }
+  const canInsertBoxNow = (): boolean => { const id = soleConnectorId(); return id !== null && canInsertBoxIntoConnector(strokesRef.current, id) }
+  const insertBoxIntoSelectedConnector = (): boolean => {
+    const id = soleConnectorId()
+    if (id === null) return false
+    if (textEditorRef.current) commitTextEditor()
+    const result = insertBoxIntoConnector(strokesRef.current, id, { rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current }, { style: newShapeStyleRef.current, workspace: workspaceBoundsRef.current })
+    if (!result) { showToast('Select one unlocked connector'); return false }
+    nextRectangleIdRef.current += 1
+    nextConnectorIdRef.current += 1
+    saveHistory()
+    const box = sketchyRef.current ? withSketchSeed(result.box) : result.box
+    strokesRef.current = box === result.box ? result.items : result.items.map((item) => (item === result.box ? box : item))
+    historyCacheRef.current = null
+    setHasInk(true)
+    scheduleAutosave()
+    setSelectedRectangle(box.id)
+    updateSelectedItems([])
+    if (inputModeRef.current === 'desktop') {
+      const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+      openTextEditor({ itemId: null, x: middle.x, y: middle.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: middle, mergeHistory: true })
+      setSelectedRectangle(box.id)
+    }
+    renderAll()
     return true
   }
   // Keyboard walk (Tab / Shift+Tab, Alt+Arrow; Select tool only): selects `key` through the normal selection path (a group member selects its group)
@@ -5208,6 +5240,7 @@ function App() {
       case 'sameHeight': sameSizeSelection('height'); break
       case 'sameSize': sameSizeSelection('both'); break
       case 'swapPositions': swapPositionsSelection(); break
+      case 'insertBox': insertBoxIntoSelectedConnector(); break
       case 'numberSteps': numberFlowSteps(); break
       case 'clearSteps': clearFlowSteps(); break
       case 'bringToFront': moveSelectionLayer('front'); break
@@ -5411,6 +5444,7 @@ function App() {
     { id: 'select:previous', label: 'Select previous item', group: 'Select', keywords: 'shift tab walk keyboard step back reading order', run: () => { if (!walkTo(-1) && !selectionMode) showToast('Switch to the Select tool first') } },
     ...(soleSelectedKey() !== null ? (['right', 'left', 'up', 'down'] as const).map((direction) => ({ id: `select:linked-${direction}`, label: `Select linked box: ${direction}`, group: 'Select', keywords: 'alt arrow walk neighbour connected keyboard', run: () => { if (!walkLinked(direction)) showToast('No linked box that way') } })) : []),
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
+    ...(canInsertBoxNow() ? [{ id: 'connector:insert-box', label: 'Insert box into connector', group: 'Edit', keywords: 'add rectangle middle split connector arrow line box between', run: () => { insertBoxIntoSelectedConnector() } }] : []),
     ...(canSwapPositions(strokesRef.current, currentSelectionKeys()) ? [{ id: 'arrange:swap', label: 'Swap positions', group: 'Arrange', keywords: 'exchange switch two boxes places', run: () => { swapPositionsSelection() } }] : []),
     ...(canSameSize(strokesRef.current, currentSelectionKeys()) ? [
       { id: 'arrange:same-width', label: 'Same width', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('width') } },
@@ -5763,6 +5797,7 @@ function App() {
             canNumberSteps: stepTargets(strokesRef.current, currentSelectionKeys()).length > 0,
             canSameSize: canSameSize(strokesRef.current, currentSelectionKeys()),
             canSwap: canSwapPositions(strokesRef.current, currentSelectionKeys()),
+            canInsertBox: canInsertBoxNow(),
             canSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()),
             arrowEnds: arrowEndsChoice(strokesRef.current, selectedKeysRef.current),
             corners: cornersChoice(strokesRef.current, currentSelectionKeys()),
@@ -6042,7 +6077,7 @@ function App() {
         onPaste={() => { pasteClipboard() }}
         onDuplicate={() => { duplicateSelection() }}
         relationship={selectedConnectorId !== null && selectedConnectorType !== null
-          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, hasLabel: selectedConnectorLabel, twoWay: selectedConnectorTwoWay, onTwoWay: setSelectedArrowEnds, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting, ...endLabelProps(selectedConnectorId) }
+          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, hasLabel: selectedConnectorLabel, twoWay: selectedConnectorTwoWay, onTwoWay: setSelectedArrowEnds, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, canInsertBox: canInsertBoxNow(), onInsertBox: () => { insertBoxIntoSelectedConnector() }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting, ...endLabelProps(selectedConnectorId) }
           : null}
       />
       {pageOverviewOpen && <PageOverview count={pageCount} current={pageIndex} names={pagesRef.current.map((slot) => slot.name ?? '')} onRename={renamePage} loadThumbnail={renderPageThumbnail} onGo={(index) => { goToPage(index); setPageOverviewOpen(false) }} onMove={movePageTo} onClose={() => setPageOverviewOpen(false)} />}
