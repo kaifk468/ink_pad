@@ -70,6 +70,7 @@ import { TopLeftBar } from './app/TopLeftBar'
 import { HomeScreen } from './app/HomeScreen'
 import { storageLabel } from './StoragePanel'
 import { ZoomControls } from './app/ZoomControls'
+import type { ZoomMenuChoice } from './zoomMenu'
 import { EmptyCanvasHint } from './app/EmptyCanvasHint'
 import { ShortcutHelp } from './app/ShortcutHelp'
 import { CommandPalette } from './app/CommandPalette'
@@ -3485,6 +3486,25 @@ function App() {
     applyViewport({ scale: DEFAULT_ZOOM, offsetX: center.x - anchor.x * DEFAULT_ZOOM, offsetY: center.y - anchor.y * DEFAULT_ZOOM })
   }
 
+  /** Zoom menu level: the given percentage around the centre of the current view. */
+  const zoomToPercent = (percent: number) => {
+    if (navigationSettingsRef.current.zoomLocked) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const viewport = viewportRef.current
+    const scale = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, percent / 100))
+    const center = { x: rect.width / 2, y: rect.height / 2, pressure: 1 }
+    const anchor = screenToCanvasPoint(center, viewport)
+    applyViewport({ scale, offsetX: center.x - anchor.x * scale, offsetY: center.y - anchor.y * scale })
+  }
+
+  /** Applies a choice from the zoom menu on the % readout, reusing the Shift+1 / Shift+2 handlers (the tablet fits the drawing with the plain fit). */
+  const applyZoomChoice = (choice: ZoomMenuChoice) => {
+    if (choice.kind === 'level') zoomToPercent(choice.percent)
+    else if (choice.kind === 'fitDrawing') { if (inputMode === 'desktop') zoomToFitDesktop(); else fitDrawingView() }
+    else zoomToSelection()
+  }
+
   const resetView = () => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -6171,7 +6191,7 @@ function App() {
       <input ref={excalidrawFileRef} type="file" accept=".excalidraw,application/json" hidden onChange={(event) => { openExcalidrawFile(event.target.files?.[0]); event.target.value = '' }} />
       {mermaidOpen && <MermaidDialog onInsert={importMermaid} onClose={() => setMermaidOpen(false)} />}
       {templateChooserOpen && <TemplateChooser onChoose={insertTemplate} onClose={() => setTemplateChooserOpen(false)} onMermaid={() => { setTemplateChooserOpen(false); setMermaidOpen(true) }} userTemplates={userTemplates} onChooseUser={insertUserTemplate} onDeleteUser={deleteUserTemplate} canSave={selectedItemCount > 0 || hasSelectedRectangle} startSaving={templateSaveMode} onSave={saveSelectionAsTemplate} />}
-      <ZoomControls desktop={inputMode === 'desktop'} onResetZoom={zoomToActualSize} zoomPercent={zoomPercent} locked={zoomLockActive} onToggleLock={() => updateNavigationSettings({ zoomLocked: !zoomLockActive })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
+      <ZoomControls desktop={inputMode === 'desktop'} hasSelection={currentSelectionKeys().size > 0} onZoomChoice={applyZoomChoice} zoomPercent={zoomPercent} locked={zoomLockActive} onToggleLock={() => updateNavigationSettings({ zoomLocked: !zoomLockActive })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
         desktop={inputMode === 'desktop'}
         dockRef={toolbarRef}

@@ -53,7 +53,7 @@ test('wiring: zoom and page commands, help dialog, hidden tablet-only controls a
   assert.match(app, /Redo \(Ctrl\+Y\)/)
   assert.match(app, /Zoom in \(Ctrl\+\+\)/)
   assert.match(app, /Zoom out \(Ctrl\+-\)/)
-  assert.match(app, /onClick=\{onResetZoom\}/)
+  assert.match(app, /onZoomChoice=\{applyZoomChoice\}/)
   assert.match(app, /Escape/)
   assert.match(app, /event\.target === event\.currentTarget\) onClose\(\)/)
 })
