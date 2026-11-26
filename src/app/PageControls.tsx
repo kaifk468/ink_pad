@@ -40,10 +40,10 @@ export function PageControls({ index, count, canAdd, addHint, onPrevious, onNext
 }
 
 /** Shown for a few seconds after items were moved to another page: puts both pages back as they were. */
-export function MoveUndoBar({ count, pageNumber, onUndo }: { count: number; pageNumber: number; onUndo: () => void }) {
+export function MoveUndoBar({ message, onUndo }: { message: string; onUndo: () => void }) {
   return (
     <div className="page-undo-bar" role="status">
-      <span>Moved {count} {count === 1 ? 'item' : 'items'} to page {pageNumber}</span>
+      <span>{message}</span>
       <button type="button" onClick={onUndo}>Undo</button>
     </div>
   )

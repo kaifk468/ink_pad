@@ -688,7 +688,7 @@ function App() {
   // Move selection to another page: the record (both pages' items and undo histories) behind the Undo bar, valid only while neither page changed.
   const moveUndoRef = useRef<MoveRecord | null>(null)
   const moveUndoTimerRef = useRef<number | null>(null)
-  const [moveUndoBar, setMoveUndoBar] = useState<{ count: number; pageNumber: number } | null>(null)
+  const [moveUndoBar, setMoveUndoBar] = useState<{ message: string } | null>(null)
   const dismissMoveUndo = () => {
     if (moveUndoTimerRef.current !== null) window.clearTimeout(moveUndoTimerRef.current)
     moveUndoTimerRef.current = null
@@ -738,9 +738,9 @@ function App() {
     renderAll()
     scheduleAutosave()
     moveUndoRef.current = { sourceIndex: from, targetIndex: to, newPage, pageCount: pagesRef.current.length, beforeSource: sourceBefore, beforeTarget: targetBefore, afterSource: result.source, afterTarget: result.target, afterSourceLength: result.source.length, afterTargetLength: result.target.length, sourceHistory, targetHistory: targetHistoryState, selection }
-    setMoveUndoBar({ count: result.moved, pageNumber: to + 1 })
+    // One message only: the Undo bar carries the toast text (page name, locked items left behind).
+    setMoveUndoBar({ message: movedToast(result.moved, to, pagesRef.current[to]?.name, result.lockedSkipped) })
     moveUndoTimerRef.current = window.setTimeout(dismissMoveUndo, DELETED_PAGE_UNDO_MS)
-    showToast(movedToast(result.moved, to, pagesRef.current[to]?.name, result.lockedSkipped))
     return true
   }
 
@@ -6047,7 +6047,7 @@ function App() {
       />
       {pageOverviewOpen && <PageOverview count={pageCount} current={pageIndex} names={pagesRef.current.map((slot) => slot.name ?? '')} onRename={renamePage} loadThumbnail={renderPageThumbnail} onGo={(index) => { goToPage(index); setPageOverviewOpen(false) }} onMove={movePageTo} onClose={() => setPageOverviewOpen(false)} />}
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
-      {moveUndoBar !== null && deletedPageNumber === null && <MoveUndoBar count={moveUndoBar.count} pageNumber={moveUndoBar.pageNumber} onUndo={undoMoveToPage} />}
+      {moveUndoBar !== null && deletedPageNumber === null && <MoveUndoBar message={moveUndoBar.message} onUndo={undoMoveToPage} />}
       {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} replaceOpen={findReplaceOpen} onToggleReplace={() => setFindReplaceOpen((open) => !open)} replacement={findReplacement} onReplacementChange={changeFindReplacement} onReplace={replaceCurrentFind} onReplaceAll={replaceAllFind} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
       {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
