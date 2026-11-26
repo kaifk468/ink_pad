@@ -42,6 +42,12 @@ export type ConnectorEndLabelLayout = { end: ConnectorEnd; text: string; fontSiz
  * Where each end label goes (`connector` should be the routed copy). The text box sits `END_LABEL_ALONG` from the end point along the path and
  * beside the line (`END_LABEL_SIDE`), on the upper / right side so both ends of a line read the same way.
  */
+/** Signs (+1 / -1) of the quarter-plane a diagonal attached end leaves into, or null when the line leaves nearly straight (no ambiguity about the side). */
+function endLabelQuadrant(away: { x: number; y: number }): { x: number; y: number } | null {
+  if (Math.abs(away.x) < 0.15 || Math.abs(away.y) < 0.15) return null
+  return { x: Math.sign(away.x), y: Math.sign(away.y) }
+}
+
 export function connectorEndLabelLayouts(connector: ConnectorObject, measure?: TextMeasure): ConnectorEndLabelLayout[] {
   const out: ConnectorEndLabelLayout[] = []
   if (connector.startLabel === undefined && connector.endLabel === undefined) return out
@@ -66,8 +72,29 @@ export function connectorEndLabelLayouts(connector: ConnectorObject, measure?: T
     const away = end === 'start' ? direction : { x: -direction.x, y: -direction.y }
     let normal = { x: -away.y, y: away.x }
     if (normal.y > 1e-9 || (Math.abs(normal.y) <= 1e-9 && normal.x < 0)) normal = { x: -normal.x, y: -normal.y }
-    const cx = point.x + normal.x * (END_LABEL_SIDE + size.width / 2)
-    const cy = point.y + normal.y * (END_LABEL_SIDE + size.height / 2)
+    let cx = point.x + normal.x * (END_LABEL_SIDE + size.width / 2)
+    let cy = point.y + normal.y * (END_LABEL_SIDE + size.height / 2)
+    const attached = end === 'start' ? connector.startAttachment : connector.endAttachment
+    const quadrant = attached ? endLabelQuadrant(away) : null
+    if (quadrant) {
+      // A diagonal line into a box: the box lies behind the side it leaves, which is either the horizontal or the vertical
+      // side through the end point. The quarter-plane beyond both is outside the box either way, so the label goes there.
+      const endPoint = end === 'start' ? path[0] : path[path.length - 1]
+      if (normal.x * quadrant.x + normal.y * quadrant.y < 0) normal = { x: -normal.x, y: -normal.y }
+      const place = (distance: number) => {
+        const at = pointAlongPath(path, end === 'start' ? distance : total - distance).point
+        return { x: at.x + normal.x * (END_LABEL_SIDE + size.width / 2), y: at.y + normal.y * (END_LABEL_SIDE + size.height / 2) }
+      }
+      const inside = (c: { x: number; y: number }) => quadrant.x * (c.x - endPoint.x) - size.width / 2 >= 2 && quadrant.y * (c.y - endPoint.y) - size.height / 2 >= 2
+      let distance = along
+      let centre = place(distance)
+      while (!inside(centre) && distance < total / 2) {
+        distance = Math.min(total / 2, distance + 2)
+        centre = place(distance)
+      }
+      cx = centre.x
+      cy = centre.y
+    }
     out.push({ end, text, fontSize, x: cx - size.width / 2, y: cy - size.height / 2, width: size.width, height: size.height, baseline: cy + fontSize * 0.35 })
   }
   return out

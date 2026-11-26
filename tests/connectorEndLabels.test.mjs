@@ -165,3 +165,13 @@ test('labels at an end with a UML symbol start beyond the symbol', () => {
   const elbow = near(conn({ relationshipType: 'inheritance', endLabel: 'x', routedPath: [p(100, 100), p(100, 300), p(400, 300)] }), 'end')
   assert.ok(elbow.x + elbow.width <= 400 - 12)
 })
+
+test('walk fix: a diagonal line into the bottom (or right) side of a box keeps its end labels outside the box', () => {
+  // Box 0..180 x 0..130; the line leaves its bottom side at (90,130) down-right, steeply shallow (could be the right side too).
+  for (const [end, other] of [[p(90, 130), p(460, 290)], [p(180, 65), p(460, 290)]]) {
+    const connector = { kind: 'connector', id: 1, start: other, end, strokeColor: '#000', strokeWidth: 2, relationshipType: 'association', reversed: false, endAttachment: { rectangleId: 9, offsetX: end.x, offsetY: end.y }, endLabel: '0..*' }
+    const [label] = el.connectorEndLabelLayouts(connector)
+    const overlapsBox = label.x < 180 && label.x + label.width > 0 && label.y < 130 && label.y + label.height > 0
+    assert.equal(overlapsBox, false, JSON.stringify(label))
+  }
+})
