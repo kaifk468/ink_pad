@@ -352,16 +352,16 @@ Follow-ups found this round (ideas for the next round):
 ### Candidates (problem · who/how often · benefit · risk · size · decision)
 | # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
 |---|---|---|---|---|---|---|---|
-| 135 | Mermaid `classDiagram` import → typed class boxes + UML relationship connectors | LLD class diagrams from text typed by hand | LLD users, weekly | high | low (ordinary items, insert path) | M | picked |
-| 136 | Mermaid flowchart `subgraph` → boundary on import | Grouping lost on import | HLD users from text | medium | low | S | picked |
-| 137 | Copy as Mermaid: boundary → `subgraph`, class boxes → `classDiagram` | Text export doesn't round-trip groups/classes | developers, weekly | medium | low (pure module) | S-M | picked |
-| 138 | Mermaid `sequenceDiagram` import → participants, lifelines, message arrows | Sequence diagrams drawn line by line | LLD/interviews, often | medium-high | low (ordinary items) | M | picked |
-| 139 | Two-way arrow connectors (head at both ends; `<-->` import/export) | Bidirectional links need two arrows | HLD users, most diagrams | medium-high | medium (new saved field) | M | picked |
-| 140 | More HLD shapes: API gateway, Server, Object storage, Stream, Worker | Common parts drawn as plain boxes | HLD users, every diagram | high | low-medium (new hldShape values) | M | picked |
-| 141 | Page names (rename in page overview, shown in strip/overview/palette) (#119) | Pages are just "2 / 5" | multi-page users, often | medium-high | medium (top-level saved key) | M | picked |
-| 142 | Find & replace (Replace field in the Find bar, Ctrl+H) | Renaming a component everywhere | growing diagrams, often | medium-high | low-medium (text re-fit, per-page undo) | M | picked |
-| 143 | List continuation in labels (Enter after "- ", "• ", "1." continues; Enter on an empty bullet ends the list) | Bullets typed on every line | requirements notes, every interview | medium | low (editor only) | S | picked |
-| 144 | Round 5 paper cuts: label drag on an unselected connector, menu ≤ 700 px, connector "Text size" heading, zoom + vs dock at 1440 | small friction | | low-medium | low | S | picked |
+| 135 | Mermaid `classDiagram` import → typed class boxes + UML relationship connectors | LLD class diagrams from text typed by hand | LLD users, weekly | high | low (ordinary items, insert path) | M | **done** e0f1f45 (+e0af513) |
+| 136 | Mermaid flowchart `subgraph` → boundary on import | Grouping lost on import | HLD users from text | medium | low | S | **done** e0f1f45 (+e0af513 membership by mention, 6c923c8 non-members kept out) |
+| 137 | Copy as Mermaid: boundary → `subgraph`, class boxes → `classDiagram` | Text export doesn't round-trip groups/classes | developers, weekly | medium | low (pure module) | S-M | **done** 2c0df29 (+e0af513 annotations, names, two-way, dashed) |
+| 138 | Mermaid `sequenceDiagram` import → participants, lifelines, message arrows | Sequence diagrams drawn line by line | LLD/interviews, often | medium-high | low (ordinary items) | M | **done** 71195e5 (+e0af513 self-message room) |
+| 139 | Two-way arrow connectors (head at both ends; `<-->` import/export) | Bidirectional links need two arrows | HLD users, most diagrams | medium-high | medium (new saved field) | M | **done** 3b82769 |
+| 140 | More HLD shapes: API gateway, Server, Object storage, Stream, Worker | Common parts drawn as plain boxes | HLD users, every diagram | high | low-medium (new hldShape values) | M | **done** 16aea15 (+e0af513 symmetric insets) |
+| 141 | Page names (rename in page overview, shown in strip/overview/palette) (#119) | Pages are just "2 / 5" | multi-page users, often | medium-high | medium (top-level saved key) | M | **done** 2fe754e |
+| 142 | Find & replace (Replace field in the Find bar, Ctrl+H) | Renaming a component everywhere | growing diagrams, often | medium-high | low-medium (text re-fit, per-page undo) | M | **done** eb083b1 (+e0af513 HLD label refit) |
+| 143 | List continuation in labels (Enter after "- ", "• ", "1." continues; Enter on an empty bullet ends the list) | Bullets typed on every line | requirements notes, every interview | medium | low (editor only) | S | **done** 7fb9f42 (+e0af513 double-apply guard) |
+| 144 | Round 5 paper cuts: label drag on an unselected connector, menu ≤ 700 px, connector "Text size" heading, zoom + vs dock at 1440 | small friction | | low-medium | low | S | **done** 5073cf2, 3093bae (+e0af513 groups, 649dbc6 menu clamp after layout) |
 | 145 | Last-used fill / dash for new shapes (Excalidraw) (#120) | restyling every new box | desktop | medium | medium (pen colour interplay, surprise) | M | idea |
 | 146 | Snap to grid (#121) | | desktop | low-medium | medium | M | idea |
 | 147 | Move folders into folders (#122) | | rare | low | medium (Drive) | M | idea |
@@ -390,3 +390,15 @@ Follow-ups found this round (ideas for the next round):
 142. **Find & replace**: the Find bar has a "Replace" toggle (desktop Ctrl+H opens it) with a replacement field, "Replace" (current match) and "Replace all" (all pages); text labels, connector labels and class box text are changed case-insensitively; labels re-fit; each changed page gets one undo step; a toast says "Replaced 6 in 4 items"; locked items untouched; code blocks skipped.
 143. **Lists**: in a text label or sticky note editor, Enter on a line starting with "- ", "* ", "• " or "1. " / "1) " starts the next line with the same bullet (numbers count up); Enter on a line that is only the bullet removes it and ends the list; Shift+Enter unaffected where it already means something; works with the tablet on-screen keyboard.
 144. **Paper cuts**: pressing on the label of an unselected connector with the Select tool and dragging slides the label (one undo step; a plain click still just selects); the right-click menu with all chip rows fits a 1024x700 window without scrolling; connector label sizes have a "Text size" heading; at 1440x900 the zoom + button is not covered by the dock.
+
+### Round 6 result (2026-11-26)
+All 10 picked items built (#135-#144). Two agents first built on a stale base (old `main`) and were redone on the round head (only the redo was merged). Independent Opus review: 0 high, 2 medium (Replace did not re-fit labels in HLD shapes; class export lost «annotations» and display names), 8 low; all 10 fixed in e0af513. Headless walk fixes: right-click menu ran 30 px past the bottom at 1024x700 (649dbc6, clamp after layout); subgraph boundaries overlapped non-member boxes (6c923c8). Details and checklist: project-context.md, 2026-11-26 entry.
+
+Follow-ups found this round (ideas for the next round):
+- Page names show as "API de…" in the narrow page strip (tooltip has the full name); a wider strip label or a hover card could help.
+- Sequence import: participants and lifelines are separate items (moving a participant leaves its lifeline); `loop`/`alt` frames are skipped (could become boundaries); `-x` / `-)` heads drawn as normal arrows.
+- classDiagram: `namespace` blocks could become boundaries; notes skipped; cardinalities dropped.
+- Change-shape chip row has 14 HLD chips (5 lines in the right-click menu).
+- Two-way arrows: no hit-test on the second head (selection uses the line).
+- Tablet Insert tray now scrolls at 800 px tall with 14 HLD shapes.
+- Find & replace skips a page waiting in the "Page deleted" undo bar.
