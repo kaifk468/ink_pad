@@ -1,6 +1,7 @@
 import { canvasItemKey, getConnectorRenderSpec, hasLineDash, hasOutlineWidth, isItemLocked, recolorItems, restrokeItems, setArrowheads, setLineDash, setSelectedArrowsTwoWay, strokeArrowheads } from './canvasModel'
 import type { Arrowheads, CanvasItem, LineDash, TextFontId } from './canvasModel'
 import { setFillColor } from './shapeFill'
+import { isPlainRectangle, setRoundedCorners } from './roundedCorners'
 import { isFillableRectangle } from './sketchy'
 import { changeTextFont, LEGACY_TEXT_FONT, updateTextObject } from './textLayout'
 import type { TextMeasure } from './textLayout'
@@ -19,6 +20,8 @@ export type StyleSnapshot = {
   arrowheads?: Arrowheads
   /** Connector arrow ends: both ends (true) or one (false). Applies only to directed associations; only captured from one. */
   twoWay?: boolean
+  /** Plain rectangles only: rounded (true) or sharp (false) corners. */
+  rounded?: boolean
   fontSize?: number
   fontFamily?: TextFontId
 }
@@ -38,6 +41,7 @@ export function captureStyle(item: CanvasItem): StyleSnapshot | null {
       if (hasOutlineWidth(item)) style.width = item.strokeWidth
       if (hasLineDash(item)) style.dash = item.dash ?? 'solid'
       if (isFillableRectangle(item)) style.fill = item.fillColor ?? null
+      if (isPlainRectangle(item)) style.rounded = item.rounded === true
       return style
     }
     case 'connector':
@@ -68,6 +72,7 @@ export function applyStyle(items: CanvasItem[], keys: ReadonlySet<string>, style
   if (style.dash !== undefined) next = setLineDash(next, target, style.dash === 'solid' ? null : style.dash)
   if (style.fill !== undefined) next = setFillColor(next, target, style.fill)
   if (style.arrowheads !== undefined) next = setArrowheads(next, target, style.arrowheads)
+  if (style.rounded !== undefined) next = setRoundedCorners(next, target, style.rounded)
   if (style.twoWay !== undefined) next = setSelectedArrowsTwoWay(next, target, style.twoWay)
   if (style.fontSize !== undefined || style.fontFamily !== undefined) next = applyTextStyle(next, target, style, options)
   return next

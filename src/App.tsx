@@ -82,6 +82,7 @@ import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitCla
 import { buildEditedLabel, prepareEditorFit } from './textFit'
 import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
 import { setConnectorEndLabel } from './connectorEndLabels'
+import { cornersChoice, setRoundedCorners } from './roundedCorners'
 import { connectorLabelCentre, connectorLabelFontSize, connectorLabelPosition, labelPositionForDrag, pointOnConnectorLabel, setConnectorLabel, setConnectorLabelFontSize, setConnectorLabelPosition } from './connectorLabel'
 import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, keepAlignAnchor, stepFontSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
@@ -822,6 +823,18 @@ function App() {
     strokesRef.current = next
     setSelectedConnectorTwoWay(twoWay)
     renderAll()
+  }
+
+  /** Corners: rounds or squares every selected unlocked plain rectangle. One undo step; nothing happens when none would change. */
+  const setSelectedCorners = (rounded: boolean) => {
+    const next = setRoundedCorners(strokesRef.current, currentSelectionKeys(), rounded)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    scheduleAutosave()
   }
 
   const reverseSelectedConnector = () => {
@@ -4919,6 +4932,8 @@ function App() {
       case 'pasteStyle': pasteStyleWithToast(); break
       case 'arrowBothEnds': setSelectedArrowEnds(true); break
       case 'arrowOneEnd': setSelectedArrowEnds(false); break
+      case 'cornersRound': setSelectedCorners(true); break
+      case 'cornersSharp': setSelectedCorners(false); break
       case 'exportPng': exportSelectionAs('png'); break
       case 'exportSvg': exportSelectionAs('svg'); break
       case 'saveTemplate': openSaveTemplate(); break
@@ -5104,6 +5119,12 @@ function App() {
       { id: 'arrange:same-height', label: 'Same height', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('height') } },
       { id: 'arrange:same-size', label: 'Same size', group: 'Arrange', keywords: 'width height equal resize boxes match', run: () => { sameSizeSelection('both') } },
     ] : []),
+    ...(() => {
+      const corners = cornersChoice(strokesRef.current, currentSelectionKeys())
+      return corners === null ? [] : [corners === 'round'
+        ? { id: 'corners:round', label: 'Corners: round', group: 'Edit', keywords: 'rounded rectangle corner radius box', run: () => { setSelectedCorners(true) } }
+        : { id: 'corners:sharp', label: 'Corners: sharp', group: 'Edit', keywords: 'square rectangle corner box', run: () => { setSelectedCorners(false) } }]
+    })(),
     ...(() => {
       const choice = arrowEndsChoice(strokesRef.current, selectedKeysRef.current)
       return choice === null ? [] : [
@@ -5424,6 +5445,7 @@ function App() {
             canSameSize: canSameSize(strokesRef.current, currentSelectionKeys()),
             canSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()),
             arrowEnds: arrowEndsChoice(strokesRef.current, selectedKeysRef.current),
+            corners: cornersChoice(strokesRef.current, currentSelectionKeys()),
             canSelectSimilar: (() => { const key = soleSelectedKey(); return key !== null && similarItemKeys(strokesRef.current, key).length > 0 })(),
           })
           const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight)
@@ -5641,6 +5663,7 @@ function App() {
         arrowheads={inputMode === 'desktop' && selectionHasArrowheads(strokesRef.current, currentSelectionKeys())
           ? { value: selectionArrowheads(strokesRef.current, currentSelectionKeys()), onChange: changeArrowheads }
           : null}
+        corners={(() => { const choice = cornersChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { rounded: choice === 'sharp', onChange: setSelectedCorners } })()}
         changeShape={(() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })()}
         sameSize={canSameSize(strokesRef.current, currentSelectionKeys()) ? { onSameSize: (mode) => { sameSizeSelection(mode) } } : null}
         boundaryTools={currentSelectionKeys().size > 0 ? { onAddBoundary: () => { addBoundaryAroundSelection() }, onSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()) ? () => { selectConnectedItems(false) } : null } : null}

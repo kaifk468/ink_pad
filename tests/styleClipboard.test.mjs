@@ -18,8 +18,8 @@ const keys = (...items) => new Set(items.map((i) => model.canvasItemKey(i)))
 const key = (k, extra = {}) => ({ key: k, ctrlKey: true, metaKey: false, altKey: true, shiftKey: false, repeat: false, ...extra })
 
 test('captureStyle: shape, arrow, connector, text; null for code, eraser, opaque', () => {
-  assert.deepEqual(sc.captureStyle(box(1, { fillColor: '#b2f2bb', dash: 'dashed' })), { color: '#111111', width: 2, dash: 'dashed', fill: '#b2f2bb' })
-  assert.deepEqual(sc.captureStyle(box(1)), { color: '#111111', width: 2, dash: 'solid', fill: null })
+  assert.deepEqual(sc.captureStyle(box(1, { fillColor: '#b2f2bb', dash: 'dashed' })), { color: '#111111', width: 2, dash: 'dashed', fill: '#b2f2bb', rounded: false })
+  assert.deepEqual(sc.captureStyle(box(1)), { color: '#111111', width: 2, dash: 'solid', fill: null, rounded: false })
   assert.deepEqual(sc.captureStyle(arrow(2, { arrowheads: 'both' })), { color: '#222222', width: 3, dash: 'solid', arrowheads: 'both' })
   assert.deepEqual(sc.captureStyle(pen(3)), { color: '#333333', width: 4 })
   assert.deepEqual(sc.captureStyle(conn(4, { dash: 'dotted' })), { color: '#444444', width: 2, dash: 'dotted' })

@@ -379,6 +379,7 @@ function sanitizeItemFields(value: unknown): CanvasItem | null {
     const classBox = sanitizeClassBox(value.classBox)
     const inkBox = sanitizeInkBox(value.inkBox, value.y, value.height)
     const rectangle: RectangleObject = { kind: 'rectangle', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth, ...(classBox ? { classBox } : {}), ...(inkBox ? { inkBox } : {}), ...(inkBox && HLD_SHAPE_KINDS.includes(value.hldShape as string) ? { hldShape: value.hldShape as HldShape } : {}), ...(value.ellipse === true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { ellipse: true as const } : {}), ...(value.diamond === true && value.ellipse !== true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { diamond: true as const } : {}) }
+    if (value.rounded === true && !classBox && !inkBox && !rectangle.ellipse && !rectangle.diamond) rectangle.rounded = true
     const rectAngle = !classBox && !inkBox && !hldShapeKept(value) ? sanitizeAngle(value.angle) : undefined
     if (rectAngle !== undefined) rectangle.angle = rectAngle
     // Hand-drawn style seed and fill colour: only on shapes that can carry them (not service, class boxes or ink class boxes).

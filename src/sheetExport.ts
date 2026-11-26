@@ -9,6 +9,7 @@ import { getCodeLines } from './codeHighlight'
 import type { CodeObject, OpaqueObject } from './canvasModel'
 import { getTextBaselines, labelLines, textLineX, TEXT_FONT_FAMILY, textFontFamily, getCachedTextMeasure, DEFAULT_TEXT_FONT } from './textLayout'
 import { connectorLabelFontSize, connectorLabelLayout } from './connectorLabel'
+import { roundedCornerRadius } from './roundedCorners'
 import { connectorEndLabelFontSize, connectorEndLabelLayouts } from './connectorEndLabels'
 
 export type ExportTemplate = 'blank' | 'lined' | 'dotted'
@@ -140,7 +141,8 @@ function plainRectangleElement(rectangle: RectangleObject): string {
   if (rectangle.ellipse) {
     return `<ellipse cx="${n(rectangle.x + rectangle.width / 2)}" cy="${n(rectangle.y + rectangle.height / 2)}" rx="${n(rectangle.width / 2)}" ry="${n(rectangle.height / 2)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
   }
-  const rounded = rectangle.inkBox ? ' rx="14" ry="14"' : ''
+  const radius = rectangle.inkBox ? 14 : rectangle.rounded ? roundedCornerRadius(rectangle.width, rectangle.height) : 0
+  const rounded = radius > 0 ? ` rx="${n(radius)}" ry="${n(radius)}"` : ''
   return classBoxElement(rectangle) + inkBoxInkElement(rectangle) + inkBoxLinesElement(rectangle) + `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}"${rounded} fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
 }
 

@@ -85,6 +85,8 @@ type ContextPanelProps = {
   /** Desktop: layer order buttons for the selection. */
   layer?: { onMove: (move: LayerMove) => void } | null
   /** Desktop: align (2+ items) and distribute (3+ items). */
+  /** Selected plain rectangles: Sharp / Round corners (`rounded` true when all selected are round). */
+  corners?: { rounded: boolean; onChange: (rounded: boolean) => void } | null
   /** Desktop: the shapes the selected boxes can change to (Change shape). */
   changeShape?: { choices: Array<{ id: string; label: string }>; onChange: (id: string) => void } | null
   /** Tablet: the commands the desktop right-click menu has (Select similar, Copy / Paste style, Number steps). Each button shows only when its handler is given. */
@@ -144,7 +146,7 @@ const TEXT_ALIGN_OPTIONS: ReadonlyArray<{ id: TextAlign | 'left'; label: string;
 
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.sameSize && !props.boundaryTools) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !props.sameSize && !props.boundaryTools) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -307,6 +309,13 @@ export function ContextPanel(props: ContextPanelProps) {
         </div>
         <ColorChoices value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" onChange={(hex, commit) => props.fill?.onFill(hex, commit)} />
         {props.fill.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null) && <button className="clear-selection-button" type="button" title="Use the darker outline that goes with this fill" onClick={() => { const hex = props.fill?.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null); if (hex) props.fill?.onMatchOutline(hex) }}>Matching outline</button>}
+      </div>}
+      {props.corners && <div className="corners-controls" role="group" aria-label="Corners">
+        <span className="panel-label">Corners</span>
+        <div className="routing-toggle" role="group" aria-label="Rectangle corners" title="Sharp or rounded corners for plain rectangles">
+          <button type="button" className={props.corners.rounded ? '' : 'active'} aria-pressed={!props.corners.rounded} onClick={() => props.corners?.onChange(false)}>Sharp</button>
+          <button type="button" className={props.corners.rounded ? 'active' : ''} aria-pressed={props.corners.rounded} onClick={() => props.corners?.onChange(true)}>Round</button>
+        </div>
       </div>}
       {props.rotation && <div className="rotation-controls" role="group" aria-label="Rotation">
         <span className="panel-label">Rotation: {props.rotation.degrees}°</span>

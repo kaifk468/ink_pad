@@ -1,5 +1,6 @@
 import { connectorPoints, getConnectorRenderSpec, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, strokeHeadGeometry } from './canvasModel'
 import type { ConnectorObject, Point, RectangleObject, Stroke } from './canvasModel'
+import { roundedCornerRadius, roundedRectanglePath } from './roundedCorners'
 
 /**
  * Hand-drawn ("sketchy") style: pure geometry, no canvas and no randomness at draw time.
@@ -198,6 +199,15 @@ export function sketchyRectangleShape(rectangle: RectangleObject): SketchyShape 
     return { outline, fill }
   }
   if (rectangle.ellipse) return roughEllipse(x + w / 2, y + h / 2, w / 2, h / 2, rng)
+  if (rectangle.rounded) {
+    // Four hand-drawn sides joined by small curved corners; the fill is the exact rounded outline.
+    const r = roundedCornerRadius(w, h)
+    const jitter = () => signed(rng) * 0.8
+    let outline = roughLine(x + r, y, x + w - r, y, rng) + roughLine(x + w, y + r, x + w, y + h - r, rng) + roughLine(x + w - r, y + h, x + r, y + h, rng) + roughLine(x, y + h - r, x, y + r, rng)
+    outline += `M${n(x + w - r)} ${n(y)}Q${n(x + w + jitter())} ${n(y + jitter())} ${n(x + w)} ${n(y + r)}M${n(x + w)} ${n(y + h - r)}Q${n(x + w + jitter())} ${n(y + h + jitter())} ${n(x + w - r)} ${n(y + h)}`
+      + `M${n(x + r)} ${n(y + h)}Q${n(x + jitter())} ${n(y + h + jitter())} ${n(x)} ${n(y + h - r)}M${n(x)} ${n(y + r)}Q${n(x + jitter())} ${n(y + jitter())} ${n(x + r)} ${n(y)}`
+    return { outline, fill: roundedRectanglePath(rectangle) }
+  }
   const corners: Array<[number, number]> = rectangle.diamond
     ? [[x + w / 2, y], [x + w, y + h / 2], [x + w / 2, y + h], [x, y + h / 2]]
     : [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
@@ -224,6 +234,7 @@ export function plainFillPath(rectangle: RectangleObject): string {
     return `M${n(x)} ${n(y + ry)}A${n(rx)} ${n(ry)} 0 0 1 ${n(x + w)} ${n(y + ry)}A${n(rx)} ${n(ry)} 0 0 1 ${n(x)} ${n(y + ry)}Z`
   }
   if (rectangle.diamond) return `M${n(x + w / 2)} ${n(y)}L${n(x + w)} ${n(y + h / 2)}L${n(x + w / 2)} ${n(y + h)}L${n(x)} ${n(y + h / 2)}Z`
+  if (rectangle.rounded) return roundedRectanglePath(rectangle)
   return `M${n(x)} ${n(y)}H${n(x + w)}V${n(y + h)}H${n(x)}Z`
 }
 

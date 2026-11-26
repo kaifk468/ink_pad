@@ -62,7 +62,7 @@ export function changeBoxShape(box: RectangleObject, target: ShapeChoice): Recta
   const targetFamily: ShapeFamily = isHldChoice(target) ? 'hld' : 'plain'
   if (targetFamily !== current.family) return null
   if (current.shape === target) return box
-  const { diamond: _diamond, ellipse: _ellipse, hldShape: _hldShape, ...rest } = box
+  const { diamond: _diamond, ellipse: _ellipse, hldShape: _hldShape, rounded: _rounded, ...rest } = box
   const shaped: RectangleObject = isHldChoice(target)
     ? { ...rest, hldShape: target }
     : { ...rest, ...(target === 'diamond' ? { diamond: true as const } : {}), ...(target === 'ellipse' ? { ellipse: true as const } : {}) }
