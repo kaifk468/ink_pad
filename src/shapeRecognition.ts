@@ -69,6 +69,60 @@ function rectangleFromLoop(loop: ClosedLoop, id: number): RectangleObject | null
   }
 }
 
+/** Largest average distance from the diamond outline |u|+|v|=1 (u, v in half-axes). A circle averages about 0.27, a square about 0.5. */
+const DIAMOND_MAX_ERROR = 0.09
+/** The stroke must be at least this much closer to the diamond than to the box outline and to the inscribed ellipse. */
+const DIAMOND_MARGIN = 0.4
+/** Each of the four extreme points must lie within this share of the half-axis from its side midpoint. */
+const DIAMOND_CORNER_OFFSET = 0.3
+const DIAMOND_MIN_TURNS = 0.85
+const DIAMOND_MAX_TURNS = 1.4
+
+/** A closed stroke whose corners sit near the side midpoints of its box and whose sides are straight between them. */
+function diamondFromLoop(loop: ClosedLoop, id: number): RectangleObject | null {
+  const { width, height, stroke } = loop
+  if (loop.diagonal <= MIN_RECTANGLE_DIAGONAL || width <= MIN_RECTANGLE_WIDTH || height <= MIN_RECTANGLE_HEIGHT) return null
+  const samples = resamplePath(loop.points, ELLIPSE_SAMPLES)
+  if (!samples) return null
+  const halfWidth = width / 2
+  const halfHeight = height / 2
+  const centreX = loop.left + halfWidth
+  const centreY = loop.top + halfHeight
+  let errorSum = 0
+  let ellipseErrorSum = 0
+  let turned = 0
+  let previousAngle = 0
+  let top = samples[0]
+  let bottom = samples[0]
+  let left = samples[0]
+  let right = samples[0]
+  samples.forEach((sample, index) => {
+    const u = (sample.x - centreX) / halfWidth
+    const v = (sample.y - centreY) / halfHeight
+    errorSum += Math.abs(Math.abs(u) + Math.abs(v) - 1)
+    ellipseErrorSum += Math.abs(Math.hypot(u, v) - 1)
+    const angle = Math.atan2(v, u)
+    if (index > 0) {
+      let step = angle - previousAngle
+      if (step > Math.PI) step -= 2 * Math.PI
+      else if (step < -Math.PI) step += 2 * Math.PI
+      turned += step
+    }
+    previousAngle = angle
+    if (sample.y < top.y) top = sample
+    if (sample.y > bottom.y) bottom = sample
+    if (sample.x < left.x) left = sample
+    if (sample.x > right.x) right = sample
+  })
+  const error = errorSum / samples.length
+  const turns = Math.abs(turned) / (2 * Math.PI)
+  if (turns < DIAMOND_MIN_TURNS || turns > DIAMOND_MAX_TURNS) return null
+  if (error > DIAMOND_MAX_ERROR || error >= (ellipseErrorSum / samples.length) * DIAMOND_MARGIN || error >= rectangleError(samples, loop) * DIAMOND_MARGIN) return null
+  if (Math.abs(top.x - centreX) > halfWidth * DIAMOND_CORNER_OFFSET || Math.abs(bottom.x - centreX) > halfWidth * DIAMOND_CORNER_OFFSET) return null
+  if (Math.abs(left.y - centreY) > halfHeight * DIAMOND_CORNER_OFFSET || Math.abs(right.y - centreY) > halfHeight * DIAMOND_CORNER_OFFSET) return null
+  return { kind: 'rectangle', id, x: loop.left, y: loop.top, width, height, strokeColor: stroke.color, strokeWidth: stroke.width, diamond: true }
+}
+
 /** The path as `count` points equally spaced along its length, so a slow or crowded part of the stroke does not count extra. */
 function resamplePath(points: Point[], count: number): Point[] | null {
   const total = pathLengthOf(points)
@@ -224,7 +278,7 @@ export function recognizeEllipseStroke(stroke: Stroke, id: number): RectangleObj
 export function recognizeClosedShapeStroke(stroke: Stroke, id: number): RectangleObject | null {
   const loop = closedLoop(stroke)
   if (!loop) return null
-  return ellipseFromLoop(loop, id) ?? rectangleFromLoop(loop, id)
+  return ellipseFromLoop(loop, id) ?? diamondFromLoop(loop, id) ?? rectangleFromLoop(loop, id)
 }
 
 export function recognizeRectangleOnHold(stroke: Stroke, heldForMs: number, id: number): RectangleObject | null {

@@ -85,6 +85,7 @@ import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
+import { penConnectorFor } from './penConnector'
 import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
 import { selectionBoundsWithEndLabels, setConnectorEndLabel } from './connectorEndLabels'
 import { cornersChoice, setRoundedCorners } from './roundedCorners'
@@ -3354,6 +3355,11 @@ function App() {
           arrowConnector = arrowToolConnector(strokesRef.current, first, last, { id: nextConnectorIdRef.current, color: stroke.color, width: stroke.width, dash: lineDashDefaultRef.current === 'solid' ? undefined : lineDashDefaultRef.current }, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale)
           if (arrowConnector) nextConnectorIdRef.current += 1
         }
+      }
+      // Pen/touch: a recognized arrow (Shapes mode) or a hold-straightened line that lands on boxes becomes an attached connector (src/penConnector.ts).
+      if (!arrowConnector && !lineTool && inkBoxId === null && stroke.kind === 'stroke' && !stroke.erase && (stroke.shape === 'arrow' || stroke.shape === 'line') && stroke.points.length === 2) {
+        arrowConnector = penConnectorFor(strokesRef.current, stroke.shape, stroke.points[0], stroke.points[1], { id: nextConnectorIdRef.current, color: stroke.color, width: stroke.width, dash: stroke.dash }, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale)
+        if (arrowConnector) nextConnectorIdRef.current += 1
       }
       if (arrowConnector) {
         // handled below: the connector replaces the stroke
