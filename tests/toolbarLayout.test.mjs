@@ -67,7 +67,7 @@ test('the Insert tray holds Text label, Shapes, Typed class box and the three HL
   for (const shape of ['database', 'queue', 'service']) assert.match(tray, new RegExp(`shape: '${shape}'`))
   assert.match(tray, /onHldShape\(shape\)/)
   assert.doesNotMatch(tray, /soon-badge/)
-  assert.match(tray, /key === 'Escape'/)
+  assert.match(tray, /key !== 'Escape'/)
   assert.match(tray, /rootRef\.current\.contains/)
   assert.match(tray, /aria-expanded=\{open\}/)
 })

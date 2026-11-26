@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { HLD_SHAPE_LABELS } from '../hldShapes'
 import type { HldShape } from '../hldShapes'
-import { MORE_HLD_ENTRIES } from './InsertTray'
+import { HLD_ENTRIES, MORE_HLD_ENTRIES } from './InsertTray'
 import { searchShapes } from '../shapeSearch'
 
 type MoreShapesTrayProps = {
@@ -16,6 +16,7 @@ export function MoreShapesTray({ hldActive, onHldShape, onSticky }:MoreShapesTra
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const searching = query.trim() !== ''
   const anyActive = MORE_HLD_ENTRIES.some((entry) => entry.shape === hldActive)
 
   useEffect(() => {
@@ -25,23 +26,24 @@ export function MoreShapesTray({ hldActive, onHldShape, onSticky }:MoreShapesTra
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
     }
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (searchRef.current && searchRef.current.value) { setQuery(''); event.stopPropagation() } else setOpen(false)
-      }
+      if (event.key !== 'Escape') return
+      // Capture phase + stopPropagation: App's own Escape handler (focus mode, deselect) must not also run while a tray is open.
+      event.stopPropagation()
+      if (searchRef.current && searchRef.current.value) setQuery(''); else setOpen(false)
     }
     window.addEventListener('pointerdown', onPointerDown)
-    window.addEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
     return () => {
       window.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keydown', onKey, true)
     }
   }, [open])
 
-  const matches = searchShapes(query).filter((match) => match.id === 'sticky' || MORE_HLD_ENTRIES.some((entry) => entry.shape === match.id))
-  const shownEntries = MORE_HLD_ENTRIES.map((entry) => ({ entry, index: matches.findIndex((match) => match.id === entry.shape), alias: matches.find((match) => match.id === entry.shape)?.alias ?? null }))
+  const allEntries = searching ? [...MORE_HLD_ENTRIES, ...HLD_ENTRIES] : MORE_HLD_ENTRIES // while typing, the dock shapes (Database, Queue, Service...) are found here too
+  const matches = searchShapes(query).filter((match) => match.id === 'sticky' || allEntries.some((entry) => entry.shape === match.id))
+  const shownEntries = allEntries.map((entry) => ({ entry, index: matches.findIndex((match) => match.id === entry.shape), alias: matches.find((match) => match.id === entry.shape)?.alias ?? null }))
     .filter((tile) => tile.index >= 0).sort((a, b) => a.index - b.index)
   const firstShown = matches.find((match) => match.id !== 'sticky') ?? matches[0]
-  const searching = query.trim() !== ''
   const stickyAlias = matches.find((match) => match.id === 'sticky')?.alias ?? null
   const insertMatch = (id: string) => { if (id === 'sticky') onSticky(); else onHldShape(id as HldShape); setOpen(false) }
 

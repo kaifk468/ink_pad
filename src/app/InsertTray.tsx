@@ -52,15 +52,16 @@ export function InsertTray({ textActive, classActive, shapeActive, hldActive, on
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
     }
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (searchRef.current && searchRef.current.value) { setQuery(''); event.stopPropagation() } else setOpen(false)
-      }
+      if (event.key !== 'Escape') return
+      // Capture phase + stopPropagation: App's own Escape handler (focus mode, deselect) must not also run while a tray is open.
+      event.stopPropagation()
+      if (searchRef.current && searchRef.current.value) setQuery(''); else setOpen(false)
     }
     window.addEventListener('pointerdown', onPointerDown)
-    window.addEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
     return () => {
       window.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keydown', onKey, true)
     }
   }, [open])
 

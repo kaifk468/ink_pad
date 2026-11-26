@@ -79,7 +79,8 @@ test('More shapes grid: search field focused on open, filters, Enter inserts the
   assert.match(moreTray, /searchRef\.current\?\.focus\(\)/)
   assert.match(moreTray, /event\.key === 'Enter' && firstShown\) \{ event\.preventDefault\(\); insertMatch\(firstShown\.id\)/)
   assert.match(moreTray, /if \(id === 'sticky'\) onSticky\(\); else onHldShape\(id as HldShape\); setOpen\(false\)/)
-  assert.match(moreTray, /Escape'\) \{\s*if \(searchRef\.current && searchRef\.current\.value\) \{ setQuery\(''\)[^}]*\} else setOpen\(false\)/)
+  assert.match(moreTray, /Escape'\) return[\s\S]*event\.stopPropagation\(\)\s*if \(searchRef\.current && searchRef\.current\.value\) setQuery\(''\); else setOpen\(false\)/)
+  assert.match(moreTray, /addEventListener\('keydown', onKey, true\)/, 'capture phase, so App Escape handler does not also run')
   assert.match(moreTray, /No shape matches/)
   assert.match(moreTray, /shape-search-alias/)
 })
@@ -89,7 +90,8 @@ test('Insert tray: search field without autofocus, filters, Enter inserts the fi
   assert.doesNotMatch(insertTray, /autoFocus|\.focus\(\)/)
   assert.match(insertTray, /event\.key === 'Enter' && matches\[0\]\) \{ event\.preventDefault\(\); insertById\(matches\[0\]\.id\)/)
   assert.match(insertTray, /id === 'text'\) onText\(\)[\s\S]*id === 'shapes'\) onShapes\(\)[\s\S]*id === 'sticky'\) onSticky\(\)[\s\S]*id === 'classBox'\) onClass\(\)[\s\S]*onHldShape\(id as HldShape\)/)
-  assert.match(insertTray, /Escape'\) \{\s*if \(searchRef\.current && searchRef\.current\.value\) \{ setQuery\(''\)[^}]*\} else setOpen\(false\)/)
+  assert.match(insertTray, /Escape'\) return[\s\S]*event\.stopPropagation\(\)\s*if \(searchRef\.current && searchRef\.current\.value\) setQuery\(''\); else setOpen\(false\)/)
+  assert.match(insertTray, /addEventListener\('keydown', onKey, true\)/, 'capture phase, so App Escape handler does not also run')
   assert.match(insertTray, /No shape matches/)
   assert.match(insertTray, /\{!searching && <>/, 'the normal sections show when the query is empty')
 })
@@ -97,4 +99,15 @@ test('Insert tray: search field without autofocus, filters, Enter inserts the fi
 test('command palette: "Insert shape: <Name>" rows carry the aliases as keywords', () => {
   assert.match(app, /label: `Insert shape: \$\{HLD_SHAPE_LABELS\[shape\]\}`, group: 'Shapes', keywords: `hld system design add \$\{shapeKeywords\(shape\)\}`/)
   assert.match(app, /import \{ shapeKeywords \} from '\.\/shapeSearch'/)
+})
+
+test('desktop More shapes search also finds the dock shapes (postgres, mysql, sqs)', () => {
+  assert.match(moreTray, /import \{ HLD_ENTRIES, MORE_HLD_ENTRIES \} from '\.\/InsertTray'/)
+  assert.match(moreTray, /searching \? \[\.\.\.MORE_HLD_ENTRIES, \.\.\.HLD_ENTRIES\] : MORE_HLD_ENTRIES/)
+  assert.match(moreTray, /allEntries\.some\(\(entry\) => entry\.shape === match\.id\)/)
+  const dock = new Set([...insertTray.slice(insertTray.indexOf('HLD_ENTRIES'), insertTray.indexOf('MORE_HLD_ENTRIES')).matchAll(/\{ shape: '(\w+)'/g)].map((m) => m[1]))
+  for (const [query, id] of [['postgres', 'database'], ['mysql', 'database'], ['sqs', 'queue']]) {
+    assert.equal(first(query)?.id, id, query)
+    assert.ok(dock.has(id), `${id} is a dock shape`)
+  }
 })

@@ -922,6 +922,7 @@ function App() {
     focusRef.current = null
     focusKeptRef.current = null
     focusCheckedItemsRef.current = null
+    focusDrawnRef.current.clear()
     setFocusActive(false)
     historyCacheRef.current = null
     renderAll()
@@ -1299,7 +1300,11 @@ function App() {
   const drawItem = useCallback((ctx: CanvasRenderingContext2D, item: CanvasItem) => {
     const faded = focusRef.current
     // Focus on: a faded box that several connectors redraw is drawn once (a second faded pass would darken it). Off: nothing extra.
-    if (faded !== null && faded.has(canvasItemKey(item))) { if (focusDrawnRef.current.has(item)) return; focusDrawnRef.current.add(item) }
+    if (faded !== null) {
+      // An erase stroke starts a new pass: the connectors, locked items and boxes redrawn after it must really draw (they repair what it cut).
+      if (item.kind === 'stroke' && item.erase) focusDrawnRef.current.clear()
+      else if (faded.has(canvasItemKey(item))) { if (focusDrawnRef.current.has(item)) return; focusDrawnRef.current.add(item) }
+    }
     drawItemToCanvas(ctx, item, strokeDisplayMode, sketchy, faded)
   }, [strokeDisplayMode, sketchy])
 
