@@ -267,8 +267,7 @@ export function sketchyStrokePath(stroke: Stroke): string | null {
 export function sketchyStrokeParts(stroke: Stroke): { line: string; heads: string } | null {
   if ((stroke.shape !== 'arrow' && stroke.shape !== 'line') || stroke.points.length < 2 || stroke.erase) return null
   const rng = mulberry32(seedFromId(`stroke-${stroke.shape}`, stroke.id))
-  const [start, end] = stroke.points
-  const line = roughPolyline([start, end], rng)
+  const line = roughPolyline(stroke.shape === 'arrow' ? stroke.points : stroke.points.slice(0, 2), rng)
   let heads = ''
   for (const head of strokeHeadGeometry(stroke)) {
     for (const wing of [head.wingA, head.wingB]) heads += roughLine(head.tip.x, head.tip.y, wing.x, wing.y, rng, 0.5)

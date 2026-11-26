@@ -73,7 +73,7 @@ export function fillRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
 /** Strokes a straight line or arrow stroke in the hand-drawn style; false when the stroke is not one. The caller's dash applies to the shaft only, never the heads. */
 export function strokeSketchyStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): boolean {
   const headCode = strokeArrowheads(stroke) === 'none' ? 0 : strokeArrowheads(stroke) === 'end' ? 1 : strokeArrowheads(stroke) === 'start' ? 2 : 3
-  const key = [stroke.width, stroke.points[0]?.x ?? 0, stroke.points[0]?.y ?? 0, stroke.points[1]?.x ?? 0, stroke.points[1]?.y ?? 0, headCode]
+  const key = [stroke.width, stroke.points[0]?.x ?? 0, stroke.points[0]?.y ?? 0, stroke.points[1]?.x ?? 0, stroke.points[1]?.y ?? 0, headCode, ...(stroke.shape === 'arrow' && stroke.points.length > 2 ? stroke.points.slice(2).flatMap((p) => [p.x, p.y]) : [])]
   const paths = strokeCache(stroke, `s${stroke.id}`, key, () => {
     const parts = sketchyStrokeParts(stroke)
     return parts ? { line: new Path2D(parts.line), heads: parts.heads ? new Path2D(parts.heads) : null } : null

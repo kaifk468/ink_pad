@@ -10,6 +10,7 @@ import { buildSubgraphFrames, separateFromBoundaries, type MermaidSubgraph } fro
 import { buildMermaidClassItems, isMermaidClassText, parseMermaidClass } from './mermaidClassImport'
 import { buildMermaidEr, isMermaidErText } from './mermaidErImport'
 import { buildMermaidState, isMermaidStateText } from './mermaidStateImport'
+import { applyMermaidNodeStyle, newMermaidStyleSheet, readMermaidStyleStatement, resolveNodeStyle, type MermaidNodeStyle } from './mermaidStyle'
 import { buildMermaidSequence, isMermaidSequenceText, type MermaidDiagramResult } from './mermaidSequenceImport'
 
 export { MAX_MERMAID_NODES, MAX_MERMAID_TEXT, normalizeMermaidSpaces, stripMermaidFrontMatter }
@@ -21,11 +22,12 @@ export type { MermaidDiagramResult }
  * Supported: node shapes `A[t]`, `A(t)` (rounded rectangle), `A([t])`, `A((t))`, `A{t}`, `A[(t)]` (Database), `A[[t]]` (Service), bare `A`;
  * links `-->`, `---`, `-.->`, `-.-`, `==>`, `--o`, `--x`, chains, `A & B --> C`, and labels (`|t|` or `-- t -->`).
  * `subgraph` ... `end` (nestable) becomes dashed boundaries around the member boxes; links to a subgraph id are skipped.
- * Everything else (classDef, class, style, linkStyle, click, direction) is skipped and counted.
+ * `classDef`, `class`, `:::name` and `style` colour the boxes (fill, outline, dash, label colour; see mermaidStyle.ts).
+ * Everything else (linkStyle, click, direction) is skipped and counted.
  */
 export type MermaidDirection = 'TD' | 'BT' | 'LR' | 'RL'
 export type MermaidShape = 'rectangle' | 'rounded' | 'ellipse' | 'diamond' | 'database' | 'service'
-export type MermaidNode = { id: string; text: string; shape: MermaidShape }
+export type MermaidNode = { id: string; text: string; shape: MermaidShape; /** From classDef / class / `:::` / style: fill, outline colour, dash, label colour. */ style?: MermaidNodeStyle }
 export type MermaidEdge = { from: string; to: string; label?: string; arrow: boolean; dashed: boolean; /** `<-->`: a head at both ends. Only ever true. */ twoWay?: boolean }
 export type { MermaidSubgraph }
 export type MermaidGraph = { nodes: MermaidNode[]; edges: MermaidEdge[]; direction: MermaidDirection; ignoredLines: number; subgraphs?: MermaidSubgraph[] }
@@ -68,7 +70,7 @@ function splitStatements(line: string): string[] {
   return parts.map((part) => part.trim()).filter((part) => part !== '')
 }
 
-type Declared = { id: string; text?: string; shape?: MermaidShape }
+type Declared = { id: string; text?: string; shape?: MermaidShape; klass?: string }
 type Link = { arrow: boolean; dashed: boolean; twoWay?: boolean; label?: string }
 
 function parseNode(source: string, start: number): { node: Declared; end: number } | null {
@@ -100,7 +102,7 @@ function parseNode(source: string, start: number): { node: Declared; end: number
     position = closeAt + form.close.length
   }
   const klass = /^:::[\w-]+/.exec(source.slice(position))
-  if (klass) position += klass[0].length
+  if (klass) { position += klass[0].length; node.klass = klass[0].slice(3) }
   return { node, end: position }
 }
 
@@ -157,6 +159,7 @@ export function parseMermaid(text: string): MermaidParse {
   // belongs to the first block that closes around a mention of it.
   const mentioned = new Map<number, Set<string>>()
   const claimedIds = new Set<string>()
+  const styles = newMermaidStyleSheet()
   const declare = (declared: Declared) => {
     const known = nodes.get(declared.id)
     if (!known) nodes.set(declared.id, { id: declared.id, text: declared.text || declared.id, shape: declared.shape ?? 'rectangle' })
@@ -198,7 +201,7 @@ export function parseMermaid(text: string): MermaidParse {
       subgraphs[closing].nodes = ids
       continue
     }
-    if (SKIPPED.test(line)) { ignoredLines += 1; continue }
+    if (SKIPPED.test(line) && !/^(?:classDef|class|style)\s/.test(line)) { ignoredLines += 1; continue }
     for (const statement of splitStatements(line)) if (!parseStatement(statement)) ignoredLines += 1
   }
   // A subgraph left open at the end of the text still owns what it mentions.
@@ -210,6 +213,8 @@ export function parseMermaid(text: string): MermaidParse {
   }
   function parseStatement(statement: string): boolean {
     if (statement.startsWith('%%')) return true
+    const styled = readMermaidStyleStatement(statement, styles)
+    if (styled !== null) return styled
     if (SKIPPED.test(statement)) return false
     const added: Array<[Declared[], Declared[], Link]> = []
     const first = parseGroup(statement, 0)
@@ -231,6 +236,7 @@ export function parseMermaid(text: string): MermaidParse {
     }
     for (const declared of declaredAll) {
       declare(declared)
+      if (declared.klass) styles.assigned.push([declared.id, declared.klass])
       for (const index of open) mentioned.get(index)?.add(declared.id)
     }
     let skippedSelf = false
@@ -254,6 +260,10 @@ export function parseMermaid(text: string): MermaidParse {
   }
   if (nodes.size === 0) return { ok: false, error: 'No flowchart nodes found. Start with “flowchart LR” or “graph TD”, then lines like A[Client] --> B[Server].' }
   if (nodes.size > MAX_MERMAID_NODES) return { ok: false, error: `Too many nodes (${nodes.size}); the limit is ${MAX_MERMAID_NODES}.` }
+  for (const node of nodes.values()) {
+    const style = resolveNodeStyle(styles, node.id)
+    if (style) node.style = style
+  }
   return { ok: true, nodes: [...nodes.values()], edges, direction, ignoredLines, subgraphs }
 }
 
@@ -330,7 +340,9 @@ export function buildMermaidItems(graph: MermaidGraph): { items: CanvasItem[]; b
     const { x, y } = spots[position]
     const { width, height } = sizes[position]
     const hld = HLD_SHAPE_OF[node.shape]
-    boxes.set(node.id, hld ? sheet.hld(hld, x, y, node.text, { width, height }, hld === 'database' ? Math.round(20 * HLD_TEMPLATE_SCALE) : 0) : sheet.shaped(node.shape === 'ellipse' ? 'ellipse' : node.shape === 'diamond' ? 'diamond' : node.shape === 'rounded' ? 'rounded' : 'rectangle', x, y, width, height, node.text))
+    const box = hld ? sheet.hld(hld, x, y, node.text, { width, height }, hld === 'database' ? Math.round(20 * HLD_TEMPLATE_SCALE) : 0) : sheet.shaped(node.shape === 'ellipse' ? 'ellipse' : node.shape === 'diamond' ? 'diamond' : node.shape === 'rounded' ? 'rounded' : 'rectangle', x, y, width, height, node.text)
+    applyMermaidNodeStyle(sheet.items, box, node.style)
+    boxes.set(node.id, box)
   })
   for (const edge of graph.edges) {
     const from = boxes.get(edge.from) as RectangleObject

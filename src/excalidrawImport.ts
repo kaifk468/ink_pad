@@ -329,16 +329,18 @@ export function buildExcalidrawItems(json: unknown): ExcalidrawResult {
     const g = groupFor(el)
     const arrowheads: Arrowheads = startHead && endHead ? 'both' : endHead ? 'end' : startHead ? 'start' : 'none'
     const straight = pts.length === 2
+    // A bent arrow keeps all its points as one 'arrow' stroke (drawn as a polyline, head on the end segment); a bent plain line stays a polyline stroke.
+    const bentArrow = el.type === 'arrow' && pts.length > 2
     const stroke: Stroke = {
       kind: 'stroke',
       id: strokeId++,
-      // Arrow and line strokes draw only their first two points; a bent line stays a plain polyline stroke.
       points: (straight ? [first, last] : pts).map((p) => ({ x: p.x, y: p.y, pressure: 1 })),
       color,
       width,
       erase: false,
       ...(straight ? { shape: el.type === 'arrow' ? ('arrow' as const) : ('line' as const), arrowheads } : {}),
-      ...(straight && dash ? { dash } : {}),
+      ...(bentArrow ? { shape: 'arrow' as const, arrowheads } : {}),
+      ...((straight || bentArrow) && dash ? { dash } : {}),
     }
     strokes.push(group(stroke, g))
     if (label) {

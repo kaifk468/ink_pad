@@ -148,7 +148,12 @@ export function strokeHeadGeometry(stroke: Stroke): ArrowheadGeometry[] {
   if ((stroke.shape !== 'arrow' && stroke.shape !== 'line') || stroke.points.length < 2) return []
   const heads = strokeArrowheads(stroke)
   if (heads === 'none') return []
-  const [start, end] = stroke.points
+  // A bent arrow (3+ points, from Excalidraw import) keeps its heads on the first and last segments.
+  const count = stroke.points.length
+  const start = stroke.points[0]
+  const end = stroke.points[count - 1]
+  const afterStart = stroke.shape === 'arrow' ? stroke.points[1] : end
+  const beforeEnd = stroke.shape === 'arrow' ? stroke.points[count - 2] : start
   const length = Math.max(12, stroke.width * 3.5)
   const make = (tip: Point, from: Point): ArrowheadGeometry => {
     const angle = Math.atan2(tip.y - from.y, tip.x - from.x)
@@ -156,8 +161,8 @@ export function strokeHeadGeometry(stroke: Stroke): ArrowheadGeometry[] {
     return { tip, wingA: wing(-Math.PI / 6), wingB: wing(Math.PI / 6) }
   }
   const result: ArrowheadGeometry[] = []
-  if (heads === 'start' || heads === 'both') result.push(make(start, end))
-  if (heads === 'end' || heads === 'both') result.push(make(end, start))
+  if (heads === 'start' || heads === 'both') result.push(make(start, afterStart))
+  if (heads === 'end' || heads === 'both') result.push(make(end, beforeEnd))
   return result
 }
 

@@ -51,12 +51,13 @@ function strokeElement(stroke: Stroke): string {
   if (!points.length) return ''
   if ((stroke.shape === 'line' || stroke.shape === 'arrow') && points.length >= 2) {
     const [start, end] = points
+    const path = stroke.shape === 'arrow' ? points : [start, end]
     const rough = sketchyExport ? sketchyStrokeParts(stroke) : null
     const dash = dashAttr(dashPattern(stroke.dash, stroke.width))
     const heads = strokeHeadGeometry(stroke)
     // Heads are always solid; the dash belongs to the shaft only.
     const headPath = rough ? rough.heads : heads.map((head) => `M${n(head.tip.x)} ${n(head.tip.y)}L${n(head.wingA.x)} ${n(head.wingA.y)}M${n(head.tip.x)} ${n(head.tip.y)}L${n(head.wingB.x)} ${n(head.wingB.y)}`).join('')
-    const shaft = rough ? rough.line : `M${n(start.x)} ${n(start.y)}L${n(end.x)} ${n(end.y)}`
+    const shaft = rough ? rough.line : path.map((p, i) => `${i === 0 ? 'M' : 'L'}${n(p.x)} ${n(p.y)}`).join('')
     if (!dash) return `<path d="${shaft}${headPath}" ${common} stroke-width="${n(stroke.width)}"/>`
     return `<path d="${shaft}" ${common} stroke-width="${n(stroke.width)}"${dash}/>` + (headPath ? `<path d="${headPath}" ${common} stroke-width="${n(stroke.width)}"/>` : '')
   }

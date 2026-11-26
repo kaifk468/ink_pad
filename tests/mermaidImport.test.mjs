@@ -58,11 +58,11 @@ test('edge labels in both spellings', () => {
   assert.equal(g.edges[2].dashed, true)
 })
 
-test('comments, style lines are skipped and the unparsed ones counted', () => {
+test('comments, linkStyle and click lines are skipped and the unparsed ones counted', () => {
   const g = ok('%% a comment\nflowchart TD\nsubgraph S\nA-->B\nend\nclassDef x fill:#f00\nclass A x\nstyle B fill:#fff\nlinkStyle 0 stroke:red\nclick A callback\n%% another\nthis is not mermaid ((')
   assert.equal(g.nodes.length, 2)
   assert.equal(g.edges.length, 1)
-  assert.equal(g.ignoredLines, 6) // subgraph / end are now read, not ignored
+  assert.equal(g.ignoredLines, 3) // linkStyle, click and the bad line; subgraph / end and classDef / class / style are read
   assert.equal(ok('graph TD\nA-->B').ignoredLines, 0)
 })
 
@@ -184,8 +184,9 @@ test('inline-label links with no space before the target keep their arrow', () =
 test('keywords are case-sensitive: End / Style1 nodes are not skipped, real keywords still are', () => {
   const g = ok('graph TD\nEnd[Done] --> X\nEnd --> Y\nStyle1 --> Z\nsubgraph S\nA --> B\nend\nclass A red\nstyle A fill:#f00\nsubgraphX --> Q')
   assert.deepEqual(g.nodes.map((n) => n.id), ['End', 'X', 'Y', 'Style1', 'Z', 'A', 'B', 'subgraphX', 'Q'])
-  assert.equal(g.ignoredLines, 2) // subgraph / end are now read
+  assert.equal(g.ignoredLines, 0) // subgraph / end and class / style are read
   assert.equal(node(g, 'End').text, 'Done')
+  assert.equal(node(g, 'A').style.fill, '#ff0000')
 })
 
 test('Unicode spaces act as plain spaces (no duplicate nodes)', () => {
@@ -266,4 +267,43 @@ test('A(text) builds a rectangle with rounded: true; [text] stays sharp', () => 
   assert.equal(rect('Round').rounded, true)
   assert.equal(rect('Sharp').rounded, undefined)
   assert.equal(rect('Stadium').rounded, undefined)
+})
+
+const fillOf = (items, text) => {
+  const label = items.find((item) => item.kind === 'text' && item.text === text)
+  const box = items.find((item) => item.kind === 'rectangle' && label && item.x < label.x + label.width / 2 && label.x + label.width / 2 < item.x + item.width && item.y < label.y + label.height / 2 && label.y + label.height / 2 < item.y + item.height)
+  return { box, label }
+}
+
+test('classDef, class, ::: and style colour boxes, outline, dash and label', () => {
+  const g = ok('flowchart LR\nclassDef hot fill:#f9f,stroke:#333,stroke-dasharray:5 5,color:#fff\nclassDef cold fill:#00f\nA[Alpha]:::hot --> B[Beta] --> C[Gamma]\nclass B,C cold\nstyle C stroke:red,fill:#0f0')
+  assert.equal(g.ignoredLines, 0)
+  const { items } = buildMermaidItems(g)
+  const a = fillOf(items, 'Alpha')
+  assert.equal(a.box.fillColor, '#ff99ff')
+  assert.equal(a.box.strokeColor, '#333333')
+  assert.equal(a.box.dash, 'dashed')
+  assert.equal(a.label.color, '#ffffff')
+  assert.equal(fillOf(items, 'Beta').box.fillColor, '#0000ff')
+  const c = fillOf(items, 'Gamma').box
+  assert.equal(c.fillColor, '#00ff00') // style wins over the class
+  assert.equal(c.strokeColor, '#ff0000')
+})
+
+test('default classDef applies to all nodes; bad values are ignored; unstyled boxes unchanged', () => {
+  const g = ok('graph TD\nclassDef default fill:#abc\nclassDef bad fill:nonsense,stroke:#12\nclassDef special fill:#fff\nA --> B:::special\nclass A bad')
+  assert.equal(g.ignoredLines, 1) // the classDef with no usable value
+  const { items } = buildMermaidItems(g)
+  assert.equal(fillOf(items, 'A').box.fillColor, '#aabbcc')
+  assert.equal(fillOf(items, 'B').box.fillColor, '#ffffff')
+  const plain = buildMermaidItems(ok('graph TD\nA --> B'))
+  assert.equal(fillOf(plain.items, 'A').box.fillColor, undefined)
+  assert.equal(fillOf(plain.items, 'A').box.dash, undefined)
+})
+
+test('styled import survives a save and load', () => {
+  const { items } = buildMermaidItems(ok('graph TD\nclassDef x fill:#f00,stroke-dasharray:2 2,color:#00f\nA:::x --> B'))
+  const clean = items.map((item) => doc.sanitizeItem(JSON.parse(JSON.stringify(item))))
+  assert.deepEqual(clean, items)
+  assert.equal(clean.find((item) => item.kind === 'rectangle').dash, 'dotted')
 })

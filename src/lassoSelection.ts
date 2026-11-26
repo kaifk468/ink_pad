@@ -32,12 +32,13 @@ export function pointInLasso(point: Point, polygon: Point[]): boolean {
 
 function arrowSegments(stroke: Stroke): Array<[Point, Point]> {
   if (stroke.points.length < 2) return []
-  const [start, end] = stroke.points
-  const angle = Math.atan2(end.y - start.y, end.x - start.x)
+  const end = stroke.points[stroke.points.length - 1]
+  const before = stroke.points[stroke.points.length - 2]
+  const angle = Math.atan2(end.y - before.y, end.x - before.x)
   const headLength = Math.max(12, stroke.width * 3.5)
   const left = { x: end.x - headLength * Math.cos(angle - Math.PI / 6), y: end.y - headLength * Math.sin(angle - Math.PI / 6), pressure: 1 }
   const right = { x: end.x - headLength * Math.cos(angle + Math.PI / 6), y: end.y - headLength * Math.sin(angle + Math.PI / 6), pressure: 1 }
-  return [[start, end], [end, left], [end, right]]
+  return [...stroke.points.slice(1).map((p, i): [Point, Point] => [stroke.points[i], p]), [end, left], [end, right]]
 }
 
 function strokeSegments(stroke: Stroke): Array<[Point, Point]> {

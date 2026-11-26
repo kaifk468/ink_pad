@@ -140,7 +140,8 @@ export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, stroke
     ctx.setLineDash(dashPattern(stroke.dash, stroke.width))
     ctx.beginPath()
     ctx.moveTo(points[0].x, points[0].y)
-    ctx.lineTo(points[1].x, points[1].y)
+    // A bent arrow (3+ points) is a polyline; lines and two-point arrows draw their first two points.
+    for (const point of stroke.shape === 'arrow' ? points.slice(1) : [points[1]]) ctx.lineTo(point.x, point.y)
     ctx.stroke()
     // Arrowheads are always solid, whatever the dash of the shaft.
     const heads = strokeHeadGeometry({ ...stroke, points })
