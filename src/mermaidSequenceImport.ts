@@ -1,4 +1,5 @@
-import type { CanvasItem, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
+import { createShapeBox, type CanvasItem, type Point, type RectangleObject, type Stroke, type TextObject } from './canvasModel'
+import { BOUNDARY_COLOR, BOUNDARY_FONT_SIZE } from './boundary'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH } from './classBoxLayout'
 import { HLD_TEMPLATE_SCALE, Sheet } from './diagramTemplates'
 import { HLD_DEFAULT_SIZE } from './hldShapes'
@@ -10,7 +11,10 @@ import { createTextObject, measureTextSize } from './textLayout'
  * Mermaid `sequenceDiagram` import: participants become boxes in a row (actors use the HLD User shape), each with a dashed vertical
  * lifeline; messages become horizontal arrow strokes, notes become sticky-note rectangles. Only ordinary items (rectangles, strokes, text
  * labels) with local ids from 1 per kind, top-left at (0, 0): the same convention the templates use, remapped by the paste/insert path.
- * Skipped and counted: loop/alt/else/opt/par/and/critical/break/rect/end, activate/deactivate, box, create, destroy, anything unknown.
+ * Each participant box, its label and its lifeline share a `group` number, so dragging a participant moves its lifeline (the insert path
+ * gives the pasted groups fresh numbers). `loop`/`alt`/`opt`/`par`/`critical`/`break`/`rect` ... `end` (nestable) become dashed unfilled boundary
+ * rectangles behind everything, labelled "kind: text" at the top-left; `else` / `and` / `option` become a dashed divider with its text. Empty frames are skipped.
+ * Skipped and counted: activate/deactivate, box, create, destroy, a stray `end` / `else`, anything unknown.
  */
 export const MAX_SEQUENCE_PARTICIPANTS = 30
 export const MAX_SEQUENCE_MESSAGES = 200
@@ -31,14 +35,19 @@ const PARTICIPANT = new RegExp(`^(participant|actor)\\s+(${ID})(?:\\s+as\\s+(.+)
 const MESSAGE = new RegExp(`^(${ID})\\s*(-->>|->>|-->|->|--x|-x|--\\)|-\\))\\s*([+-]?)\\s*(${ID})\\s*(?::\\s*(.*))?$`, 'u')
 const NOTE = new RegExp(`^note\\s+(over|left\\s+of|right\\s+of)\\s+(${ID})(?:\\s*,\\s*(${ID}))?\\s*:\\s*(.*)$`, 'iu')
 const TITLE = /^title(?:\s*:\s*|\s+)(.+)$/
+const FRAME = /^(loop|alt|opt|par|critical|break|rect)(?:\s+(.*))?$/
+const FRAME_DIVIDER = /^(else|and|option)(?:\s+(.*))?$/
+const FRAME_END = /^end$/
 const AUTONUMBER = /^autonumber(?:\s|$)/
 
 type Participant = { id: string; text: string; actor: boolean }
 type Message = { kind: 'message'; from: string; to: string; text: string; dashed: boolean; head: boolean }
 type Note = { kind: 'note'; side: 'over' | 'left' | 'right'; a: string; b?: string; text: string }
-type Step = Message | Note
+type Marker = { kind: 'open'; frame: number } | { kind: 'divider'; frame: number; text: string } | { kind: 'close'; frame: number }
+type Step = Message | Note | Marker
+type Frame = { kind: string; text: string; dividers: Array<{ y: number; text: string }>; minX: number; maxX: number; top: number; bottom: number; startY: number; depth: number; height: number; used: boolean }
 
-export type MermaidSequenceBuild = { ok: true; items: CanvasItem[]; boxes: number; links: number; ignoredLines: number; kind: 'sequence' } | { ok: false; error: string }
+export type MermaidSequenceBuild = { ok: true; items: CanvasItem[]; boxes: number; links: number; ignoredLines: number; kind: 'sequence'; /** Frames drawn (loop / alt / ... boundaries). */ frames: number } | { ok: false; error: string }
 
 function sourceLines(text: string): string[] {
   return stripMermaidFrontMatter(normalizeMermaidSpaces(text).replace(/^﻿/, '')).split(/\r?\n/)
@@ -64,6 +73,8 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
   let numbered = false
   let messageCount = 0
   let headerSeen = false
+  const frameDefs: Array<{ kind: string; text: string }> = []
+  const openFrames: number[] = []
 
   const known = (id: string): Participant | undefined => participants.find((participant) => participant.id === id)
   /** The participant, added in order of first appearance; null when the cap is reached. */
@@ -101,6 +112,16 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
       steps.push({ kind: 'message', from: from.id, to: to.id, text: cleanText(message[5] ?? ''), dashed: message[2].startsWith('--'), head: message[2].endsWith('>>') || message[2].endsWith('x') || message[2].endsWith(')') })
       continue
     }
+    const opened = FRAME.exec(line)
+    if (opened) {
+      frameDefs.push({ kind: opened[1], text: cleanText(opened[2] ?? '') })
+      openFrames.push(frameDefs.length - 1)
+      steps.push({ kind: 'open', frame: frameDefs.length - 1 })
+      continue
+    }
+    const divided = FRAME_DIVIDER.exec(line)
+    if (divided && openFrames.length > 0) { steps.push({ kind: 'divider', frame: openFrames[openFrames.length - 1], text: cleanText(divided[2] ?? '') }); continue }
+    if (FRAME_END.test(line) && openFrames.length > 0) { steps.push({ kind: 'close', frame: openFrames.pop() as number }); continue }
     const noted = NOTE.exec(line)
     if (noted) {
       const side = noted[1].toLowerCase().startsWith('left') ? 'left' : noted[1].toLowerCase().startsWith('right') ? 'right' : 'over'
@@ -113,6 +134,7 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
     ignored += 1
   }
   if (participants.length === 0) return { ok: false, error: 'No participants found' }
+  while (openFrames.length > 0) steps.push({ kind: 'close', frame: openFrames.pop() as number }) // a frame left open at the end closes there
 
   // ---- Boxes: sizes, then centre x of each lifeline (relative, first box centred on 0).
   const userSize = { width: Math.round(HLD_DEFAULT_SIZE.user.width * HLD_TEMPLATE_SCALE), height: Math.round(HLD_DEFAULT_SIZE.user.height * HLD_TEMPLATE_SCALE) }
@@ -172,6 +194,12 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
       : sheet.shaped('rectangle', x, boxTop, sizes[index].width, sizes[index].height, participant.text)
   })
   const boxBottom = Math.max(...boxes.map((box) => box.y + box.height))
+  // One group per participant: its box, the label inside it and (below) its lifeline.
+  boxes.forEach((box, index) => {
+    box.group = index + 1
+    const label = sheet.items[sheet.items.indexOf(box) + 1]
+    if (label && label.kind === 'text') label.group = index + 1
+  })
 
   let strokeId = 1
   let rectangleId = boxes.length + 1
@@ -193,9 +221,42 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
 
   if (title) addText(title, (centres[0] + centres[centres.length - 1]) / 2, 0, 32)
 
+  const frames: Frame[] = frameDefs.map((def) => ({ ...def, dividers: [], minX: Infinity, maxX: -Infinity, top: 0, bottom: 0, startY: 0, depth: 0, height: 0, used: false }))
+  const stack: Frame[] = []
+  const touch = (left: number, right: number): void => {
+    for (const frame of stack) { frame.used = true; frame.minX = Math.min(frame.minX, left); frame.maxX = Math.max(frame.maxX, right) }
+  }
+  const drawn: Frame[] = []
+
   let y = boxBottom + 30
   let counter = 0
   for (const step of steps) {
+    if (step.kind === 'open') {
+      const frame = frames[step.frame]
+      frame.startY = y
+      frame.top = y
+      frame.depth = stack.length
+      y += 40 // room for the frame label above the first message label
+      stack.push(frame)
+      continue
+    }
+    if (step.kind === 'divider') {
+      const frame = frames[step.frame]
+      frame.dividers.push({ y: y + 4, text: step.text })
+      y += step.text ? 40 : 24
+      continue
+    }
+    if (step.kind === 'close') {
+      const frame = frames[step.frame]
+      stack.pop()
+      if (!frame.used) { y = frame.startY; continue } // empty: nothing drawn, space given back
+      frame.bottom = y
+      y += 16
+      const parent = stack[stack.length - 1]
+      if (parent) parent.height = Math.max(parent.height, frame.height + 1)
+      drawn.push(frame)
+      continue
+    }
     if (step.kind === 'note') {
       const size = noteSize(step)
       const place = noteX(step, centres)
@@ -205,6 +266,7 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
         const made = createTextObject(textId, 0, 0, step.text, INK, LABEL_SIZE)
         addText(step.text, note.x + note.width / 2, note.y + note.height / 2 - made.height / 2, LABEL_SIZE)
       }
+      touch(note.x, note.x + note.width)
       y += size.height + 30
       continue
     }
@@ -214,6 +276,7 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
     const x1 = centres[column.get(step.from) as number]
     const x2 = centres[column.get(step.to) as number]
     const heads = step.head ? 'end' : 'none'
+    touch(Math.min(x1, x2), Math.max(x1, x2) + (x1 === x2 ? LOOP_WIDTH + (label ? 16 + measureTextSize(label, LABEL_SIZE).width : 0) : 0))
     if (x1 === x2) {
       const top = y + 20 + labelHeight
       // Self message: out to the right, down, and back, as three straight strokes (arrow strokes are straight lines).
@@ -239,12 +302,35 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
     lifelines.push({ kind: 'stroke', id: strokeId++, points: [pt(centres[index], box.y + box.height), pt(centres[index], lifelineEnd)], color: LIFELINE_COLOR, width: 2, erase: false, shape: 'line', dash: 'dashed', arrowheads: 'none' })
   })
 
-  // Lifelines first so boxes, arrows and labels draw over them.
-  const items: CanvasItem[] = [...lifelines, ...sheet.items, ...rectangles, ...strokes, ...texts]
-  return { ok: true, items, boxes: participants.length, links: messageCount, ignoredLines: ignored, kind: 'sequence' }
+  lifelines.forEach((line, index) => { line.group = index + 1 })
+
+  // Frames: dashed boundaries (outer first, so inner ones draw over them), a label at the top-left and dividers across.
+  drawn.sort((a, b) => frames.indexOf(a) - frames.indexOf(b))
+  const frameRectangles: RectangleObject[] = []
+  for (const frame of drawn) {
+    const label = frame.kind === 'rect' ? '' : frame.text ? `${frame.kind}: ${frame.text}` : frame.kind
+    const labelObject = label ? createTextObject(textId++, 0, 0, label, BOUNDARY_COLOR, BOUNDARY_FONT_SIZE) : null
+    const pad = 36 + 14 * frame.height
+    const left = Math.round(frame.minX - pad)
+    const right = Math.round(Math.max(frame.maxX + pad, left + (labelObject ? labelObject.width + 24 : 0)))
+    const rectangle: RectangleObject = { ...createShapeBox(rectangleId++, left, Math.round(frame.top), right - left, Math.round(frame.bottom - frame.top), BOUNDARY_COLOR, 2, 'rectangle'), dash: 'dashed' }
+    frameRectangles.push(rectangle)
+    if (labelObject) texts.push({ ...labelObject, x: left + 12, y: Math.round(frame.top) + 8 })
+    for (const divider of frame.dividers) {
+      addStroke(pt(left, divider.y), pt(right, divider.y), true, 'none', BOUNDARY_COLOR, 2)
+      if (divider.text) {
+        const made = createTextObject(textId++, 0, 0, divider.text, BOUNDARY_COLOR, BOUNDARY_FONT_SIZE)
+        texts.push({ ...made, x: left + 12, y: Math.round(divider.y) + 6 })
+      }
+    }
+  }
+
+  // Frames first (behind everything), then lifelines, so boxes, arrows and labels draw over them.
+  const items: CanvasItem[] = [...frameRectangles, ...lifelines, ...sheet.items, ...rectangles, ...strokes, ...texts]
+  return { ok: true, items, boxes: participants.length, links: messageCount, ignoredLines: ignored, kind: 'sequence', frames: drawn.length }
 }
 
 /** Result of any Mermaid importer (flowchart, class, sequence); the dispatcher in mermaidImport.ts returns it. */
 export type MermaidDiagramResult =
-  | { ok: true; items: CanvasItem[]; boxes: number; links: number; ignoredLines: number; kind: 'flowchart' | 'class' | 'sequence' | 'er' | 'state' }
+  | { ok: true; items: CanvasItem[]; boxes: number; links: number; ignoredLines: number; kind: 'flowchart' | 'class' | 'sequence' | 'er' | 'state'; /** Sequence frames drawn. */ frames?: number }
   | { ok: false; error: string }

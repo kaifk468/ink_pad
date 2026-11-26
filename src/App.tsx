@@ -4671,7 +4671,7 @@ function App() {
     if (!built.ok) return built.error
     if (!insertTemplateItems(built.items, at)) return 'Could not insert the diagram.'
     setMermaidOpen(false) // closed only after a successful insert; on failure the dialog stays open with the message
-    showToast(mermaidInsertMessage(built.boxes, built.links, built.ignoredLines, built.kind))
+    showToast(mermaidInsertMessage(built.boxes, built.links, built.ignoredLines, built.kind, built.frames ?? 0))
     return null
   }
   // Desktop paste with an empty in-app clipboard: the browser's paste event carries the system clipboard text. Mermaid text becomes a diagram, other text one label.

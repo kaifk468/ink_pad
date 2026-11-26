@@ -434,7 +434,7 @@ function buildSubgraphFrames(groups: MermaidSubgraph[], boxes: Map<string, Recta
 }
 
 /** The toast after inserting: "Inserted 3 boxes and 2 links", plus "(1 line ignored)". Class diagrams say "classes". */
-export function mermaidInsertMessage(boxes: number, links: number, ignored: number, kind: 'flowchart' | 'class' | 'sequence' | 'er' | 'state' = 'flowchart'): string {
+export function mermaidInsertMessage(boxes: number, links: number, ignored: number, kind: 'flowchart' | 'class' | 'sequence' | 'er' | 'state' = 'flowchart', frames = 0): string {
   const boxText = kind === 'class' ? `${boxes} ${boxes === 1 ? 'class' : 'classes'}`
     : kind === 'sequence' ? `${boxes} ${boxes === 1 ? 'participant' : 'participants'}`
     : kind === 'er' ? `${boxes} ${boxes === 1 ? 'entity' : 'entities'}`
@@ -444,6 +444,7 @@ export function mermaidInsertMessage(boxes: number, links: number, ignored: numb
     : kind === 'er' ? `${links} ${links === 1 ? 'relationship' : 'relationships'}`
     : kind === 'state' ? `${links} ${links === 1 ? 'transition' : 'transitions'}`
     : `${links} ${links === 1 ? 'link' : 'links'}`
+  if (frames > 0) return `Inserted ${boxText}, ${linkText} and ${frames} ${frames === 1 ? 'frame' : 'frames'}${ignored > 0 ? ` (${ignored} ${ignored === 1 ? 'line' : 'lines'} ignored)` : ''}`
   return `Inserted ${boxText} and ${linkText}${ignored > 0 ? ` (${ignored} ${ignored === 1 ? 'line' : 'lines'} ignored)` : ''}`
 }
 

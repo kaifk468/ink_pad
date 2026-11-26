@@ -92,6 +92,8 @@ test('dispatcher routes by header', () => {
   assert.equal(sequence.ok && sequence.kind, 'sequence')
   assert.equal(sequence.boxes, 2)
   assert.equal(mermaidInsertMessage(2, 1, 0, 'sequence'), 'Inserted 2 participants and 1 message')
+  assert.equal(mermaidInsertMessage(3, 5, 0, 'sequence', 2), 'Inserted 3 participants, 5 messages and 2 frames')
+  assert.equal(mermaidInsertMessage(3, 5, 1, 'sequence', 1), 'Inserted 3 participants, 5 messages and 1 frame (1 line ignored)')
 })
 
 test('class diagrams say classes in the toast', () => {
@@ -103,7 +105,7 @@ test('class diagrams say classes in the toast', () => {
 test('wiring: dispatcher in App and dialog hint', async () => {
   assert.match(app, /import \{ buildMermaidDiagram, isMermaidText, MAX_MERMAID_TEXT, mermaidInsertMessage \} from '\.\/mermaidImport'/)
   assert.match(app, /const built = buildMermaidDiagram\(text\)\n\s+if \(!built\.ok\) return built\.error/)
-  assert.match(app, /mermaidInsertMessage\(built\.boxes, built\.links, built\.ignoredLines, built\.kind\)/)
+  assert.match(app, /mermaidInsertMessage\(built\.boxes, built\.links, built\.ignoredLines, built\.kind, built\.frames \?\? 0\)/)
   assert.match(app, /const parsed = buildMermaidDiagram\(mermaidText\)/)
   const dialog = await readFile(new URL('../src/app/MermaidDialog.tsx', import.meta.url), 'utf8')
   assert.match(dialog, /flowchart[\s\S]*classDiagram[\s\S]*sequenceDiagram/)
