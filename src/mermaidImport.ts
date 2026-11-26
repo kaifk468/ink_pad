@@ -8,6 +8,7 @@ import { BOUNDARY_COLOR, BOUNDARY_FONT_SIZE, BOUNDARY_PADDING } from './boundary
 import { cleanMermaidText, facingSides, firstMermaidLine, MAX_MERMAID_NODES, MAX_MERMAID_TEXT, normalizeMermaidSpaces, stripMermaidFrontMatter } from './mermaidCommon'
 import { buildMermaidClassItems, isMermaidClassText, parseMermaidClass } from './mermaidClassImport'
 import { buildMermaidEr, isMermaidErText } from './mermaidErImport'
+import { buildMermaidState, isMermaidStateText } from './mermaidStateImport'
 import { buildMermaidSequence, isMermaidSequenceText, type MermaidDiagramResult } from './mermaidSequenceImport'
 
 export { MAX_MERMAID_NODES, MAX_MERMAID_TEXT, normalizeMermaidSpaces, stripMermaidFrontMatter }
@@ -36,7 +37,7 @@ const HEADER = /^(?:graph|flowchart)(?:[ \t]+(?:TD|TB|BT|LR|RL))?[ \t]*(?:;.*)?$
 /** True when the first line that is not blank, front matter or a %% comment is a `graph` / `flowchart`, `classDiagram` or `sequenceDiagram` header (lowercase, as Mermaid requires). */
 export function isMermaidText(text: string): boolean {
   const line = firstMermaidLine(text)
-  return HEADER.test(line) || isMermaidClassText(line) || isMermaidSequenceText(line) || isMermaidErText(line)
+  return HEADER.test(line) || isMermaidClassText(line) || isMermaidSequenceText(line) || isMermaidErText(line) || isMermaidStateText(line)
 }
 
 const SHAPES: ReadonlyArray<{ open: string; close: string; shape: MermaidShape }> = [
@@ -458,6 +459,7 @@ export function buildMermaidDiagram(text: string): MermaidDiagramResult {
   }
   if (isMermaidSequenceText(header)) return buildMermaidSequence(capped)
   if (isMermaidErText(header)) return buildMermaidEr(capped)
+  if (isMermaidStateText(header)) return buildMermaidState(capped)
   const parsed = parseMermaid(capped)
   if (!parsed.ok) return parsed
   const built = buildMermaidItems(parsed)
