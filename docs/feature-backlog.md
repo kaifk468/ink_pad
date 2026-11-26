@@ -533,3 +533,59 @@ Follow-ups found this round (ideas for the next round):
 - Sequence Copy as Mermaid relies on geometry (no saved marker); heavily edited pages may drop messages (counted in the toast).
 - Move to page is desktop-only (right-click and palette); a tablet entry (panel / More tray) is an idea.
 - PlantUML dialog: an unmarked single `class X {` in the Mermaid/PlantUML dialog now needs `@startuml` (shared detector).
+
+## Round 9 — 2026-11-27 (branch desktop-20x)
+
+### User journeys walked (friction found, on top of rounds 1-8)
+1. Growing an HLD: "put a cache between the service and the DB" means deleting the arrow, adding a box and drawing two new arrows (draw.io / Miro let you drop a box onto a line). Happens in every design discussion.
+2. Rearranging: a request flow drawn right-to-left, or a tree drawn upside down, has to be rebuilt by hand; Excalidraw / draw.io flip the selection (Shift+H / Shift+V).
+3. Neat diagrams on the laptop: smart guides help one box at a time, but a grid snap (Excalidraw Ctrl+', draw.io default) is the quick way to line up a whole HLD.
+4. Zoom: the % readout only resets to 100% on the desktop; on the tablet there is no one-tap "fit the whole drawing" or "100%" (pinch only).
+5. Finding a diagram: library search matches titles only; "the one with Kafka" cannot be found by its contents.
+6. Connecting on the tablet: the desktop shows + buttons beside a selected box (click = connected new box); the tablet has nothing like it, so every connected box is drawn and wired by hand.
+7. Desktop Arrow tool: an end dropped deep inside a box attaches to the nearest side, not the side facing the other end (fixed for the pen in round 8, not for the mouse tool).
+8. Text import: Mermaid / PlantUML / Excalidraw insert lands at the pointer and can overlap boxes already on the page.
+9. Tablet: Move to page (round 8) exists only on the desktop right-click menu and palette.
+10. PlantUML / Mermaid sequence text: `database` / `queue` / `actor` participants import as plain boxes; `-x`, `-)`, `->o` arrows are not read.
+
+### Candidates (problem · who/how often · benefit · risk · size · decision)
+| # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
+|---|---|---|---|---|---|---|---|
+| 214 | Insert box into a connector (split the arrow at its middle into box + two connectors) | Adding a component between two boxes means delete + redraw | everyone, every growing HLD | high | low-medium (pure split, one undo step) | M | picked |
+| 215 | Flip selection horizontal / vertical (Shift+H / Shift+V) | Mirrored layouts are rebuilt by hand | desktop + tablet, sometimes | medium | medium (all item kinds, attachments) | M | picked |
+| 216 | Snap to grid toggle (desktop moves, resizes, new shapes) (#198) | Lining up many boxes is fiddly | desktop, often | medium | low-medium (off by default, desktop paths only) | M | picked |
+| 217 | Zoom menu on the % readout (100%, 50-200%, Fit drawing, Fit selection) in both modes | No one-tap fit / 100% on the tablet; hidden zoom keys on the desktop | both, daily | medium | low | S | picked |
+| 218 | Library search inside diagram contents (labels, text) (#203) | "the one with Kafka" not findable | everyone, often | high | low-medium (read-only; no network, cached Drive copies only) | M | picked |
+| 219 | Tablet quick-connect + buttons on the selected box (pen / touch tap) | Tablet users wire every connected box by hand | tablet, every diagram | high | medium (select-mode pointer path on the tablet only) | M | picked |
+| 220 | Desktop Arrow tool: end inside a box attaches to the side facing the other end (round 8 follow-up) | Arrow attaches to the wrong side | desktop, often | medium | low | S | picked |
+| 221 | Imports land in free space beside the content instead of over it (round 8 follow-up) | Inserted diagrams overlap existing boxes | importers, sometimes | medium | low | S | picked |
+| 222 | Move to page on the tablet (panel entry) (round 8 follow-up) | Tablet cannot split a page | tablet, sometimes | low-medium | low | S | picked |
+| 223 | Sequence import polish: participant kinds as HLD shapes, `-x` / `-)` / `->o` arrows read (#208) | Kinds and arrows lost on import | text-first, sometimes | low-medium | low | S | picked |
+| 224 | Copy as Mermaid for ER / state pages (#197) | round trip | sometimes | low-medium | medium (detection vs class pages) | M | idea |
+| 225 | Curved connectors (#199) | nicer arrows | sometimes | low-medium | medium-high (render, hit, export, labels) | M-L | idea |
+| 226 | Images on the canvas (#200) | screenshots | sometimes | medium | high (new kind, storage, Drive size) | L | idea |
+| 227 | Dark UI theme (#201) | night study | sometimes | low-medium | medium (all CSS) | L | idea |
+| 228 | Move folders into folders (#202) | | rare | low | medium (Drive) | M | idea |
+| 229 | Drag a box onto a connector to insert it (gesture form of #214) | | | medium | medium (drag path, accidental drops) | M | idea (explicit command first; add the drop once #214 is verified) |
+| 230 | Shift+resize keeps aspect ratio | | desktop | low | low | S | idea |
+| 231 | Version history per diagram (#207) | | rare | medium | high | L | idea |
+| 232 | Insert table (#212) | | sometimes | medium | medium | L | idea (class / ER boxes cover schemas) |
+| 233 | Numbered request-flow steps on connectors | | | | | | skipped: flow steps exist (src/flowSteps.ts) |
+| 234 | Laser pointer for interviews | | | | | | skipped: exists (src/laserPointer.ts) |
+| 235 | Tidy / auto layout | | | | | | skipped: exists (src/tidyLayout.ts) |
+| 236 | Elbow bend clamp (#209) | | rare | low | medium | S | idea |
+| 237 | State layout crossings (#210) | | sometimes | low | medium | M | idea |
+| 238 | Scribble-to-erase / handwriting OCR | | | | high (writing path / no API) | | skipped again (#206, #213) |
+| 239 | Eyedropper | | | | | | skipped again (style copy covers it) |
+
+### Acceptance criteria (picked items)
+214. **Insert box into connector**: with one connector selected (both modes), right-click "Insert box", the context panel button "Insert box" and the palette "Insert box into connector" add a plain rectangle (default new-shape style, same size as a desktop double-click box) centred on the connector's midpoint (path midpoint for elbow / bent connectors); the original connector now ends on the new box and a new connector (same colour, width, dash, routing) runs from the new box to the old end; the start head and start label stay on the first part, the end head and end label move to the second; the middle label stays on the first part. Both parts attach to the sides facing their other ends. One undo step; on the desktop the new box opens for typing. Works for two-way arrows and for connectors with a free end.
+215. **Flip**: with two or more items (or one stroke / connector) selected, Shift+H flips horizontally and Shift+V vertically about the selection's centre (desktop), also right-click Position "Flip ↔ / Flip ↕", palette and panel (both modes). Boxes move (they are not mirrored), strokes and free connector points are mirrored, attached connector ends swap left/right (or top/bottom) sides so they stay on the same physical side relative to the layout, text is never mirrored, rotation angles are negated. Locked items stay put (and are not flipped). One undo step; ? help lists the keys.
+216. **Snap to grid**: desktop toggle (Ctrl+' , palette "Snap to grid: on/off", ? help, View row of the More tray on the desktop) stored per device; while on, dragging items snaps the selection's top-left to a 20 px grid (the page grid spacing when the page background is a grid), resize handles snap the moved edge, new boxes from desktop tools snap their corners; smart guides are skipped while it is on; a faint dot grid is drawn while dragging when the page background is plain. Off by default; tablet pen and touch paths unchanged. Toast "Snap to grid on" / "off".
+217. **Zoom menu**: the % readout (desktop and tablet) opens a small menu: 50%, 100%, 150%, 200%, Fit drawing (Shift+1), Fit selection (Shift+2, disabled without a selection); choosing one closes it; Esc / outside tap closes it. The tablet zoom lock still disables zoom choices. Ctrl+0 still resets to 100%.
+218. **Content search**: typing in the Library search also matches diagrams whose labels / text / class members contain the words (case-insensitive), shown after title matches with a short "Contains: …Kafka…" snippet on the card; works for locally stored diagrams and device-folder / Drive diagrams that have a local cached copy (no network requests); results update within a moment of typing; diagrams never opened on this device simply are not content-matched.
+219. **Tablet quick connect**: in tablet mode with the Select tool and one plain / HLD box selected, + buttons (bigger hit circle than the desktop's) appear beside its four sides; a pen or finger tap on one adds a connected box in that direction exactly like the desktop click (one undo step), and the new box is selected (no keyboard opens). A drag that starts on a button does nothing (no stroke). Writing with the pen, Raw mode, pinch and pan are unchanged; the buttons never show outside Select mode.
+220. **Arrow tool sides**: desktop Arrow / Line tool: an end released deep inside a box attaches to the middle of the side facing the other end (as the pen does since round 8); ends released on the outline keep attaching where they are.
+221. **Free-space imports**: Mermaid, PlantUML and Excalidraw inserts (dialog and Ctrl+V) are placed at the pointer / view centre when that area is empty; when they would overlap existing items they move to the nearest free spot to the right of (or below) the existing content, and the view scrolls to show them. One undo step as before.
+222. **Tablet Move to page**: in tablet mode with a selection, the context panel shows "Move to page…" with page chips (and + New page) that run the round 8 move (same toast / Undo bar).
+223. **Sequence polish**: PlantUML `database` / `queue` / `actor` (and Mermaid `actor`, already a User shape) participants import as Database / Queue / User shapes with their lifelines; Mermaid `-x` / `--x` / `-)` / `--)` and PlantUML `->x` / `->o` / `->>` are read as messages (cross / open ends drawn with the closest existing arrowhead, plain otherwise); counts in the toast stay accurate.
