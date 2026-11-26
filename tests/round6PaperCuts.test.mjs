@@ -9,7 +9,7 @@ const css = (await readFile(new URL('../src/styles.css', import.meta.url), 'utf8
 
 const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn', 'apiGateway', 'server', 'objectStorage', 'stream', 'worker'].map((id) => ({ id, label: ({ loadBalancer: 'Load balancer', apiGateway: 'API gateway', objectStorage: 'Object storage' })[id] ?? id[0].toUpperCase() + id.slice(1) }))
 // Five grouped HLD boxes joined by labelled connectors: every optional chip block is on.
-const busy = { hasSelection: true, clipboardHasItems: true, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false, canCopyStyle: true, canPasteStyle: true, canSelectSimilar: true, canGroup: true, canUngroup: true, changeShapes: hld, canNumberSteps: true, canSameSize: true, canSelectConnected: true }
+const busy = { hasSelection: true, clipboardHasItems: true, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false, canCopyStyle: true, canPasteStyle: true, canSelectSimilar: true, canGroup: true, canUngroup: true, changeShapes: hld, canNumberSteps: true, canSameSize: true, canSelectConnected: true, changeShapesExpanded: true }
 
 test('right-click menu: the busiest selection fits a 1024x700 window without scrolling (measured 646 px in Chromium)', () => {
   const entries = input.contextMenuEntries(busy)

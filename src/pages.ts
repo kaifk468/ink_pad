@@ -26,6 +26,9 @@ export function removePageAt<T>(pages: readonly T[], index: number): { pages: T[
 }
 
 /** "2 / 5", or "2 / 5 · API" when the page has a name. */
+/** Characters of a page name the page strip shows before the ellipsis (the tooltip carries the whole name). */
+export const PAGE_STRIP_NAME_CHARS = 12
+export const pageStripName = (name: string): string => { const chars = [...name]; return chars.length > PAGE_STRIP_NAME_CHARS ? `${chars.slice(0, PAGE_STRIP_NAME_CHARS).join('')}…` : name }
 export const pageLabel = (index: number, count: number, name?: string): string => `${index + 1} / ${count}${name ? ` · ${name}` : ''}`
 
 /** The name for a duplicate of a page: "<name> copy" (cut so it stays within 40 characters), or no name when the original has none. */

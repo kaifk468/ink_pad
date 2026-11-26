@@ -336,7 +336,7 @@ function App() {
   // Step 11: the right-click menu (Desktop only), at the pointer in screen coordinates.
   // The pointer type of the latest canvas press: a double-tap by a finger or pen is not a mouse double-click.
   const lastPointerTypeRef = useRef('')
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; lockedKey: string | null } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; lockedKey: string | null; shapesExpanded?: boolean } | null>(null)
   const contextMenuRef = useRef(contextMenu)
   contextMenuRef.current = contextMenu
   const contextMenuElementRef = useRef<HTMLDivElement>(null)
@@ -4985,6 +4985,7 @@ function App() {
     setContextMenu({ x: event.clientX, y: event.clientY, lockedKey })
   }
   const runContextMenuAction = (action: ContextMenuAction, lockedKey: string | null = null) => {
+    if (action === 'shapesMore') { setContextMenu((menu) => menu && { ...menu, shapesExpanded: true }); return }
     setContextMenu(null)
     switch (action) {
       case 'cut': cutWithToast(); break
@@ -5512,6 +5513,7 @@ function App() {
             canGroup: canGroup(strokesRef.current, currentSelectionKeys()),
             canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()),
             changeShapes: changeShapeChoices(strokesRef.current, currentSelectionKeys())?.choices ?? [],
+            changeShapesExpanded: contextMenu.shapesExpanded === true,
             canNumberSteps: stepTargets(strokesRef.current, currentSelectionKeys()).length > 0,
             canSameSize: canSameSize(strokesRef.current, currentSelectionKeys()),
             canSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()),

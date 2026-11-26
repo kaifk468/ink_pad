@@ -545,7 +545,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
 
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'exportPng' | 'exportSvg'
   | 'editText' | 'zoomSelection' | 'focus' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps' | 'saveTemplate'
-  | 'sameWidth' | 'sameHeight' | 'sameSize' | 'addBoundary' | 'selectConnected' | 'arrowBothEnds' | 'arrowOneEnd' | 'cornersRound' | 'cornersSharp'
+  | 'sameWidth' | 'sameHeight' | 'sameSize' | 'addBoundary' | 'selectConnected' | 'arrowBothEnds' | 'arrowOneEnd' | 'cornersRound' | 'cornersSharp' | 'shapesMore'
   | `shape:${string}`
 export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select' | 'flow'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
@@ -554,6 +554,30 @@ export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint:
 /** Short chip text for a shape name (the full name stays in the tooltip). */
 export function shortShapeLabel(label: string): string {
   return label === 'Rectangle' ? 'Rect' : label === 'Load balancer' ? 'Load bal.' : label === 'API gateway' ? 'Gateway' : label === 'Object storage' ? 'Storage' : label
+}
+
+/** Estimated pixel width of a chip (shared by the chip block layout and the Change shape one-line cut). */
+function chipWidth(text: string): number { return Math.ceil(text.length * 6.8) + 18 }
+
+/** Most Change shape chips shown before More… (about six); fewer when six would not fit one line next to More…. */
+export const CHANGE_SHAPE_CHIP_LIMIT = 6
+
+/**
+ * Change shape chips for the menu: all of them when they fit one line (the three plain shapes) or when expanded; else the first few
+ * that fit one line (at most CHANGE_SHAPE_CHIP_LIMIT) next to the More… chip, which expands the rest in place.
+ */
+export function compactChangeShapes<T extends { label: string }>(choices: readonly T[], expanded: boolean): T[] {
+  const width = (choice: T) => chipWidth(shortShapeLabel(choice.label))
+  const total = choices.reduce((sum, choice, index) => sum + width(choice) + (index > 0 ? CHIP_GAP : 0), 0)
+  if (expanded || (choices.length <= 4 && total <= CHIP_AREA_WIDTH)) return [...choices]
+  const kept: T[] = []
+  let used = chipWidth('More…')
+  for (const choice of choices) {
+    if (kept.length >= CHANGE_SHAPE_CHIP_LIMIT || used + CHIP_GAP + width(choice) > CHIP_AREA_WIDTH) break
+    kept.push(choice)
+    used += CHIP_GAP + width(choice)
+  }
+  return kept
 }
 
 /** What the menu needs to know about the page when it opens. */
@@ -579,6 +603,8 @@ export type ContextMenuState = {
   canSelectSimilar?: boolean
   /** Change shape: the shapes the selected boxes can change to (id is the shape name; the action is `shape:<id>`). */
   changeShapes?: ReadonlyArray<{ id: string; label: string }>
+  /** The More… chip was clicked: every Change shape chip is shown instead of one line of them. */
+  changeShapesExpanded?: boolean
   /** The selection holds connectors (or boxes joined by them): Number steps / Clear step numbers are offered. */
   canNumberSteps?: boolean
   /** Two or more unlocked boxes Same size can change are selected (the Same size chips are offered). */
@@ -597,7 +623,7 @@ export type ContextMenuState = {
  * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
-  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], canNumberSteps = false, canSameSize = false, canSelectConnected = false, arrowEnds = null, corners = null } = state
+  const { canCopyStyle = false, canPasteStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], changeShapesExpanded = false, canNumberSteps = false, canSameSize = false, canSelectConnected = false, arrowEnds = null, corners = null } = state
   const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean, chip?: string, chipGroup?: string): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled, ...(chip !== undefined ? { chip, chipGroup: chipGroup ?? 'Change shape' } : {}) })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
@@ -610,7 +636,8 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'shape', canPasteStyle, 'Paste', 'Style'),
     ...(arrowEnds === 'both' ? [entry('arrowBothEnds', 'Arrow: both ends', '', 'shape', true, 'Two-way', 'Style')] : arrowEnds === 'one' ? [entry('arrowOneEnd', 'Arrow: one end', '', 'shape', true, 'One-way', 'Style')] : []),
     ...(corners === 'round' ? [entry('cornersRound', 'Corners: round', '', 'shape', true, 'Round', 'Style')] : corners === 'sharp' ? [entry('cornersSharp', 'Corners: sharp', '', 'shape', true, 'Sharp', 'Style')] : []),
-    ...changeShapes.map((choice) => entry(`shape:${choice.id}`, `Change shape to ${choice.label}`, '', 'shape', true, shortShapeLabel(choice.label))),
+    ...compactChangeShapes(changeShapes, changeShapesExpanded).map((choice) => entry(`shape:${choice.id}`, `Change shape to ${choice.label}`, '', 'shape', true, shortShapeLabel(choice.label))),
+    ...(!changeShapesExpanded && compactChangeShapes(changeShapes, false).length < changeShapes.length ? [entry('shapesMore', 'More shapes', '', 'shape', true, 'More…')] : []),
     ...(canNumberSteps ? [entry('numberSteps', 'Number steps', '', 'shape', true, 'Number', 'Step numbers'), entry('clearSteps', 'Clear step numbers', '', 'shape', true, 'Clear', 'Step numbers')] : []),
     entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection, 'Front', 'Order'),
     entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection, 'Back', 'Order'),
@@ -668,7 +695,7 @@ const CAPTION_GAP = 6
 
 /** Chip block layout: the caption sits at the left of the first chip line when every chip still fits on that one line, else over the chips. */
 export function chipBlockLayout(chips: readonly ContextMenuEntry[]): { inline: boolean; lines: number } {
-  const widths = chips.map((chip) => Math.ceil((chip.chip ?? chip.label).length * 6.8) + 18)
+  const widths = chips.map((chip) => chipWidth(chip.chip ?? chip.label))
   const flow = (start: number) => {
     let lines = 1
     let used = start

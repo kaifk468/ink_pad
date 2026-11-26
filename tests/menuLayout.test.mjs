@@ -54,3 +54,26 @@ test('Clear canvas is red and undoable', () => {
 test('no old toolbar style makes one menu row look different (Export and import once had a border and 11 px text)', () => {
   assert.doesNotMatch(css, /^\.file-button\b/m)
 })
+
+test('Change shape: HLD chips collapse to one line plus More…, which expands them in place; basic shapes stay as they are', async () => {
+  const { loadModule } = await import('./helpers/loadModule.mjs')
+  const input = await loadModule('desktopInput.ts')
+  const hld = await loadModule('hldShapes.ts')
+  const base = { hasSelection: true, clipboardHasItems: false, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false }
+  const choices = hld.HLD_SHAPES.slice(1).map((id) => ({ id, label: hld.HLD_SHAPE_LABELS[id] }))
+  const chips = (state) => input.contextMenuEntries({ ...base, ...state }).filter((e) => e.chipGroup === 'Change shape')
+  const collapsed = chips({ changeShapes: choices })
+  assert.ok(choices.length >= 10)
+  const shapeChips = collapsed.filter((e) => e.action.startsWith('shape:'))
+  assert.ok(shapeChips.length >= 2 && shapeChips.length <= 6)
+  assert.deepEqual(shapeChips.map((e) => e.action), choices.slice(0, shapeChips.length).map((c) => `shape:${c.id}`))
+  assert.equal(collapsed.at(-1).action, 'shapesMore')
+  assert.equal(input.chipBlockLayout(collapsed).lines, 1)
+  const expanded = chips({ changeShapes: choices, changeShapesExpanded: true })
+  assert.equal(expanded.length, choices.length)
+  assert.ok(!expanded.some((e) => e.action === 'shapesMore'))
+  const plain = chips({ changeShapes: [{ id: 'diamond', label: 'Diamond' }, { id: 'ellipse', label: 'Ellipse' }] })
+  assert.deepEqual(plain.map((e) => e.action), ['shape:diamond', 'shape:ellipse'])
+  assert.match(app, /action === 'shapesMore'/)
+  assert.match(app, /changeShapesExpanded: contextMenu\.shapesExpanded === true/)
+})

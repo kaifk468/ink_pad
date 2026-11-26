@@ -108,7 +108,7 @@ test('the change-shape choices form ONE chips row with short names, and the menu
   const state = { hasSelection: true, clipboardHasItems: false, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false }
   const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn', 'apiGateway', 'server', 'objectStorage', 'stream', 'worker'].map((id) => ({ id, label: ({ loadBalancer: 'Load balancer', apiGateway: 'API gateway', objectStorage: 'Object storage' })[id] ?? id[0].toUpperCase() + id.slice(1) }))
   const base = input.contextMenuEntries(state)
-  const withChips = input.contextMenuEntries({ ...state, changeShapes: hld })
+  const withChips = input.contextMenuEntries({ ...state, changeShapes: hld, changeShapesExpanded: true })
   const rows = input.contextMenuRows(withChips)
   const shapeRow = (list) => list.find((r) => r.chips && r.chips[0].chipGroup === 'Change shape')
   assert.equal(rows.filter((r) => r.chips && r.chips[0].chipGroup === 'Change shape').length, 1)

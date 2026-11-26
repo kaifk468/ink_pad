@@ -380,12 +380,13 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 .zoom-controls button:disabled { opacity: .35; cursor: default; }
 /* Page controls: a slim bar right above the zoom controls (56 px tall, 16 px from the edge), 40 px buttons. */
 .page-controls { position: absolute; z-index: 2; bottom: calc(100% + 8px); right: 0; display: flex; flex-direction: column; align-items: center; width: 40px; padding: 2px 0; border: 1px solid rgba(36, 42, 52, .1); border-radius: 14px; background: rgba(255, 255, 255, .96); box-shadow: 0 3px 12px rgba(31, 39, 52, .12); }
+.page-controls.has-name { width: 76px; }
 .page-controls button { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 11px; background: transparent; color: #343944; cursor: pointer; touch-action: manipulation; }
 .page-controls button:hover:not(:disabled) { background: #f1f2f5; }
 .page-controls button:disabled { opacity: .35; cursor: default; }
 .page-controls .page-indicator { display: grid; justify-items: center; line-height: 1.1; width: 100%; padding: 2px 0; color: #343944; font-weight: 700; }
 .page-controls .page-indicator span { font-size: 15px; }
-.page-controls .page-indicator .page-indicator-name { max-width: 34px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; font-size: 9px; font-weight: 600; color: #4b5563; }
+.page-controls .page-indicator .page-indicator-name { max-width: 70px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; font-size: 9px; font-weight: 600; color: #4b5563; }
 .page-controls .page-indicator small { margin-top: 1px; padding-top: 1px; border-top: 1px solid #c9ccd4; min-width: 16px; font-size: 11px; font-weight: 600; color: #6b7280; text-align: center; }
 .page-controls .page-add { color: #354fc2; }
 .page-controls .page-delete { color: #b3261e; }

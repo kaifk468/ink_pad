@@ -125,3 +125,20 @@ test('panel, menu, palette and history are wired', () => {
   assert.match(app, /id: 'arrow:both-ends', label: 'Arrow: both ends'/)
   assert.match(app, /id: 'arrow:one-end', label: 'Arrow: one end'/)
 })
+
+test('every point inside the start arrowhead of a two-way arrow selects the connector, at any zoom, like the end head', () => {
+  for (const reversed of [false, true]) for (const strokeWidth of [2, 3, 6]) for (const scale of [0.5, 1, 4, 8]) {
+    const c = conn('directed-association', { twoWay: true, reversed, strokeWidth })
+    const second = model.getConnectorSecondSymbolGeometry(c)
+    const first = model.getConnectorSymbolGeometry(c)
+    for (const head of [second, first]) {
+      const { tip, sideA, sideB } = head
+      for (const [u, v] of [[0.5, 0.2], [0.2, 0.5], [0.2, 0.2], [0.34, 0.33], [0.1, 0.8], [0.8, 0.1]]) {
+        const w = 1 - u - v
+        const point = { x: tip.x * w + sideA.x * u + sideB.x * v, y: tip.y * w + sideA.y * u + sideB.y * v, pressure: 0 }
+        const hit = input.hitTarget([c], point, scale)
+        assert.equal(hit?.kind, 'connector', `reversed=${reversed} width=${strokeWidth} scale=${scale} at ${u},${v}`)
+      }
+    }
+  }
+})
