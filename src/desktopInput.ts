@@ -546,7 +546,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'useAsDefaultStyle' | 'exportPng' | 'exportSvg'
   | 'editText' | 'zoomSelection' | 'focus' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps' | 'saveTemplate'
   | 'sameWidth' | 'sameHeight' | 'sameSize' | 'addBoundary' | 'selectConnected' | 'arrowBothEnds' | 'arrowOneEnd' | 'cornersRound' | 'cornersSharp' | 'shapesMore'
-  | `shape:${string}`
+  | `shape:${string}` | `movePage:${string}`
 export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select' | 'flow'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
 export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint: string; section: ContextMenuSection; disabled: boolean; /** Chip entries only: the short text of the chip (the label is its tooltip and aria-label). */ chip?: string; /** Chip entries only: the caption over the chip block; consecutive chips with the same caption share one block. */ chipGroup?: string }
@@ -617,6 +617,8 @@ export type ContextMenuState = {
   arrowEnds?: 'both' | 'one' | null
   /** The selection holds unlocked plain rectangles: 'round' offers Round (some are sharp), 'sharp' offers Sharp (all are rounded). Shown as a chip in the Style block. */
   corners?: 'round' | 'sharp' | null
+  /** Move to page: one chip per other page and a New page chip (action `movePage:<index>` / `movePage:new`); offered with a selection. */
+  movePages?: ReadonlyArray<{ action: `movePage:${string}`; chip: string; label: string }>
 }
 
 /**
@@ -625,7 +627,7 @@ export type ContextMenuState = {
  * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
-  const { canCopyStyle = false, canPasteStyle = false, canSetDefaultStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], changeShapesExpanded = false, canNumberSteps = false, canSameSize = false, canSelectConnected = false, arrowEnds = null, corners = null } = state
+  const { canCopyStyle = false, canPasteStyle = false, canSetDefaultStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], changeShapesExpanded = false, canNumberSteps = false, canSameSize = false, canSelectConnected = false, arrowEnds = null, corners = null, movePages = [] } = state
   const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean, chip?: string, chipGroup?: string): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled, ...(chip !== undefined ? { chip, chipGroup: chipGroup ?? 'Change shape' } : {}) })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
@@ -654,6 +656,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     ...(hasSelection && !lockedTarget ? [entry('lock', 'Lock', 'Ctrl+Shift+L', 'arrange', true, 'Lock', 'Selection')] : []),
     ...(lockedTarget ? [entry('unlock', 'Unlock', '', 'arrange', true)] : []),
     ...(!hasSelection && !lockedTarget && anyLocked ? [entry('unlockAll', 'Unlock all', '', 'arrange', true)] : []),
+    ...(hasSelection ? movePages.map((page) => entry(page.action, page.label, '', 'arrange', true, page.chip, 'Move to page')) : []),
     entry('copyPng', 'Copy as PNG', 'Shift+Alt+C', 'export', hasSelection || pageHasItems),
     // Only offered when something is selected.
     ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true, 'PNG', 'Save selection as'), entry('exportSvg', 'Export selection as SVG', '', 'export', true, 'SVG', 'Save selection as'), entry('saveTemplate', 'Save selection as template…', '', 'export', true, 'Template…', 'Save selection as')] : []),

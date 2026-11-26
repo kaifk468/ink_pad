@@ -39,6 +39,16 @@ export function PageControls({ index, count, canAdd, addHint, onPrevious, onNext
   )
 }
 
+/** Shown for a few seconds after items were moved to another page: puts both pages back as they were. */
+export function MoveUndoBar({ count, pageNumber, onUndo }: { count: number; pageNumber: number; onUndo: () => void }) {
+  return (
+    <div className="page-undo-bar" role="status">
+      <span>Moved {count} {count === 1 ? 'item' : 'items'} to page {pageNumber}</span>
+      <button type="button" onClick={onUndo}>Undo</button>
+    </div>
+  )
+}
+
 /** Shown for a few seconds after a page was deleted: puts it back where it was, with its drawing and its undo history. */
 export function PageUndoBar({ pageNumber, onUndo }: { pageNumber: number; onUndo: () => void }) {
   return (

@@ -70,6 +70,7 @@ import { ShortcutHelp } from './app/ShortcutHelp'
 import { CommandPalette } from './app/CommandPalette'
 import { FindBar } from './app/FindBar'
 import { replaceAcrossPages, replaceToast } from './canvasReplace'
+import { moveMenuChips, movedToast, movePaletteEntries, moveRecordUndoable, moveSelectionToPage, parseMoveAction, type MoveRecord, type MoveTarget } from './moveToPage'
 import { sameSearchFingerprint, searchCanvas, searchFingerprint, type SearchMatch } from './canvasSearch'
 import { buildDiagramOutline, outlineFileName } from './diagramOutline'
 import { downloadBlob } from './documentStore'
@@ -100,7 +101,7 @@ import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedS
 import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, fitViewportToBoundsInset, DESKTOP_FIT_INSETS, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
 import { MAX_PAGES, canAddPage, clampPageIndex, duplicatePageItems, duplicatedPageName, insertPageAfter, insertPageAt, movePage, indexAfterMove, removePageAt, writeLastPage } from './pages'
-import { PageControls, PageUndoBar } from './app/PageControls'
+import { MoveUndoBar, PageControls, PageUndoBar } from './app/PageControls'
 import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
@@ -682,6 +683,92 @@ function App() {
     scheduleAutosave()
   }
 
+  // Move selection to another page: the record (both pages' items and undo histories) behind the Undo bar, valid only while neither page changed.
+  const moveUndoRef = useRef<MoveRecord | null>(null)
+  const moveUndoTimerRef = useRef<number | null>(null)
+  const [moveUndoBar, setMoveUndoBar] = useState<{ count: number; pageNumber: number } | null>(null)
+  const dismissMoveUndo = () => {
+    if (moveUndoTimerRef.current !== null) window.clearTimeout(moveUndoTimerRef.current)
+    moveUndoTimerRef.current = null
+    moveUndoRef.current = null
+    setMoveUndoBar(null)
+  }
+
+  /** Moves the selected items to another page (or a new page right after this one) at the same coordinates: one undo step on each page, then that page is shown with them selected. */
+  const moveSelectionToPageNow = (target: MoveTarget): boolean => {
+    if (penBusy()) return false
+    if (textEditorRef.current) commitTextEditor()
+    const keys = currentSelectionKeys()
+    const from = pageIndexRef.current
+    const count = pagesRef.current.length
+    const newPage = target === 'new'
+    if (keys.size === 0) { showToast('Select something to move first'); return false }
+    if (newPage && !canAddPage(count)) { setFileNotice(`A diagram can have up to ${MAX_PAGES} pages.`); return false }
+    const to = newPage ? from + 1 : target
+    if (!newPage && (to === from || to < 0 || to >= count)) return false
+    const sourceBefore = strokesRef.current
+    const targetBefore = newPage ? [] : pagesRef.current[to].items
+    const result = moveSelectionToPage(sourceBefore, targetBefore, keys, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current })
+    if (!result) { showToast('Nothing to move: locked items stay on their page'); return false }
+    dismissDeletedPage()
+    dismissMoveUndo()
+    nextStrokeIdRef.current = result.counters.stroke
+    nextRectangleIdRef.current = result.counters.rectangle
+    nextConnectorIdRef.current = result.counters.connector
+    nextTextIdRef.current = result.counters.text
+    const selection = [...keys]
+    const sourceHistory = historyRef.current.capture()
+    const targetHistory = (newPage ? null : pagesRef.current[to].history) ?? new CanvasSnapshotHistory()
+    const targetHistoryState = targetHistory.capture()
+    // One undo step on each page: the old items go on that page's own history, then both pages get the new items.
+    historyRef.current.record(sourceBefore)
+    targetHistory.record(targetBefore)
+    strokesRef.current = result.source
+    historyCacheRef.current = null
+    stashCurrentPage()
+    resetInteractionState()
+    if (newPage) pagesRef.current = insertPageAfter(pagesRef.current, from, { items: result.target, history: targetHistory })
+    else pagesRef.current[to] = { ...pagesRef.current[to], items: result.target, history: targetHistory }
+    showPageSlot(to)
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    updateSelectedItems(result.movedKeys)
+    renderAll()
+    scheduleAutosave()
+    moveUndoRef.current = { sourceIndex: from, targetIndex: to, newPage, pageCount: pagesRef.current.length, beforeSource: sourceBefore, beforeTarget: targetBefore, afterSource: result.source, afterTarget: result.target, sourceHistory, targetHistory: targetHistoryState, selection }
+    setMoveUndoBar({ count: result.moved, pageNumber: to + 1 })
+    moveUndoTimerRef.current = window.setTimeout(dismissMoveUndo, DELETED_PAGE_UNDO_MS)
+    showToast(movedToast(result.moved, to, pagesRef.current[to]?.name, result.lockedSkipped))
+    return true
+  }
+
+  /** The Undo of the move bar: both pages back exactly as they were (items and undo histories), only while neither changed since. */
+  const undoMoveToPage = () => {
+    const record = moveUndoRef.current
+    if (!record || penBusy()) return
+    if (textEditorRef.current) commitTextEditor()
+    const live = pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items))
+    if (!moveRecordUndoable(record, live)) {
+      dismissMoveUndo()
+      showTapToast('A page changed since the move: use Ctrl+Z on each page instead')
+      return
+    }
+    stashCurrentPage()
+    resetInteractionState()
+    const restore = (index: number, items: CanvasItem[], state: MoveRecord['sourceHistory']) => {
+      const history = new CanvasSnapshotHistory()
+      history.restore(state)
+      pagesRef.current[index] = { ...pagesRef.current[index], items, history }
+    }
+    restore(record.sourceIndex, record.beforeSource, record.sourceHistory)
+    if (record.newPage) pagesRef.current = removePageAt(pagesRef.current, record.targetIndex).pages
+    else restore(record.targetIndex, record.beforeTarget, record.targetHistory)
+    dismissMoveUndo()
+    showPageSlot(record.sourceIndex)
+    updateSelectedItems(record.selection.filter((key) => strokesRef.current.some((item) => canvasItemKey(item) === key)))
+    renderAll()
+    scheduleAutosave()
+  }
+
   /** Saves soon, and once the change is in place checks whether the page needs to grow (callers often schedule the save just before adding the item). */
   const scheduleAutosave = () => {
     scheduleAutosaveBase()
@@ -786,6 +873,7 @@ function App() {
 
   const saveHistory = () => {
     if (deletedPageRef.current) dismissDeletedPage() // drawing again settles the delete
+    if (moveUndoRef.current) dismissMoveUndo() // and the move
     historyRef.current.record(strokesRef.current)
     setCanUndo(historyRef.current.canUndo)
     setCanRedo(historyRef.current.canRedo)
@@ -5083,7 +5171,11 @@ function App() {
       case 'ungroup': ungroupSelection(); break
       case 'unlock': if (lockedKey) unlockItems(new Set([lockedKey])); break
       case 'unlockAll': unlockItems(null); break
-      default: if (action.startsWith('shape:')) changeShapeSelection(action.slice('shape:'.length))
+      default: {
+        const moveTarget = parseMoveAction(action)
+        if (moveTarget !== null) moveSelectionToPageNow(moveTarget)
+        else if (action.startsWith('shape:')) changeShapeSelection(action.slice('shape:'.length))
+      }
     }
   }
   // Menu keyboard: arrows (and Home/End) move focus between the enabled rows; Enter runs the focused row (a button click); Escape is handled with the other keys.
@@ -5265,6 +5357,7 @@ function App() {
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
     { id: 'page:overview', label: 'Page overview', group: 'Pages', keywords: 'pages thumbnails grid reorder move jump', run: () => setPageOverviewOpen(true) },
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
+    ...(currentSelectionKeys().size > 0 ? movePaletteEntries(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)).map((row) => ({ id: row.id, label: row.label, group: 'Pages', keywords: 'move selection send items to page', run: () => { moveSelectionToPageNow(row.target) } })) : []),
     ...pagesRef.current.flatMap((slot, index) => (slot.name ? [{ id: `page:go:${index}`, label: `Go to page: ${slot.name}`, group: 'Pages', keywords: `jump open ${index + 1}`, run: () => goToPage(index) }] : [])),
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
     ...(canSameSize(strokesRef.current, currentSelectionKeys()) ? [
@@ -5618,6 +5711,7 @@ function App() {
             corners: cornersChoice(strokesRef.current, currentSelectionKeys()),
             canSetDefaultStyle: defaultStyleSource() !== null,
             canSelectSimilar: (() => { const key = soleSelectedKey(); return key !== null && similarItemKeys(strokesRef.current, key).length > 0 })(),
+            movePages: moveMenuChips(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)),
           })
           const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight)
           return (
@@ -5896,6 +5990,7 @@ function App() {
       />
       {pageOverviewOpen && <PageOverview count={pageCount} current={pageIndex} names={pagesRef.current.map((slot) => slot.name ?? '')} onRename={renamePage} loadThumbnail={renderPageThumbnail} onGo={(index) => { goToPage(index); setPageOverviewOpen(false) }} onMove={movePageTo} onClose={() => setPageOverviewOpen(false)} />}
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
+      {moveUndoBar !== null && deletedPageNumber === null && <MoveUndoBar count={moveUndoBar.count} pageNumber={moveUndoBar.pageNumber} onUndo={undoMoveToPage} />}
       {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} replaceOpen={findReplaceOpen} onToggleReplace={() => setFindReplaceOpen((open) => !open)} replacement={findReplacement} onReplacementChange={changeFindReplacement} onReplace={replaceCurrentFind} onReplaceAll={replaceAllFind} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
       {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
