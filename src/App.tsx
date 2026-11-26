@@ -3748,10 +3748,10 @@ function App() {
     // A pen landing ends a mouse marquee still being dragged (the pen always wins over the mouse).
     if (event.pointerType === 'pen' && activeMarqueeRef.current) { activeMarqueeRef.current = null; renderAll() }
     moveEraserCursor(event)
-    // A pen landing cancels a connector handle gesture a finger owns (palm rejection: the pen wins).
-    if (event.pointerType === 'pen' && activeEndpointRef.current?.pointerType === 'touch') cancelConnectorHandleGesture()
     // A pen landing ends a finger's quick-connect press (the pen wins).
     if (event.pointerType === 'pen' && activeQuickRef.current?.pointerType === 'touch') cancelQuickConnectPress()
+    // A pen landing cancels a connector handle gesture a finger owns (palm rejection: the pen wins).
+    if (event.pointerType === 'pen' && activeEndpointRef.current?.pointerType === 'touch') cancelConnectorHandleGesture()
     if (event.pointerType === 'pen') touchNav.penDown()
     if (event.pointerType === 'touch') {
       event.preventDefault()
