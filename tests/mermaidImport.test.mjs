@@ -18,7 +18,7 @@ const node = (graph, id) => graph.nodes.find((n) => n.id === id)
 test('node shapes', () => {
   const g = ok('flowchart TD\nA[Rect]\nB(Round)\nC([Stadium])\nD((Circle))\nE{Choice}\nF[(Store)]\nG[[Svc]]\nH')
   assert.deepEqual(g.nodes.map((n) => [n.id, n.text, n.shape]), [
-    ['A', 'Rect', 'rectangle'], ['B', 'Round', 'rectangle'], ['C', 'Stadium', 'rectangle'], ['D', 'Circle', 'ellipse'],
+    ['A', 'Rect', 'rectangle'], ['B', 'Round', 'rounded'], ['C', 'Stadium', 'rectangle'], ['D', 'Circle', 'ellipse'],
     ['E', 'Choice', 'diamond'], ['F', 'Store', 'database'], ['G', 'Svc', 'service'], ['H', 'H', 'rectangle'],
   ])
 })
@@ -257,4 +257,13 @@ test('wiring: paste guards, full-text Mermaid detection, handled errors, dialog 
   assert.match(app, /routedConnector: which === 'label' \? \(routeConnectors\(strokesRef\.current\)/)
   assert.match(app, /const connector = gesture\.routedConnector/)
   assert.match(app, /connectorLabelPosition\([^\n]*\) === gesture\.startLabelPosition\) \{[\s\S]{0,200}historyRef\.current\.discardLast\(\)/)
+})
+
+test('A(text) builds a rectangle with rounded: true; [text] stays sharp', () => {
+  const g = ok('flowchart TD\nA(Round) --> B[Sharp]\nC([Stadium])')
+  const { items } = buildMermaidItems(g)
+  const rect = (name) => items.find((i) => i.kind === 'rectangle' && items.some((t) => t.kind === 'text' && t.text === name && t.x >= i.x && t.x < i.x + i.width && t.y >= i.y && t.y < i.y + i.height))
+  assert.equal(rect('Round').rounded, true)
+  assert.equal(rect('Sharp').rounded, undefined)
+  assert.equal(rect('Stadium').rounded, undefined)
 })

@@ -2,6 +2,7 @@ import { createConnector } from './canvasModel'
 import type { CanvasItem, ConnectorAttachment, ConnectorRelationshipType, ConnectorRouting, HldShape, Point, RectangleObject, TextObject } from './canvasModel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, createClassBox } from './classBoxLayout'
 import { HLD_DEFAULT_SIZE, createHldShape } from './hldShapes'
+import { STICKY_FILL, STICKY_OUTLINE } from './stickyNote'
 import { createTextObject } from './textLayout'
 
 /**
@@ -52,8 +53,16 @@ export class Sheet {
   }
 
   /** A plain rectangle, ellipse or diamond with `text` as a centred label (Mermaid import). */
-  shaped(form: 'rectangle' | 'ellipse' | 'diamond', x: number, y: number, width: number, height: number, text: string): RectangleObject {
-    const box: RectangleObject = { kind: 'rectangle', id: this.rectangleId++, x, y, width, height, strokeColor: STROKE_COLOR, strokeWidth: CLASS_BOX_DEFAULT_STROKE_WIDTH, ...(form === 'ellipse' ? { ellipse: true as const } : form === 'diamond' ? { diamond: true as const } : {}) }
+  shaped(form: 'rectangle' | 'rounded' | 'ellipse' | 'diamond', x: number, y: number, width: number, height: number, text: string): RectangleObject {
+    const box: RectangleObject = { kind: 'rectangle', id: this.rectangleId++, x, y, width, height, strokeColor: STROKE_COLOR, strokeWidth: CLASS_BOX_DEFAULT_STROKE_WIDTH, ...(form === 'ellipse' ? { ellipse: true as const } : form === 'diamond' ? { diamond: true as const } : form === 'rounded' ? { rounded: true as const } : {}) }
+    this.items.push(box)
+    this.label(box, text, LABEL_SIZE, 0)
+    return box
+  }
+
+  /** A sticky note (pale yellow plain rectangle) with `text` as a centred label (Mermaid class `note`). */
+  sticky(x: number, y: number, width: number, height: number, text: string): RectangleObject {
+    const box: RectangleObject = { kind: 'rectangle', id: this.rectangleId++, x, y, width, height, strokeColor: STICKY_OUTLINE, strokeWidth: CLASS_BOX_DEFAULT_STROKE_WIDTH, fillColor: STICKY_FILL }
     this.items.push(box)
     this.label(box, text, LABEL_SIZE, 0)
     return box
@@ -90,7 +99,7 @@ export class Sheet {
   }
 
   /** An arrow between the middle of one side of `from` and the middle of one side of `to`, attached to both boxes. */
-  connect(from: RectangleObject, fromSide: Side, to: RectangleObject, toSide: Side, options: { type?: ConnectorRelationshipType; routing?: ConnectorRouting; label?: string; dash?: 'dashed'; twoWay?: true } = {}): void {
+  connect(from: RectangleObject, fromSide: Side, to: RectangleObject, toSide: Side, options: { type?: ConnectorRelationshipType; routing?: ConnectorRouting; label?: string; /** Cardinality text next to the start / end box. */ startLabel?: string; endLabel?: string; dash?: 'dashed'; twoWay?: true } = {}): void {
     const attach = (box: RectangleObject, side: Side): ConnectorAttachment => ({
       rectangleId: box.id,
       offsetX: side === 'right' ? box.width : side === 'left' ? 0 : box.width / 2,
@@ -100,7 +109,7 @@ export class Sheet {
     const endAttachment = attach(to, toSide)
     const point = (box: RectangleObject, a: ConnectorAttachment): Point => ({ x: box.x + a.offsetX, y: box.y + a.offsetY, pressure: 1 })
     const connector = createConnector(this.connectorId++, point(from, startAttachment), point(to, endAttachment), STROKE_COLOR, CLASS_BOX_DEFAULT_STROKE_WIDTH, startAttachment, endAttachment, options.type ?? 'directed-association')
-    this.items.push({ ...connector, ...(options.routing === 'elbow' ? { routing: 'elbow' as const } : {}), ...(options.twoWay ? { twoWay: options.twoWay } : {}), ...(options.dash ? { dash: options.dash } : {}), ...(options.label ? { label: options.label } : {}) })
+    this.items.push({ ...connector, ...(options.routing === 'elbow' ? { routing: 'elbow' as const } : {}), ...(options.twoWay ? { twoWay: options.twoWay } : {}), ...(options.dash ? { dash: options.dash } : {}), ...(options.label ? { label: options.label } : {}), ...(options.startLabel ? { startLabel: options.startLabel } : {}), ...(options.endLabel ? { endLabel: options.endLabel } : {}) })
   }
 }
 

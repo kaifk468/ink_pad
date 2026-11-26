@@ -2,6 +2,7 @@ import { getConnectorRenderSpec, type CanvasItem, type CodeObject, type Connecto
 import { isFlowBox, labelInsideBox } from './diagramFlow'
 import { boxKindName } from './diagramOutline'
 import { isContainerBox, OWN_LABEL_CORNER } from './boundary'
+import { STICKY_FILL } from './stickyNote'
 
 /**
  * The current page as a Mermaid flowchart (Export: "Copy as Mermaid"). Pure: reads the items, changes nothing and adds nothing to the saved format.
@@ -40,6 +41,7 @@ function shape(box: RectangleObject, label: string): string {
   if (box.ellipse) return `(("${label}"))`
   if (box.hldShape === 'database') return `[("${label}")]`
   if (box.hldShape === 'service') return `[["${label}"]]`
+  if (!box.hldShape && (box as RectangleObject & { rounded?: true }).rounded === true) return `("${label}")`
   return `["${label}"]`
 }
 
@@ -61,7 +63,18 @@ export function classIdentifier(name: string, taken: Set<string>): string {
   return id
 }
 
-function classDiagram(items: readonly CanvasItem[], classBoxes: RectangleObject[], skippedContent: boolean): MermaidResult {
+/** Cardinality text a connector may carry next to its start / end box (added by the connector format; read here as optional strings). */
+type Cardinalities = { startLabel?: string; endLabel?: string }
+const cardinalityText = (text: string | undefined): string => (text ? text.replace(/\s+/g, ' ').replace(/"/g, "'").trim() : '')
+
+/** A sticky note (plain rectangle with the sticky fill): in a class diagram it is a `note`. */
+const isSticky = (box: RectangleObject): boolean => box.fillColor === STICKY_FILL && !box.hldShape && !box.diamond && !box.ellipse
+
+/** `note for X "text"` when a class is within this distance of the note, else a floating `note "text"`. */
+const NOTE_NEAR = 80
+const gapBetween = (a: RectangleObject, b: RectangleObject): number => Math.max(0, a.x - (b.x + b.width), b.x - (a.x + a.width)) + Math.max(0, a.y - (b.y + b.height), b.y - (a.y + a.height))
+
+function classDiagram(items: readonly CanvasItem[], classBoxes: RectangleObject[], skippedContent: boolean, notes: Array<{ box: RectangleObject; text: string }> = []): MermaidResult {
   const taken = new Set<string>()
   const ids = new Map<number, string>()
   const lines = ['classDiagram']
@@ -81,6 +94,13 @@ function classDiagram(items: readonly CanvasItem[], classBoxes: RectangleObject[
     }
     lines.push('  }')
   }
+  for (const note of notes) {
+    const text = mermaidText(note.text).replace(/<br\/>/g, '\\n')
+    if (!text) continue
+    let near: RectangleObject | null = null
+    for (const box of classBoxes) if (gapBetween(note.box, box) <= NOTE_NEAR && (!near || gapBetween(note.box, box) < gapBetween(note.box, near))) near = box
+    lines.push(near ? `  note for ${ids.get(near.id)} "${text}"` : `  note "${text}"`)
+  }
   let links = 0
   let skippedLinks = 0
   const connectors = items.filter((item): item is ConnectorObject => item.kind === 'connector').sort((a, b) => a.start.y - b.start.y || a.start.x - b.start.x || a.id - b.id)
@@ -93,15 +113,25 @@ function classDiagram(items: readonly CanvasItem[], classBoxes: RectangleObject[
     const marked = spec.endpoint === 'start' ? from : to
     const other = spec.endpoint === 'start' ? to : from
     const label = connector.label ? mermaidText(connector.label).replace(/<br\/>/g, ' ') : ''
+    // Cardinalities stay next to their own class: `A "1" --> "*" B`. The start label belongs to the connector's start box (`from`), the end label to `to`.
+    const cards = connector as ConnectorObject & Cardinalities
+    const startCard = cardinalityText(cards.startLabel)
+    const endCard = cardinalityText(cards.endLabel)
+    const edge = (l: string, op: string, r: string): string => {
+      const cardOf = (id: string): string => (id === from ? startCard : endCard)
+      const leftCard = l === r ? '' : cardOf(l)
+      const rightCard = l === r ? '' : cardOf(r)
+      return `${l}${leftCard ? ` "${leftCard}"` : ''} ${op}${rightCard ? ` "${rightCard}"` : ''} ${r}`
+    }
     let line: string
     switch (connector.relationshipType) {
-      case 'inheritance': line = `${marked} <|-- ${other}`; break
-      case 'realization': line = `${marked} <|.. ${other}`; break
-      case 'composition': line = `${marked} *-- ${other}`; break
-      case 'aggregation': line = `${marked} o-- ${other}`; break
-      case 'directed-association': line = connector.twoWay === true ? `${from} <--> ${to}` : `${other} --> ${marked}`; break
-      case 'dependency': line = `${other} ..> ${marked}`; break
-      default: line = `${from} ${connector.dash === 'dashed' ? '..' : '--'} ${to}`
+      case 'inheritance': line = edge(marked, '<|--', other); break
+      case 'realization': line = edge(marked, '<|..', other); break
+      case 'composition': line = edge(marked, '*--', other); break
+      case 'aggregation': line = edge(marked, 'o--', other); break
+      case 'directed-association': line = connector.twoWay === true ? edge(from, '<-->', to) : edge(other, '-->', marked); break
+      case 'dependency': line = edge(other, '..>', marked); break
+      default: line = edge(from, connector.dash === 'dashed' ? '..' : '--', to)
     }
     lines.push(`  ${line}${label ? ` : ${label}` : ''}`)
     links += 1
@@ -144,9 +174,11 @@ export function buildMermaid(items: readonly CanvasItem[]): MermaidResult {
   const ink = items.some((item) => item.kind === 'stroke' && !item.erase)
   const code = items.some((item): item is CodeObject => item.kind === 'code')
   const classBoxes = rectangles.filter((box) => box.classBox).sort(byPosition)
-  if (boxes.length === 0 && classBoxes.length > 0) {
+  // Sticky notes on a page of class boxes are class diagram notes (`note` / `note for A`), not flowchart boxes.
+  if (classBoxes.length > 0 && boxes.every(isSticky)) {
     const otherBoxes = rectangles.some((box) => !box.classBox && !isFlowBox(box))
-    return classDiagram(items, classBoxes, freeText || ink || code || otherBoxes || containers.length > 0)
+    const notes = boxes.map((box) => ({ box, text: (labels.get(box.id) ?? []).sort(byPosition).map((label) => label.text).join('\n') }))
+    return classDiagram(items, classBoxes, freeText || ink || code || otherBoxes || containers.length > 0, notes)
   }
   const nodeLine = (box: RectangleObject, indent: string): string => {
     const own = [...(labels.get(box.id) ?? [])].sort(byPosition).map((label) => mermaidText(label.text)).filter(Boolean)

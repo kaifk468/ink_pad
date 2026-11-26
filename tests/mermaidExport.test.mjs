@@ -229,3 +229,47 @@ test('two-way arrows round trip through Mermaid text', () => {
   assert.equal(g.edges[0].twoWay, true)
   assert.equal(g.edges[0].arrow, true)
 })
+
+test('a plain rounded rectangle exports as id("text"); sharp, ellipse and HLD shapes are unchanged', () => {
+  const r = buildMermaid([box(1, 0, 0, { rounded: true }), inside(11, box(1, 0, 0), 'Round'), box(2, 0, 300), inside(12, box(2, 0, 300), 'Sharp'), box(3, 0, 600, { rounded: true, ellipse: true }), inside(13, box(3, 0, 600), 'Oval')])
+  assert.match(r.text, /n1\("Round"\)/)
+  assert.match(r.text, /n2\["Sharp"\]/)
+  assert.match(r.text, /n3\(\("Oval"\)\)/)
+})
+
+test('rounded rectangle round trips through Mermaid text', async () => {
+  const { buildMermaidItems } = await loadModule('mermaidImport.ts')
+  const built = buildMermaidItems(parseMermaid('flowchart LR\nA(Soft) --> B[Hard]'))
+  const r = buildMermaid(built.items)
+  assert.match(r.text, /\("Soft"\)/)
+  assert.match(r.text, /\["Hard"\]/)
+  assert.equal(parseMermaid(r.text).nodes.find((n) => n.text === 'Soft').shape, 'rounded')
+})
+
+test('class cardinalities are written next to their own class', () => {
+  const A = cls(1, 0, 0, 'A'), B = cls(2, 400, 0, 'B')
+  const lines = (...connectors) => buildMermaid([A, B, ...connectors]).text.split('\n').filter((line) => /--|\.\./.test(line))
+  assert.deepEqual(lines(link(10, 1, 2, { startLabel: '1', endLabel: '*' })), ['  A "1" --> "*" B'])
+  assert.deepEqual(lines(link(10, 1, 2, { startLabel: '1', endLabel: '*', reversed: true })), ['  B "*" --> "1" A'])
+  assert.deepEqual(lines(link(10, 1, 2, { relationshipType: 'inheritance', startLabel: 'c', endLabel: 'p' })), ['  B "p" <|-- "c" A'])
+  assert.deepEqual(lines(link(10, 1, 2, { relationshipType: 'aggregation', startLabel: 'whole', endLabel: 'part' })), ['  A "whole" o-- "part" B'])
+  assert.deepEqual(lines(link(10, 1, 2, { startLabel: 'only start' })), ['  A "only start" --> B'])
+  assert.deepEqual(lines(link(10, 1, 2, { endLabel: 'say "x"', label: 'uses' })), ['  A --> "say \'x\'" B : uses'])
+})
+
+test('class diagram round trip keeps cardinalities and notes', async () => {
+  const { parseMermaidClass, buildMermaidClassItems } = await loadModule('mermaidClassImport.ts')
+  const source = 'classDiagram\nclass A\nclass B\nA "1" --> "*" B : has\nC "1..*" o-- "0..1" D\nE "x" <|-- "y" F\nnote for A "careful"\nnote "general"\nnamespace NS {\n  class G\n}\nG --> A'
+  const first = parseMermaidClass(source)
+  const exported = buildMermaid(buildMermaidClassItems(first).items)
+  assert.equal(exported.kind, 'class')
+  assert.match(exported.text, /A "1" --> "\*" B : has/)
+  assert.match(exported.text, /C "1\.\.\*" o-- "0\.\.1" D/)
+  assert.match(exported.text, /E "x" <\|-- "y" F/)
+  assert.match(exported.text, /note for A "careful"/)
+  assert.match(exported.text, /note "general"/)
+  const second = parseMermaidClass(exported.text)
+  const key = (g) => g.relations.map((r) => [r.from, r.to, r.type, r.startLabel, r.endLabel, r.label].join('|')).sort()
+  assert.deepEqual(key(second), key(first))
+  assert.equal(second.notes.length, 2)
+})
