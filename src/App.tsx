@@ -19,7 +19,7 @@ import { canSelectConnected, connectedKeys, linkedKeys } from './selectConnected
 import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
 import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeChoice } from './changeShape'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
-import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
+import { PASTE_OFFSET, copyItems, pasteItems, pasteTranslation, type PasteResult } from './clipboard'
 import { gridDots, gridSnapApplies, gridSpacingFor, loadGridSnap, saveGridSnap, snapMoveDelta, snapResizeBounds, snapToGrid } from './gridSnap'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
@@ -87,6 +87,7 @@ import { MermaidDialog } from './app/MermaidDialog'
 import { buildExcalidrawItems, excalidrawInsertMessage, isExcalidrawText } from './excalidrawImport'
 import type { ExcalidrawResult } from './excalidrawImport'
 import { isOwnClipboardText } from './systemPaste'
+import { freeInsertOffset } from './insertPlacement'
 import { buildMermaidDiagram, isMermaidText, MAX_MERMAID_TEXT, mermaidInsertMessage } from './mermaidImport'
 import { DIAGRAM_TEMPLATES, buildTemplate } from './diagramTemplates'
 import { addUserTemplate, loadUserTemplates, newTemplateId, removeUserTemplate, saveUserTemplates, userTemplatesBlockedMessage, type UserTemplate } from './userTemplates'
@@ -5038,14 +5039,28 @@ function App() {
   const insertTemplate = (id: string): boolean => insertTemplateItems(buildTemplate(id))
   // "My templates" use the same path: the saved items are plain canvas items with local ids, so pasteItems gives them fresh ones.
   const insertUserTemplate = (id: string): boolean => insertTemplateItems(userTemplates.find((template) => template.id === id)?.items ?? null)
-  const insertTemplateItems = (items: CanvasItem[] | null, at: Point | null = null, fitToView = true): boolean => {
+  const insertTemplateItems = (items: CanvasItem[] | null, at: Point | null = null, fitToView = true, avoidOverlap = false): boolean => {
     const canvas = canvasRef.current
     setTemplateChooserOpen(false)
     if (!canvas || !items) return false
     if (textEditorRef.current) commitTextEditor()
     if (codeEditorRef.current) commitCodeEditor()
     const rect = canvas.getBoundingClientRect()
-    const centre = at ?? screenToCanvasPoint({ x: rect.width / 2, y: rect.height / 2, pressure: 1 }, viewportRef.current)
+    let centre = at ?? screenToCanvasPoint({ x: rect.width / 2, y: rect.height / 2, pressure: 1 }, viewportRef.current)
+    // Imports land in free space: when the placed bounds would overlap existing items, move them beside the content (right, else below).
+    if (avoidOverlap && strokesRef.current.length > 0) {
+      const own = getCanvasSelectionBounds(items, new Set(items.map(canvasItemKey)))
+      if (own) {
+        const shift = pasteTranslation(own, PASTE_OFFSET, workspaceBoundsRef.current, centre)
+        const existingBounds: ViewBounds[] = []
+        for (const item of strokesRef.current) {
+          const itemBounds = getCanvasSelectionBounds([item], new Set([canvasItemKey(item)]))
+          if (itemBounds) existingBounds.push(itemBounds)
+        }
+        const free = freeInsertOffset({ ...own, x: own.x + shift.dx, y: own.y + shift.dy }, existingBounds, workspaceBoundsRef.current)
+        if (free.dx !== 0 || free.dy !== 0) centre = { x: own.x + own.width / 2 + shift.dx + free.dx, y: own.y + own.height / 2 + shift.dy + free.dy, pressure: 1 }
+      }
+    }
     const result = pasteItems(items, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET, workspaceBoundsRef.current, centre, strokesRef.current)
     if (!result) return false
     const done = insertPasted(sketchyRef.current ? { ...result, items: withSketchSeeds(result.items) } : result)
@@ -5065,7 +5080,7 @@ function App() {
   const importMermaid = (text: string, at: Point | null = null): string | null => {
     const built = buildMermaidDiagram(text)
     if (!built.ok) return built.error
-    if (!insertTemplateItems(built.items, at)) return 'Could not insert the diagram.'
+    if (!insertTemplateItems(built.items, at, true, true)) return 'Could not insert the diagram.'
     setMermaidOpen(false) // closed only after a successful insert; on failure the dialog stays open with the message
     showToast(mermaidInsertMessage(built.boxes, built.links, built.ignoredLines, built.kind, built.frames ?? 0))
     return null
@@ -5075,7 +5090,7 @@ function App() {
   const importExcalidraw = (source: string | ExcalidrawResult, at: Point | null = null): string | null => {
     const built = typeof source === 'string' ? buildExcalidrawItems(source) : source
     if (!built.ok) return built.error
-    if (!insertTemplateItems(built.items, at)) return 'Could not insert the drawing.'
+    if (!insertTemplateItems(built.items, at, true, true)) return 'Could not insert the drawing.'
     showToast(excalidrawInsertMessage(built.shapes, built.skipped))
     return null
   }
