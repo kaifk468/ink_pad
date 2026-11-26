@@ -120,3 +120,12 @@ test('wiring: panel toggle, menu actions, palette entries, renderer', () => {
   assert.match(app, /const setSelectedCorners[\s\S]{0,300}saveHistory\(\)/)
   assert.match(renderer, /roundRect\(rectangle\.x, rectangle\.y, rectangle\.width, rectangle\.height, roundedCornerRadius/)
 })
+
+test('a rectangle turned into a class box drops rounded and no renderer rounds a non-plain box', () => {
+  assert.match(app, /\(\{ rounded: _rounded, \.\.\.rest \}\) => \(\{ \.\.\.rest, classBox: clean \}\)/)
+  const opts = { width: 800, height: 600, template: 'blank', backgroundColor: '#ffffff' }
+  const stale = rect({ rounded: true, classBox: { name: 'A', attributes: '', methods: '' } })
+  assert.doesNotMatch(exp.buildSheetSvg([stale], opts), /<rect [^>]*rx=/)
+  assert.doesNotMatch(sketchy.sketchyRectangleShape(stale).outline, /Q/)
+  assert.match(renderer, /rectangle\.rounded && isPlainRectangle\(rectangle\)/)
+})

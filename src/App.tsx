@@ -84,7 +84,7 @@ import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
 import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
-import { setConnectorEndLabel } from './connectorEndLabels'
+import { selectionBoundsWithEndLabels, setConnectorEndLabel } from './connectorEndLabels'
 import { cornersChoice, setRoundedCorners } from './roundedCorners'
 import { connectorLabelCentre, connectorLabelFontSize, connectorLabelPosition, labelPositionForDrag, pointOnConnectorLabel, setConnectorLabel, setConnectorLabelFontSize, setConnectorLabelPosition } from './connectorLabel'
 import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, keepAlignAnchor, stepFontSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
@@ -1224,7 +1224,7 @@ function App() {
     if (!existing.classBox && isEmptyClassBox(clean)) return
     if (sameClassBoxContent(existing.classBox, clean)) return
     saveHistory()
-    const withContent = strokesRef.current.map((item) => (item.kind === 'rectangle' && item.id === existing.id ? { ...item, classBox: clean } : item))
+    const withContent = strokesRef.current.map((item) => (item.kind === 'rectangle' && item.id === existing.id ? (({ rounded: _rounded, ...rest }) => ({ ...rest, classBox: clean }))(item) : item))
     const bounds = fitClassBoxBounds(existing, clean, measure)
     const grown = bounds.width !== existing.width || bounds.height !== existing.height
     strokesRef.current = grown ? resizeRectangleItems(withContent, existing.id, bounds) : withContent
@@ -2095,8 +2095,9 @@ function App() {
     return {
       startLabel: connector?.startLabel ?? '',
       endLabel: connector?.endLabel ?? '',
-      onEndLabel: (end: 'start' | 'end', text: string) => {
-        const next = setConnectorEndLabel(strokesRef.current, connectorId, end, text)
+      connectorId,
+      onEndLabel: (id: number, end: 'start' | 'end', text: string) => {
+        const next = setConnectorEndLabel(strokesRef.current, id, end, text)
         if (next === strokesRef.current) return
         saveHistory()
         strokesRef.current = next
@@ -3191,7 +3192,7 @@ function App() {
     if (navigationSettingsRef.current.zoomLocked) return
     const canvas = canvasRef.current
     if (!canvas) return
-    const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
+    const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
     if (!bounds) {
       fitCanvasView()
       return
@@ -3207,7 +3208,7 @@ function App() {
     if (!rect) return false
     const keys = currentSelectionKeys()
     if (keys.size === 0) return false
-    const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), keys)
+    const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), keys)
     if (!bounds) return false
     applyViewport(fitViewportToBoundsInset(bounds, rect.width, rect.height, DESKTOP_FIT_INSETS, 2))
     return true
@@ -3218,7 +3219,7 @@ function App() {
     if (navigationSettingsRef.current.zoomLocked) return
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
-    const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
+    const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
     if (!bounds) {
       fitCanvasView()
       return
@@ -4697,7 +4698,7 @@ function App() {
     const done = insertPasted(sketchyRef.current ? { ...result, items: withSketchSeeds(result.items) } : result)
     if (done) {
       // A template larger than the view is zoomed out to fit (never zoomed in), so the whole layout is visible at once.
-      const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), new Set(result.keys))
+      const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), new Set(result.keys))
       if (fitToView && bounds && !navigationSettingsRef.current.zoomLocked) {
         const insets = inputModeRef.current === 'desktop' ? DESKTOP_FIT_INSETS : { top: 72, right: 24, bottom: 96, left: 24 }
         applyViewport(fitViewportToBoundsInset(bounds, rect.width, rect.height, insets, viewportRef.current.scale))
@@ -5260,7 +5261,7 @@ function App() {
     const canvas = canvasRef.current
     const item = strokesRef.current.find((candidate) => canvasItemKey(candidate) === match.key)
     if (!canvas || !item) return false
-    const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), new Set([match.key]))
+    const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), new Set([match.key]))
     if (bounds) {
       const rect = canvas.getBoundingClientRect()
       const insets = inputModeRef.current === 'desktop' ? DESKTOP_FIT_INSETS : { left: 16, top: 120, right: 16, bottom: 96 }

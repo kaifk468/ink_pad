@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ColorPicker } from './ColorPicker'
 import { ERASER_SIZES } from './appConfig'
 import type { Arrowheads, ConnectorRelationshipType, LayerMove } from '../canvasModel'
@@ -24,7 +24,31 @@ type RelationshipProps = {
   /** Multiplicity text at each end of the connector; `onEndLabel` commits one (blur / Enter). */
   startLabel: string
   endLabel: string
-  onEndLabel: (end: 'start' | 'end', text: string) => void
+  /** Id of the connector these labels belong to; the inputs capture it when they mount and commit to that id. */
+  connectorId: number
+  onEndLabel: (connectorId: number, end: 'start' | 'end', text: string) => void
+}
+
+/**
+ * One end-label input. It is keyed by connector id + end, captures the id when it mounts and commits to that id (on blur, Enter or unmount),
+ * so a blur caused by selecting another connector never writes the text to the new one and text typed before the section unmounts is kept.
+ */
+function EndLabelInput({ connectorId, end, value, placeholder, label, onCommit }: { connectorId: number; end: 'start' | 'end'; value: string; placeholder: string; label: string; onCommit: (connectorId: number, end: 'start' | 'end', text: string) => void }) {
+  const capturedId = useRef(connectorId).current
+  const draft = useRef<string | null>(null)
+  const commitRef = useRef(onCommit)
+  commitRef.current = onCommit
+  const commit = (text: string) => {
+    draft.current = null
+    commitRef.current(capturedId, end, text)
+  }
+  useEffect(() => () => { if (draft.current !== null) commitRef.current(capturedId, end, draft.current) }, [capturedId, end])
+  return (
+    <input type="text" maxLength={24} placeholder={placeholder} aria-label={label} title="Multiplicity or cardinality at this end" defaultValue={value}
+      onChange={(event) => { draft.current = event.currentTarget.value }}
+      onBlur={(event) => commit(event.currentTarget.value)}
+      onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} />
+  )
 }
 
 type ContextPanelProps = {
@@ -465,12 +489,8 @@ export function ContextPanel(props: ContextPanelProps) {
         )}
         <div className="end-labels" role="group" aria-label="End labels" title="Multiplicity or cardinality at this end">
           <span className="end-labels-heading">End labels</span>
-          <input key={`start:${relationship.startLabel}`} type="text" maxLength={24} placeholder="1" aria-label="Start end label" title="Multiplicity or cardinality at this end" defaultValue={relationship.startLabel}
-            onBlur={(event) => relationship.onEndLabel('start', event.currentTarget.value)}
-            onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} />
-          <input key={`end:${relationship.endLabel}`} type="text" maxLength={24} placeholder="*" aria-label="End end label" title="Multiplicity or cardinality at this end" defaultValue={relationship.endLabel}
-            onBlur={(event) => relationship.onEndLabel('end', event.currentTarget.value)}
-            onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} />
+          <EndLabelInput key={`${relationship.connectorId}:start`} connectorId={relationship.connectorId} end="start" value={relationship.startLabel} placeholder="1" label="Start end label" onCommit={relationship.onEndLabel} />
+          <EndLabelInput key={`${relationship.connectorId}:end`} connectorId={relationship.connectorId} end="end" value={relationship.endLabel} placeholder="*" label="End end label" onCommit={relationship.onEndLabel} />
         </div>
         <button type="button" className="relationship-reverse" aria-label={relationship.hasLabel ? 'Edit connector label' : 'Add connector label'} title="Text drawn on the middle of the connector (double-click it, or press Enter)" onClick={relationship.onEditLabel}>
           <span>{relationship.hasLabel ? 'Edit label' : 'Add label'}</span>

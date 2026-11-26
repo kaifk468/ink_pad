@@ -1,6 +1,6 @@
 import { connectorPoints, getConnectorRenderSpec, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, strokeHeadGeometry } from './canvasModel'
 import type { ConnectorObject, Point, RectangleObject, Stroke } from './canvasModel'
-import { roundedCornerRadius, roundedRectanglePath } from './roundedCorners'
+import { isPlainRectangle, roundedCornerRadius, roundedRectanglePath } from './roundedCorners'
 
 /**
  * Hand-drawn ("sketchy") style: pure geometry, no canvas and no randomness at draw time.
@@ -199,7 +199,7 @@ export function sketchyRectangleShape(rectangle: RectangleObject): SketchyShape 
     return { outline, fill }
   }
   if (rectangle.ellipse) return roughEllipse(x + w / 2, y + h / 2, w / 2, h / 2, rng)
-  if (rectangle.rounded) {
+  if (rectangle.rounded && isPlainRectangle(rectangle)) {
     // Four hand-drawn sides joined by small curved corners; the fill is the exact rounded outline.
     const r = roundedCornerRadius(w, h)
     const jitter = () => signed(rng) * 0.8
@@ -234,7 +234,7 @@ export function plainFillPath(rectangle: RectangleObject): string {
     return `M${n(x)} ${n(y + ry)}A${n(rx)} ${n(ry)} 0 0 1 ${n(x + w)} ${n(y + ry)}A${n(rx)} ${n(ry)} 0 0 1 ${n(x)} ${n(y + ry)}Z`
   }
   if (rectangle.diamond) return `M${n(x + w / 2)} ${n(y)}L${n(x + w)} ${n(y + h / 2)}L${n(x + w / 2)} ${n(y + h)}L${n(x)} ${n(y + h / 2)}Z`
-  if (rectangle.rounded) return roundedRectanglePath(rectangle)
+  if (rectangle.rounded && isPlainRectangle(rectangle)) return roundedRectanglePath(rectangle)
   return `M${n(x)} ${n(y)}H${n(x + w)}V${n(y + h)}H${n(x)}Z`
 }
 

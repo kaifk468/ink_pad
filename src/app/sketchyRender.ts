@@ -1,6 +1,7 @@
 import { connectorPoints, strokeArrowheads } from '../canvasModel'
 import type { ConnectorObject, RectangleObject, Stroke } from '../canvasModel'
 import { plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokeParts, type SketchyConnector, type SketchyShape } from '../sketchy'
+import { isPlainRectangle } from '../roundedCorners'
 
 /**
  * Canvas side of the hand-drawn style. Outlines are generated once per item and kept (items are immutable, so a WeakMap
@@ -40,7 +41,7 @@ const plainFillCache = makeCache<Path2D>()
 const strokeCache = makeCache<{ line: Path2D; heads: Path2D | null } | null>()
 const connectorCache = makeCache<{ line: Path2D; head: Path2D | null; spec: SketchyConnector }>()
 
-const flag = (rectangle: RectangleObject) => (rectangle.hldShape === 'database' ? 1 : rectangle.hldShape === 'queue' ? 2 : 0) + (rectangle.ellipse ? 4 : 0) + (rectangle.diamond ? 8 : 0) + (rectangle.rounded ? 16 : 0)
+const flag = (rectangle: RectangleObject) => (rectangle.hldShape === 'database' ? 1 : rectangle.hldShape === 'queue' ? 2 : 0) + (rectangle.ellipse ? 4 : 0) + (rectangle.diamond ? 8 : 0) + (rectangle.rounded && isPlainRectangle(rectangle) ? 16 : 0)
 
 function rectangleKey(rectangle: RectangleObject): number[] {
   return [rectangle.x, rectangle.y, rectangle.width, rectangle.height, rectangle.seed ?? -1, flag(rectangle)]

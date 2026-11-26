@@ -6,7 +6,7 @@ import { buildInterpolatingCurve, buildMidpointCurve, type InterpolatingStrokeSe
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import { classBoxFont, getClassBoxGeometry, type ClassBoxCompartment, type FontMeasure } from '../classBoxLayout'
 import { connectorLabelFontSize, connectorLabelLayout } from '../connectorLabel'
-import { roundedCornerRadius } from '../roundedCorners'
+import { isPlainRectangle, roundedCornerRadius } from '../roundedCorners'
 import { connectorEndLabelFontSize, connectorEndLabelLayouts } from '../connectorEndLabels'
 import { DEFAULT_TEXT_FONT, textLineX, getCachedTextMeasure, getTextBaselines, labelLines, textFont, type TextMeasure } from '../textLayout'
 import type { MinimapGeometry } from '../viewport'
@@ -318,7 +318,7 @@ export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
     ctx.beginPath()
     ctx.ellipse(rectangle.x + rectangle.width / 2, rectangle.y + rectangle.height / 2, rectangle.width / 2, rectangle.height / 2, 0, 0, Math.PI * 2)
     ctx.stroke()
-  } else if (rectangle.rounded) {
+  } else if (rectangle.rounded && isPlainRectangle(rectangle)) {
     ctx.beginPath()
     ctx.roundRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, roundedCornerRadius(rectangle.width, rectangle.height))
     ctx.stroke()

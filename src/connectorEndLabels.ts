@@ -1,7 +1,7 @@
-import { canvasItemKey, connectorPoints, type CanvasItem, type ConnectorObject } from './canvasModel'
+import { canvasItemKey, connectorPoints, getCanvasSelectionBounds, type CanvasItem, type ConnectorObject } from './canvasModel'
 import { pathLength, pointAlongPath } from './pathGeometry'
 import { connectorLabelFontSize } from './connectorLabel'
-import { measureTextSize, type TextMeasure } from './textLayout'
+import { DEFAULT_TEXT_FONT, getCachedTextMeasure, measureTextSize, type TextMeasure } from './textLayout'
 
 export const MAX_CONNECTOR_END_LABEL_LENGTH = 24
 /** Distance of the text from the end point along the path, and sideways from the line (canvas units). */
@@ -39,13 +39,17 @@ export function connectorEndLabelLayouts(connector: ConnectorObject, measure?: T
   for (const end of ['start', 'end'] as const) {
     const text = cleanConnectorEndLabel(end === 'start' ? connector.startLabel : connector.endLabel)
     if (text === undefined) continue
-    const along = Math.min(END_LABEL_ALONG, total / 2)
+    const size = measureTextSize(text, fontSize, measure)
+    const base = Math.min(END_LABEL_ALONG, total / 2)
+    const dir0 = pointAlongPath(path, end === 'start' ? base : total - base).direction
+    // Wide labels are pushed further along the line so their near edge stays 4 units outside the box (never over its border).
+    const extent = Math.abs(dir0.x) * size.width + Math.abs(dir0.y) * size.height
+    const along = Math.min(base + Math.max(0, extent / 2 - END_LABEL_ALONG + 4), total / 2)
     const { point, direction } = pointAlongPath(path, end === 'start' ? along : total - along)
     // Direction pointing away from the end, into the line.
     const away = end === 'start' ? direction : { x: -direction.x, y: -direction.y }
     let normal = { x: -away.y, y: away.x }
     if (normal.y > 1e-9 || (Math.abs(normal.y) <= 1e-9 && normal.x < 0)) normal = { x: -normal.x, y: -normal.y }
-    const size = measureTextSize(text, fontSize, measure)
     const cx = point.x + normal.x * (END_LABEL_SIDE + size.width / 2)
     const cy = point.y + normal.y * (END_LABEL_SIDE + size.height / 2)
     out.push({ end, text, fontSize, x: cx - size.width / 2, y: cy - size.height / 2, width: size.width, height: size.height, baseline: cy + fontSize * 0.35 })
@@ -76,4 +80,23 @@ export function selectedConnectorEndLabels(items: readonly CanvasItem[], keys: R
   if (keys.size !== 1) return null
   const found = items.find((item): item is ConnectorObject => item.kind === 'connector' && keys.has(canvasItemKey(item)))
   return found ? { id: found.id, startLabel: found.startLabel ?? '', endLabel: found.endLabel ?? '' } : null
+}
+
+/**
+ * Selection bounds that also cover the end labels of the selected connectors (`items` should be routed). Lives here, not in canvasModel,
+ * because the label layout imports canvasModel. Used by zoom-to-selection and fit-after-insert so labels are never cut off.
+ */
+export function selectionBoundsWithEndLabels(items: CanvasItem[], keys: ReadonlySet<string>): { x: number; y: number; width: number; height: number } | null {
+  const base = getCanvasSelectionBounds(items, keys)
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const item of items) {
+    if (item.kind !== 'connector' || !keys.has(canvasItemKey(item))) continue
+    for (const label of connectorEndLabelLayouts(item, getCachedTextMeasure(connectorEndLabelFontSize(item), DEFAULT_TEXT_FONT))) {
+      minX = Math.min(minX, label.x); minY = Math.min(minY, label.y); maxX = Math.max(maxX, label.x + label.width); maxY = Math.max(maxY, label.y + label.height)
+    }
+  }
+  if (!Number.isFinite(minX)) return base
+  if (!base) return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+  const x = Math.min(base.x, minX), y = Math.min(base.y, minY)
+  return { x, y, width: Math.max(base.x + base.width, maxX) - x, height: Math.max(base.y + base.height, maxY) - y }
 }
