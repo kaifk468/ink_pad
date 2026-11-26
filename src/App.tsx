@@ -11,6 +11,7 @@ import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dr
 import { similarItemKeys } from './selectSimilar'
 import { canSameSize, sameSizeItems, type SameSizeMode } from './sameSize'
 import { canSwapPositions, swapPositionsItems } from './swapPositions'
+import { linkedNeighbour, revealViewport, walkItemBounds, walkStep } from './keyboardWalk'
 import { addBoundary } from './boundary'
 import { canSelectConnected, connectedKeys, linkedKeys } from './selectConnected'
 import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
@@ -1633,17 +1634,6 @@ function App() {
     showToast(`Selected ${keys.length} similar item${keys.length === 1 ? '' : 's'}`)
     return true
   }
-  // Select connected / Select all linked (right-click chip, palette, panel): the box, its connectors and the boxes at their other ends (all the way through, for linked). No history entry.
-  const selectConnectedItems = (transitive: boolean): boolean => {
-    const keys = (transitive ? linkedKeys : connectedKeys)(strokesRef.current, currentSelectionKeys())
-    if (keys.length === 0 || !canSelectConnected(strokesRef.current, currentSelectionKeys())) { showToast('No connected items'); return false }
-    if (!selectionMode && !lassoMode) toggleSelectTool()
-    setSelectedRectangle(null)
-    updateSelectedItems(keys)
-    renderAll()
-    showToast(`Selected ${keys.length} connected item${keys.length === 1 ? '' : 's'}`)
-    return true
-  }
   // Swap positions (right-click chip, palette): two selected boxes trade centres; labels inside and attached connectors follow; one undo step.
   const swapPositionsSelection = (): boolean => {
     const result = swapPositionsItems(strokesRef.current, currentSelectionKeys(), workspaceBoundsRef.current)
@@ -1655,6 +1645,35 @@ function App() {
     scheduleAutosave()
     bumpSelectionColor((n) => n + 1)
     showToast('Swapped the two boxes')
+    return true
+  }
+  // Keyboard walk (Tab / Shift+Tab, Alt+Arrow; Select tool only): selects `key` through the normal selection path (a group member selects its group)
+  // and pans the view when the item is off screen. Selection and view only: no history entry.
+  const walkSelect = (key: string | null): boolean => {
+    if (!selectionMode || key === null) return false
+    applySelectionState(expandSelectionState(normalizeSelection([key])))
+    const bounds = walkItemBounds(strokesRef.current, key)
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (bounds && rect) {
+      const next = revealViewport(viewportRef.current, bounds, rect)
+      if (next !== viewportRef.current) applyViewport(next)
+    }
+    return true
+  }
+  const walkTo = (step: 1 | -1): boolean => walkSelect(walkStep(strokesRef.current, soleSelectedKey(), step))
+  const walkLinked = (direction: 'right' | 'left' | 'up' | 'down'): boolean => {
+    const from = soleSelectedKey()
+    return from !== null && walkSelect(linkedNeighbour(strokesRef.current, from, direction))
+  }
+  // Select connected / Select all linked (right-click chip, palette, panel): the box, its connectors and the boxes at their other ends (all the way through, for linked). No history entry.
+  const selectConnectedItems = (transitive: boolean): boolean => {
+    const keys = (transitive ? linkedKeys : connectedKeys)(strokesRef.current, currentSelectionKeys())
+    if (keys.length === 0 || !canSelectConnected(strokesRef.current, currentSelectionKeys())) { showToast('No connected items'); return false }
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    setSelectedRectangle(null)
+    updateSelectedItems(keys)
+    renderAll()
+    showToast(`Selected ${keys.length} connected item${keys.length === 1 ? '' : 's'}`)
     return true
   }
   // Same size (right-click chips, palette, panel): the selected boxes take the largest width and / or height around their centres. Connectors and inside labels follow; one undo step.
@@ -5376,6 +5395,9 @@ function App() {
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
     ...(currentSelectionKeys().size > 0 ? movePaletteEntries(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)).map((row) => ({ id: row.id, label: row.label, group: 'Pages', keywords: 'move selection send items to page', run: () => { moveSelectionToPageNow(row.target) } })) : []),
     ...pagesRef.current.flatMap((slot, index) => (slot.name ? [{ id: `page:go:${index}`, label: `Go to page: ${slot.name}`, group: 'Pages', keywords: `jump open ${index + 1}`, run: () => goToPage(index) }] : [])),
+    { id: 'select:next', label: 'Select next item', group: 'Select', keywords: 'tab walk keyboard step forward reading order', run: () => { if (!walkTo(1)) showToast('Switch to the Select tool first') } },
+    { id: 'select:previous', label: 'Select previous item', group: 'Select', keywords: 'shift tab walk keyboard step back reading order', run: () => { if (!walkTo(-1)) showToast('Switch to the Select tool first') } },
+    ...(soleSelectedKey() !== null ? (['right', 'left', 'up', 'down'] as const).map((direction) => ({ id: `select:linked-${direction}`, label: `Select linked box: ${direction}`, group: 'Select', keywords: 'alt arrow walk neighbour connected keyboard', run: () => { if (!walkLinked(direction)) showToast('No linked box that way') } })) : []),
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
     ...(canSwapPositions(strokesRef.current, currentSelectionKeys()) ? [{ id: 'arrange:swap', label: 'Swap positions', group: 'Arrange', keywords: 'exchange switch two boxes places', run: () => { swapPositionsSelection() } }] : []),
     ...(canSameSize(strokesRef.current, currentSelectionKeys()) ? [
@@ -5624,6 +5646,8 @@ function App() {
         clearLassoSelection()
         return true
       case 'quickCreate': return quickCreateShape(command.direction)
+      case 'walk': return walkTo(command.step)
+      case 'walkLinked': return walkLinked(command.direction)
       case 'nudge': return nudgeSelection(command.dx, command.dy)
       case 'edit': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); return target ? openEditTarget(target) : false }
       case 'copy': return copyWithToast()
@@ -5675,6 +5699,8 @@ function App() {
         if (command.kind === 'palette' || command.kind === 'find' || command.kind === 'findReplace') event.preventDefault() // Chrome's Ctrl+K (search bar) and Ctrl+F (find bar) never win, even inside a text field
         return
       }
+      // Tab and Alt+Arrow walk the items only from the canvas: on a focused button, link or panel Tab keeps moving focus.
+      if ((command.kind === 'walk' || command.kind === 'walkLinked') && !['BODY', 'CANVAS', 'MAIN', 'SECTION'].includes((target?.tagName ?? 'BODY').toUpperCase())) return
       // Enter on a focused button or link activates it: only a canvas-level Enter edits.
       if (command.kind === 'edit' && ['BUTTON', 'A'].includes((target?.tagName ?? '').toUpperCase())) return
       const handled = keyActionsRef.current(command)

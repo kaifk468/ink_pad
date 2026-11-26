@@ -187,7 +187,9 @@ test('arrow keys nudge by 1, Shift by 10, in Desktop mode only, and other modifi
   assert.deepEqual(input.keyCommand(key('ArrowDown', { repeat: true }), 'desktop'), { kind: 'nudge', dx: 0, dy: 1 })
   assert.equal(input.keyCommand(key('ArrowLeft'), 'tablet'), null)
   assert.deepEqual(input.keyCommand(key('ArrowLeft', { ctrlKey: true }), 'desktop'), { kind: 'quickCreate', direction: 'left' }) // Ctrl+Arrow makes a connected shape (batch C)
-  for (const extra of [{ altKey: true }]) assert.equal(input.keyCommand(key('ArrowLeft', extra), 'desktop'), null)
+  // Alt+Arrow walks to the linked box (keyboard walk, round 8); Alt+Shift+Arrow stays with the browser.
+  assert.deepEqual(input.keyCommand(key('ArrowLeft', { altKey: true }), 'desktop'), { kind: 'walkLinked', direction: 'left' })
+  assert.equal(input.keyCommand(key('ArrowLeft', { altKey: true, shiftKey: true }), 'desktop'), null)
 })
 
 test('a burst of nudges is one undo step: only the first press after a 500 ms pause starts a step', () => {

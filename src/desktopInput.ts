@@ -218,6 +218,8 @@ export type KeyCommand =
   | { kind: 'quickCreate'; direction: 'right' | 'left' | 'up' | 'down' }
   | { kind: 'layer'; move: 'forward' | 'backward' | 'front' | 'back' }
   | { kind: 'toolLock' }
+  | { kind: 'walk'; step: 1 | -1 }
+  | { kind: 'walkLinked'; direction: 'right' | 'left' | 'up' | 'down' }
   | { kind: 'fontSize'; direction: 1 | -1 }
   | { kind: 'tool'; tool: KeyTool }
 
@@ -298,6 +300,10 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
   if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.code === 'KeyZ' || (!event.code && key === 'z'))) return event.repeat ? null : { kind: 'presentMode' }
   // "?" opens the shortcut help (Shift + / on most layouts; some keyboards send "?" without Shift).
   if (key === '?' && !event.ctrlKey && !event.metaKey && !event.altKey) return event.repeat ? null : { kind: 'help' }
+  // Keyboard walk (Select tool, checked by the App): Tab / Shift+Tab step through the items, Alt+Arrow goes to the linked box in that direction.
+  if (key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) return { kind: 'walk', step: event.shiftKey ? -1 : 1 }
+  const walkDirection = QUICK_CREATE_KEYS[key]
+  if (walkDirection && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) return event.repeat ? null : { kind: 'walkLinked', direction: walkDirection }
   // Arrow keys nudge the selection (Shift = 10 units); holding the key repeats on purpose. Other modifiers belong to the browser.
   const arrow = ARROW_KEYS[key]
   if (arrow && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -741,7 +747,7 @@ export function clampMenuPosition(x: number, y: number, width: number, height: n
 }
 
 /** Commands whose browser default (Chrome's find bar for Ctrl+G, the open-file dialog, Ctrl+Alt shortcuts) is always cancelled in Desktop mode, even when the action does nothing. */
-export const ALWAYS_PREVENT_DEFAULT_COMMANDS: ReadonlySet<KeyCommand['kind']> = new Set(['group', 'ungroup', 'library', 'palette', 'find', 'findReplace', 'copyStyle', 'pasteStyle'])
+export const ALWAYS_PREVENT_DEFAULT_COMMANDS: ReadonlySet<KeyCommand['kind']> = new Set(['group', 'ungroup', 'library', 'palette', 'find', 'findReplace', 'copyStyle', 'pasteStyle', 'walkLinked'])
 export function alwaysPreventsDefault(command: KeyCommand, mode: InputMode): boolean {
   return mode === 'desktop' && ALWAYS_PREVENT_DEFAULT_COMMANDS.has(command.kind)
 }
