@@ -7,8 +7,11 @@ import { canDragCards, decideDrop, hasFinePointer } from '../libraryDrop'
 import { batchDelete, createPendingDeletes, hiddenForDiagram, hiddenForFolder, hidesInFolder, pendingLabel, type PendingDeletes } from '../pendingDelete'
 import { allSelected, deleteConfirmText, effectiveSelection, idsToMove, movedMessage, runMoves, selectAllIds, selectionLabel, toggleSelected } from '../librarySelect'
 import type { PageTemplate } from '../pageTemplates'
+import { createSearchTextIndex, matchContent } from '../librarySearchText'
 
 type HomeScreenProps = {
+  /** Reads a diagram's saved contents from a local copy only (for searching inside diagrams); null when there is none. Never the network. */
+  loadForSearch?: (id: string) => Promise<unknown | null>
   library: DocumentSummary[]
   folders: FolderRecord[]
   currentId: string | null
@@ -44,6 +47,7 @@ type HomeScreenProps = {
 }
 
 const STATUS_MS = 3000
+const CONTENT_SEARCH_DELAY_MS = 200
 const LAYOUT_KEY = 'inkpad.libraryLayout'
 const SORT_KEY = 'inkpad.librarySort'
 
@@ -159,7 +163,38 @@ export function HomeScreen(props: HomeScreenProps) {
   const hereFolder = here ? folders.find((folder) => folder.id === here) : undefined
   const starredSet = props.starredIds
   const starredCount = useMemo(() => library.filter((entry) => starredSet.has(entry.id)).length, [library, starredSet])
-  const shown = useMemo(() => sortLibrary(searchLibrary(library, folders, { query, folderId: here, onlyIds: view === 'starred' ? starredSet : undefined }), sort), [library, folders, query, here, view, starredSet, sort])
+  const titleShown = useMemo(() => sortLibrary(searchLibrary(library, folders, { query, folderId: here, onlyIds: view === 'starred' ? starredSet : undefined }), sort), [library, folders, query, here, view, starredSet, sort])
+  // Search inside diagrams: after a short pause in typing, the diagrams that did not match by title are checked against their
+  // text (built lazily from local copies, kept in memory by id + edit time). Matches come after the title matches.
+  const loadForSearchRef = useRef(props.loadForSearch)
+  loadForSearchRef.current = props.loadForSearch
+  const searchIndex = useRef<ReturnType<typeof createSearchTextIndex> | null>(null)
+  if (!searchIndex.current) searchIndex.current = createSearchTextIndex(async (id) => (loadForSearchRef.current ? loadForSearchRef.current(id) : null))
+  const [contentHits, setContentHits] = useState<{ query: string; snippets: Map<string, string> }>({ query: '', snippets: new Map() })
+  const contentCandidates = useMemo(() => {
+    if (!props.loadForSearch || !query.trim()) return []
+    const titled = new Set(titleShown.map((entry) => entry.id))
+    return searchLibrary(library, folders, { query: '', folderId: here, onlyIds: view === 'starred' ? starredSet : undefined }).filter((entry) => !titled.has(entry.id))
+  }, [props.loadForSearch, query, titleShown, library, folders, here, view, starredSet])
+  useEffect(() => {
+    const wanted = query.trim()
+    if (!wanted || contentCandidates.length === 0) { setContentHits((current) => (current.snippets.size === 0 ? current : { query: '', snippets: new Map() })); return }
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      const snippets = new Map<string, string>()
+      for (const entry of contentCandidates) {
+        if (cancelled) return
+        const text = await searchIndex.current!.textFor(entry)
+        const snippet = text ? matchContent(text, wanted) : null
+        if (snippet) snippets.set(entry.id, snippet)
+      }
+      if (!cancelled) setContentHits({ query: wanted, snippets })
+    }, CONTENT_SEARCH_DELAY_MS)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [query, contentCandidates])
+  const contentSnippets = useMemo(() => (contentHits.query === query.trim() ? contentHits.snippets : new Map<string, string>()), [contentHits, query])
+  const contentShown = useMemo(() => sortLibrary(contentCandidates.filter((entry) => contentSnippets.has(entry.id)), sort), [contentCandidates, contentSnippets, sort])
+  const shown = useMemo(() => (contentShown.length > 0 ? [...titleShown, ...contentShown] : titleShown), [titleShown, contentShown])
   const tree = useMemo(() => flattenFolders(folders), [folders])
   const shownIds = useMemo(() => shown.map((entry) => entry.id), [shown])
   /** What an action may touch: selected AND visible now (a search or folder change never makes it act on hidden diagrams). */
@@ -452,6 +487,7 @@ export function HomeScreen(props: HomeScreenProps) {
                   </span>
                   <span className="home-card-title">{entry.title || 'Untitled diagram'}</span>
                   <span className="home-card-folder">{where || 'No folder'}</span>
+                  {contentSnippets.has(entry.id) && <span className="home-card-snippet">Contains: {contentSnippets.get(entry.id)}</span>}
                   <span className="home-card-meta">{entry.id === props.currentId ? 'Open now · ' : ''}Edited {describeEdited(entry.updatedAt) || 'earlier'} · {entry.itemCount} item{entry.itemCount === 1 ? '' : 's'}{entry.pageCount && entry.pageCount > 1 ? ` · ${entry.pageCount} pages` : ''}</span>
                 </button>
                 <button type="button" className={`home-star${isStarred ? ' on' : ''}`} aria-pressed={isStarred} aria-label={`${isStarred ? 'Unstar' : 'Star'} ${entry.title || 'Untitled diagram'}`} onClick={() => props.onToggleStar(entry.id)}>

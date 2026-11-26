@@ -470,7 +470,7 @@ function App() {
     filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram,
-    scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
+    loadForSearch, scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   } = useDocuments({
     getItems: () => strokesRef.current,
@@ -6263,6 +6263,7 @@ function App() {
         onCopyBrowserHere={() => void copyBrowserToDevice()}
       />}
       {libraryOpen && <HomeScreen
+        loadForSearch={loadForSearch}
         library={library}
         folders={folders}
         currentId={currentDocId}

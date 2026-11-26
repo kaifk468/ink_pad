@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CanvasItem } from '../canvasModel'
 import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, isLossyParse, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
-import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
+import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadStoredDocument, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
 import { shouldRefreshLibrary } from '../libraryRefresh'
 import { copyStoredDiagram as copyDiagramOnBackend } from '../libraryCopy'
 import { PAGE_PREVIEW_TOO_LARGE, THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
@@ -10,6 +10,7 @@ import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDev
 import { diagramsInFolder, folderAndDescendantIds } from '../folderTree'
 import { DriveAuthError, DriveHttpError, createDriveBackend, fetchDriveProfile, type DriveEnv } from '../googleDrive'
 import { createIndexedDbDriveCache, type DriveCache } from '../driveCache'
+import { loadLocalCopyForSearch } from '../librarySearchLoad'
 import { readStoredProfile, writeStoredProfile, type DriveProfile } from '../driveProfile'
 import { REFRESH_WINDOW_MS, driveAuth, driveExportAuth } from '../googleAuth'
 import { uploadDiagramPdf } from '../driveExport'
@@ -1219,8 +1220,11 @@ export function useDocuments(host: DocumentHost) {
     }
   }, [])
 
+  /** Library search inside diagrams: reads only a local copy (this browser's store, or Drive's browser cache). No network, no device-folder access. */
+  const loadForSearch = (id: string) => loadLocalCopyForSearch(backendRef.current.kind, id, { browserDocument: loadStoredDocument, driveCached: (docId) => getDriveCache().get(docId) })
+
   return {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    loadForSearch, filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
