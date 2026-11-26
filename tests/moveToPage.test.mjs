@@ -128,11 +128,26 @@ test('toast, palette rows, menu chips and action parsing', () => {
 test('undo record is only valid while both pages are exactly as the move left them', () => {
   const a = []
   const b = []
-  const record = { sourceIndex: 0, targetIndex: 1, newPage: false, pageCount: 2, afterSource: a, afterTarget: b }
+  const record = { sourceIndex: 0, targetIndex: 1, newPage: false, pageCount: 2, afterSource: a, afterTarget: b, afterSourceLength: 0, afterTargetLength: 0 }
   assert.equal(moveRecordUndoable(record, [a, b]), true)
   assert.equal(moveRecordUndoable(record, [a, b.slice()]), false)
   assert.equal(moveRecordUndoable(record, [a.slice(), b]), false)
   assert.equal(moveRecordUndoable(record, [a, b, []]), false)
+})
+
+test('undo record is refused when a label was pushed into the same array after the move', () => {
+  const a = []
+  const b = [box(1)]
+  const record = { sourceIndex: 0, targetIndex: 1, newPage: false, pageCount: 2, afterSource: a, afterTarget: b, afterSourceLength: 0, afterTargetLength: 1 }
+  assert.equal(moveRecordUndoable(record, [a, b]), true)
+  b.push(text(2))
+  assert.equal(moveRecordUndoable(record, [a, b]), false)
+})
+
+test('App wiring: bar Undo re-reads the record after the text commit; labels in a moved box go along', () => {
+  assert.match(app, /if \(textEditorRef\.current\) commitTextEditor\(\)\n\s*const record = moveUndoRef\.current[^\n]*\n\s*if \(!record\) return/)
+  assert.match(app, /afterSourceLength: result\.source\.length, afterTargetLength: result\.target\.length/)
+  assert.match(app, /for \(const key of labelsInside\(strokesRef\.current, keys\)\) keys\.add\(key\)[^\n]*\n\s*const from = pageIndexRef\.current/)
 })
 
 test('the right-click menu offers Move to page chips only with a selection', () => {

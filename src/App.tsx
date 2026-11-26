@@ -701,6 +701,7 @@ function App() {
     if (penBusy()) return false
     if (textEditorRef.current) commitTextEditor()
     const keys = currentSelectionKeys()
+    for (const key of labelsInside(strokesRef.current, keys)) keys.add(key) // labels inside a moved box go with it
     const from = pageIndexRef.current
     const count = pagesRef.current.length
     const newPage = target === 'new'
@@ -736,7 +737,7 @@ function App() {
     updateSelectedItems(result.movedKeys)
     renderAll()
     scheduleAutosave()
-    moveUndoRef.current = { sourceIndex: from, targetIndex: to, newPage, pageCount: pagesRef.current.length, beforeSource: sourceBefore, beforeTarget: targetBefore, afterSource: result.source, afterTarget: result.target, sourceHistory, targetHistory: targetHistoryState, selection }
+    moveUndoRef.current = { sourceIndex: from, targetIndex: to, newPage, pageCount: pagesRef.current.length, beforeSource: sourceBefore, beforeTarget: targetBefore, afterSource: result.source, afterTarget: result.target, afterSourceLength: result.source.length, afterTargetLength: result.target.length, sourceHistory, targetHistory: targetHistoryState, selection }
     setMoveUndoBar({ count: result.moved, pageNumber: to + 1 })
     moveUndoTimerRef.current = window.setTimeout(dismissMoveUndo, DELETED_PAGE_UNDO_MS)
     showToast(movedToast(result.moved, to, pagesRef.current[to]?.name, result.lockedSkipped))
@@ -745,9 +746,10 @@ function App() {
 
   /** The Undo of the move bar: both pages back exactly as they were (items and undo histories), only while neither changed since. */
   const undoMoveToPage = () => {
-    const record = moveUndoRef.current
-    if (!record || penBusy()) return
+    if (!moveUndoRef.current || penBusy()) return
     if (textEditorRef.current) commitTextEditor()
+    const record = moveUndoRef.current // read after the commit: it can push a label into the same array
+    if (!record) return
     const live = pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items))
     if (!moveRecordUndoable(record, live)) {
       dismissMoveUndo()
@@ -1133,7 +1135,7 @@ function App() {
         } else recognized = recognizeLine(stroke)
       }
       if (recognized.kind === 'rectangle' || (recognized.kind === 'stroke' && recognized.shape)) {
-        shapePreviewRef.current = recognized
+        shapePreviewRef.current = styleNewShape(recognized) // the finish path uses the preview as is, so it carries the default shape style
         renderAll()
       }
       holdTimerRef.current = null
@@ -3487,12 +3489,13 @@ function App() {
       const lineTool = shapeToolRef.current === 'line' || shapeToolRef.current === 'arrow' ? shapeToolRef.current : null
       // Desktop Arrow tool with a mouse: a drag that starts or ends on a plain or HLD shape makes an attached arrow connector instead of a stroke.
       let arrowConnector: ConnectorObject | null = null
+      let selectDesktopArrow = false // only the desktop Arrow tool selects its new connector; a pen connector leaves the tool and Shapes mode alone
       if (lineTool === 'arrow' && inputModeRef.current === 'desktop' && mouseGestureRef.current && stroke.kind === 'stroke' && !stroke.erase && stroke.points.length >= 2) {
         const first = stroke.points[0]
         const last = stroke.points[stroke.points.length - 1]
         if (Math.hypot(last.x - first.x, last.y - first.y) >= 4) {
           arrowConnector = arrowToolConnector(strokesRef.current, first, last, { id: nextConnectorIdRef.current, color: stroke.color, width: stroke.width, dash: lineDashDefaultRef.current === 'solid' ? undefined : lineDashDefaultRef.current }, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale)
-          if (arrowConnector) nextConnectorIdRef.current += 1
+          if (arrowConnector) { nextConnectorIdRef.current += 1; selectDesktopArrow = true }
         }
       }
       // Pen/touch: a recognized arrow (Shapes mode) or a hold-straightened line that lands on boxes becomes an attached connector (src/penConnector.ts).
@@ -3518,7 +3521,7 @@ function App() {
         strokesRef.current = [...strokesRef.current.filter((item) => item !== targetBox), grown]
       } else if (arrowConnector) {
         strokesRef.current.push(arrowConnector)
-        if (!toolLockRef.current) selectNewConnectorRef.current(canvasItemKey(arrowConnector))
+        if (selectDesktopArrow && !toolLockRef.current) selectNewConnectorRef.current(canvasItemKey(arrowConnector))
       } else {
         strokesRef.current.push(stroke)
         if (stroke.kind === 'stroke' && stroke.erase) strokesRef.current = compactAfterErase(strokesRef.current, () => nextStrokeIdRef.current++)

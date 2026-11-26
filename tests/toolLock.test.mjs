@@ -41,5 +41,5 @@ test('App wires the lock: shapes and arrows keep the tool when on, Select takeov
   assert.match(app, /useState<boolean>\(\(\) => loadToolLock\(\)\)/)
   assert.match(app, /case 'toolLock': toggleToolLock\(\); return true/)
   assert.match(app, /if \(toolLockRef\.current\) \{[^}]*setSelectedRectangle\(null\)[^}]*return\s*\}\s*setShapeTool\(null\)\s*setSelectionMode\(true\)\s*setSelectedRectangle\(finished\.rectangleId\)/s)
-  assert.match(app, /if \(!toolLockRef\.current\) selectNewConnectorRef\.current\(canvasItemKey\(arrowConnector\)\)/)
+  assert.match(app, /if \(selectDesktopArrow && !toolLockRef\.current\) selectNewConnectorRef\.current\(canvasItemKey\(arrowConnector\)\)/)
 })

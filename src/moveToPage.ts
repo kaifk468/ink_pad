@@ -169,6 +169,9 @@ export type MoveRecord = {
   beforeTarget: CanvasItem[]
   afterSource: CanvasItem[]
   afterTarget: CanvasItem[]
+  /** Lengths right after the move: a label committed later is pushed into the same array, so identity alone cannot tell. */
+  afterSourceLength: number
+  afterTargetLength: number
   sourceHistory: { undo: CanvasItem[][]; redo: CanvasItem[][] }
   targetHistory: { undo: CanvasItem[][]; redo: CanvasItem[][] }
   selection: string[]
@@ -176,5 +179,5 @@ export type MoveRecord = {
 
 /** The toast Undo is only safe while both pages are exactly as the move left them (same arrays, same page count). `pageItems` is the live items of every page. */
 export function moveRecordUndoable(record: MoveRecord, pageItems: ReadonlyArray<readonly CanvasItem[]>): boolean {
-  return pageItems.length === record.pageCount && pageItems[record.sourceIndex] === record.afterSource && pageItems[record.targetIndex] === record.afterTarget
+  return pageItems.length === record.pageCount && pageItems[record.sourceIndex] === record.afterSource && pageItems[record.targetIndex] === record.afterTarget && record.afterSource.length === record.afterSourceLength && record.afterTarget.length === record.afterTargetLength
 }
