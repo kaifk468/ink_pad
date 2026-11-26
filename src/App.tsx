@@ -73,6 +73,7 @@ import { diagramIdFromEntry, diagramPaletteEntries, shortcutEntryId, shortcutPal
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
 import { MermaidDialog } from './app/MermaidDialog'
+import { buildExcalidrawItems, excalidrawInsertMessage, isExcalidrawText } from './excalidrawImport'
 import { buildMermaidDiagram, isMermaidText, MAX_MERMAID_TEXT, mermaidInsertMessage } from './mermaidImport'
 import { DIAGRAM_TEMPLATES, buildTemplate } from './diagramTemplates'
 import { addUserTemplate, loadUserTemplates, newTemplateId, removeUserTemplate, saveUserTemplates, userTemplatesBlockedMessage, type UserTemplate } from './userTemplates'
@@ -4674,12 +4675,34 @@ function App() {
     showToast(mermaidInsertMessage(built.boxes, built.links, built.ignoredLines, built.kind, built.frames ?? 0))
     return null
   }
+  // Excalidraw JSON (pasted clipboard text or an opened .excalidraw file): the same insert path as templates. Returns an error message, or null when inserted.
+  const importExcalidraw = (text: string, at: Point | null = null): string | null => {
+    const built = buildExcalidrawItems(text)
+    if (!built.ok) return built.error
+    if (!insertTemplateItems(built.items, at)) return 'Could not insert the drawing.'
+    showToast(excalidrawInsertMessage(built.shapes, built.skipped))
+    return null
+  }
+  const excalidrawFileRef = useRef<HTMLInputElement>(null)
+  const openExcalidrawFile = (file: File | undefined) => {
+    if (!file) return
+    file.text().then((text) => {
+      const error = importExcalidraw(text)
+      if (error) showToast(error)
+    }, () => showToast('Not an Excalidraw file'))
+  }
   // Desktop paste with an empty in-app clipboard: the browser's paste event carries the system clipboard text. Mermaid text becomes a diagram, other text one label.
   // Returns true when the paste was handled (including a shown error), false when there was nothing to paste.
   const pasteSystemText = (raw: string, at: Point | null): boolean => {
     const full = normalizeText(raw).trim()
     if (full === '') return false
     // Mermaid is detected and parsed on the whole text (capped at MAX_MERMAID_TEXT); only the plain label below is cut to 2000 characters.
+    // Excalidraw clipboard JSON comes first: it is inserted as shapes (a failed parse falls through to plain text).
+    if (isExcalidrawText(full) && buildExcalidrawItems(full).ok) {
+      const error = importExcalidraw(full, at)
+      if (error) showToast(error)
+      return true
+    }
     const mermaidText = full.slice(0, MAX_MERMAID_TEXT)
     if (isMermaidText(mermaidText)) {
       const parsed = buildMermaidDiagram(mermaidText)
@@ -5105,6 +5128,7 @@ function App() {
     ...HLD_SHAPES.map((shape) => ({ id: `hld:${shape}`, label: HLD_SHAPE_LABELS[shape], group: 'Shapes', keywords: 'hld system design add', run: () => toggleHldShapeTool(shape) })),
     ...DIAGRAM_TEMPLATES.map((template) => ({ id: `template:${template.id}`, label: `Template: ${template.name}`, group: 'Templates', keywords: `insert starter layout ${template.description}`, run: () => { insertTemplate(template.id) } })),
     ...(alignTargetKeys().size > 0 ? (['left', 'center', 'right'] as const).map((align) => ({ id: `align:${align}`, label: `Align text ${align === 'center' ? 'centre' : align}`, group: 'Edit', keywords: 'text label alignment justify', run: () => pickTextAlign(align) })) : []),
+    { id: 'excalidraw:import', label: 'Import Excalidraw file…', group: 'Templates', keywords: 'excalidraw open diagram json import paste', run: () => excalidrawFileRef.current?.click() },
     { id: 'mermaid:insert', label: 'Insert from Mermaid…', group: 'Templates', keywords: 'import flowchart graph diagram text paste', run: () => setMermaidOpen(true) },
     { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout my templates saved', run: () => setTemplateChooserOpen(true) },
     ...(selectionKeysWithBox().size > 0 ? [{ id: 'template:save', label: 'Save selection as template…', group: 'Templates', keywords: 'my templates store reuse', run: openSaveTemplate }] : []),
@@ -5727,6 +5751,7 @@ function App() {
       {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} replaceOpen={findReplaceOpen} onToggleReplace={() => setFindReplaceOpen((open) => !open)} replacement={findReplacement} onReplacementChange={changeFindReplacement} onReplace={replaceCurrentFind} onReplaceAll={replaceAllFind} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
       {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
+      <input ref={excalidrawFileRef} type="file" accept=".excalidraw,application/json" hidden onChange={(event) => { openExcalidrawFile(event.target.files?.[0]); event.target.value = '' }} />
       {mermaidOpen && <MermaidDialog onInsert={importMermaid} onClose={() => setMermaidOpen(false)} />}
       {templateChooserOpen && <TemplateChooser onChoose={insertTemplate} onClose={() => setTemplateChooserOpen(false)} onMermaid={() => { setTemplateChooserOpen(false); setMermaidOpen(true) }} userTemplates={userTemplates} onChooseUser={insertUserTemplate} onDeleteUser={deleteUserTemplate} canSave={selectedItemCount > 0 || hasSelectedRectangle} startSaving={templateSaveMode} onSave={saveSelectionAsTemplate} />}
       <ZoomControls desktop={inputMode === 'desktop'} onResetZoom={zoomToActualSize} zoomPercent={zoomPercent} locked={zoomLockActive} onToggleLock={() => updateNavigationSettings({ zoomLocked: !zoomLockActive })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
@@ -5767,6 +5792,7 @@ function App() {
         onToolLock={toggleToolLock}
         onTemplates={() => setTemplateChooserOpen(true)}
         onMermaid={() => setMermaidOpen(true)}
+        onExcalidraw={() => excalidrawFileRef.current?.click()}
         laserActive={laserMode}
         onLaser={toggleLaserTool}
         presentActive={presentMode}

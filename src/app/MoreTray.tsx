@@ -16,6 +16,8 @@ type MoreTrayProps = {
   onTemplates: () => void
   /** Opens the "Insert from Mermaid…" dialog. */
   onMermaid?: () => void
+  /** Opens the file picker of "Import Excalidraw file…". */
+  onExcalidraw?: () => void
   /** Laser pointer (both modes): a transient red trail for presenting; nothing is saved. */
   onLaser?: () => void
   laserActive?: boolean
@@ -32,7 +34,7 @@ type MoreTrayProps = {
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onMermaid, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, onPageOverview, canDuplicatePage = true }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onMermaid, onExcalidraw, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, onPageOverview, canDuplicatePage = true }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -82,6 +84,9 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, on
         </button>
         {onMermaid && <button className="insert-entry" type="button" aria-label="Insert from Mermaid" title="Turn Mermaid flowchart text into boxes and arrows" onClick={() => { onMermaid(); setOpen(false) }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="6" height="5" rx="1.2"/><rect x="14.5" y="15" width="6" height="5" rx="1.2"/><path d="M6.5 9v6h8M12.5 13l2 2-2 2"/></svg><span>Insert from Mermaid…</span>
+        </button>}
+        {onExcalidraw && <button className="insert-entry" type="button" aria-label="Import Excalidraw file" title="Open an Excalidraw (.excalidraw) file as shapes, arrows and text" onClick={() => { onExcalidraw(); setOpen(false) }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11M8 10.5l4 4 4-4M4.5 15.5v4h15v-4"/></svg><span>Import Excalidraw file…</span>
         </button>}
         {onFind && <>
           <div className="insert-tray-heading">Search</div>

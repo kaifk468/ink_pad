@@ -43,6 +43,8 @@ type ToolDockProps = {
   onTemplates: () => void
   /** Opens the Mermaid import dialog (More menu, both modes). */
   onMermaid?: () => void
+  /** Opens the file picker of "Import Excalidraw file…". */
+  onExcalidraw?: () => void
   /** Desktop only: adds a code block at the middle of the view. */
   onCode?: () => void
   /** Opens the find bar (More menu, both modes). */
@@ -138,7 +140,7 @@ export function ToolDock(props: ToolDockProps) {
         {divider}
         {inkClass}
         {divider}
-        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" onTemplates={props.onTemplates} onMermaid={props.onMermaid} onLaser={props.onLaser} laserActive={props.laserActive} laserKey="X" onPresent={props.onPresent} presentActive={props.presentActive} presentKey="Alt+Z" onDuplicatePage={props.onDuplicatePage} onPageOverview={props.onPageOverview} canDuplicatePage={props.canDuplicatePage} />
+        <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" onTemplates={props.onTemplates} onMermaid={props.onMermaid} onExcalidraw={props.onExcalidraw} onLaser={props.onLaser} laserActive={props.laserActive} laserKey="X" onPresent={props.onPresent} presentActive={props.presentActive} presentKey="Alt+Z" onDuplicatePage={props.onDuplicatePage} onPageOverview={props.onPageOverview} canDuplicatePage={props.canDuplicatePage} />
         {lock}
       </nav>
     )
@@ -163,7 +165,7 @@ export function ToolDock(props: ToolDockProps) {
         onShapes={props.onShapes}
         onSticky={props.onSticky}
       />
-      <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onFind={props.onFind} findTitle="Find text on the canvas" onTemplates={props.onTemplates} onMermaid={props.onMermaid} onLaser={props.onLaser} laserActive={props.laserActive} onPresent={props.onPresent} presentActive={props.presentActive} onDuplicatePage={props.onDuplicatePage} onPageOverview={props.onPageOverview} canDuplicatePage={props.canDuplicatePage} />
+      <MoreTray tidyLabel={props.tidyLabel} onTidy={props.onTidy} onFind={props.onFind} findTitle="Find text on the canvas" onTemplates={props.onTemplates} onMermaid={props.onMermaid} onExcalidraw={props.onExcalidraw} onLaser={props.onLaser} laserActive={props.laserActive} onPresent={props.onPresent} presentActive={props.presentActive} onDuplicatePage={props.onDuplicatePage} onPageOverview={props.onPageOverview} canDuplicatePage={props.canDuplicatePage} />
       {lock}
     </nav>
   )
