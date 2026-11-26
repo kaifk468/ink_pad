@@ -81,6 +81,7 @@ import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
 import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
+import { setConnectorEndLabel } from './connectorEndLabels'
 import { connectorLabelCentre, connectorLabelFontSize, connectorLabelPosition, labelPositionForDrag, pointOnConnectorLabel, setConnectorLabel, setConnectorLabelFontSize, setConnectorLabelPosition } from './connectorLabel'
 import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, keepAlignAnchor, stepFontSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
@@ -2040,6 +2041,24 @@ function App() {
     renderAll()
     bumpSelectionColor((n) => n + 1)
     scheduleAutosave()
+  }
+  /** End labels of a connector for the panel inputs, and the commit that sets one (one undo step per change). */
+  const endLabelProps = (connectorId: number) => {
+    const connector = strokesRef.current.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
+    return {
+      startLabel: connector?.startLabel ?? '',
+      endLabel: connector?.endLabel ?? '',
+      onEndLabel: (end: 'start' | 'end', text: string) => {
+        const next = setConnectorEndLabel(strokesRef.current, connectorId, end, text)
+        if (next === strokesRef.current) return
+        saveHistory()
+        strokesRef.current = next
+        historyCacheRef.current = null
+        renderAll()
+        bumpSelectionColor((n) => n + 1)
+        scheduleAutosave()
+      },
+    }
   }
   /** Text labels the alignment buttons act on: the selected labels plus the labels inside a selected box (both modes). */
   const alignTargetKeys = (): Set<string> => {
@@ -5677,7 +5696,7 @@ function App() {
         onPaste={() => { pasteClipboard() }}
         onDuplicate={() => { duplicateSelection() }}
         relationship={selectedConnectorId !== null && selectedConnectorType !== null
-          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, hasLabel: selectedConnectorLabel, twoWay: selectedConnectorTwoWay, onTwoWay: setSelectedArrowEnds, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
+          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, hasLabel: selectedConnectorLabel, twoWay: selectedConnectorTwoWay, onTwoWay: setSelectedArrowEnds, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting, ...endLabelProps(selectedConnectorId) }
           : null}
       />
       {pageOverviewOpen && <PageOverview count={pageCount} current={pageIndex} names={pagesRef.current.map((slot) => slot.name ?? '')} onRename={renamePage} loadThumbnail={renderPageThumbnail} onGo={(index) => { goToPage(index); setPageOverviewOpen(false) }} onMove={movePageTo} onClose={() => setPageOverviewOpen(false)} />}

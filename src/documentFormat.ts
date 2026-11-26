@@ -1,5 +1,6 @@
 import { clampCodeFontSize, cleanCodeLanguage, DEFAULT_CODE_FONT_SIZE, MAX_CODE_LENGTH, normalizeCodeText } from './codeBlock'
 import { cleanConnectorLabel, cleanConnectorLabelFontSize, cleanConnectorLabelPosition } from './connectorLabel'
+import { cleanConnectorEndLabel } from './connectorEndLabels'
 import { MAX_CONNECTOR_BEND } from './canvasModel'
 import type { CodeObject, OpaqueObject, TextFontId, HldShape, CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 
@@ -422,6 +423,8 @@ function sanitizeItemFields(value: unknown): CanvasItem | null {
       ...(startAttachment ? { startAttachment } : {}),
       ...(endAttachment ? { endAttachment } : {}),
       ...(cleanConnectorLabel(value.label) !== undefined ? { label: cleanConnectorLabel(value.label) } : {}),
+      ...(cleanConnectorEndLabel(value.startLabel) !== undefined ? { startLabel: cleanConnectorEndLabel(value.startLabel) } : {}),
+      ...(cleanConnectorEndLabel(value.endLabel) !== undefined ? { endLabel: cleanConnectorEndLabel(value.endLabel) } : {}),
       ...(cleanConnectorLabelFontSize(value.labelFontSize) !== undefined ? { labelFontSize: cleanConnectorLabelFontSize(value.labelFontSize) } : {}),
       ...(cleanConnectorLabel(value.label) !== undefined && cleanConnectorLabelPosition(value.labelPosition) !== undefined ? { labelPosition: cleanConnectorLabelPosition(value.labelPosition) } : {}),
     }

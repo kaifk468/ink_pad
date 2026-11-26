@@ -9,6 +9,7 @@ import { getCodeLines } from './codeHighlight'
 import type { CodeObject, OpaqueObject } from './canvasModel'
 import { getTextBaselines, labelLines, textLineX, TEXT_FONT_FAMILY, textFontFamily, getCachedTextMeasure, DEFAULT_TEXT_FONT } from './textLayout'
 import { connectorLabelFontSize, connectorLabelLayout } from './connectorLabel'
+import { connectorEndLabelFontSize, connectorEndLabelLayouts } from './connectorEndLabels'
 
 export type ExportTemplate = 'blank' | 'lined' | 'dotted'
 export type SheetExportOptions = {
@@ -172,8 +173,16 @@ function connectorLabelElement(connector: ConnectorObject): string {
   return pad + text
 }
 
+function connectorEndLabelElements(connector: ConnectorObject): string {
+  if (!connector.startLabel && !connector.endLabel) return ''
+  const family = esc(textFontFamily(DEFAULT_TEXT_FONT))
+  return connectorEndLabelLayouts(connector, getCachedTextMeasure(connectorEndLabelFontSize(connector), DEFAULT_TEXT_FONT))
+    .map((layout) => `<text x="${n(layout.x)}" y="${n(layout.baseline)}" font-family="${family}" font-size="${n(layout.fontSize)}" fill="${esc(connector.strokeColor)}" xml:space="preserve">${esc(layout.text)}</text>`)
+    .join('')
+}
+
 function connectorElement(connector: ConnectorObject): string {
-  return connectorLineElement(connector) + connectorLabelElement(connector)
+  return connectorLineElement(connector) + connectorLabelElement(connector) + connectorEndLabelElements(connector)
 }
 
 function connectorLineElement(connector: ConnectorObject): string {
@@ -361,6 +370,7 @@ export function getContentBounds(rawItems: CanvasItem[], sheet: { width: number;
     } else {
       for (const p of connectorPoints(item)) include(p.x, p.y, item.strokeWidth + 16)
       const labelLayout = connectorLabelLayout(item, getCachedTextMeasure(connectorLabelFontSize(item), DEFAULT_TEXT_FONT))
+      for (const end of connectorEndLabelLayouts(item, getCachedTextMeasure(connectorEndLabelFontSize(item), DEFAULT_TEXT_FONT))) { include(end.x, end.y, 0); include(end.x + end.width, end.y + end.height, 0) }
       if (labelLayout) { include(labelLayout.box.x, labelLayout.box.y, 0); include(labelLayout.box.x + labelLayout.box.width, labelLayout.box.y + labelLayout.box.height, 0) }
     }
   }

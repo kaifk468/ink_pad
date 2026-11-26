@@ -6,6 +6,7 @@ import { buildInterpolatingCurve, buildMidpointCurve, type InterpolatingStrokeSe
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import { classBoxFont, getClassBoxGeometry, type ClassBoxCompartment, type FontMeasure } from '../classBoxLayout'
 import { connectorLabelFontSize, connectorLabelLayout } from '../connectorLabel'
+import { connectorEndLabelFontSize, connectorEndLabelLayouts } from '../connectorEndLabels'
 import { DEFAULT_TEXT_FONT, textLineX, getCachedTextMeasure, getTextBaselines, labelLines, textFont, type TextMeasure } from '../textLayout'
 import type { MinimapGeometry } from '../viewport'
 import { isSketchyRectangle } from '../sketchy'
@@ -437,10 +438,25 @@ export function drawConnectorLabel(ctx: CanvasRenderingContext2D, connector: Con
   ctx.restore()
 }
 
+/** A connector's start / end labels (multiplicity): small text beside each end of the line, in the connector's colour. Same for plain and sketchy. */
+export function drawConnectorEndLabels(ctx: CanvasRenderingContext2D, connector: ConnectorObject): void {
+  if (!connector.startLabel && !connector.endLabel) return
+  const layouts = connectorEndLabelLayouts(connector, createTextMeasure(connectorEndLabelFontSize(connector), DEFAULT_TEXT_FONT))
+  if (layouts.length === 0) return
+  ctx.save()
+  ctx.fillStyle = connector.strokeColor
+  ctx.textBaseline = 'alphabetic'
+  for (const layout of layouts) {
+    ctx.font = textFont(layout.fontSize, DEFAULT_TEXT_FONT)
+    ctx.fillText(layout.text, layout.x, layout.baseline)
+  }
+  ctx.restore()
+}
+
 export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, strokeDisplayMode: StrokeDisplayMode, sketchy = false): void {
   if (item.kind === 'rectangle') drawRectangle(ctx, item, strokeDisplayMode, sketchy)
   else if (item.kind === 'text') drawText(ctx, item)
-  else if (item.kind === 'connector') { drawConnector(ctx, item, item.strokeColor, item.strokeWidth, sketchy); drawConnectorLabel(ctx, item) }
+  else if (item.kind === 'connector') { drawConnector(ctx, item, item.strokeColor, item.strokeWidth, sketchy); drawConnectorLabel(ctx, item); drawConnectorEndLabels(ctx, item) }
   else if (item.kind === 'code') drawCode(ctx, item)
   else if (item.kind === 'opaque') drawOpaque(ctx, item)
   else drawStroke(ctx, item, strokeDisplayMode, sketchy)

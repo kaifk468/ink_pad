@@ -52,6 +52,9 @@ export type ConnectorObject = {
   labelPosition?: number
   /** Arrowhead at both ends. Saved only as `true`, only on a directed association. */
   twoWay?: true
+  /** Short text (multiplicity, e.g. "1" or "0..*") drawn beside the start / end of the line. Trimmed, 1..24 characters; omitted when empty. Saved. */
+  startLabel?: string
+  endLabel?: string
   /** Desktop lock: drawn normally, never selected, edited or erased. Only ever `true`. */
   locked?: true
   /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */

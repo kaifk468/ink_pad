@@ -21,6 +21,10 @@ type RelationshipProps = {
   onChange: (type: ConnectorRelationshipType) => void
   onReverse: () => void
   onElbow: (elbow: boolean) => void
+  /** Multiplicity text at each end of the connector; `onEndLabel` commits one (blur / Enter). */
+  startLabel: string
+  endLabel: string
+  onEndLabel: (end: 'start' | 'end', text: string) => void
 }
 
 type ContextPanelProps = {
@@ -449,6 +453,15 @@ export function ContextPanel(props: ContextPanelProps) {
             <button type="button" className={relationship.twoWay ? 'active' : ''} aria-pressed={relationship.twoWay} onClick={() => relationship.onTwoWay(true)}>Both ends</button>
           </div>
         )}
+        <div className="end-labels" role="group" aria-label="End labels" title="Multiplicity or cardinality at this end">
+          <span className="end-labels-heading">End labels</span>
+          <input key={`start:${relationship.startLabel}`} type="text" maxLength={24} placeholder="1" aria-label="Start end label" title="Multiplicity or cardinality at this end" defaultValue={relationship.startLabel}
+            onBlur={(event) => relationship.onEndLabel('start', event.currentTarget.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} />
+          <input key={`end:${relationship.endLabel}`} type="text" maxLength={24} placeholder="*" aria-label="End end label" title="Multiplicity or cardinality at this end" defaultValue={relationship.endLabel}
+            onBlur={(event) => relationship.onEndLabel('end', event.currentTarget.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} />
+        </div>
         <button type="button" className="relationship-reverse" aria-label={relationship.hasLabel ? 'Edit connector label' : 'Add connector label'} title="Text drawn on the middle of the connector (double-click it, or press Enter)" onClick={relationship.onEditLabel}>
           <span>{relationship.hasLabel ? 'Edit label' : 'Add label'}</span>
         </button>
