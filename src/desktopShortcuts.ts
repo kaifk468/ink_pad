@@ -58,6 +58,7 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'View', label: 'Select the box linked to the selected box, in that direction', keys: 'Alt+Arrow keys', input: { key: 'ArrowRight', altKey: true } },
   { group: 'View', label: 'Pan', keys: 'Space + drag, or middle mouse drag' },
   { group: 'View', label: 'Zoom around the pointer', keys: 'Ctrl + wheel' },
+  { group: 'View', label: 'Snap to grid on or off (mouse drags, resizes and new shapes snap to the grid)', keys: "Ctrl+'", input: { key: "'", code: 'Quote', ...ctrl } },
   { group: 'View', label: 'Open the library', keys: 'Ctrl+O', input: { key: 'o', ...ctrl } },
   { group: 'View', label: 'Command palette', keys: 'Ctrl+K', input: { key: 'k', ...ctrl } },
   { group: 'View', label: 'Find on the canvas (text, labels, class boxes, code)', keys: 'Ctrl+F', input: { key: 'f', ...ctrl } },

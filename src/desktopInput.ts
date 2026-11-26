@@ -201,6 +201,7 @@ export type KeyCommand =
   | { kind: 'pageNext' }
   | { kind: 'help' }
   | { kind: 'presentMode' }
+  | { kind: 'gridSnap' }
   | { kind: 'deselect' }
   | { kind: 'deleteSelection' }
   | { kind: 'selectAll' }
@@ -273,6 +274,8 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     }
     // Ctrl+Shift+L locks the selection. The physical key decides, as Shift changes `key`.
     if (event.code === 'KeyL' && event.shiftKey) return event.repeat ? null : { kind: 'lock' }
+    // Ctrl/Cmd+' toggles snap to grid. The physical key (Quote) or the character decides.
+    if ((event.code === 'Quote' || key === "'") && !event.shiftKey) return event.repeat ? null : { kind: 'gridSnap' }
     if (key === 'o' && !event.shiftKey && !event.repeat) return { kind: 'library' }
     // Ctrl/Cmd+K opens the command palette (Chrome would focus its search bar).
     if (key === 'k' && !event.shiftKey && !event.repeat) return { kind: 'palette' }

@@ -1,0 +1,79 @@
+/**
+ * Snap to grid (Desktop mode, mouse only). A per-device on/off setting (off by default, never in a diagram) and the pure
+ * maths that rounds a moved box's top-left, a resized edge or a new shape's corner to the grid. Tablet pen and touch paths
+ * never call into this. The faint dot grid drawn during a gesture is transient render output, not an item.
+ */
+
+import type { RectangleBounds, RectangleResizeHandle } from './canvasModel'
+import { pageSpacingUnits, type PageSpacing, type PageTemplate } from './pageTemplates'
+
+export const GRID_SNAP_KEY = 'inkpad.snapToGrid'
+/** Grid size in world units when the page has no dot grid of its own. */
+export const DEFAULT_GRID_SIZE = 20
+/** Smallest box a grid-snapped resize may produce (matches the resize minimum). */
+const MIN_SNAPPED_SIZE = 32
+
+export function loadGridSnap(storage?: Pick<Storage, 'getItem'>): boolean {
+  try {
+    return (storage ?? window.localStorage).getItem(GRID_SNAP_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function saveGridSnap(on: boolean, storage?: Pick<Storage, 'setItem'>): void {
+  try {
+    (storage ?? window.localStorage).setItem(GRID_SNAP_KEY, on ? '1' : '0')
+  } catch {
+    /* storage unavailable: the choice lasts for this session only */
+  }
+}
+
+/** The grid size for a page: the dotted page's own spacing, otherwise 20 units. */
+export function gridSpacingFor(template: PageTemplate, spacing: PageSpacing): number {
+  return template === 'dotted' ? pageSpacingUnits(spacing) : DEFAULT_GRID_SIZE
+}
+
+/** True while a gesture should snap: setting on, Desktop mode, a mouse (never pen or touch). */
+export function gridSnapApplies(on: boolean, mode: string, pointerType: string): boolean {
+  return on && mode === 'desktop' && pointerType === 'mouse'
+}
+
+/** The grid line nearest to `value` (never -0). */
+export function snapToGrid(value: number, grid: number): number {
+  if (!(grid > 0) || !Number.isFinite(value)) return value
+  return Math.round(value / grid) * grid + 0
+}
+
+/** The move delta that puts the top-left of `bounds` on a grid point after moving by (dx, dy); every item moves by the same delta. */
+export function snapMoveDelta(bounds: Pick<RectangleBounds, 'x' | 'y'>, dx: number, dy: number, grid: number): { dx: number; dy: number } {
+  return { dx: snapToGrid(bounds.x + dx, grid) - bounds.x, dy: snapToGrid(bounds.y + dy, grid) - bounds.y }
+}
+
+/** A resize result with the moved edge(s) of `handle` on the grid; the opposite edges stay put. An axis whose snap would shrink below the minimum is left as is. */
+export function snapResizeBounds(bounds: RectangleBounds, handle: RectangleResizeHandle, grid: number): RectangleBounds {
+  let left = bounds.x
+  let right = bounds.x + bounds.width
+  let top = bounds.y
+  let bottom = bounds.y + bounds.height
+  if (handle.includes('w')) { const next = snapToGrid(left, grid); if (right - next >= MIN_SNAPPED_SIZE) left = next }
+  if (handle.includes('e')) { const next = snapToGrid(right, grid); if (next - left >= MIN_SNAPPED_SIZE) right = next }
+  if (handle.includes('n')) { const next = snapToGrid(top, grid); if (bottom - next >= MIN_SNAPPED_SIZE) top = next }
+  if (handle.includes('s')) { const next = snapToGrid(bottom, grid); if (next - top >= MIN_SNAPPED_SIZE) bottom = next }
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
+/** Dot positions of the grid inside `view` (canvas units), for the transient overlay. Capped so a tiny grid at low zoom stays cheap. */
+export function gridDots(view: RectangleBounds, grid: number, maxDots = 4000): { x: number; y: number }[] {
+  if (!(grid > 0)) return []
+  const x0 = Math.ceil(view.x / grid)
+  const x1 = Math.floor((view.x + view.width) / grid)
+  const y0 = Math.ceil(view.y / grid)
+  const y1 = Math.floor((view.y + view.height) / grid)
+  const cols = x1 - x0 + 1
+  const rows = y1 - y0 + 1
+  if (cols <= 0 || rows <= 0 || cols * rows > maxDots) return []
+  const dots: { x: number; y: number }[] = []
+  for (let row = y0; row <= y1; row++) for (let col = x0; col <= x1; col++) dots.push({ x: col * grid + 0, y: row * grid + 0 })
+  return dots
+}

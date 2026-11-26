@@ -20,6 +20,7 @@ import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
 import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeChoice } from './changeShape'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, type PasteResult } from './clipboard'
+import { gridDots, gridSnapApplies, gridSpacingFor, loadGridSnap, saveGridSnap, snapMoveDelta, snapResizeBounds, snapToGrid } from './gridSnap'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
 import { shapeKeywords } from './shapeSearch'
@@ -386,6 +387,19 @@ function App() {
   // What a drag snaps to (read once when it starts) and the guide lines to draw. Guides live only here: never items, history or saved data.
   const snapStateRef = useRef<{ pointerId: number; moving: Bounds | null; targets: Bounds[] } | null>(null)
   const guidesRef = useRef<Guide[]>([])
+  // Snap to grid (Desktop mode, mouse only; off by default, per device). `gridOverlayRef` holds the grid size while a snapped drag or resize is active, so the dot grid is drawn only then.
+  const [gridSnap, setGridSnap] = useState(() => loadGridSnap())
+  const gridSnapRef = useRef(gridSnap)
+  gridSnapRef.current = gridSnap
+  const gridOverlayRef = useRef<number | null>(null)
+  const updateGridSnap = (on: boolean) => {
+    gridSnapRef.current = on
+    setGridSnap(on)
+    saveGridSnap(on)
+    showToast(on ? 'Snap to grid on' : 'Snap to grid off')
+  }
+  const gridActive = (event: { pointerType: string }): number | null =>
+    gridSnapApplies(gridSnapRef.current, inputModeRef.current, event.pointerType) ? gridSpacingFor(pageTemplateRef.current, pageSpacingRef.current) : null
   const [tapUndo, setTapUndo] = useState(() => loadTapUndo())
   const tapUndoRef = useRef(tapUndo)
   tapUndoRef.current = tapUndo
@@ -516,6 +530,7 @@ function App() {
     activeMarqueeRef.current = null
     guidesRef.current = []
     snapStateRef.current = null
+    gridOverlayRef.current = null
     pasteCountRef.current = 0
     activePointerRef.current = null
     activeObjectEraserRef.current = null
@@ -1867,14 +1882,27 @@ function App() {
 
   // The guides and snap state end with the drag, however it ends; the canvas is repainted only when a guide was showing.
   const clearSnapGuides = (repaint = true) => {
-    const hadGuides = guidesRef.current.length > 0
+    const hadGuides = guidesRef.current.length > 0 || gridOverlayRef.current !== null
     guidesRef.current = []
+    gridOverlayRef.current = null
     snapStateRef.current = null
     if (hadGuides && repaint) renderAll()
   }
   // One drag move: the pointer's delta, nudged so the moving bounds line up with nearby boxes and labels. Off when the setting is off,
   // while Alt is held with a mouse in Desktop mode, and for selections without a box or label (ink and connectors alone never snap).
   const snapDragDelta = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], keys: ReadonlySet<string>, dx: number, dy: number): { dx: number; dy: number } => {
+    // Grid snap replaces the smart guides while it is on (Desktop mouse): the selection's top-left lands on a grid point and everything moves together.
+    const grid = gridActive(event)
+    if (grid !== null) {
+      guidesRef.current = []
+      let gridState = snapStateRef.current
+      if (!gridState || gridState.pointerId !== event.pointerId) {
+        gridState = { pointerId: event.pointerId, moving: getCanvasSelectionBounds(routeConnectors(originalItems), keys), targets: [] }
+        snapStateRef.current = gridState
+      }
+      gridOverlayRef.current = grid
+      return gridState.moving ? snapMoveDelta(gridState.moving, dx, dy, grid) : { dx, dy }
+    }
     const altWithMouse = event.altKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop'
     if (!snappingRef.current || altWithMouse) {
       guidesRef.current = []
@@ -2894,6 +2922,20 @@ function App() {
       ctx.stroke()
       ctx.restore()
     }
+    // Snap to grid: a faint dot grid over the visible area while a snapped drag or resize is active and the page is plain. Never saved or exported.
+    const gridSize = gridOverlayRef.current
+    if (gridSize !== null && pageTemplateRef.current === 'blank') {
+      const dots = gridDots(view, gridSize)
+      if (dots.length > 0) {
+        ctx.save()
+        ctx.fillStyle = 'rgba(83, 111, 224, 0.35)'
+        const r = 1.2 / viewport.scale
+        ctx.beginPath()
+        for (const dot of dots) { ctx.moveTo(dot.x + r, dot.y); ctx.arc(dot.x, dot.y, r, 0, Math.PI * 2) }
+        ctx.fill()
+        ctx.restore()
+      }
+    }
     const guides = guidesRef.current
     if (guides.length > 0) {
       ctx.save()
@@ -3760,8 +3802,13 @@ function App() {
       // Press where the shape starts and drag to size it (Shift keeps it square); a plain click makes a default-sized shape.
       event.currentTarget.setPointerCapture(event.pointerId)
       saveHistory()
+      // Snap to grid (Desktop mouse): the new shape starts on a grid point.
+      const createGrid = gridActive(event)
+      const startX = createGrid !== null ? snapToGrid(point.x, createGrid) : point.x
+      const startY = createGrid !== null ? snapToGrid(point.y, createGrid) : point.y
       const plainBox = createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)
-      const dashedBox = lineDashDefaultRef.current !== 'solid' ? { ...plainBox, dash: lineDashDefaultRef.current } : plainBox
+      const gridBox = createGrid !== null ? { ...plainBox, x: startX, y: startY } : plainBox
+      const dashedBox = lineDashDefaultRef.current !== 'solid' ? { ...gridBox, dash: lineDashDefaultRef.current } : gridBox
       const styledBox = styleNewShape(dashedBox)
       const box = sketchyRef.current ? withSketchSeed(styledBox) : styledBox
       strokesRef.current.push(box)
@@ -4166,6 +4213,14 @@ function App() {
         const side = Math.max(bounds.width, bounds.height)
         bounds.width = side
         bounds.height = side
+      }
+      const resizeGrid = gridActive(event)
+      if (resizeGrid !== null && !(activeResize.created && event.shiftKey)) {
+        // The moved edge(s) land on the grid (a new shape's corner too: its press point was snapped when it was made).
+        const snapped = snapResizeBounds(bounds, activeResize.handle, resizeGrid)
+        bounds.x = snapped.x; bounds.y = snapped.y; bounds.width = snapped.width; bounds.height = snapped.height
+        if (snapStateRef.current?.pointerId !== event.pointerId) snapStateRef.current = { pointerId: event.pointerId, moving: null, targets: [] }
+        gridOverlayRef.current = resizeGrid
       }
       const original = activeResize.originalBounds
       const unchanged = bounds.x === original.x && bounds.y === original.y
@@ -5503,6 +5558,7 @@ function App() {
     { id: 'export:mermaid-copy', label: 'Copy as Mermaid', group: 'Export', keywords: 'flowchart diagram text copy markdown', run: copyMermaid },
     { id: 'export:outline-download', label: 'Download outline (.md)', group: 'Export', keywords: 'markdown text summary file', run: downloadOutline },
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
+    ...(inputMode === 'desktop' ? [{ id: 'setting:grid-snap', label: gridSnap ? 'Snap to grid: off' : 'Snap to grid: on', group: 'Settings', keywords: 'snap grid align dots', run: () => updateGridSnap(!gridSnapRef.current) }] : []),
     { id: 'setting:snapping', label: 'Toggle snapping', group: 'Settings', keywords: 'snap guides align', run: () => updateSnapping(!snappingRef.current) },
     { id: 'setting:sketchy', label: 'Toggle hand-drawn style', group: 'Settings', keywords: 'sketchy rough', run: toggleSketchy },
     // Always last: equal search scores keep list order, so commands stay above diagrams. Opening goes through the Library's own open function (the open diagram is saved first).
@@ -5707,6 +5763,7 @@ function App() {
       case 'pagePrev': goToPage(pageIndexRef.current - 1); return true
       case 'pageNext': goToPage(pageIndexRef.current + 1); return true
       case 'presentMode': togglePresentMode(); return true
+      case 'gridSnap': updateGridSnap(!gridSnapRef.current); return true
       case 'help': setShortcutHelpOpen((open) => !open); return true
       case 'deselect':
         if (selectedKeysRef.current.size === 0 && selectedRectangleIdRef.current === null) return false
@@ -6000,6 +6057,8 @@ function App() {
           onInputMode={updateInputMode}
           snapping={snapping}
           onSnapping={updateSnapping}
+          gridSnap={gridSnap}
+          onGridSnap={updateGridSnap}
           onShortcutHelp={() => setShortcutHelpOpen(true)}
           oneFingerPan={navigationSettings.oneFingerPan}
           onOneFingerPan={(value) => updateNavigationSettings({ oneFingerPan: value })}

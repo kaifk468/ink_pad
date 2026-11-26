@@ -25,6 +25,8 @@ type TopLeftBarProps = {
   /** Boxes snap to nearby boxes while dragged, with guide lines (a per-device setting, in both input modes). */
   snapping: boolean
   onSnapping: (on: boolean) => void
+  gridSnap: boolean
+  onGridSnap: (on: boolean) => void
   oneFingerPan: boolean
   onOneFingerPan: (value: boolean) => void
   tapUndo: boolean
@@ -170,6 +172,11 @@ export function TopLeftBar(props: TopLeftBarProps) {
             <span className="menu-row-label menu-row-stack"><span>Snap and guides</span><span className="menu-row-sub">Boxes snap to the edges and centres of nearby boxes while you drag</span></span>
             <span className={`menu-switch${props.snapping ? ' on' : ''}`} aria-hidden="true"><span /></span>
           </button>
+          {props.inputMode === 'desktop' && <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.gridSnap} onClick={() => props.onGridSnap(!props.gridSnap)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h.01M12 5h.01M19 5h.01M5 12h.01M12 12h.01M19 12h.01M5 19h.01M12 19h.01M19 19h.01" strokeWidth="3" strokeLinecap="round"/></svg>
+            <span className="menu-row-label menu-row-stack"><span>Snap to grid</span><span className="menu-row-sub">Mouse drags, resizes and new shapes land on a grid (Ctrl+')</span></span>
+            <span className={`menu-switch${props.gridSnap ? ' on' : ''}`} aria-hidden="true"><span /></span>
+          </button>}
           {props.inputMode !== 'desktop' && <button className="menu-row menu-switch-row" type="button" role="switch" aria-checked={props.oneFingerPan} onClick={() => props.onOneFingerPan(!props.oneFingerPan)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V5a1.5 1.5 0 0 1 3 0v6M12 10.5a1.5 1.5 0 0 1 3 0V12M15 11.5a1.5 1.5 0 0 1 3 0V16a5 5 0 0 1-5 5h-1.5a5 5 0 0 1-4-2L5 15.5a1.5 1.5 0 0 1 2.4-1.8L9 15"/></svg>
             <span className="menu-row-label menu-row-stack"><span>One-finger pan</span><span className="menu-row-sub">Ignored while the pen is near</span></span>
