@@ -754,7 +754,7 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .context-panel .text-font-button.selected { border-color: #5269df; background: #eef1fc; }
 
 /* Desktop mode: the options panel of the active tool sits on the left and opens with one click. */
-.context-panel.desktop-left { top: calc(max(16px, env(safe-area-inset-top)) + 68px); left: max(16px, env(safe-area-inset-left)); right: auto; width: 212px; box-sizing: border-box; max-height: calc(100vh - 190px); overflow-y: auto; }
+.context-panel.desktop-left { top: calc(max(16px, env(safe-area-inset-top)) + 68px); left: max(16px, env(safe-area-inset-left)); right: auto; width: 212px; box-sizing: border-box; max-height: calc(100vh - 252px); overflow-y: auto; }
 /* A long desktop panel scrolls instead of squashing its buttons (the round 5 sections made it overflow more often). */
 .context-panel.desktop-left > * { flex-shrink: 0; }
 .context-panel.desktop-left .color-swatch { width: 30px; height: 30px; }
