@@ -108,3 +108,39 @@ test('wiring: dispatcher in App and dialog hint', async () => {
   const dialog = await readFile(new URL('../src/app/MermaidDialog.tsx', import.meta.url), 'utf8')
   assert.match(dialog, /flowchart[\s\S]*classDiagram[\s\S]*sequenceDiagram/)
 })
+
+const hitsRect = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b
+const assertClean = (items, memberships) => {
+  const boxes = plainBoxes(items)
+  const dashed = frames(items)
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) assert.equal(hitsRect(bounds(boxes[i]), bounds(boxes[j])), false, `boxes ${i}/${j} overlap`)
+  for (const [title, ids] of memberships) {
+    const label = items.find((i) => i.kind === 'text' && i.text === title)
+    const frame = dashed.find((f) => label && label.x >= f.x && label.x <= f.x + f.width && label.y >= f.y && label.y <= f.y + f.height && ![...dashed].some((o) => o !== f && o.x > f.x - 1 && encloses(bounds(f), bounds(o)) && label.x >= o.x && label.y >= o.y && label.x <= o.x + o.width && label.y <= o.y + o.height))
+    assert.ok(frame, `frame ${title}`)
+    for (const box of boxes) {
+      const member = ids.some((id) => boxOf(items, id) === box)
+      if (!member) assert.equal(hitsRect(bounds(box), bounds(frame)), false, `non-member box overlaps ${title}`)
+    }
+  }
+}
+
+test('subgraph: a non-member box is moved out of nested boundaries', () => {
+  const g = ok('flowchart LR\nsubgraph vpc [VPC]\n  subgraph priv [Private subnet]\n    S[[Order service]] --> D[(Orders DB)]\n  end\n  LB[Load balancer] --> S\nend\nC((Client)) <--> LB\nS -.-> Q[Queue]')
+  const { items } = buildMermaidItems(g)
+  assertClean(items, [['VPC', ['Order service', 'Orders DB', 'Load balancer']], ['Private subnet', ['Order service', 'Orders DB']]])
+  assert.equal(buildMermaidItems(g).items.length, items.length)
+})
+
+test('subgraph: TD layout keeps outsiders out of the boundary', () => {
+  const g = ok('flowchart TD\nsubgraph a [Group A]\n  X --> Y\nend\nT --> X\nX -.-> Z\nT --> Z\nY --> W')
+  assertClean(buildMermaidItems(g).items, [['Group A', ['X', 'Y']]])
+})
+
+test('subgraph: interleaved sibling subgraphs do not overlap', () => {
+  const g = ok('flowchart LR\nsubgraph one [One]\n  A1 --> A2\nend\nsubgraph two [Two]\n  B1 --> B2\nend\nA1 --> B1\nB1 --> A2\nA2 --> B2\nS --> A1\nS --> B1')
+  const { items } = buildMermaidItems(g)
+  assertClean(items, [['One', ['A1', 'A2']], ['Two', ['B1', 'B2']]])
+  const [f1, f2] = frames(items)
+  assert.equal(hitsRect(bounds(f1), bounds(f2)), false)
+})
