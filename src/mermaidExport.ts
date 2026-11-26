@@ -3,6 +3,7 @@ import { isFlowBox, labelInsideBox } from './diagramFlow'
 import { boxKindName } from './diagramOutline'
 import { isContainerBox, OWN_LABEL_CORNER } from './boundary'
 import { STICKY_FILL } from './stickyNote'
+import { buildMermaidSequenceText } from './mermaidSequenceExport'
 
 /**
  * The current page as a Mermaid flowchart (Export: "Copy as Mermaid"). Pure: reads the items, changes nothing and adds nothing to the saved format.
@@ -12,8 +13,8 @@ import { STICKY_FILL } from './stickyNote'
 
 export type MermaidResult = {
   text: string
-  /** `class` when the page is only typed class boxes (a classDiagram); otherwise a flowchart. */
-  kind: 'flowchart' | 'class'
+  /** `class` when the page is only typed class boxes (a classDiagram); `sequence` for a page built like an imported sequenceDiagram (participants with lifelines); otherwise a flowchart. */
+  kind: 'flowchart' | 'class' | 'sequence'
   /** Nodes exported (classes for a class diagram). Boundary containers are subgraphs, not boxes. */
   boxes: number
   links: number
@@ -138,6 +139,8 @@ function classDiagram(items: readonly CanvasItem[], classBoxes: RectangleObject[
 }
 
 export function buildMermaid(items: readonly CanvasItem[]): MermaidResult {
+  const sequence = buildMermaidSequenceText(items)
+  if (sequence) return { text: sequence.text, kind: 'sequence', boxes: sequence.boxes, links: sequence.links, skipped: sequence.skipped, skippedLinks: sequence.skippedLinks }
   const rectangles = items.filter((item): item is RectangleObject => item.kind === 'rectangle')
   const flowBoxes = rectangles.filter(isFlowBox)
   // A container is a plain unfilled rectangle (a boundary) that holds other boxes: it becomes a subgraph, not a node.
