@@ -10,6 +10,7 @@ import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
 import { similarItemKeys } from './selectSimilar'
 import { canSameSize, sameSizeItems, type SameSizeMode } from './sameSize'
+import { canSwapPositions, swapPositionsItems } from './swapPositions'
 import { addBoundary } from './boundary'
 import { canSelectConnected, connectedKeys, linkedKeys } from './selectConnected'
 import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
@@ -1028,6 +1029,7 @@ function App() {
     setFocusActive(false)
     historyCacheRef.current = null
     renderAll()
+    renderNavigator(true)
   }
   // Another page or another diagram: the focus belongs to the page it was started on.
   useEffect(() => { exitFocus() }, [pageIndex, currentDocId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1040,6 +1042,7 @@ function App() {
     setFocusActive(true)
     historyCacheRef.current = null
     renderAll()
+    renderNavigator(true)
     return true
   }
   const togglePresentMode = () => {
@@ -1411,7 +1414,7 @@ function App() {
   }, [strokeDisplayMode, sketchy])
 
   const drawMinimapItems = useCallback((ctx: CanvasRenderingContext2D, geometry: MinimapGeometry) => {
-    drawMinimapItemsToCanvas(ctx, canvasItemsForRendering(routeConnectors(strokesRef.current)), geometry)
+    drawMinimapItemsToCanvas(ctx, canvasItemsForRendering(routeConnectors(strokesRef.current)), geometry, focusRef.current)
   }, [])
 
 
@@ -1639,6 +1642,19 @@ function App() {
     updateSelectedItems(keys)
     renderAll()
     showToast(`Selected ${keys.length} connected item${keys.length === 1 ? '' : 's'}`)
+    return true
+  }
+  // Swap positions (right-click chip, palette): two selected boxes trade centres; labels inside and attached connectors follow; one undo step.
+  const swapPositionsSelection = (): boolean => {
+    const result = swapPositionsItems(strokesRef.current, currentSelectionKeys(), workspaceBoundsRef.current)
+    if (!result) { showToast(canSwapPositions(strokesRef.current, currentSelectionKeys()) ? 'Already in each other\'s place' : 'Select exactly two boxes (not locked or grouped)'); return false }
+    saveHistory()
+    strokesRef.current = result
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+    bumpSelectionColor((n) => n + 1)
+    showToast('Swapped the two boxes')
     return true
   }
   // Same size (right-click chips, palette, panel): the selected boxes take the largest width and / or height around their centres. Connectors and inside labels follow; one undo step.
@@ -5160,6 +5176,7 @@ function App() {
       case 'sameWidth': sameSizeSelection('width'); break
       case 'sameHeight': sameSizeSelection('height'); break
       case 'sameSize': sameSizeSelection('both'); break
+      case 'swapPositions': swapPositionsSelection(); break
       case 'numberSteps': numberFlowSteps(); break
       case 'clearSteps': clearFlowSteps(); break
       case 'bringToFront': moveSelectionLayer('front'); break
@@ -5360,6 +5377,7 @@ function App() {
     ...(currentSelectionKeys().size > 0 ? movePaletteEntries(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)).map((row) => ({ id: row.id, label: row.label, group: 'Pages', keywords: 'move selection send items to page', run: () => { moveSelectionToPageNow(row.target) } })) : []),
     ...pagesRef.current.flatMap((slot, index) => (slot.name ? [{ id: `page:go:${index}`, label: `Go to page: ${slot.name}`, group: 'Pages', keywords: `jump open ${index + 1}`, run: () => goToPage(index) }] : [])),
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
+    ...(canSwapPositions(strokesRef.current, currentSelectionKeys()) ? [{ id: 'arrange:swap', label: 'Swap positions', group: 'Arrange', keywords: 'exchange switch two boxes places', run: () => { swapPositionsSelection() } }] : []),
     ...(canSameSize(strokesRef.current, currentSelectionKeys()) ? [
       { id: 'arrange:same-width', label: 'Same width', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('width') } },
       { id: 'arrange:same-height', label: 'Same height', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('height') } },
@@ -5706,6 +5724,7 @@ function App() {
             changeShapesExpanded: contextMenu.shapesExpanded === true,
             canNumberSteps: stepTargets(strokesRef.current, currentSelectionKeys()).length > 0,
             canSameSize: canSameSize(strokesRef.current, currentSelectionKeys()),
+            canSwap: canSwapPositions(strokesRef.current, currentSelectionKeys()),
             canSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()),
             arrowEnds: arrowEndsChoice(strokesRef.current, selectedKeysRef.current),
             corners: cornersChoice(strokesRef.current, currentSelectionKeys()),

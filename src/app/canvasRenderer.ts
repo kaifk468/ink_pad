@@ -480,19 +480,22 @@ export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, stroke
   else drawStroke(ctx, item, strokeDisplayMode, sketchy)
 }
 
-export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasItem[], geometry: MinimapGeometry): void {
+/** `focusFaded` (focus mode, null = off and nothing extra happens) lists the keys drawn faded, as the canvas does. */
+export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasItem[], geometry: MinimapGeometry, focusFaded: ReadonlySet<string> | null = null): void {
   const toMiniX = (x: number) => x * geometry.scale + geometry.offsetX
   const toMiniY = (y: number) => y * geometry.scale + geometry.offsetY
   ctx.save()
   for (const item of items) {
+    const fade = focusFaded !== null && focusFaded.has(canvasItemKey(item))
+    if (fade) ctx.globalAlpha = FOCUS_FADE_ALPHA
     if (item.kind === 'text') {
       // Text is unreadable at minimap size: show where it sits as a faint block.
       ctx.globalCompositeOperation = 'source-over'
-      ctx.globalAlpha = 0.4
+      ctx.globalAlpha = fade ? FOCUS_FADE_ALPHA * 0.4 : 0.4
       ctx.fillStyle = item.color
       const box = rotatedItemBounds(item)
       ctx.fillRect(toMiniX(box.x), toMiniY(box.y), Math.max(1, box.width * geometry.scale), Math.max(1, box.height * geometry.scale))
-      ctx.globalAlpha = 1
+      ctx.globalAlpha = fade ? FOCUS_FADE_ALPHA : 1
     } else if (item.kind === 'code' || item.kind === 'opaque') {
       // A simple box: the block's own background (grey for an unknown item).
       const box = item.kind === 'code' ? item : item.box
@@ -544,6 +547,7 @@ export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasIte
         ctx.fill()
       } else ctx.stroke()
     }
+    if (fade) ctx.globalAlpha = 1
   }
   ctx.restore()
 }
