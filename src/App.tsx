@@ -12,6 +12,7 @@ import { similarItemKeys } from './selectSimilar'
 import { canSameSize, sameSizeItems, type SameSizeMode } from './sameSize'
 import { canSwapPositions, swapPositionsItems } from './swapPositions'
 import { canInsertBoxIntoConnector, insertBoxIntoConnector } from './insertIntoConnector'
+import { canFlipSelection, flipSelectionItems, type FlipAxis } from './flipSelection'
 import { linkedNeighbour, revealViewport, walkCurrentKey, walkItemBounds, walkStep } from './keyboardWalk'
 import { addBoundary } from './boundary'
 import { canSelectConnected, connectedKeys, linkedKeys } from './selectConnected'
@@ -1679,6 +1680,19 @@ function App() {
       setSelectedRectangle(box.id)
     }
     renderAll()
+    return true
+  }
+  // Flip selection (Shift+H / Shift+V, right-click chips, palette, context panel): mirrors the selection about its bounding-box centre; one undo step.
+  const flipSelection = (axis: FlipAxis): boolean => {
+    const result = flipSelectionItems(strokesRef.current, currentSelectionKeys(), axis)
+    if (!result) { showToast(canFlipSelection(strokesRef.current, currentSelectionKeys()) ? 'Nothing to flip' : 'Select two or more items (or a stroke or connector) to flip'); return false }
+    saveHistory()
+    strokesRef.current = result
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+    bumpSelectionColor((n) => n + 1)
+    showToast(axis === 'horizontal' ? 'Flipped horizontally' : 'Flipped vertically')
     return true
   }
   // Keyboard walk (Tab / Shift+Tab, Alt+Arrow; Select tool only): selects `key` through the normal selection path (a group member selects its group)
@@ -5241,6 +5255,8 @@ function App() {
       case 'sameSize': sameSizeSelection('both'); break
       case 'swapPositions': swapPositionsSelection(); break
       case 'insertBox': insertBoxIntoSelectedConnector(); break
+      case 'flipHorizontal': flipSelection('horizontal'); break
+      case 'flipVertical': flipSelection('vertical'); break
       case 'numberSteps': numberFlowSteps(); break
       case 'clearSteps': clearFlowSteps(); break
       case 'bringToFront': moveSelectionLayer('front'); break
@@ -5446,6 +5462,10 @@ function App() {
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
     ...(canInsertBoxNow() ? [{ id: 'connector:insert-box', label: 'Insert box into connector', group: 'Edit', keywords: 'add rectangle middle split connector arrow line box between', run: () => { insertBoxIntoSelectedConnector() } }] : []),
     ...(canSwapPositions(strokesRef.current, currentSelectionKeys()) ? [{ id: 'arrange:swap', label: 'Swap positions', group: 'Arrange', keywords: 'exchange switch two boxes places', run: () => { swapPositionsSelection() } }] : []),
+    ...(canFlipSelection(strokesRef.current, currentSelectionKeys()) ? [
+      { id: 'arrange:flip-horizontal', label: 'Flip horizontal', group: 'Arrange', keywords: 'mirror reflect left right selection', run: () => { flipSelection('horizontal') } },
+      { id: 'arrange:flip-vertical', label: 'Flip vertical', group: 'Arrange', keywords: 'mirror reflect up down selection', run: () => { flipSelection('vertical') } },
+    ] : []),
     ...(canSameSize(strokesRef.current, currentSelectionKeys()) ? [
       { id: 'arrange:same-width', label: 'Same width', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('width') } },
       { id: 'arrange:same-height', label: 'Same height', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('height') } },
@@ -5683,6 +5703,7 @@ function App() {
       case 'zoomFit': zoomToFitDesktop(); return true
       case 'zoomSelection': zoomToSelection(); return true
       case 'focus': return startFocus()
+      case 'flip': return currentSelectionKeys().size > 0 ? (flipSelection(command.axis), true) : false
       case 'pagePrev': goToPage(pageIndexRef.current - 1); return true
       case 'pageNext': goToPage(pageIndexRef.current + 1); return true
       case 'presentMode': togglePresentMode(); return true
@@ -5798,6 +5819,7 @@ function App() {
             canSameSize: canSameSize(strokesRef.current, currentSelectionKeys()),
             canSwap: canSwapPositions(strokesRef.current, currentSelectionKeys()),
             canInsertBox: canInsertBoxNow(),
+            canFlip: canFlipSelection(strokesRef.current, currentSelectionKeys()),
             canSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()),
             arrowEnds: arrowEndsChoice(strokesRef.current, selectedKeysRef.current),
             corners: cornersChoice(strokesRef.current, currentSelectionKeys()),
@@ -6023,6 +6045,7 @@ function App() {
         newShapeDefault={currentSelectionKeys().size > 0 || newShapeStyle ? { canSet: defaultStyleSource() !== null, isSet: newShapeStyle !== null, onSet: () => { useAsDefaultShapeStyle() }, onReset: () => { resetDefaultShapeStyle() } } : null}
         corners={(() => { const choice = cornersChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { rounded: choice === 'sharp', onChange: setSelectedCorners } })()}
         changeShape={(() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })()}
+        flip={canFlipSelection(strokesRef.current, currentSelectionKeys()) ? { onFlip: (axis) => { flipSelection(axis) } } : null}
         sameSize={canSameSize(strokesRef.current, currentSelectionKeys()) ? { onSameSize: (mode) => { sameSizeSelection(mode) } } : null}
         boundaryTools={currentSelectionKeys().size > 0 ? { onFocus: () => { startFocus() }, onAddBoundary: () => { addBoundaryAroundSelection() }, onSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()) ? () => { selectConnectedItems(false) } : null } : null}
         selectionTools={inputMode !== 'desktop' && currentSelectionKeys().size > 0 ? (() => {

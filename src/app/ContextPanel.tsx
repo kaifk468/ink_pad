@@ -121,6 +121,8 @@ type ContextPanelProps = {
   /** Tablet: the commands the desktop right-click menu has (Select similar, Copy / Paste style, Number steps). Each button shows only when its handler is given. */
   selectionTools?: { onSelectSimilar?: (() => void) | null; onCopyStyle?: (() => void) | null; onPasteStyle?: (() => void) | null; canPasteStyle?: boolean; onNumberSteps?: (() => void) | null } | null
   group?: { canGroup: boolean; canUngroup: boolean; onGroup: () => void; onUngroup: () => void } | null
+  /** Flip selection (2+ unlocked items, or one stroke / connector; desktop and tablet). */
+  flip?: { onFlip: (axis: 'horizontal' | 'vertical') => void } | null
   /** Same size (2+ boxes selected, desktop and tablet): the largest width / height wins. */
   sameSize?: { onSameSize: (mode: 'width' | 'height' | 'both') => void } | null
   /** Add boundary (any selection) and Select connected (one box with connectors), desktop and tablet. */
@@ -175,7 +177,7 @@ const TEXT_ALIGN_OPTIONS: ReadonlyArray<{ id: TextAlign | 'left'; label: string;
 
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
-  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !(props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet)) && !props.sameSize && !props.boundaryTools) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !(props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet)) && !props.flip && !props.sameSize && !props.boundaryTools) return null
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
       {props.showStyle && <>
@@ -310,6 +312,13 @@ export function ContextPanel(props: ContextPanelProps) {
         <div className="selection-actions">
           <button className="clear-selection-button" type="button" disabled={!props.arrange.canDistribute} aria-label="Distribute horizontally" title="Equal gaps left to right (3 or more items)" onClick={() => props.arrange?.onDistribute('horizontal')}>Horizontally</button>
           <button className="clear-selection-button" type="button" disabled={!props.arrange.canDistribute} aria-label="Distribute vertically" title="Equal gaps top to bottom (3 or more items)" onClick={() => props.arrange?.onDistribute('vertical')}>Vertically</button>
+        </div>
+      </div>}
+      {props.flip && <div className="flip-controls" role="group" aria-label="Flip">
+        <span className="panel-label">Flip</span>
+        <div className="selection-actions">
+          <button className="clear-selection-button" type="button" aria-label="Flip horizontal" title="Mirror the selection left to right (Shift+H)" onClick={() => props.flip?.onFlip('horizontal')}>Flip ↔</button>
+          <button className="clear-selection-button" type="button" aria-label="Flip vertical" title="Mirror the selection top to bottom (Shift+V)" onClick={() => props.flip?.onFlip('vertical')}>Flip ↕</button>
         </div>
       </div>}
       {props.sameSize && <div className="same-size-controls" role="group" aria-label="Same size">

@@ -196,6 +196,7 @@ export type KeyCommand =
   | { kind: 'zoomFit' }
   | { kind: 'zoomSelection' }
   | { kind: 'focus' }
+  | { kind: 'flip'; axis: 'horizontal' | 'vertical' }
   | { kind: 'pagePrev' }
   | { kind: 'pageNext' }
   | { kind: 'help' }
@@ -295,6 +296,9 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if (event.code === 'Digit2' || event.code === 'Numpad2') return event.repeat ? null : { kind: 'zoomSelection' }
     // Shift+F fades everything not linked to the selection (focus mode).
     if (event.code === 'KeyF') return event.repeat ? null : { kind: 'focus' }
+    // Shift+H / Shift+V flip the selection (plain h / v are not tool keys; Ctrl+H is find and replace, which has its own branch above).
+    if (event.code === 'KeyH') return event.repeat ? null : { kind: 'flip', axis: 'horizontal' }
+    if (event.code === 'KeyV') return event.repeat ? null : { kind: 'flip', axis: 'vertical' }
   }
   // Alt+Z hides or shows the toolbars (present mode). The physical key decides: Alt changes `key` on a Mac.
   if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.code === 'KeyZ' || (!event.code && key === 'z'))) return event.repeat ? null : { kind: 'presentMode' }
@@ -551,7 +555,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
 
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'useAsDefaultStyle' | 'exportPng' | 'exportSvg'
   | 'editText' | 'zoomSelection' | 'focus' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps' | 'saveTemplate'
-  | 'sameWidth' | 'sameHeight' | 'sameSize' | 'swapPositions' | 'insertBox' | 'addBoundary' | 'selectConnected' | 'arrowBothEnds' | 'arrowOneEnd' | 'cornersRound' | 'cornersSharp' | 'shapesMore'
+  | 'sameWidth' | 'sameHeight' | 'sameSize' | 'swapPositions' | 'insertBox' | 'flipHorizontal' | 'flipVertical' | 'addBoundary' | 'selectConnected' | 'arrowBothEnds' | 'arrowOneEnd' | 'cornersRound' | 'cornersSharp' | 'shapesMore'
   | `shape:${string}` | `movePage:${string}`
 export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select' | 'flow'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
@@ -621,6 +625,8 @@ export type ContextMenuState = {
   canSwap?: boolean
   /** Exactly one unlocked connector is selected (the Insert box row is offered). */
   canInsertBox?: boolean
+  /** Two or more unlocked items, or one stroke or connector, are selected (the Flip chips are offered). */
+  canFlip?: boolean
   /** One selected box has connectors attached (the Connected chip is offered). */
   canSelectConnected?: boolean
   /** The selection holds unlocked arrow connectors: 'both' offers Both ends (some are one-way), 'one' offers One end (all are two-way). Shown as a chip in the Style block. */
@@ -637,7 +643,7 @@ export type ContextMenuState = {
  * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
-  const { canCopyStyle = false, canPasteStyle = false, canSetDefaultStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], changeShapesExpanded = false, canNumberSteps = false, canSameSize = false, canSwap = false, canInsertBox = false, canSelectConnected = false, arrowEnds = null, corners = null, movePages = [] } = state
+  const { canCopyStyle = false, canPasteStyle = false, canSetDefaultStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], changeShapesExpanded = false, canNumberSteps = false, canSameSize = false, canSwap = false, canInsertBox = false, canFlip = false, canSelectConnected = false, arrowEnds = null, corners = null, movePages = [] } = state
   const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean, chip?: string, chipGroup?: string): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled, ...(chip !== undefined ? { chip, chipGroup: chipGroup ?? 'Change shape' } : {}) })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
@@ -660,6 +666,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     ...(canSameSize ? [entry('sameWidth', 'Same width', '', 'arrange', true, 'Width', 'Size'), entry('sameHeight', 'Same height', '', 'arrange', true, 'Height', 'Size'), entry('sameSize', 'Same width and height', '', 'arrange', true, 'Both', 'Size')] : []),
     ...(canSwap ? [entry('swapPositions', 'Swap positions', '', 'arrange', true, 'Swap', 'Position')] : []),
     ...(canInsertBox ? [entry('insertBox', 'Insert box', '', 'arrange', true)] : []),
+    ...(canFlip ? [entry('flipHorizontal', 'Flip horizontal', 'Shift+H', 'arrange', true, 'Flip ↔', 'Position'), entry('flipVertical', 'Flip vertical', 'Shift+V', 'arrange', true, 'Flip ↕', 'Position')] : []),
     // Group, Ungroup, Zoom and Lock share one chip block (one row of chips instead of four rows); Unlock stays a row.
     ...(canGroup ? [entry('group', 'Group', 'Ctrl+G', 'arrange', true, 'Group', 'Selection')] : []),
     ...(canUngroup ? [entry('ungroup', 'Ungroup', 'Ctrl+Shift+G', 'arrange', true, 'Ungroup', 'Selection')] : []),
