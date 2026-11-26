@@ -31,9 +31,9 @@ export function MermaidDialog({ onInsert, onClose }: MermaidDialogProps) {
   const submit = () => setError(onInsert(text))
   return (
     <div className="file-panel-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <section className="file-panel template-chooser mermaid-dialog" role="dialog" aria-modal="true" aria-label="Insert from Mermaid">
+      <section className="file-panel template-chooser mermaid-dialog" role="dialog" aria-modal="true" aria-label="Insert from Mermaid or PlantUML">
         <header className="file-panel-header">
-          <strong>Insert from Mermaid</strong>
+          <strong>Insert from Mermaid or PlantUML</strong>
           <button type="button" className="file-panel-close" aria-label="Close" title="Close (Esc)" onClick={onClose}>×</button>
         </header>
         <form className="mermaid-form" onSubmit={(event) => { event.preventDefault(); submit() }}>
@@ -48,7 +48,7 @@ export function MermaidDialog({ onInsert, onClose }: MermaidDialogProps) {
             onChange={(event) => { setText(event.target.value); setError(null) }}
             onKeyDown={(event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); submit() } }}
           />
-          <p className="template-empty">Supports flowchart (with subgraphs), classDiagram, sequenceDiagram, erDiagram and stateDiagram.</p>
+          <p className="template-empty">Supports flowchart (with subgraphs), classDiagram, sequenceDiagram, erDiagram and stateDiagram. PlantUML class and sequence diagrams (@startuml) also work.</p>
           {error && <p className="template-error" role="alert">{error}</p>}
           <div className="mermaid-actions">
             <button type="button" onClick={paste} title="Paste the text on the clipboard into the box">Paste</button>

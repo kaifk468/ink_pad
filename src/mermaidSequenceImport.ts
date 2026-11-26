@@ -40,11 +40,11 @@ const FRAME_DIVIDER = /^(else|and|option)(?:\s+(.*))?$/
 const FRAME_END = /^end$/
 const AUTONUMBER = /^autonumber(?:\s|$)/
 
-type Participant = { id: string; text: string; actor: boolean }
-type Message = { kind: 'message'; from: string; to: string; text: string; dashed: boolean; head: boolean }
-type Note = { kind: 'note'; side: 'over' | 'left' | 'right'; a: string; b?: string; text: string }
-type Marker = { kind: 'open'; frame: number } | { kind: 'divider'; frame: number; text: string } | { kind: 'close'; frame: number }
-type Step = Message | Note | Marker
+export type SequenceParticipant = { id: string; text: string; actor: boolean }
+export type SequenceMessage = { kind: 'message'; from: string; to: string; text: string; dashed: boolean; head: boolean }
+export type SequenceNote = { kind: 'note'; side: 'over' | 'left' | 'right'; a: string; b?: string; text: string }
+export type SequenceMarker = { kind: 'open'; frame: number } | { kind: 'divider'; frame: number; text: string } | { kind: 'close'; frame: number }
+export type SequenceStep = SequenceMessage | SequenceNote | SequenceMarker
 type Frame = { kind: string; text: string; dividers: Array<{ y: number; text: string }>; minX: number; maxX: number; top: number; bottom: number; startY: number; depth: number; height: number; used: boolean }
 
 export type MermaidSequenceBuild = { ok: true; items: CanvasItem[]; boxes: number; links: number; ignoredLines: number; kind: 'sequence'; /** Frames drawn (loop / alt / ... boundaries). */ frames: number } | { ok: false; error: string }
@@ -66,8 +66,8 @@ export function isMermaidSequenceText(text: string): boolean {
 export function buildMermaidSequence(text: string): MermaidSequenceBuild {
   if (!isMermaidSequenceText(text)) return { ok: false, error: 'Not a Mermaid sequence diagram (the first line must be "sequenceDiagram").' }
   const lines = sourceLines(text.slice(0, MAX_MERMAID_TEXT))
-  const participants: Participant[] = []
-  const steps: Step[] = []
+  const participants: SequenceParticipant[] = []
+  const steps: SequenceStep[] = []
   let ignored = 0
   let title = ''
   let numbered = false
@@ -76,13 +76,13 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
   const frameDefs: Array<{ kind: string; text: string }> = []
   const openFrames: number[] = []
 
-  const known = (id: string): Participant | undefined => participants.find((participant) => participant.id === id)
+  const known = (id: string): SequenceParticipant | undefined => participants.find((participant) => participant.id === id)
   /** The participant, added in order of first appearance; null when the cap is reached. */
-  const ensure = (id: string): Participant | null => {
+  const ensure = (id: string): SequenceParticipant | null => {
     const found = known(id)
     if (found) return found
     if (participants.length >= MAX_SEQUENCE_PARTICIPANTS) return null
-    const added: Participant = { id, text: id, actor: false }
+    const added: SequenceParticipant = { id, text: id, actor: false }
     participants.push(added)
     return added
   }
@@ -135,7 +135,15 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
   }
   if (participants.length === 0) return { ok: false, error: 'No participants found' }
   while (openFrames.length > 0) steps.push({ kind: 'close', frame: openFrames.pop() as number }) // a frame left open at the end closes there
+  return buildSequenceItems({ participants, steps, frameDefs, title, numbered, messageCount, ignored })
+}
 
+/** Parsed sequence diagram, independent of the text format (Mermaid or PlantUML). */
+export type SequenceModel = { participants: SequenceParticipant[]; steps: SequenceStep[]; frameDefs: Array<{ kind: string; text: string }>; title: string; numbered: boolean; messageCount: number; ignored: number }
+
+/** Lays out a parsed sequence model as canvas items (shared by the Mermaid and PlantUML importers). */
+export function buildSequenceItems(model: SequenceModel): MermaidSequenceBuild {
+  const { participants, steps, frameDefs, title, numbered, messageCount, ignored } = model
   // ---- Boxes: sizes, then centre x of each lifeline (relative, first box centred on 0).
   const userSize = { width: Math.round(HLD_DEFAULT_SIZE.user.width * HLD_TEMPLATE_SCALE), height: Math.round(HLD_DEFAULT_SIZE.user.height * HLD_TEMPLATE_SCALE) }
   const sizes = participants.map((participant) => {
@@ -146,7 +154,7 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
   })
   const column = new Map(participants.map((participant, index) => [participant.id, index]))
   const gaps = participants.slice(1).map((_, index) => Math.max(MIN_CENTRE_GAP, (sizes[index].width + sizes[index + 1].width) / 2 + 60))
-  const labelWidth = (step: Step): number => (step.kind === 'message' ? measureTextSize(step.text || ' ', LABEL_SIZE).width + 60 : 0)
+  const labelWidth = (step: SequenceStep): number => (step.kind === 'message' ? measureTextSize(step.text || ' ', LABEL_SIZE).width + 60 : 0)
   // Each message label must fit between the two lifelines it joins: stretch the gaps in the span evenly when it does not.
   for (const step of steps) {
     if (step.kind !== 'message') continue
@@ -165,11 +173,11 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
   gaps.forEach((gap, index) => relative.push(relative[index] + gap))
 
   // ---- Notes and rows (positions relative to the first lifeline).
-  const noteSize = (note: Note): { width: number; height: number } => {
+  const noteSize = (note: SequenceNote): { width: number; height: number } => {
     const label = measureTextSize(note.text || ' ', LABEL_SIZE)
     return { width: Math.max(note.side === 'over' ? 160 : 140, Math.ceil((label.width + 40) / 10) * 10), height: Math.max(60, Math.ceil((label.height + 30) / 10) * 10) }
   }
-  const noteX = (note: Note, centres: number[]): { x: number; width: number } => {
+  const noteX = (note: SequenceNote, centres: number[]): { x: number; width: number } => {
     const size = noteSize(note)
     const ca = centres[column.get(note.a) as number]
     if (note.side === 'left') return { x: ca - 20 - size.width, width: size.width }

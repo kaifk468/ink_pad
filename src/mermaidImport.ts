@@ -11,6 +11,7 @@ import { buildMermaidClassItems, isMermaidClassText, parseMermaidClass } from '.
 import { buildMermaidEr, isMermaidErText } from './mermaidErImport'
 import { buildMermaidState, isMermaidStateText } from './mermaidStateImport'
 import { applyMermaidNodeStyle, newMermaidStyleSheet, readMermaidStyleStatement, resolveNodeStyle, type MermaidNodeStyle } from './mermaidStyle'
+import { buildPlantUml, isPlantUmlText } from './plantumlImport'
 import { buildMermaidSequence, isMermaidSequenceText, type MermaidDiagramResult } from './mermaidSequenceImport'
 
 export { MAX_MERMAID_NODES, MAX_MERMAID_TEXT, normalizeMermaidSpaces, stripMermaidFrontMatter }
@@ -38,6 +39,7 @@ const SKIPPED = /^(?:subgraph(?=\s|$)|end\s*;?\s*$|(?:classDef|class|style|linkS
 const HEADER = /^(?:graph|flowchart)(?:[ \t]+(?:TD|TB|BT|LR|RL))?[ \t]*(?:;.*)?$/
 /** True when the first line that is not blank, front matter or a %% comment is a `graph` / `flowchart`, `classDiagram` or `sequenceDiagram` header (lowercase, as Mermaid requires). */
 export function isMermaidText(text: string): boolean {
+  if (isPlantUmlText(text)) return true // PlantUML class / sequence text (the name is historical: this is "text the diagram importer reads")
   const line = firstMermaidLine(text)
   return HEADER.test(line) || isMermaidClassText(line) || isMermaidSequenceText(line) || isMermaidErText(line) || isMermaidStateText(line)
 }
@@ -372,6 +374,7 @@ export function mermaidInsertMessage(boxes: number, links: number, ignored: numb
 /** Reads Mermaid text of any supported kind (flowchart / graph, classDiagram, sequenceDiagram) by its header and builds the items. */
 export function buildMermaidDiagram(text: string): MermaidDiagramResult {
   const capped = text.slice(0, MAX_MERMAID_TEXT)
+  if (isPlantUmlText(capped)) return buildPlantUml(capped)
   const header = firstMermaidLine(capped)
   if (isMermaidClassText(header)) {
     const parsed = parseMermaidClass(capped)

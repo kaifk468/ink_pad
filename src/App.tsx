@@ -5195,7 +5195,7 @@ function App() {
     ...DIAGRAM_TEMPLATES.map((template) => ({ id: `template:${template.id}`, label: `Template: ${template.name}`, group: 'Templates', keywords: `insert starter layout ${template.description}`, run: () => { insertTemplate(template.id) } })),
     ...(alignTargetKeys().size > 0 ? (['left', 'center', 'right'] as const).map((align) => ({ id: `align:${align}`, label: `Align text ${align === 'center' ? 'centre' : align}`, group: 'Edit', keywords: 'text label alignment justify', run: () => pickTextAlign(align) })) : []),
     { id: 'excalidraw:import', label: 'Import Excalidraw file…', group: 'Templates', keywords: 'excalidraw open diagram json import paste', run: () => excalidrawFileRef.current?.click() },
-    { id: 'mermaid:insert', label: 'Insert from Mermaid…', group: 'Templates', keywords: 'import flowchart graph diagram text paste', run: () => setMermaidOpen(true) },
+    { id: 'mermaid:insert', label: 'Insert from Mermaid…', group: 'Templates', keywords: 'import flowchart graph diagram text paste plantuml uml class sequence', run: () => setMermaidOpen(true) },
     { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout my templates saved', run: () => setTemplateChooserOpen(true) },
     ...(selectionKeysWithBox().size > 0 ? [{ id: 'template:save', label: 'Save selection as template…', group: 'Templates', keywords: 'my templates store reuse', run: openSaveTemplate }] : []),
     { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2).then((error) => { if (error) showToast(error) }) },
