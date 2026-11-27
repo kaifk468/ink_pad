@@ -45,9 +45,17 @@
 .app-shell[data-input-mode="desktop"] .top-status-pill.tone-bad .top-status-dot { background: var(--ip-danger); }
 .app-shell[data-input-mode="desktop"] .top-status-pill.tone-bad { color: var(--ip-danger); }
 .app-shell[data-input-mode="desktop"] .top-status-dot.just-saved { animation: ip-status-pulse var(--ip-dur-menu) var(--ip-ease-out) 1; }
+/* Ctrl+S: the pill is re-keyed, so this one-shot accent wash replays. A pseudo-element fades in and out (opacity only). */
+.app-shell[data-input-mode="desktop"] .top-status-pill { position: relative; isolation: isolate; }
+.app-shell[data-input-mode="desktop"] .top-status-pill.flash::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--ip-accent-soft); opacity: 0; z-index: -1; pointer-events: none;
+  animation: ip-status-flash 240ms var(--ip-ease-out) 1;
+}
+@keyframes ip-status-flash { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes ip-status-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.6); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) {
   .app-shell[data-input-mode="desktop"] .top-status-dot.just-saved { animation: none; }
+  .app-shell[data-input-mode="desktop"] .top-status-pill.flash::before { animation: none; }
 }
 .app-shell[data-input-mode="desktop"] .top-export-button {
   display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; box-sizing: border-box;

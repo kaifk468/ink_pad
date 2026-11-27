@@ -270,7 +270,7 @@ test('Ctrl/Cmd + plus, minus and 0 zoom in, out and reset; other Ctrl combinatio
   assert.deepEqual(input.keyCommand(key('+', { ctrlKey: true, shiftKey: true }), 'desktop'), { kind: 'zoomIn' })
   assert.deepEqual(input.keyCommand(key('-', { ctrlKey: true }), 'desktop'), { kind: 'zoomOut' })
   assert.deepEqual(input.keyCommand(key('0', { metaKey: true }), 'desktop'), { kind: 'zoomReset' })
-  for (const k of ['s', 'p', 'r', 'w', 't', 'l']) assert.equal(input.keyCommand(key(k, { ctrlKey: true }), 'desktop'), null, `Ctrl+${k}`)
+  for (const k of ['p', 'r', 'w', 't', 'l']) assert.equal(input.keyCommand(key(k, { ctrlKey: true }), 'desktop'), null, `Ctrl+${k}`)
 })
 
 test('plain letters pick tools (any case), and only with no modifier and no auto-repeat', () => {
