@@ -224,7 +224,9 @@ export function buildMermaidSequenceText(items: readonly CanvasItem[]): Sequence
   if (numbered) lines.push('  autonumber')
   for (const p of participants) {
     const label = seqText(p.label)
-    lines.push(`  ${p.actor ? 'actor' : 'participant'} ${p.id}${label && label !== p.id ? ` as ${label}` : ''}`)
+    // Mermaid 11 typed participant: `participant Id@{ "type": "database" } as Label` (the config goes before `as`).
+    const typed = p.box.hldShape === 'database' || p.box.hldShape === 'queue' ? `@{ "type": "${p.box.hldShape}" }` : ''
+    lines.push(`  ${p.actor ? 'actor' : 'participant'} ${p.id}${typed}${label && label !== p.id ? ` as ${label}` : ''}`)
   }
   events.sort((a, b) => a.y - b.y || a.priority - b.priority || a.tie - b.tie)
   for (const event of events) {

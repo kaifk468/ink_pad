@@ -31,7 +31,9 @@ const LOOP_HEIGHT = 36
 
 const ID = '[\\p{L}\\p{N}_.]+'
 const HEADER = /^sequenceDiagram[ \t]*(?:;.*)?$/
-const PARTICIPANT = new RegExp(`^(participant|actor)\\s+(${ID})(?:\\s+as\\s+(.+))?$`, 'u')
+// `participant DB@{ "type": "database" } as Orders DB` (Mermaid 11): the optional @{ ... } config sits right after the id, before `as`.
+const PARTICIPANT = new RegExp(`^(participant|actor)\\s+(${ID})(?:\\s*@\\{([^}]*)\\})?(?:\\s+as\\s+(.+))?$`, 'u')
+const TYPE_CONFIG = /["']?type["']?\s*:\s*["']?([A-Za-z]+)["']?/i
 const MESSAGE = new RegExp(`^(${ID})\\s*(-->>|->>|-->|->|--x|-x|--\\)|-\\))\\s*([+-]?)\\s*(${ID})\\s*(?::\\s*(.*))?$`, 'u')
 const NOTE = new RegExp(`^note\\s+(over|left\\s+of|right\\s+of)\\s+(${ID})(?:\\s*,\\s*(${ID}))?\\s*:\\s*(.*)$`, 'iu')
 const TITLE = /^title(?:\s*:\s*|\s+)(.+)$/
@@ -97,7 +99,10 @@ export function buildMermaidSequence(text: string): MermaidSequenceBuild {
       const participant = ensure(declared[2])
       if (!participant) { ignored += 1; continue }
       participant.actor = declared[1] === 'actor'
-      if (declared[3] !== undefined) participant.text = cleanText(declared[3].replace(/^"(.*)"$/, '$1')) || declared[2]
+      // Typed participants: database / queue use the HLD shapes; collections, entity, boundary, control and others stay plain boxes.
+      const type = declared[3] !== undefined ? TYPE_CONFIG.exec(declared[3])?.[1]?.toLowerCase() : undefined
+      if (!participant.actor && (type === 'database' || type === 'queue')) participant.shape = type
+      if (declared[4] !== undefined) participant.text = cleanText(declared[4].replace(/^"(.*)"$/, '$1')) || declared[2]
       continue
     }
     if (AUTONUMBER.test(line)) { numbered = true; continue }
