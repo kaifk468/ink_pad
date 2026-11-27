@@ -6110,7 +6110,7 @@ function App() {
   }, [])
 
   return (
-    <main className={`app-shell${presentMode ? ' ui-hidden' : ''}`}>
+    <main className={`app-shell${presentMode ? ' ui-hidden' : ''}`} data-input-mode={inputMode}>
       <section className="canvas-stage" aria-label="Drawing canvas">
         <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: sheetHeight }} />
         <div ref={eraserCursorRef} className="eraser-cursor" aria-hidden="true" />
@@ -6335,6 +6335,7 @@ function App() {
           gridSnap={gridSnap}
           onGridSnap={updateGridSnap}
           onShortcutHelp={() => setShortcutHelpOpen(true)}
+          onCommandPalette={openPalette}
           oneFingerPan={navigationSettings.oneFingerPan}
           onOneFingerPan={(value) => updateNavigationSettings({ oneFingerPan: value })}
           tapUndo={tapUndo}

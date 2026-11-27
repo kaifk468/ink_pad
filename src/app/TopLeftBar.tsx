@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { StorageInfo } from './useDocuments'
 import { PAGE_BACKGROUND_COLORS, type PageBackground } from '../pageBackground'
 import { titleToCommit } from '../documentFormat'
 import type { PageSpacing, PageTemplate } from '../pageTemplates'
 import type { InputMode } from '../desktopInput'
+import { DesktopMenuSheet } from './DesktopMenuSheet'
 
-type TopLeftBarProps = {
+export type TopLeftBarProps = {
   /** Desktop only: opens the keyboard shortcut list. */
   onShortcutHelp?: () => void
+  /** Desktop only: opens the command palette (Help section of the menu sheet). */
+  onCommandPalette?: () => void
   title: string
   /** Called with the cleaned new title when the name is edited in place in the bar. */
   onRenameTitle: (title: string) => void
@@ -66,8 +69,27 @@ const PAGE_COLOR_CHOICES: Array<{ value: PageBackground; label: string }> = [
 
 /** Menu, Library button and the diagram title. The menu has three labelled groups (File, Page, Canvas) and Clear canvas apart at the bottom. */
 export function TopLeftBar(props: TopLeftBarProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
+  // Desktop shows the navigation sheet, Tablet keeps the dropdown panel; one open flag drives whichever applies.
+  const [menuRequested, setMenuOpen] = useState(false)
+  const desktop = props.inputMode === 'desktop'
+  const menuOpen = menuRequested && !desktop
   const menuRef = useRef<HTMLDivElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  // Switching mode never carries an open menu over to the other layout.
+  useEffect(() => { setMenuOpen(false) }, [props.inputMode])
+  const closeSheet = useCallback((restoreFocus: boolean) => {
+    setMenuOpen(false)
+    if (restoreFocus) menuButtonRef.current?.focus()
+  }, [])
+  // Desktop: a click outside closes the sheet (Escape is handled inside the sheet).
+  useEffect(() => {
+    if (!menuRequested || !desktop) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [menuRequested, desktop])
   const [editingTitle, setEditingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const editingTitleRef = useRef(false)
@@ -104,9 +126,10 @@ export function TopLeftBar(props: TopLeftBarProps) {
   return (
     <div className="top-left-bar">
       <div ref={menuRef} className="menu-control">
-        <button className={`top-icon-button${menuOpen ? ' selected' : ''}`} type="button" aria-label="Menu" aria-haspopup="true" aria-expanded={menuOpen} title="File, page and canvas options" onClick={() => setMenuOpen((value) => !value)}>
+        <button ref={menuButtonRef} className={`top-icon-button${menuRequested ? ' selected' : ''}`} type="button" aria-label="Menu" aria-haspopup="true" aria-expanded={menuRequested} title="File, page and canvas options" onClick={() => setMenuOpen((value) => !value)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
+        {menuRequested && desktop && <DesktopMenuSheet {...props} onClose={closeSheet} />}
         {menuOpen && <div className="menu-panel" role="group" aria-label="Menu">
           <div className="menu-brand">
             <span className="brand-mark" aria-hidden="true"><span /></span>
