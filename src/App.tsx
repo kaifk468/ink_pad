@@ -121,7 +121,7 @@ import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, loadTapUndo, saveNavigationSettings, saveTapUndo } from './navigationSettings'
-import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, CONTEXT_MENU_TOP_CLEARANCE, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, saveToastText, shouldShowKeepToolTip, KEEP_TOOL_TIP, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuMaxHeight, CONTEXT_MENU_TOP_CLEARANCE, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, saveToastText, shouldShowKeepToolTip, KEEP_TOOL_TIP, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -5629,6 +5629,17 @@ function App() {
   }
   // Menu keyboard: arrows (and Home/End) move focus between the enabled rows; Enter runs the focused row (a button click); Escape is handled with the other keys.
   const onContextMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Left / Right move between the chips of the focused chip row (and are left alone elsewhere).
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      const row = (document.activeElement as HTMLElement | null)?.closest('.canvas-context-chips-row')
+      if (!row || !event.currentTarget.contains(row)) return
+      event.preventDefault()
+      event.stopPropagation()
+      const chips = [...row.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+      const at = chips.indexOf(document.activeElement as HTMLButtonElement)
+      if (chips.length > 0 && at >= 0) chips[(at + (event.key === 'ArrowRight' ? 1 : chips.length - 1)) % chips.length].focus()
+      return
+    }
     const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End']
     if (!keys.includes(event.key)) return
     event.preventDefault()
@@ -5646,8 +5657,14 @@ function App() {
     const menu = contextMenuElementRef.current
     if (!contextMenu || !menu) return
     const rect = menu.getBoundingClientRect()
-    const overflow = rect.bottom - (window.innerHeight - menuBottomClearance(rect.left, rect.width, dockRange()))
-    if (overflow > 0) menu.style.top = `${Math.max(8, rect.top - overflow)}px`
+    const clearance = menuBottomClearance(rect.left, rect.width, dockRange())
+    const overflow = rect.bottom - (window.innerHeight - clearance)
+    if (overflow > 0) {
+      // Never above the top clearance (the top bar); what still does not fit scrolls.
+      const top = Math.max(CONTEXT_MENU_TOP_CLEARANCE, rect.top - overflow)
+      menu.style.top = `${top}px`
+      menu.style.maxHeight = `${contextMenuMaxHeight(top, window.innerHeight, clearance)}px`
+    }
   }, [contextMenu])
   // Opening the menu puts focus on its first enabled row so the keyboard works at once.
   useEffect(() => {
@@ -6200,9 +6217,10 @@ function App() {
             movePages: moveMenuChips(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)),
           })
           const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight - menuBottomClearance(contextMenu.x, CONTEXT_MENU_WIDTH, dockRange()), CONTEXT_MENU_TOP_CLEARANCE)
+          const maxHeight = contextMenuMaxHeight(position.y, window.innerHeight, menuBottomClearance(position.x, CONTEXT_MENU_WIDTH, dockRange()))
           const origin = `${position.x < contextMenu.x ? 'right' : 'left'} ${position.y < contextMenu.y ? 'bottom' : 'top'}`
           return (
-            <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y, transformOrigin: origin }} onContextMenu={(event) => event.preventDefault()} onKeyDown={onContextMenuKeyDown}>
+            <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y, maxHeight, transformOrigin: origin }} onContextMenu={(event) => event.preventDefault()} onKeyDown={onContextMenuKeyDown}>
               {contextMenuRows(entries).map((row, index) => row.separator
                 ? <div key={`separator-${index}`} className="canvas-context-separator" role="separator" />
                 : row.chips ? (

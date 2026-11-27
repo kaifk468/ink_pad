@@ -634,7 +634,7 @@ export function shortShapeLabel(label: string): string {
 
 /** Estimated pixel width of a chip (shared by the chip block layout and the Change shape one-line cut). */
 /** Estimated width of a menu chip: 12px DM Sans 500 text plus the chip's 6px side padding. */
-function layoutChipWidth(text: string): number { return Math.ceil(text.length * 6.4) + 12 }
+function layoutChipWidth(text: string): number { return Math.ceil(text.length * 6.8) + 12 }
 
 /** Most Change shape chips shown before More… (about six); fewer when six would not fit one line next to More…. */
 export const CHANGE_SHAPE_CHIP_LIMIT = 6
@@ -726,7 +726,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('copyStyle', 'Copy style', 'Ctrl+Alt+C', 'shape', canCopyStyle, 'Copy', 'Style'),
     entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'shape', canPasteStyle, 'Paste', 'Style'),
     ...(canSetDefaultStyle ? [entry('useAsDefaultStyle', 'Use as default for new shapes', '', 'shape', true, 'Default', 'Style')] : []),
-    ...(corners === 'round' ? [entry('cornersRound', 'Corners: round', '', 'shape', true, 'Round', 'Style')] : corners === 'sharp' ? [entry('cornersSharp', 'Corners: sharp', '', 'shape', true, 'Sharp', 'Style')] : []),
+    ...(corners === 'round' ? [entry('cornersRound', 'Corners: round', '', 'shape', true, 'Round', 'Corners')] : corners === 'sharp' ? [entry('cornersSharp', 'Corners: sharp', '', 'shape', true, 'Sharp', 'Corners')] : []),
     ...(lineShape !== null ? [
       entry('lineStraight', 'Line: straight', '', 'shape', lineShape !== 'straight', 'Straight', 'Line'),
       entry('lineElbow', 'Line: elbow', '', 'shape', lineShape !== 'elbow', 'Elbow', 'Line'),
@@ -839,10 +839,35 @@ export const CONTEXT_MENU_TOP_CLEARANCE = 68
  */
 export function clampMenuPosition(x: number, y: number, width: number, height: number, viewWidth: number, viewHeight: number, minTop = 0): { x: number; y: number } {
   const clampedX = Math.max(0, Math.min(x, viewWidth - width))
+  // Desktop (minTop > 0): the top is never above minTop; a menu that does not fit below it sits at minTop and scrolls (see contextMenuMaxHeight).
+  if (minTop > 0) return { x: clampedX, y: height <= viewHeight - minTop ? Math.max(minTop, Math.min(y, viewHeight - height)) : minTop }
   // A menu taller than the window (the CSS caps it to the window minus 8px each side and scrolls) sits at the top margin.
   if (height > viewHeight - 16) return { x: clampedX, y: 8 }
-  if (minTop > 0 && height <= viewHeight - minTop) return { x: clampedX, y: Math.max(minTop, Math.min(y, viewHeight - height)) }
   return { x: clampedX, y: Math.max(0, Math.min(y, viewHeight - height)) }
+}
+
+/** Smallest height the menu scrolls down to in a very short window. */
+const CONTEXT_MENU_MIN_HEIGHT = 120
+/**
+ * Desktop: inline max-height of the right-click menu so it ends above the dock (bottomClearance, 0 when the dock is not under it) and
+ * scrolls instead of being cut. Always leaves at least the 8px window margin below.
+ */
+export function contextMenuMaxHeight(top: number, windowHeight: number, bottomClearance: number): number {
+  return Math.max(CONTEXT_MENU_MIN_HEIGHT, Math.floor(windowHeight - top - Math.max(8, bottomClearance)))
+}
+
+/** Estimated number of lines a chip-block caption needs in the fixed caption column (11px uppercase, .06em tracking is about 7.6px per letter; wraps by word). */
+export function captionLineCount(caption: string): number {
+  const perLetter = 7.6
+  let lines = 1
+  let used = 0
+  for (const word of caption.split(' ')) {
+    const width = Math.ceil(word.length * perLetter)
+    const space = used > 0 ? 4 : 0
+    if (used > 0 && used + space + width > CHIP_CAPTION_COLUMN) { lines += 1; used = width } else used += space + width
+    while (used > CHIP_CAPTION_COLUMN) { lines += 1; used -= CHIP_CAPTION_COLUMN } // a single over-long word breaks anywhere
+  }
+  return lines
 }
 
 /** Commands whose browser default (Chrome's find bar for Ctrl+G, the open-file dialog, Ctrl+Alt shortcuts) is always cancelled in Desktop mode, even when the action does nothing. */
