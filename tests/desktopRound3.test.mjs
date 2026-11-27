@@ -83,7 +83,8 @@ test('round 3 walk fixes: desktop says Click to rename, chrome text unselectable
   const assert = (await import('node:assert/strict')).default
   assert.match(bar, /desktop \? 'Click to rename this diagram' : 'Tap to rename this diagram'/)
   assert.match(css, /\.tool-dock, \.context-panel[^}]*user-select: none/)
-  assert.match(css, /\.ms-desc \{[^}]*-webkit-line-clamp: 3/)
+  assert.match(css, /\.ms-desc \{[^}]*white-space: nowrap[^}]*text-overflow: ellipsis/)
+  assert.doesNotMatch(css, /\.ms-desc \{[^}]*line-clamp/)
 })
 
 test('a held Ctrl+S only cancels the browser dialog; the save runs on the first press', () => {
