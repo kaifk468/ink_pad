@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { DESKTOP_SECTION_ORDER, browserStorage, readOptionsCollapsed, writeOptionsCollapsed, type DesktopSectionId } from './optionsPanelModel'
 import { ColorPicker } from './ColorPicker'
 import { ERASER_SIZES } from './appConfig'
 import type { Arrowheads, ConnectorRelationshipType, ConnectorRouting, LayerMove } from '../canvasModel'
@@ -90,6 +91,8 @@ type ContextPanelProps = {
   relationship: RelationshipProps | null
   /** Desktop only: the panel sits on the left, opens with one click, and offers the full colour spectrum, recolouring and the eraser options. */
   desktop?: boolean
+  /** Desktop: short name shown in the panel header ("Pen", "Rectangle", "3 objects"). */
+  contextName?: string
   /** Hide the Smooth/Raw switch (shape tools). */
   showDisplayMode?: boolean
   /** Recolour the selection: the one colour it shares (null when mixed) and the change handler (commit = false while dragging in the picker). */
@@ -179,51 +182,13 @@ const TEXT_ALIGN_OPTIONS: ReadonlyArray<{ id: TextAlign | 'left'; label: string;
 
 export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
+  const [collapsed, setCollapsed] = useState(() => (props.desktop ? readOptionsCollapsed(browserStorage()) : false))
+  const [moreOpen, setMoreOpen] = useState(false)
+  const toggleCollapsed = () => { const next = !collapsed; setCollapsed(next); writeOptionsCollapsed(browserStorage(), next) }
+  const headerColor = props.showStyle ? props.color : (props.selectionColor ?? 'var(--ip-muted)')
   if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !(props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet)) && !props.flip && !props.sameSize && !props.boundaryTools) return null
-  return (
-    <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}`} aria-label="Tool options">
-      {props.showStyle && <>
-        {props.desktop ? <ColorChoices value={props.color} label="Stroke colour" onChange={(hex) => props.onColor(hex)} /> : <div className="tool-group color-group" role="group" aria-label="Pen color">
-          {COLORS.map((item) => (
-            <button
-              className={`color-swatch${props.color === item.value ? ' selected' : ''}`}
-              key={item.value}
-              type="button"
-              title={item.name}
-              aria-label={item.name}
-              aria-pressed={props.color === item.value}
-              style={{ '--swatch': item.value } as CSSProperties}
-              onClick={() => props.onColor(item.value)}
-            />
-          ))}
-        </div>}
-        <div className="tool-group thickness-group" role="group" aria-label="Stroke thickness">
-          {WIDTHS.map((size) => (
-            <button
-              className={`thickness-button${props.width === size ? ' selected' : ''}`}
-              key={size}
-              type="button"
-              title={`${size}px stroke`}
-              aria-label={`${size} pixel stroke thickness`}
-              aria-pressed={props.width === size}
-              onClick={() => props.onWidth(size)}
-            ><span style={{ width: Math.min(size * 2.2, 20), height: Math.min(size * 2.2, 20) }} /></button>
-          ))}
-        </div>
-        <div className="stroke-width-slider">
-          <label className="popover-label" htmlFor="stroke-width-range">Width</label>
-          <input id="stroke-width-range" className="stroke-width-range" aria-label="Stroke width" type="range" min={MIN_STROKE_WIDTH} max={MAX_STROKE_WIDTH} step="1" value={props.width} onChange={(event) => props.onWidth(Number(event.target.value))} />
-          <output htmlFor="stroke-width-range">{props.width} px</output>
-        </div>
-        {props.showDisplayMode !== false && <div className="stroke-display-control" role="group" aria-label="Stroke display mode">
-          <button className={`stroke-mode-button${props.strokeDisplayMode === 'smooth' ? ' selected' : ''}`} type="button" aria-label="Smooth stroke display" aria-pressed={props.strokeDisplayMode === 'smooth'} title="Display smoothed curved strokes" onClick={() => props.onStrokeDisplayMode('smooth')}>
-            <svg viewBox="0 0 24 16" aria-hidden="true"><path d="M1 12c4 0 4-8 8-8s4 8 8 8 4-4 6-4"/></svg><span>Smooth</span>
-          </button>
-          <button className={`stroke-mode-button${props.strokeDisplayMode === 'raw' ? ' selected' : ''}`} type="button" aria-label="Raw stroke display" aria-pressed={props.strokeDisplayMode === 'raw'} title="Display raw straight stroke segments" onClick={() => props.onStrokeDisplayMode('raw')}>
-            <svg viewBox="0 0 24 16" aria-hidden="true"><path d="m1 12 7-8 7 8 8-7"/></svg><span>Raw</span>
-          </button>
-        </div>}
-      </>}
+  const selectionWidthEl = (
+    <>
       {props.selectionWidth && <div className="selection-width" role="group" aria-label="Outline width of the selection">
         <span className="panel-label">Width of this object</span>
         <div className="tool-group thickness-group">
@@ -258,6 +223,10 @@ export function ContextPanel(props: ContextPanelProps) {
           <output htmlFor="selection-width-range">{props.selectionWidth.value === null ? 'mixed' : `${props.selectionWidth.value} px`}</output>
         </div>
       </div>}
+    </>
+  )
+  const lineStyleEl = (
+    <>
       {props.lineStyle && <div className="line-style-controls" role="group" aria-label={props.lineStyle.label}>
         <span className="panel-label">{props.lineStyle.label}</span>
         <div className="routing-toggle" role="group" aria-label="Line style">
@@ -268,6 +237,10 @@ export function ContextPanel(props: ContextPanelProps) {
           ))}
         </div>
       </div>}
+    </>
+  )
+  const arrowheadsEl = (
+    <>
       {props.arrowheads && <div className="arrowhead-controls" role="group" aria-label="Arrowheads">
         <span className="panel-label">Arrowheads</span>
         <div className="routing-toggle" role="group" aria-label="Arrowhead ends">
@@ -278,6 +251,10 @@ export function ContextPanel(props: ContextPanelProps) {
           ))}
         </div>
       </div>}
+    </>
+  )
+  const layerEl = (
+    <>
       {props.layer && <div className="layer-controls" role="group" aria-label="Layer order">
         <span className="panel-label">Layer</span>
         <div className="selection-actions">
@@ -287,28 +264,48 @@ export function ContextPanel(props: ContextPanelProps) {
           <button className="clear-selection-button" type="button" aria-label="Send to back" title="Send to back (Ctrl+Shift+[)" onClick={() => props.layer?.onMove('back')}>{props.desktop ? <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12l7 4-7 4-7-4zM5 8l7 4 7-4-7-4z" /></svg> : 'To back'}</button>
         </div>
       </div>}
+    </>
+  )
+  const groupEl = (
+    <>
       {props.group && (props.group.canGroup || props.group.canUngroup) && <div className="selection-actions" role="group" aria-label="Group">
         {props.group.canGroup && <button className="clear-selection-button" type="button" aria-label="Group selection" title={props.desktop ? "Group the selected items so they select and move together (Ctrl+G)" : "Group the selected items so they select and move together"} onClick={props.group.onGroup}>Group</button>}
         {props.group.canUngroup && <button className="clear-selection-button" type="button" aria-label="Ungroup selection" title={props.desktop ? "Take the selected items out of their group (Ctrl+Shift+G)" : "Take the selected items out of their group"} onClick={props.group.onUngroup}>Ungroup</button>}
       </div>}
+    </>
+  )
+  const changeShapeEl = (
+    <>
       {props.changeShape && props.changeShape.choices.length > 0 && <div className="change-shape-controls" role="group" aria-label="Change shape">
         <span className="panel-label">Change shape</span>
         <div className="selection-actions">
           {props.changeShape.choices.map((choice) => <button key={choice.id} className="clear-selection-button" type="button" aria-label={`Change shape to ${choice.label}`} title={`Change shape to ${choice.label}`} onClick={() => props.changeShape?.onChange(choice.id)}>{choice.label}</button>)}
         </div>
       </div>}
+    </>
+  )
+  const selectionToolsEl = (
+    <>
       {props.selectionTools && (props.selectionTools.onSelectSimilar || props.selectionTools.onCopyStyle || props.selectionTools.onPasteStyle || props.selectionTools.onNumberSteps) && <div className="selection-actions selection-tools" role="group" aria-label="Selection commands">
         {props.selectionTools.onSelectSimilar && <button className="clear-selection-button" type="button" aria-label="Select similar" title="Select every item like this one" onClick={props.selectionTools.onSelectSimilar}>Select similar</button>}
         {props.selectionTools.onCopyStyle && <button className="clear-selection-button" type="button" aria-label="Copy style" title="Copy this item's colours and line style" onClick={props.selectionTools.onCopyStyle}>Copy style</button>}
         {props.selectionTools.onPasteStyle && <button className="clear-selection-button" type="button" aria-label="Paste style" title="Apply the copied style to the selection" disabled={!props.selectionTools.canPasteStyle} onClick={props.selectionTools.onPasteStyle}>Paste style</button>}
         {props.selectionTools.onNumberSteps && <button className="clear-selection-button" type="button" aria-label="Number steps" title="Number the selected arrows 1, 2, 3 in flow order" onClick={props.selectionTools.onNumberSteps}>Number steps</button>}
       </div>}
+    </>
+  )
+  const movePagesEl = (
+    <>
       {props.movePages && props.movePages.chips.length > 0 && <div className="move-page-controls" role="group" aria-label="Move to page">
         <span className="panel-label">Move to page</span>
         <div className="selection-actions">
           {props.movePages.chips.map((chip) => <button key={chip.action} className="clear-selection-button" type="button" aria-label={chip.label} title={chip.label} onClick={() => props.movePages?.onMove(chip.action)}>{chip.action === 'movePage:new' ? '+ New page' : chip.chip}</button>)}
         </div>
       </div>}
+    </>
+  )
+  const arrangeEl = (
+    <>
       {props.arrange && <div className="arrange-controls" role="group" aria-label="Align and distribute">
         <span className="panel-label">Align</span>
         <div className="selection-actions">
@@ -322,6 +319,10 @@ export function ContextPanel(props: ContextPanelProps) {
           <button className="clear-selection-button" type="button" disabled={!props.arrange.canDistribute} aria-label="Distribute vertically" title="Equal gaps top to bottom (3 or more items)" onClick={() => props.arrange?.onDistribute('vertical')}>Vertically</button>
         </div>
       </div>}
+    </>
+  )
+  const flipEl = (
+    <>
       {props.flip && <div className="flip-controls" role="group" aria-label="Flip">
         <span className="panel-label">Flip</span>
         <div className="selection-actions">
@@ -329,6 +330,10 @@ export function ContextPanel(props: ContextPanelProps) {
           <button className="clear-selection-button" type="button" aria-label="Flip vertical" title="Mirror the selection top to bottom (Shift+V)" onClick={() => props.flip?.onFlip('vertical')}>Flip ↕</button>
         </div>
       </div>}
+    </>
+  )
+  const sameSizeEl = (
+    <>
       {props.sameSize && <div className="same-size-controls" role="group" aria-label="Same size">
         <span className="panel-label">Same size</span>
         <div className="selection-actions">
@@ -337,15 +342,27 @@ export function ContextPanel(props: ContextPanelProps) {
           <button className="clear-selection-button" type="button" aria-label="Same width and height" title="Give the selected boxes the largest width and height" onClick={() => props.sameSize?.onSameSize('both')}>Both</button>
         </div>
       </div>}
+    </>
+  )
+  const boundaryToolsEl = (
+    <>
       {props.boundaryTools && <div className="selection-actions boundary-tools" role="group" aria-label="Boundary and connections">
         <button className="clear-selection-button" type="button" aria-label="Focus on selection" title="Fade everything not linked to the selection (view only; Esc exits)" onClick={props.boundaryTools.onFocus}>Focus</button>
         <button className="clear-selection-button" type="button" aria-label="Add boundary" title="Draw a dashed boundary box around the selection" onClick={props.boundaryTools.onAddBoundary}>Add boundary</button>
         {props.boundaryTools.onSelectConnected && <button className="clear-selection-button" type="button" aria-label="Select connected" title="Select this box, its arrows and the boxes at their other ends" onClick={props.boundaryTools.onSelectConnected}>Select connected</button>}
       </div>}
+    </>
+  )
+  const selColorEl = (
+    <>
       {props.showSelectionColor && !props.code && props.onSelectionColor && <div className="selection-color">
         <span className="panel-label">Colour of this object</span>
         <ColorChoices value={props.selectionColor ?? '#202124'} label="Object colour" onChange={props.onSelectionColor} />
       </div>}
+    </>
+  )
+  const fillEl = (
+    <>
       {props.fill && <div className="selection-color fill-color" role="group" aria-label="Fill colour">
         <span className="panel-label">Fill</span>
         <div className="tool-group color-group">
@@ -357,10 +374,18 @@ export function ContextPanel(props: ContextPanelProps) {
         <ColorChoices value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" onChange={(hex, commit) => props.fill?.onFill(hex, commit)} />
         {props.fill.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null) && <button className="clear-selection-button" type="button" title="Use the darker outline that goes with this fill" onClick={() => { const hex = props.fill?.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null); if (hex) props.fill?.onMatchOutline(hex) }}>Matching outline</button>}
       </div>}
+    </>
+  )
+  const newShapeDefaultEl = (
+    <>
       {props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet) && <div className="selection-actions selection-tools" role="group" aria-label="Default shape style">
         {props.newShapeDefault.canSet && <button className="clear-selection-button" type="button" aria-label="Use as default for new shapes" title="New shapes start with this shape's fill, line style, width and corners" onClick={props.newShapeDefault.onSet}>Use as default</button>}
         {props.newShapeDefault.isSet && <button className="clear-selection-button" type="button" aria-label="Reset default shape style" title="New shapes go back to the normal style" onClick={props.newShapeDefault.onReset}>Reset default</button>}
       </div>}
+    </>
+  )
+  const cornersEl = (
+    <>
       {props.corners && <div className="corners-controls" role="group" aria-label="Corners">
         <span className="panel-label">Corners</span>
         <div className="routing-toggle" role="group" aria-label="Rectangle corners" title="Sharp or rounded corners for plain rectangles">
@@ -368,6 +393,10 @@ export function ContextPanel(props: ContextPanelProps) {
           <button type="button" className={props.corners.rounded ? 'active' : ''} aria-pressed={props.corners.rounded} onClick={() => props.corners?.onChange(true)}>Round</button>
         </div>
       </div>}
+    </>
+  )
+  const rotationEl = (
+    <>
       {props.rotation && <div className="rotation-controls" role="group" aria-label="Rotation">
         <span className="panel-label">Rotation: {props.rotation.degrees}°</span>
         <div className="selection-actions">
@@ -376,6 +405,10 @@ export function ContextPanel(props: ContextPanelProps) {
         </div>
         <span className="panel-hint">Drag the round handle above it to rotate; hold Shift to snap to 15°.</span>
       </div>}
+    </>
+  )
+  const codeEl = (
+    <>
       {props.code && <div className="code-controls" role="group" aria-label="Code block">
         <span className="panel-label">Code block</span>
         <select className="relationship-select" aria-label="Code language" value={props.code.language} onChange={(event) => props.code?.onLanguage(event.target.value)}>
@@ -392,6 +425,10 @@ export function ContextPanel(props: ContextPanelProps) {
         </div>
         <button className="clear-selection-button" type="button" aria-label="Edit code" title="Edit the code (Enter or double-click)" onClick={props.code.onEdit}>Edit code</button>
       </div>}
+    </>
+  )
+  const eraserEl = (
+    <>
       {props.showEraser && <div className="eraser-panel" role="group" aria-label="Eraser options">
         <span className="panel-label">Mode</span>
         <div className="eraser-mode-options">
@@ -402,6 +439,10 @@ export function ContextPanel(props: ContextPanelProps) {
         <input className="eraser-size-range" aria-label="Eraser size" type="range" min="8" max="96" step="1" value={props.eraserSize} onChange={(event) => props.onEraserSize?.(Number(event.target.value))} />
         <div className="eraser-sizes" aria-label="Eraser size presets">{ERASER_SIZES.map((size) => <button className={`eraser-size${props.eraserSize === size && !props.objectEraser ? ' selected' : ''}`} type="button" key={size} aria-label={`${size} pixel eraser preset`} onClick={() => props.onEraserSize?.(size)}><span style={{ width: Math.max(7, Math.min(20, size / 3)), height: Math.max(7, Math.min(20, size / 3)) }} /></button>)}</div>
       </div>}
+    </>
+  )
+  const fontsEl = (
+    <>
       {props.showTextFonts && <div className="tool-group text-font-group" role="group" aria-label="Text font">
         {TEXT_FONTS.map((font) => (
           <button
@@ -416,6 +457,10 @@ export function ContextPanel(props: ContextPanelProps) {
           >Aa<span>{font.label}</span></button>
         ))}
       </div>}
+    </>
+  )
+  const alignEl = (
+    <>
       {props.textAlign && <span className="panel-label">Text align</span>}
       {props.textAlign && <div className="tool-group text-align-group" role="group" aria-label="Text alignment" onMouseDown={(event) => event.preventDefault()}>
         {TEXT_ALIGN_OPTIONS.map((option) => (
@@ -432,6 +477,10 @@ export function ContextPanel(props: ContextPanelProps) {
           </button>
         ))}
       </div>}
+    </>
+  )
+  const connSizeEl = (
+    <>
       {props.connectorLabelSize && <span className="panel-label">Text size</span>}
       {props.connectorLabelSize && <div className="tool-group text-size-group" role="group" aria-label="Arrow label size">
         {TEXT_FONT_SIZES_DESKTOP.map((size) => (
@@ -446,6 +495,10 @@ export function ContextPanel(props: ContextPanelProps) {
           >{size}</button>
         ))}
       </div>}
+    </>
+  )
+  const textSizeEl = (
+    <>
       {(props.showTextSizes || props.textFit) && <span className="panel-label">Text size</span>}
       {(props.showTextSizes || props.textFit) && <div className="tool-group text-size-group" role="group" aria-label="Text size" onMouseDown={props.textFit ? (event) => event.preventDefault() : undefined}>
         {(props.textSizeChoices ?? TEXT_FONT_SIZES).map((size) => (
@@ -468,13 +521,29 @@ export function ContextPanel(props: ContextPanelProps) {
           onClick={props.textFit.onToggle}
         >Fit</button>}
       </div>}
+    </>
+  )
+  const clearEl = (
+    <>
       {props.selectedItemCount > 0 && <button className="clear-selection-button" type="button" onClick={props.onClearSelection}>Clear selection</button>}
+    </>
+  )
+  const copyEl = (
+    <>
       {(props.canCopy || props.canPaste) && <div className="selection-actions" role="group" aria-label="Copy and paste">
         {props.canCopy && <button className="clear-selection-button" type="button" aria-label="Copy selection" title="Copy the selected items" onClick={props.onCopy}>Copy</button>}
         {props.canPaste && <button className="clear-selection-button" type="button" aria-label="Paste" title="Paste the copied items" onClick={props.onPaste}>Paste</button>}
         {props.canCopy && <button className="clear-selection-button" type="button" aria-label="Duplicate selection" title="Duplicate the selected items" onClick={props.onDuplicate}>Duplicate</button>}
       </div>}
+    </>
+  )
+  const deleteEl = (
+    <>
       {props.canDelete && <button className="clear-selection-button delete-selection-button" type="button" aria-label="Delete selection" title="Delete the selected items" onClick={props.onDeleteSelection}>Delete</button>}
+    </>
+  )
+  const relationshipEl = (
+    <>
       {relationship && <div className="relationship-controls" role="group" aria-label="Selected connector relationship">
         <label className="relationship-label" htmlFor="connector-relationship-type">Relationship</label>
         <select
@@ -525,6 +594,96 @@ export function ContextPanel(props: ContextPanelProps) {
         <button type="button" className="relationship-reverse" aria-label="Insert box" title="Put a box on the middle of this connector" disabled={!relationship.canInsertBox} onClick={relationship.onInsertBox}>
           <span>Insert box</span>
         </button>
+      </div>}
+    </>
+  )
+  const colourEl = (
+    <>
+        {props.desktop ? <ColorChoices value={props.color} label="Stroke colour" onChange={(hex) => props.onColor(hex)} /> : <div className="tool-group color-group" role="group" aria-label="Pen color">
+          {COLORS.map((item) => (
+            <button
+              className={`color-swatch${props.color === item.value ? ' selected' : ''}`}
+              key={item.value}
+              type="button"
+              title={item.name}
+              aria-label={item.name}
+              aria-pressed={props.color === item.value}
+              style={{ '--swatch': item.value } as CSSProperties}
+              onClick={() => props.onColor(item.value)}
+            />
+          ))}
+        </div>}
+    </>
+  )
+  const widthEl = (
+    <>
+        <div className="tool-group thickness-group" role="group" aria-label="Stroke thickness">
+          {WIDTHS.map((size) => (
+            <button
+              className={`thickness-button${props.width === size ? ' selected' : ''}`}
+              key={size}
+              type="button"
+              title={`${size}px stroke`}
+              aria-label={`${size} pixel stroke thickness`}
+              aria-pressed={props.width === size}
+              onClick={() => props.onWidth(size)}
+            ><span style={{ width: Math.min(size * 2.2, 20), height: Math.min(size * 2.2, 20) }} /></button>
+          ))}
+        </div>
+        <div className="stroke-width-slider">
+          <label className="popover-label" htmlFor="stroke-width-range">Width</label>
+          <input id="stroke-width-range" className="stroke-width-range" aria-label="Stroke width" type="range" min={MIN_STROKE_WIDTH} max={MAX_STROKE_WIDTH} step="1" value={props.width} onChange={(event) => props.onWidth(Number(event.target.value))} />
+          <output htmlFor="stroke-width-range">{props.width} px</output>
+        </div>
+        {props.showDisplayMode !== false && <div className="stroke-display-control" role="group" aria-label="Stroke display mode">
+          <button className={`stroke-mode-button${props.strokeDisplayMode === 'smooth' ? ' selected' : ''}`} type="button" aria-label="Smooth stroke display" aria-pressed={props.strokeDisplayMode === 'smooth'} title="Display smoothed curved strokes" onClick={() => props.onStrokeDisplayMode('smooth')}>
+            <svg viewBox="0 0 24 16" aria-hidden="true"><path d="M1 12c4 0 4-8 8-8s4 8 8 8 4-4 6-4"/></svg><span>Smooth</span>
+          </button>
+          <button className={`stroke-mode-button${props.strokeDisplayMode === 'raw' ? ' selected' : ''}`} type="button" aria-label="Raw stroke display" aria-pressed={props.strokeDisplayMode === 'raw'} title="Display raw straight stroke segments" onClick={() => props.onStrokeDisplayMode('raw')}>
+            <svg viewBox="0 0 24 16" aria-hidden="true"><path d="m1 12 7-8 7 8 8-7"/></svg><span>Raw</span>
+          </button>
+        </div>}
+    </>
+  )
+  const tabletBody = (
+    <>
+      {props.showStyle && <>{colourEl}{widthEl}</>}
+      {selectionWidthEl}{lineStyleEl}{arrowheadsEl}{layerEl}{groupEl}{changeShapeEl}{selectionToolsEl}{movePagesEl}{arrangeEl}{flipEl}{sameSizeEl}{boundaryToolsEl}
+      {selColorEl}{fillEl}{newShapeDefaultEl}{cornersEl}{rotationEl}{codeEl}{eraserEl}{fontsEl}{alignEl}{connSizeEl}{textSizeEl}{clearEl}{copyEl}{deleteEl}{relationshipEl}
+    </>
+  )
+  if (!props.desktop) return <aside className="context-panel" aria-label="Tool options">{tabletBody}</aside>
+  const sectionNodes: Record<DesktopSectionId, ReactNode> = {
+    colour: <>{props.showStyle && colourEl}{selColorEl}</>,
+    text: <>{fontsEl}{alignEl}{connSizeEl}{textSizeEl}{eraserEl}</>,
+    width: <>{props.showStyle && widthEl}{selectionWidthEl}</>,
+    style: <>{lineStyleEl}{arrowheadsEl}{fillEl}{cornersEl}{newShapeDefaultEl}{rotationEl}{codeEl}{relationshipEl}</>,
+    layer: <>{layerEl}{groupEl}</>,
+    arrange: <>{arrangeEl}</>,
+    actions: <>{clearEl}{copyEl}{deleteEl}</>,
+    more: null,
+  }
+  const hasMore = Boolean((props.changeShape && props.changeShape.choices.length > 0) || props.boundaryTools)
+  return (
+    <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}${collapsed ? ' is-collapsed' : ''}`} aria-label="Tool options">
+      <div className="options-header">
+        <div className="options-header-title" onClick={toggleCollapsed}>
+          <span className="options-swatch" aria-hidden="true" style={{ '--swatch': headerColor } as CSSProperties} />
+          <span className="options-name">{props.contextName ?? 'Options'}</span>
+        </div>
+        <button className="options-chevron" type="button" aria-label={collapsed ? 'Expand options' : 'Collapse options'} aria-expanded={!collapsed} aria-controls="options-panel-body" onClick={toggleCollapsed}>
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
+      </div>
+      {!collapsed && <div className="options-body" id="options-panel-body">
+        {DESKTOP_SECTION_ORDER.filter((id) => id !== 'more').map((id) => <Fragment key={id}>{sectionNodes[id]}</Fragment>)}
+        {hasMore && <div className="options-more">
+          <button className="options-more-toggle" type="button" aria-expanded={moreOpen} aria-controls="options-more-actions" onClick={() => setMoreOpen((open) => !open)}>
+            <span>More actions</span>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          {moreOpen && <div className="options-more-body" id="options-more-actions"><span className="panel-label">More</span>{changeShapeEl}{boundaryToolsEl}</div>}
+        </div>}
       </div>}
     </aside>
   )
