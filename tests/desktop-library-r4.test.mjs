@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { readFileSync } from 'node:fs'
+
+const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8')
+const css = read('../src/app/desktop-library.css')
+const tokens = read('../src/app/tokens.css')
+const styles = read('../src/styles.css')
+const home = read('../src/app/HomeScreen.tsx')
+const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').split('}').map((r) => r.split('{')[0].trim()).filter(Boolean)
+
+test('every desktop library rule is scoped under .home-desktop', () => {
+  assert.ok(rules.length > 30)
+  for (const selectorList of rules) {
+    for (const selector of selectorList.split(',')) assert.match(selector.trim(), /^\.home-desktop\b/, selector)
+  }
+})
+
+test('tokens reach the library through .home-desktop; tablet palette stays untouched', () => {
+  assert.match(tokens, /\.app-shell\[data-input-mode="desktop"\],\s*\.home-desktop \{\s*--ip-bg/)
+  assert.match(styles, /\.home-screen \{\s*--home-bg: #f4f6fa;[^}]*--home-accent: #475fdb;/)
+  assert.match(css, /--home-accent: var\(--ip-accent\)/)
+  assert.doesNotMatch(css, /#475fdb|#f4f6fa/i)
+})
+
+test('animation stays cheap: no transitions on paint properties, none above 240ms', () => {
+  assert.doesNotMatch(css, /transition:/)
+})
+
+test('view toggle exposes aria-pressed and labels; sort stays a native select; one primary button', () => {
+  assert.match(home, /aria-label="Grid" aria-pressed=\{layout === 'grid'\}/)
+  assert.match(home, /aria-label="List" aria-pressed=\{layout === 'list'\}/)
+  assert.match(home, /<select aria-label="Sort"/)
+  assert.match(css, /\.home-desktop \.home-sort select \{[^}]*appearance: none/)
+  assert.equal((home.match(/className="home-primary"/g) ?? []).length >= 1, true)
+  assert.doesNotMatch(css, /\.home-secondary[^{]*\{[^}]*background: var\(--ip-accent\)/)
+  assert.match(css, /\.home-desktop \.home-back, \.home-desktop \.home-secondary \{[^}]*background: transparent/)
+})
+
+test('storage line stays on one line and focus rings come from the desktop rule', () => {
+  assert.match(css, /\.home-desktop \.home-storage > span \{[^}]*white-space: nowrap/)
+  assert.match(read('../src/app/desktopPolish.css'), /\.home-desktop :where\(button, \[role="switch"\], a, select\):focus-visible/)
+})

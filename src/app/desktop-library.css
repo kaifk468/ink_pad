@@ -1,0 +1,69 @@
+/* InkPad desktop library restyle (round 4). Every rule is under .home-desktop, so the tablet library keeps its own --home-* palette untouched.
+   Maps the library onto the --ip-* tokens (tokens.css) so it matches the canvas chrome. Colour, radius and shadow only; no layout or behaviour changes. */
+.home-desktop {
+  --home-bg: var(--ip-bg); --home-surface: var(--ip-surface); --home-line: var(--ip-line); --home-text: var(--ip-text); --home-muted: var(--ip-muted);
+  --home-accent: var(--ip-accent); --home-accent-soft: var(--ip-accent-soft); --home-danger: var(--ip-danger);
+  --home-touch: 40px;
+  font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+.home-desktop button { border-radius: var(--ip-radius-control); color: var(--ip-text); font-weight: 500; }
+
+/* Sidebar */
+.home-desktop .home-side { background: var(--ip-surface); border-right: 1px solid var(--ip-line); }
+.home-desktop .home-brand { gap: 10px; padding: 4px 8px 12px; }
+.home-desktop .home-brand .brand-mark { border-color: var(--ip-accent); }
+.home-desktop .home-brand .brand-mark::before { background: var(--ip-accent); }
+.home-desktop .home-brand strong { color: var(--ip-text); font-family: 'DM Sans', system-ui, sans-serif; font-size: 15px; font-weight: 800; letter-spacing: -.035em; }
+.home-desktop .home-nav { min-height: 36px; color: var(--ip-text) !important; font-weight: 500; }
+.home-desktop .home-nav:hover { background: var(--ip-surface-2) !important; }
+.home-desktop .home-nav.selected { background: var(--ip-accent-soft) !important; color: var(--ip-accent) !important; font-weight: 600; }
+.home-desktop .home-nav.drop-over { background: var(--ip-accent-soft) !important; outline-color: var(--ip-accent); }
+.home-desktop .home-count { color: var(--ip-muted); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.home-desktop .home-nav.selected .home-count { color: var(--ip-accent); }
+.home-desktop .home-side-title { padding: 14px 12px 4px; color: var(--ip-muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; }
+.home-desktop .home-side-empty, .home-desktop .home-hint { color: var(--ip-muted); font-size: 12px; }
+.home-desktop .home-side-button { min-height: 36px; border: 0 !important; background: transparent !important; color: var(--ip-muted) !important; text-align: left; padding: 0 12px; font-weight: 500; }
+.home-desktop .home-side-button:hover { background: var(--ip-surface-2) !important; color: var(--ip-text) !important; }
+.home-desktop .home-storage { flex-wrap: wrap; justify-content: flex-start; gap: 4px 8px; padding: 8px 10px; background: var(--ip-surface-2); color: var(--ip-muted); font-size: 12px; }
+.home-desktop .home-storage > span { flex: 1 1 auto; white-space: nowrap; }
+.home-desktop .home-storage strong { color: var(--ip-text); font-weight: 600; }
+.home-desktop .home-storage button { min-height: 32px; padding: 0 10px; border-color: transparent; background: var(--ip-surface); color: var(--ip-text); font-size: 12px; box-shadow: var(--ip-shadow-1); }
+
+/* Header: one primary, quiet secondaries */
+.home-desktop .home-top { gap: 8px; }
+.home-desktop .home-back, .home-desktop .home-secondary { border-color: transparent; background: transparent; color: var(--ip-muted); font-weight: 500; }
+.home-desktop .home-back:hover, .home-desktop .home-secondary:hover { background: var(--ip-surface-2); color: var(--ip-text); }
+.home-desktop .home-search { height: 40px; border: 1px solid transparent; border-radius: var(--ip-radius-control); background: var(--ip-surface-2); color: var(--ip-muted); }
+.home-desktop .home-search:focus-within { border-color: var(--ip-accent); background: var(--ip-surface); box-shadow: 0 0 0 2px var(--ip-accent-soft); }
+.home-desktop .home-search input::placeholder { color: var(--ip-muted); opacity: 1; }
+.home-desktop .home-primary { border-color: var(--ip-accent) !important; border-radius: var(--ip-radius-control); background: var(--ip-accent) !important; color: var(--ip-on-accent) !important; font-weight: 600 !important; }
+.home-desktop .home-primary:hover { filter: brightness(1.08); }
+.home-desktop .home-new-menu { border-color: var(--ip-line); border-radius: var(--ip-radius-panel); box-shadow: var(--ip-shadow-2); }
+.home-desktop .home-new-menu button:hover { background: var(--ip-accent-soft); }
+
+/* Toolbar group: Select, Sort and the layout segmented control share one 36px rhythm */
+.home-desktop .home-heading-row { gap: 8px; }
+.home-desktop .home-heading-row h2 { font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.home-desktop .home-heading-count { color: var(--ip-muted); font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.home-desktop .home-select-toggle, .home-desktop .home-folder-actions button { min-height: 36px; border-color: transparent; background: var(--ip-surface-2); font-size: 13px; font-weight: 500; }
+.home-desktop .home-select-toggle:hover, .home-desktop .home-folder-actions button:hover { background: var(--ip-line); }
+.home-desktop .home-select-toggle.selected { background: var(--ip-accent-soft); color: var(--ip-accent); }
+.home-desktop .home-sort { gap: 8px; color: var(--ip-muted); font-size: 13px; }
+.home-desktop .home-sort select {
+  appearance: none; -webkit-appearance: none; min-height: 36px; padding: 0 30px 0 12px; border: 1px solid transparent; border-radius: var(--ip-radius-control);
+  background: var(--ip-surface-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2362666f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center / 16px 16px;
+  color: var(--ip-text); font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.home-desktop .home-sort select:hover { background-color: var(--ip-line); }
+.home-desktop .home-layout { gap: 2px; padding: 2px; border: 0; border-radius: var(--ip-radius-control); background: var(--ip-surface-2); }
+.home-desktop .home-layout button { width: 32px; min-height: 32px; height: 32px; padding: 0; border-radius: 8px; background: transparent; color: var(--ip-muted); }
+.home-desktop .home-layout button:hover { color: var(--ip-text); }
+.home-desktop .home-layout button.selected { background: var(--ip-surface); color: var(--ip-accent); box-shadow: var(--ip-shadow-1); }
+
+/* Secondary surfaces */
+.home-desktop .home-selectbar { border-color: var(--ip-accent); border-radius: var(--ip-radius-control); }
+.home-desktop .home-confirm { border-radius: var(--ip-radius-panel); }
+.home-desktop .home-danger { border-color: var(--ip-danger) !important; background: var(--ip-danger) !important; color: var(--ip-on-accent) !important; }
+.home-desktop .home-crumb { color: var(--ip-accent); }
+.home-desktop .home-card-actions button, .home-desktop .home-card-rename button { min-height: 36px; font-size: 13px; }
+.home-desktop .home-star { color: var(--ip-muted); }
