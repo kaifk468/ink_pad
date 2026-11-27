@@ -633,7 +633,8 @@ export function shortShapeLabel(label: string): string {
 }
 
 /** Estimated pixel width of a chip (shared by the chip block layout and the Change shape one-line cut). */
-function chipWidth(text: string): number { return Math.ceil(text.length * 6.8) + 18 }
+/** Estimated width of a menu chip: 12px DM Sans 500 text plus the chip's 6px side padding. */
+function layoutChipWidth(text: string): number { return Math.ceil(text.length * 6.4) + 12 }
 
 /** Most Change shape chips shown before More… (about six); fewer when six would not fit one line next to More…. */
 export const CHANGE_SHAPE_CHIP_LIMIT = 6
@@ -643,13 +644,15 @@ export const CHANGE_SHAPE_CHIP_LIMIT = 6
  * that fit one line (at most CHANGE_SHAPE_CHIP_LIMIT) next to the More… chip, which expands the rest in place.
  */
 export function compactChangeShapes<T extends { label: string }>(choices: readonly T[], expanded: boolean): T[] {
-  const width = (choice: T) => chipWidth(shortShapeLabel(choice.label))
+  const width = (choice: T) => layoutChipWidth(shortShapeLabel(choice.label))
+  // The chips column is narrow (the caption has its own column), so the collapsed block is allowed two chip lines.
+  const budget = 2 * CHIP_AREA_WIDTH - 16 // slack for a chip that wraps early
   const total = choices.reduce((sum, choice, index) => sum + width(choice) + (index > 0 ? CHIP_GAP : 0), 0)
-  if (expanded || (choices.length <= 4 && total <= CHIP_AREA_WIDTH)) return [...choices]
+  if (expanded || (choices.length <= 4 && total <= budget)) return [...choices]
   const kept: T[] = []
-  let used = chipWidth('More…')
+  let used = layoutChipWidth('More…')
   for (const choice of choices) {
-    if (kept.length >= CHANGE_SHAPE_CHIP_LIMIT || used + CHIP_GAP + width(choice) > CHIP_AREA_WIDTH) break
+    if (kept.length >= CHANGE_SHAPE_CHIP_LIMIT || used + CHIP_GAP + width(choice) > budget) break
     kept.push(choice)
     used += CHIP_GAP + width(choice)
   }
@@ -723,13 +726,13 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('copyStyle', 'Copy style', 'Ctrl+Alt+C', 'shape', canCopyStyle, 'Copy', 'Style'),
     entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'shape', canPasteStyle, 'Paste', 'Style'),
     ...(canSetDefaultStyle ? [entry('useAsDefaultStyle', 'Use as default for new shapes', '', 'shape', true, 'Default', 'Style')] : []),
-    ...(lineShape !== null ? [
-      entry('lineStraight', 'Line: straight', '', 'shape', lineShape !== 'straight', 'Straight', 'Line shape'),
-      entry('lineElbow', 'Line: elbow', '', 'shape', lineShape !== 'elbow', 'Elbow', 'Line shape'),
-      entry('lineCurved', 'Line: curved', '', 'shape', lineShape !== 'curved', 'Curved', 'Line shape'),
-    ] : []),
-    ...(arrowEnds === 'both' ? [entry('arrowBothEnds', 'Arrow: both ends', '', 'shape', true, 'Two-way', 'Style')] : arrowEnds === 'one' ? [entry('arrowOneEnd', 'Arrow: one end', '', 'shape', true, 'One-way', 'Style')] : []),
     ...(corners === 'round' ? [entry('cornersRound', 'Corners: round', '', 'shape', true, 'Round', 'Style')] : corners === 'sharp' ? [entry('cornersSharp', 'Corners: sharp', '', 'shape', true, 'Sharp', 'Style')] : []),
+    ...(lineShape !== null ? [
+      entry('lineStraight', 'Line: straight', '', 'shape', lineShape !== 'straight', 'Straight', 'Line'),
+      entry('lineElbow', 'Line: elbow', '', 'shape', lineShape !== 'elbow', 'Elbow', 'Line'),
+      entry('lineCurved', 'Line: curved', '', 'shape', lineShape !== 'curved', 'Curved', 'Line'),
+    ] : []),
+    ...(arrowEnds === 'both' ? [entry('arrowBothEnds', 'Arrow: both ends', '', 'shape', true, 'Two-way', 'Arrowheads')] : arrowEnds === 'one' ? [entry('arrowOneEnd', 'Arrow: one end', '', 'shape', true, 'One-way', 'Arrowheads')] : []),
     ...compactChangeShapes(changeShapes, changeShapesExpanded).map((choice) => entry(`shape:${choice.id}`, `Change shape to ${choice.label}`, '', 'shape', true, shortShapeLabel(choice.label))),
     ...(!changeShapesExpanded && compactChangeShapes(changeShapes, false).length < changeShapes.length ? [entry('shapesMore', 'More shapes', '', 'shape', true, 'More…')] : []),
     ...(canNumberSteps ? [entry('numberSteps', 'Number steps', '', 'shape', true, 'Number', 'Step numbers'), entry('clearSteps', 'Clear step numbers', '', 'shape', true, 'Clear', 'Step numbers')] : []),
@@ -751,7 +754,7 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     ...(hasSelection ? movePages.map((page) => entry(page.action, page.label, '', 'arrange', true, page.chip, 'Move to page')) : []),
     entry('copyPng', 'Copy as PNG', 'Shift+Alt+C', 'export', hasSelection || pageHasItems),
     // Only offered when something is selected.
-    ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true, 'PNG', 'Save selection as'), entry('exportSvg', 'Export selection as SVG', '', 'export', true, 'SVG', 'Save selection as'), entry('saveTemplate', 'Save selection as template…', '', 'export', true, 'Template…', 'Save selection as')] : []),
+    ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true, 'PNG', 'Save as'), entry('exportSvg', 'Export selection as SVG', '', 'export', true, 'SVG', 'Save as'), entry('saveTemplate', 'Save selection as template…', '', 'export', true, 'Template…', 'Save as')] : []),
     ...(canSelectSimilar ? [entry('selectSimilar', 'Select similar', '', 'select', true, 'Similar', 'Select')] : []),
     ...(canSelectConnected ? [entry('selectConnected', 'Select connected', '', 'select', true, 'Connected', 'Select')] : []),
     entry('selectAll', 'Select all', 'Ctrl+A', 'select', pageHasItems, 'All', 'Select'),
@@ -778,7 +781,7 @@ export function contextMenuRows(entries: readonly ContextMenuEntry[]): ContextMe
 }
 
 /** Menu geometry in px; the stylesheet uses the same numbers (.canvas-context-menu). */
-export const CONTEXT_MENU_WIDTH = 248
+export const CONTEXT_MENU_WIDTH = 296
 /** Desktop: the right-click menu stays this far above the bottom edge so it never covers the tool dock. */
 export const CONTEXT_MENU_BOTTOM_CLEARANCE = 100
 /** Clearance to keep under a menu opened at menuX: only needed when the menu's horizontal range overlaps the dock (null rect: unknown, so apply it). */
@@ -791,37 +794,32 @@ export function labelEscapeAction(editingExisting: boolean, value: string): 'com
   return editingExisting && value.trim() === '' ? 'cancel' : 'commit'
 }
 const MENU_PADDING = 6 + 1 // vertical padding plus border, per side
-const MENU_ENTRY_HEIGHT = 28
-const MENU_GAP = 2
-const MENU_SEPARATOR_HEIGHT = 1 + 3 + 3 // line plus its vertical margin
-const CHIP_CAPTION_HEIGHT = 16
-const CHIP_HEIGHT = 26
+const MENU_ENTRY_HEIGHT = 32
+const MENU_GAP = 4
+const MENU_SEPARATOR_HEIGHT = 1 + 4 + 4 // line plus its vertical margin
+const CHIP_HEIGHT = 28
 const CHIP_GAP = 4
-const CHIP_ROW_PADDING = 2 + 3 // top and bottom padding of the chip block
-const CHIP_AREA_WIDTH = CONTEXT_MENU_WIDTH - 2 * MENU_PADDING - 12 // inside the menu padding and the chip block's side padding
+/** Fixed caption column of a chip block and the gap after it; chips always start at the same x. */
+export const CHIP_CAPTION_COLUMN = 84
+const CHIP_CAPTION_GAP = 8
+const CHIP_BLOCK_SIDE_PADDING = 10 // matches the entry rows' side padding so captions line up with the labels above
+const CHIP_AREA_WIDTH = CONTEXT_MENU_WIDTH - 2 * MENU_PADDING - 2 * CHIP_BLOCK_SIDE_PADDING - CHIP_CAPTION_COLUMN - CHIP_CAPTION_GAP // chips column
 
-const CAPTION_GAP = 6
-
-/** Chip block layout: the caption sits at the left of the first chip line when every chip still fits on that one line, else over the chips. */
+/** Chip block layout: the caption has its own fixed column, so the chips only flow in what is left; `inline` means they all fit one line. */
 export function chipBlockLayout(chips: readonly ContextMenuEntry[]): { inline: boolean; lines: number } {
-  const widths = chips.map((chip) => chipWidth(chip.chip ?? chip.label))
-  const flow = (start: number) => {
-    let lines = 1
-    let used = start
-    for (const width of widths) {
-      if (used > 0 && used + CHIP_GAP + width > CHIP_AREA_WIDTH) { lines += 1; used = width } else used += (used > 0 ? CHIP_GAP : 0) + width
-    }
-    return lines
+  let lines = 1
+  let used = 0
+  for (const chip of chips) {
+    const width = layoutChipWidth(chip.chip ?? chip.label)
+    if (used > 0 && used + CHIP_GAP + width > CHIP_AREA_WIDTH) { lines += 1; used = width } else used += (used > 0 ? CHIP_GAP : 0) + width
   }
-  const caption = Math.ceil((chips[0]?.chipGroup ?? '').length * 6.4) + CAPTION_GAP
-  const inlineLines = flow(caption)
-  return inlineLines === 1 ? { inline: true, lines: 1 } : { inline: false, lines: flow(0) }
+  return { inline: lines === 1, lines }
 }
 
-/** Height of a chip block: one chip line with the caption beside it, or the caption row plus as many chip lines as the (slightly overestimated) chip widths need. */
+/** Height of a chip block: as many 28px chip lines as the (slightly overestimated) chip widths need. */
 export function chipBlockHeight(chips: readonly ContextMenuEntry[]): number {
-  const { inline, lines } = chipBlockLayout(chips)
-  return CHIP_ROW_PADDING + (inline ? 0 : CHIP_CAPTION_HEIGHT) + lines * CHIP_HEIGHT + (lines - 1) * CHIP_GAP
+  const { lines } = chipBlockLayout(chips)
+  return lines * CHIP_HEIGHT + (lines - 1) * CHIP_GAP
 }
 
 /** Height of the right-click menu, worked out from its rows (entries, the chip block and separators), for clampMenuPosition. */
@@ -832,11 +830,18 @@ export function contextMenuHeight(entries: readonly ContextMenuEntry[]): number 
   return height
 }
 
-/** Keeps the menu fully on screen: opens at the pointer, shifted back when it would run past the right or bottom edge. */
-export function clampMenuPosition(x: number, y: number, width: number, height: number, viewWidth: number, viewHeight: number): { x: number; y: number } {
+/** Desktop: the right-click menu keeps its top at least this far below the window top (clear of the top bar and the save pill) when it fits there. */
+export const CONTEXT_MENU_TOP_CLEARANCE = 68
+
+/**
+ * Keeps the menu fully on screen: opens at the pointer, shifted back when it would run past the right or bottom edge.
+ * minTop (Desktop passes CONTEXT_MENU_TOP_CLEARANCE) keeps the top that far down when the menu fits below it; otherwise the old rules apply.
+ */
+export function clampMenuPosition(x: number, y: number, width: number, height: number, viewWidth: number, viewHeight: number, minTop = 0): { x: number; y: number } {
   const clampedX = Math.max(0, Math.min(x, viewWidth - width))
   // A menu taller than the window (the CSS caps it to the window minus 8px each side and scrolls) sits at the top margin.
   if (height > viewHeight - 16) return { x: clampedX, y: 8 }
+  if (minTop > 0 && height <= viewHeight - minTop) return { x: clampedX, y: Math.max(minTop, Math.min(y, viewHeight - height)) }
   return { x: clampedX, y: Math.max(0, Math.min(y, viewHeight - height)) }
 }
 

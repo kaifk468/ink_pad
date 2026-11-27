@@ -118,9 +118,9 @@ test('the change-shape choices form ONE chips row with short names, and the menu
   assert.deepEqual(plain.filter((e) => e.chipGroup === 'Change shape').map((e) => e.chip), ['Rect', 'Diamond'])
   // Fourteen HLD chips wrap onto several lines but stay far below fourteen full rows.
   const extra = input.contextMenuHeight(withChips) - input.contextMenuHeight(base)
-  assert.ok(extra > 60 && extra < 14 * 28 / 2, `extra ${extra}`)
+  assert.ok(extra > 60 && extra <= 14 * 32 / 2, `extra ${extra}`)
   assert.ok(input.contextMenuHeight(plain) <= 700 - 16, 'plain shapes fit a 1024x700 screen without scrolling: ' + input.contextMenuHeight(plain))
-  assert.ok(input.contextMenuHeight(withChips) < input.contextMenuHeight(base) + 14 * 28, 'HLD chips take far less than nine rows')
+  assert.ok(input.contextMenuHeight(withChips) < input.contextMenuHeight(base) + 14 * 32, 'HLD chips take far less than nine rows')
   assert.ok(input.chipBlockHeight(shapeRow(rows).chips) < input.chipBlockHeight([...shapeRow(rows).chips, ...shapeRow(rows).chips, ...shapeRow(rows).chips]))
 })
 

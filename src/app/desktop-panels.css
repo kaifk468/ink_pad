@@ -145,10 +145,21 @@
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .color-picker-popover { left: calc(max(16px, env(safe-area-inset-left)) + 240px + 12px); }
 
 /* ---------- Right-click menu ---------- */
+/* Rows: 32px actions, 28px chips, 4px gaps, separators with 4px margin (contextMenuHeight in desktopInput.ts uses the same numbers). */
 .app-shell[data-input-mode="desktop"] .canvas-context-menu {
-  padding: 6px; gap: 2px; background: var(--ip-surface); border: 1px solid var(--ip-line); border-radius: var(--ip-radius-panel); box-shadow: var(--ip-shadow-2);
+  width: 296px; padding: 6px; gap: 4px; background: var(--ip-surface); border: 1px solid var(--ip-line); border-radius: var(--ip-radius-panel); box-shadow: var(--ip-shadow-2);
   max-height: calc(100vh - 108px); overscroll-behavior: contain; font-family: 'DM Sans', system-ui, sans-serif; color: var(--ip-text);
+  transform-origin: left top; animation: ip-context-menu-in 140ms var(--ip-ease-out) both;
+  /* soft shadow at the bottom (and top) edge while more content is hidden: the scrolling-shadow trick used by the menu sheet, no JS */
+  background:
+    linear-gradient(var(--ip-surface) 30%, transparent) top / 100% 24px no-repeat local,
+    linear-gradient(transparent, var(--ip-surface) 70%) bottom / 100% 24px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, .14), transparent) top / 100% 8px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, .14), transparent) bottom / 100% 8px no-repeat scroll,
+    var(--ip-surface);
 }
+@keyframes ip-context-menu-in { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .app-shell[data-input-mode="desktop"] .canvas-context-menu { animation: none; } }
 .app-shell[data-input-mode="desktop"] .canvas-context-menu button {
   min-height: 32px; height: 32px; padding: 0 10px; border-radius: 8px; font: 500 14px/1 'DM Sans', system-ui, sans-serif; color: var(--ip-text); flex: none;
 }
@@ -158,18 +169,21 @@
 .app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-hint {
   font: 400 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--ip-faint); margin-left: auto;
 }
-.app-shell[data-input-mode="desktop"] .canvas-context-separator { background: var(--ip-line); margin: 4px 6px; }
-.app-shell[data-input-mode="desktop"] .canvas-context-chips { padding: 4px 6px 6px; gap: 4px; }
-.app-shell[data-input-mode="desktop"] .canvas-context-chips-caption { color: var(--ip-muted); font: 600 11px/16px 'DM Sans', system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; }
-.app-shell[data-input-mode="desktop"] .canvas-context-chips-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.app-shell[data-input-mode="desktop"] .canvas-context-separator { flex: none; background: var(--ip-line); margin: 4px 6px; }
+/* Chip block: caption in a fixed 84px column (at most two lines), chips start at the same x on every block. */
+.app-shell[data-input-mode="desktop"] .canvas-context-chips { display: grid; grid-template-columns: 84px minmax(0, 1fr); column-gap: 8px; align-items: start; padding: 0 10px; flex: none; }
+.app-shell[data-input-mode="desktop"] .canvas-context-chips-caption {
+  display: flex; align-items: center; min-height: 28px; max-height: 28px; overflow: hidden; overflow-wrap: anywhere;
+  color: var(--ip-muted); font: 600 11px/14px 'DM Sans', system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase;
+}
+.app-shell[data-input-mode="desktop"] .canvas-context-chips-row { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip {
-  min-height: 28px; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--ip-surface-2); font: 500 12px/1 'DM Sans', system-ui, sans-serif;
+  min-height: 28px; height: 28px; padding: 0 6px; border: 0; border-radius: 8px; background: var(--ip-surface-2); font: 500 12px/1 'DM Sans', system-ui, sans-serif;
 }
 .app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip:hover:not(:disabled) { background: var(--ip-line); }
 .app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip:disabled { color: var(--ip-faint); }
 
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .selection-actions > .clear-selection-button:last-child:nth-child(odd) { grid-column: 1 / -1; }
-.app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip { padding: 0 6px; font-size: 12px; }
 
 /* Command palette and shortcut help (both render inside .app-shell). Only transform/opacity animate. */
 .app-shell[data-input-mode="desktop"] .command-palette-backdrop { padding-top: 15vh; background: rgba(31, 33, 38, .32); }

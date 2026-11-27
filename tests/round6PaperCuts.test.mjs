@@ -11,14 +11,12 @@ const hld = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache
 // Five grouped HLD boxes joined by labelled connectors: every optional chip block is on.
 const busy = { hasSelection: true, clipboardHasItems: true, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false, canCopyStyle: true, canPasteStyle: true, canSelectSimilar: true, canGroup: true, canUngroup: true, changeShapes: hld, canNumberSteps: true, canSameSize: true, canSelectConnected: true, changeShapesExpanded: true }
 
-test('right-click menu: the busiest selection fits a 1024x700 window without scrolling (measured 646 px in Chromium)', () => {
+test('right-click menu: the busiest selection is about 790 px tall; at 1024x700 it scrolls inside its max-height with the scroll shadow cue', () => {
   const entries = input.contextMenuEntries(busy)
-  // The Focus chip (round 7) wraps the Selection block to two lines: the estimate is 706 while the real menu is about 676 (the estimate runs ~30 px high), still under 684.
-  assert.ok(input.contextMenuHeight(entries) <= 684 + 30, 'height ' + input.contextMenuHeight(entries))
-  // The estimate never undershoots the measured 646 px by much, so the check above is meaningful.
+  // Round 7 (menu redesign): 32px action rows, 28px chips and 4px gaps made the busiest menu taller than a 700px window; it scrolls (CSS max-height) and shows a bottom shadow.
+  assert.ok(input.contextMenuHeight(entries) <= 840, 'height ' + input.contextMenuHeight(entries))
   assert.ok(input.contextMenuHeight(entries) >= 600)
 })
-
 test('right-click menu: Group, Ungroup, Zoom, Lock and Select all became chips, every command is still there', () => {
   const entries = input.contextMenuEntries(busy)
   const rows = input.contextMenuRows(entries)

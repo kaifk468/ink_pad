@@ -53,6 +53,6 @@ test('desktop dialog CSS is desktop-scoped, animates transform/opacity only, hon
   assert.match(css, /@keyframes ip-dialog-in \{ from \{ opacity: 0; transform: scale\(\.98\); \} to \{ opacity: 1; transform: scale\(1\); \} \}/)
   assert.match(css, /prefers-reduced-motion: reduce\) \{[^@]*animation: none/)
   assert.match(css, /min-width: 1100px[\s\S]*column-count: 2/)
-  assert.match(css, /canvas-context-chips-row \{ display: flex; flex-wrap: wrap; gap: 4px; \}/)
-  assert.match(css, /canvas-context-chip \{ padding: 0 6px; font-size: 12px; \}/)
+  assert.match(css, /canvas-context-chips-row \{ display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; \}/)
+  assert.match(css, /canvas-context-chip \{\n  min-height: 28px; height: 28px; padding: 0 6px;/)
 })

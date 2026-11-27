@@ -126,9 +126,9 @@ test('flip mirrors a curved bend; insert box keeps curved routing; Excalidraw ex
 
 test('desktop right-click: line shape chips, current one disabled', () => {
   const state = { hasSelection: true, clipboardHasItems: false, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false }
-  const chips = input.contextMenuEntries({ ...state, lineShape: 'curved' }).filter((e) => e.chipGroup === 'Line shape')
+  const chips = input.contextMenuEntries({ ...state, lineShape: 'curved' }).filter((e) => e.chipGroup === 'Line')
   assert.deepEqual(chips.map((e) => [e.action, e.disabled]), [['lineStraight', false], ['lineElbow', false], ['lineCurved', true]])
-  assert.equal(input.contextMenuEntries(state).some((e) => e.chipGroup === 'Line shape'), false)
+  assert.equal(input.contextMenuEntries(state).some((e) => e.chipGroup === 'Line'), false)
 })
 
 test('wiring: panel offers Straight / Elbow / Curved; palette entry; handler cases', () => {
