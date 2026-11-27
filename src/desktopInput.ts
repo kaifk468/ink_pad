@@ -30,6 +30,11 @@ export function loadInputMode(storage?: Pick<Storage, 'getItem'>): InputMode {
   }
 }
 
+/** Desktop sessions start on the Select tool; Tablet keeps the Pen start. */
+export function initialSelectionMode(mode: InputMode): boolean {
+  return mode === 'desktop'
+}
+
 export function saveInputMode(mode: InputMode, storage?: Pick<Storage, 'setItem'>): void {
   try {
     const target = storage ?? window.localStorage

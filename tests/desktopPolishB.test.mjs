@@ -78,3 +78,19 @@ test('desktop top bar: undo/redo live in TopLeftBar, tablet keeps HistoryBar, cs
   assert.match(bar, /title="Undo \(Ctrl\+Z\)"/)
   assertScoped(css, 'desktop-topbar.css')
 })
+
+test('desktop canvas chrome css is desktop-scoped, imported last, and lifts clusters only on overlap', async () => {
+  const chrome = await readFile(new URL('../src/app/desktop-canvas-chrome.css', import.meta.url), 'utf8')
+  assertScoped(chrome, 'desktop-canvas-chrome.css')
+  assert.ok(main.indexOf('desktop-canvas-chrome.css') > main.indexOf('desktop-panels.css'))
+  assert.match(chrome, /\.zoom-controls \{ bottom: max\(16px, env\(safe-area-inset-bottom\)\); height: 44px/)
+  assert.match(chrome, /@media \(max-width: 1157px\)/)
+  assert.match(chrome, /font-size: 13px; font-weight: 600;[^}]*tabular-nums/)
+})
+
+test('a new Desktop session starts on Select; Tablet keeps Pen', async () => {
+  const input = await loadModule('desktopInput.ts')
+  assert.equal(input.initialSelectionMode('desktop'), true)
+  assert.equal(input.initialSelectionMode('tablet'), false)
+  assert.match(app, /useState\(\(\) => initialSelectionMode\(loadInputMode\(\)\)\)/)
+})
