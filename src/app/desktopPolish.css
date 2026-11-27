@@ -42,6 +42,28 @@
 .home-desktop .home-welcome p { margin: 0 0 16px; font-size: 14px; color: var(--ip-muted, #62666f); }
 .home-desktop .home-welcome .home-primary { min-height: 40px; }
 
+/* Library cards (desktop): calm, modern. Radius 14, hairline border, paper thumbnail, lift on hover (transform + shadow on the card only). */
+.home-desktop .home-card {
+  border-radius: 14px; border: 1px solid var(--ip-line, #e4e2dc); background: #fff;
+  transition: transform 160ms cubic-bezier(.2, .8, .2, 1), box-shadow 160ms cubic-bezier(.2, .8, .2, 1);
+}
+.home-desktop .home-card:hover,
+.home-desktop .home-card:focus-within { transform: translateY(-2px); box-shadow: var(--ip-shadow-2, 0 8px 24px rgba(20, 22, 28, .10), 0 2px 6px rgba(20, 22, 28, .06)); }
+.home-desktop .home-card.current { border-color: var(--ip-accent, #2f54d6); box-shadow: 0 0 0 1px var(--ip-accent, #2f54d6); }
+.home-desktop .home-card.current:hover { box-shadow: 0 0 0 1px var(--ip-accent, #2f54d6), var(--ip-shadow-2, 0 8px 24px rgba(20, 22, 28, .10)); }
+.home-desktop .home-card.picked { border-color: var(--ip-accent, #2f54d6); box-shadow: 0 0 0 2px var(--ip-accent, #2f54d6); }
+.home-desktop .home-card-preview { background: #f7f6f2; color: #a8a69e; border-bottom: 1px solid var(--ip-line, #e4e2dc); }
+.home-desktop .home-list .home-card-preview { border: 1px solid var(--ip-line, #e4e2dc); }
+.home-desktop .home-card-title { font: 600 14px/1.3 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; color: var(--ip-text, #1f2126); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-desktop .home-card-meta,
+.home-desktop .home-card-folder { font: 400 12px/1.4 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; color: var(--ip-muted, #62666f); }
+.home-desktop .home-card-folder { font-weight: 500; }
+.home-desktop .home-recent-preview { background: #f7f6f2; border: 1px solid var(--ip-line, #e4e2dc); }
+.home-desktop .home-recent li button { border-color: var(--ip-line, #e4e2dc); border-radius: 14px; }
+
+/* Row headers (Recent) as small overlines. */
+.home-desktop .home-recent h3 { margin: 0 0 8px; font: 600 11px/1.2 'DM Sans', system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: var(--ip-muted, #62666f); }
+
 /* Focus rings: accent, 2px, offset 2px, keyboard focus only. */
 .app-shell[data-input-mode="desktop"] :where(button, [role="switch"], a, select):focus-visible,
 .home-desktop :where(button, [role="switch"], a, select):focus-visible { outline: 2px solid var(--ip-accent, #2f54d6); outline-offset: 2px; }
@@ -51,4 +73,7 @@
   .app-shell[data-input-mode="desktop"] .app-toast.app-toast-visible { transform: translate(-50%, 0); transition: opacity .01ms; }
   .app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-template { transition: none; }
   .app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-template:active { transform: none; }
+  .home-desktop .home-card,
+  .home-desktop .home-card:hover,
+  .home-desktop .home-card:focus-within { transform: none; transition: box-shadow 160ms; }
 }
