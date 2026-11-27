@@ -10,8 +10,8 @@
   background:
     linear-gradient(var(--ip-surface) 30%, transparent) top / 100% 24px no-repeat local,
     linear-gradient(transparent, var(--ip-surface) 70%) bottom / 100% 24px no-repeat local,
-    radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, .14), transparent) top / 100% 8px no-repeat scroll,
-    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, .14), transparent) bottom / 100% 8px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 0, color-mix(in srgb, var(--ip-text) 14%, transparent), transparent) top / 100% 8px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, color-mix(in srgb, var(--ip-text) 14%, transparent), transparent) bottom / 100% 8px no-repeat scroll,
     var(--ip-surface);
 }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .panel-label,
@@ -148,14 +148,14 @@
 /* Rows: 32px actions, 28px chips, 4px gaps, separators with 4px margin (contextMenuHeight in desktopInput.ts uses the same numbers). */
 .app-shell[data-input-mode="desktop"] .canvas-context-menu {
   width: 296px; padding: 6px; gap: 4px; background: var(--ip-surface); border: 1px solid var(--ip-line); border-radius: var(--ip-radius-panel); box-shadow: var(--ip-shadow-2);
-  max-height: calc(100vh - 108px); overscroll-behavior: contain; font-family: 'DM Sans', system-ui, sans-serif; color: var(--ip-text);
+  max-height: calc(100vh - 108px); /* inline max-height from contextMenuMaxHeight wins */ overflow-y: auto; overscroll-behavior: contain; font-family: 'DM Sans', system-ui, sans-serif; color: var(--ip-text);
   transform-origin: left top; animation: ip-context-menu-in 140ms var(--ip-ease-out) both;
   /* soft shadow at the bottom (and top) edge while more content is hidden: the scrolling-shadow trick used by the menu sheet, no JS */
   background:
     linear-gradient(var(--ip-surface) 30%, transparent) top / 100% 24px no-repeat local,
     linear-gradient(transparent, var(--ip-surface) 70%) bottom / 100% 24px no-repeat local,
-    radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, .14), transparent) top / 100% 8px no-repeat scroll,
-    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, .14), transparent) bottom / 100% 8px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 0, color-mix(in srgb, var(--ip-text) 14%, transparent), transparent) top / 100% 8px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, color-mix(in srgb, var(--ip-text) 14%, transparent), transparent) bottom / 100% 8px no-repeat scroll,
     var(--ip-surface);
 }
 @keyframes ip-context-menu-in { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: scale(1); } }
@@ -173,7 +173,7 @@
 /* Chip block: caption in a fixed 84px column (at most two lines), chips start at the same x on every block. */
 .app-shell[data-input-mode="desktop"] .canvas-context-chips { display: grid; grid-template-columns: 84px minmax(0, 1fr); column-gap: 8px; align-items: start; padding: 0 10px; flex: none; }
 .app-shell[data-input-mode="desktop"] .canvas-context-chips-caption {
-  display: flex; align-items: center; min-height: 28px; max-height: 28px; overflow: hidden; overflow-wrap: anywhere;
+  display: flex; align-items: center; min-height: 28px; overflow-wrap: anywhere; /* captions are at most two lines (tested) so nothing is clipped */
   color: var(--ip-muted); font: 600 11px/14px 'DM Sans', system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase;
 }
 .app-shell[data-input-mode="desktop"] .canvas-context-chips-row { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
@@ -316,7 +316,8 @@
 /* Connector section in plain language (round 6) */
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-plain { display: flex; flex-direction: column; align-items: stretch; gap: 12px; box-sizing: border-box; width: 100%; padding: 0; border: 0; min-width: 0; }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-section { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-plain .routing-toggle button { gap: 4px; padding: 0 4px; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-plain .routing-toggle button { gap: 4px; padding: 0 3px; font-size: 12px; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-plain .routing-toggle button svg { width: 14px; height: 14px; }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-plain svg { flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-arrow-row { display: grid; grid-template-columns: minmax(0, 1fr) 32px; gap: 8px; align-items: center; }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-icon-button,
@@ -325,13 +326,15 @@
   font: 500 13px/1 'DM Sans', system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
 }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-icon-button { width: 32px; color: var(--ip-muted); }
-.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-action { width: 100%; justify-content: flex-start; padding: 0 8px; background: var(--ip-surface-2); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-action { width: 100%; justify-content: center; padding: 0 8px; background: var(--ip-surface-2); white-space: nowrap; }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-icon-button:hover { background: var(--ip-surface-2); color: var(--ip-text); }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-action:hover:not(:disabled) { background: var(--ip-line); }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-action:disabled { color: var(--ip-faint); cursor: default; }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-icon-button:focus-visible,
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-action:focus-visible { outline: var(--ip-focus-ring); outline-offset: 2px; }
-.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-actions { display: flex; flex-direction: column; gap: 8px; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-icon-button:disabled { color: var(--ip-faint); cursor: default; opacity: .5; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-icon-button:disabled:hover { background: transparent; }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-uml .relationship-select {
   box-sizing: border-box; width: 100%; max-width: none; height: 32px; padding: 0 8px; border: 0; border-radius: 8px;
   background: var(--ip-surface-2); color: var(--ip-text); font: 500 13px/1 'DM Sans', system-ui, sans-serif;

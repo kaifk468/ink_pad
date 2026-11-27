@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { DESKTOP_SECTION_ORDER, activeTextSizeSegment, browserStorage, fillMoreColoursIdle, readOptionsCollapsed, writeOptionsCollapsed, type DesktopSectionId } from './optionsPanelModel'
+import { DESKTOP_SECTION_ORDER, activeTextSizeSegment, browserStorage, fillMoreColoursIdle, isUmlRelationship, readOptionsCollapsed, writeOptionsCollapsed, type DesktopSectionId } from './optionsPanelModel'
 import { ColorPicker } from './ColorPicker'
 import { ERASER_SIZES } from './appConfig'
 import type { Arrowheads, ConnectorRelationshipType, ConnectorRouting, LayerMove } from '../canvasModel'
@@ -185,7 +185,9 @@ export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
   const [collapsed, setCollapsed] = useState(() => (props.desktop ? readOptionsCollapsed(browserStorage()) : false))
   const [moreOpen, setMoreOpen] = useState(false)
-  const [umlOpen, setUmlOpen] = useState(false)
+  // The UML disclosure opens by itself for a UML relationship; once the user toggles it (or picks a type in it) their choice holds for that connector.
+  const [umlChoice, setUmlChoice] = useState<{ id: number; open: boolean } | null>(null)
+  const umlOpen = relationship ? (umlChoice?.id === relationship.connectorId ? umlChoice.open : isUmlRelationship(relationship.type)) : false
   const toggleCollapsed = () => { const next = !collapsed; setCollapsed(next); writeOptionsCollapsed(browserStorage(), next) }
   const headerColor = props.showStyle ? props.color : (props.selectionColor ?? 'var(--ip-muted)')
   if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !(props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet)) && !props.flip && !props.sameSize && !props.boundaryTools) return null
@@ -230,7 +232,7 @@ export function ContextPanel(props: ContextPanelProps) {
   const lineStyleEl = (
     <>
       {props.lineStyle && <div className="line-style-controls" role="group" aria-label={props.lineStyle.label}>
-        <span className="panel-label" title={props.lineStyle.label === 'Line style for new shapes' ? props.lineStyle.label : undefined}>{props.lineStyle.label === 'Line style for new shapes' && props.desktop ? 'Line style' : props.lineStyle.label}</span>
+        <span className="panel-label" title={props.desktop && props.lineStyle.label === 'Line style for new shapes' ? props.lineStyle.label : undefined}>{props.lineStyle.label === 'Line style for new shapes' && props.desktop ? 'Line style' : props.lineStyle.label}</span>
         <div className="routing-toggle" role="group" aria-label="Line style">
           {(['solid', 'dashed', 'dotted'] as const).map((dash) => (
             <button key={dash} type="button" className={props.lineStyle?.value === dash ? 'active' : ''} aria-pressed={props.lineStyle?.value === dash} aria-label={`${dash} line`} title={`${dash[0].toUpperCase()}${dash.slice(1)} line`} onClick={() => props.lineStyle?.onChange(dash)}>
@@ -572,7 +574,7 @@ export function ContextPanel(props: ContextPanelProps) {
                 <button type="button" className={relationship.twoWay ? '' : 'active'} aria-pressed={!relationship.twoWay} onClick={() => relationship.onTwoWay(false)}>End</button>
                 <button type="button" className={relationship.twoWay ? 'active' : ''} aria-pressed={relationship.twoWay} onClick={() => relationship.onTwoWay(true)}>Both</button>
               </div>
-              <button className="connector-icon-button" type="button" title={`Reverse direction (${relationship.reversed ? 'back to start' : 'to end'})`} aria-label="Reverse direction" onClick={relationship.onReverse}>
+              <button className="connector-icon-button" type="button" title="Reverse direction" aria-label="Reverse direction" disabled={relationship.twoWay} onClick={relationship.onReverse}>
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 8h15l-4-4m4 4-4 4M20 16H5l4 4m-4-4 4-4"/></svg>
               </button>
             </div>
@@ -580,22 +582,20 @@ export function ContextPanel(props: ContextPanelProps) {
         )}
         <div className="connector-actions">
           <button type="button" className="connector-action" aria-label={relationship.hasLabel ? 'Edit connector label' : 'Add connector label'} title="Text drawn on the middle of the connector (double-click it, or press Enter)" onClick={relationship.onEditLabel}>
-            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M5 7V5h14v2M12 5v14M9 19h6"/></svg>
             <span>{relationship.hasLabel ? 'Edit label' : 'Add label'}</span>
           </button>
           <button type="button" className="connector-action" aria-label="Insert box" title="Put a box on the middle of this connector" disabled={!relationship.canInsertBox} onClick={relationship.onInsertBox}>
-            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="5" y="6" width="14" height="12" rx="2"/></svg>
             <span>Insert box</span>
           </button>
         </div>
         <div className="options-more connector-uml">
-          <button className="options-more-toggle" type="button" aria-expanded={umlOpen} aria-controls="connector-uml-notation" onClick={() => setUmlOpen((open) => !open)}>
+          <button className="options-more-toggle" type="button" aria-expanded={umlOpen} aria-controls="connector-uml-notation" onClick={() => setUmlChoice({ id: relationship.connectorId, open: !umlOpen })}>
             <span>Diagram notation (UML)</span>
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
           {umlOpen && <div className="options-more-body" id="connector-uml-notation">
             <label className="panel-label" htmlFor="connector-relationship-type">Relationship</label>
-            <select id="connector-relationship-type" className="relationship-select" aria-label="Connector relationship type" value={relationship.type} onChange={(event) => relationship.onChange(event.target.value as ConnectorRelationshipType)}>
+            <select id="connector-relationship-type" className="relationship-select" aria-label="Connector relationship type" value={relationship.type} onChange={(event) => { setUmlChoice({ id: relationship.connectorId, open: true }); relationship.onChange(event.target.value as ConnectorRelationshipType) }}>
               <option value="association">Plain line (association)</option>
               <option value="directed-association">Arrow (directed association)</option>
               <option value="inheritance">Inherits from (inheritance)</option>

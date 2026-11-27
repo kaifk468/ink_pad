@@ -174,7 +174,8 @@ test('round 6: desktop connector section is plain language with a closed UML dis
   assert.ok(tablet, 'tablet branch is separate')
   // desktop: overlines, plain labels, disclosure closed by default
   for (const text of ['>Line<', '>Arrowheads<', '>End<', '>Both<', 'Diagram notation (UML)', 'Plain line (association)', 'Arrow (directed association)', 'Inherits from (inheritance)', 'Implements (realization)', 'Depends on (dependency)', 'Has a (aggregation)', 'Owns (composition)', 'e.g. 1 and * for one-to-many', 'aria-label="Reverse direction"', 'Add label', 'Insert box']) assert.ok(desktop.includes(text), text)
-  assert.ok(panel.includes('const [umlOpen, setUmlOpen] = useState(false)'))
+  assert.ok(panel.includes('isUmlRelationship(relationship.type)'))
+  assert.ok(panel.includes('const [umlChoice, setUmlChoice]'))
   assert.ok(desktop.includes('{umlOpen && '))
   assert.ok(desktop.includes("relationship.type === 'directed-association'"))
   assert.ok(!desktop.includes('Directed association<'))
@@ -189,4 +190,16 @@ test('round 6: desktop line-style heading is short, eraser active segment uses t
   const tail = css.slice(css.indexOf('Connector section in plain language'))
   for (const line of tail.split('\n').filter((l) => /^\.[\w-]|^\.app-shell/.test(l))) assert.ok(line.startsWith('.app-shell[data-input-mode="desktop"]'), line)
   assert.ok(!/transition/.test(tail))
+})
+
+test('connector section: UML opens by default for UML types, Reverse is disabled for two-way, Line labels fit, actions match the other buttons', () => {
+  assert.equal(model.isUmlRelationship('association'), false)
+  assert.equal(model.isUmlRelationship('directed-association'), false)
+  for (const t of ['inheritance', 'realization', 'dependency', 'aggregation', 'composition']) assert.equal(model.isUmlRelationship(t), true, t)
+  assert.match(panel, /<button className="connector-icon-button" type="button" title="Reverse direction" aria-label="Reverse direction" disabled=\{relationship\.twoWay\}/)
+  assert.match(panel, /title=\{props\.desktop && props\.lineStyle\.label === 'Line style for new shapes'/)
+  assert.match(css, /\.connector-plain \.routing-toggle button \{[^}]*padding: 0 3px; font-size: 12px/)
+  assert.match(css, /\.connector-action \{[^}]*justify-content: center/)
+  assert.match(css, /\.connector-actions \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
+  assert.match(css, /\.options-more-toggle \{[^}]*background: transparent/)
 })

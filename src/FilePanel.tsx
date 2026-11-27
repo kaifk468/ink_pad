@@ -91,7 +91,7 @@ export function FilePanel(props: FilePanelProps) {
             <h3 id="export-options-heading">Options</h3>
             <div className="export-options-row">
               <div className="export-scale-row">
-                <span id="export-scale-label">Scale</span>
+                <span id="export-scale-label">PNG scale</span>
                 <div className="export-segmented" role="group" aria-labelledby="export-scale-label">
                   <button type="button" aria-pressed={pngScale === 1} className={pngScale === 1 ? 'selected' : ''} onClick={() => setPngScale(1)}>1x</button>
                   <button type="button" aria-pressed={pngScale === 2} className={pngScale === 2 ? 'selected' : ''} onClick={() => setPngScale(2)}>2x</button>
@@ -102,6 +102,7 @@ export function FilePanel(props: FilePanelProps) {
                 <input type="checkbox" role="switch" className="export-switch" checked={props.transparent} onChange={(event) => props.onTransparentChange(event.target.checked)} />
               </label>
             </div>
+            <p className="file-panel-hint">Transparent background also applies to Copy as PNG.</p>
           </section>
 
           <section className="export-section" aria-labelledby="export-image-heading">
@@ -120,7 +121,7 @@ export function FilePanel(props: FilePanelProps) {
                 <span className="export-tile-file">{exportFileName(props.title, 'svg')}</span>
               </button>
             </div>
-            <p className="file-panel-hint">Images are cropped to your drawing. Transparent background also applies to Copy as PNG.</p>
+            <p className="file-panel-hint">Images are cropped to your drawing.</p>
           </section>
 
           <section className="export-section" aria-labelledby="export-file-heading">
