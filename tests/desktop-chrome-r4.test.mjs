@@ -66,3 +66,14 @@ test('top-right connector button is the UML tools restore: desktop gets DockTip,
   assert.match(app, /aria-label="Restore UML connector tools"/)
   assert.equal(chrome.UML_RESTORE_TIP, 'UML connector tools')
 })
+
+test('desktop menu sheet body scrolls and shows a static scroll shadow (nothing animated)', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const css = await readFile(new URL('../src/app/desktopPolish.css', import.meta.url), 'utf8')
+  const block = css.slice(css.indexOf('.ms-body {'))
+  assert.match(block, /no-repeat local/)
+  assert.match(block, /no-repeat scroll/)
+  assert.doesNotMatch(block.split('}')[0], /transition|animation/)
+  const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
+  assert.match(styles, /\.ms-body \{ flex: 1 1 auto; min-height: 0; overflow-y: auto/)
+})
