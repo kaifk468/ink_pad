@@ -80,6 +80,8 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'Arrange', label: 'Type inside a shape', keys: 'Double-click the shape (Select tool)' },
   { group: 'Arrange', label: 'Arrow that sticks to shapes', keys: 'Arrow tool (A): start or end on a shape' },
   { group: 'Arrange', label: 'Square or circle while drawing a shape', keys: 'Hold Shift' },
+  { group: 'Arrange', label: 'Shift while resizing: keep proportions (corner handles)', keys: 'Hold Shift' },
+  { group: 'Arrange', label: 'Shift while moving: straight line (one axis)', keys: 'Hold Shift' },
   { group: 'Pages', label: 'Previous page', keys: 'Page Up', input: { key: 'PageUp' } },
   { group: 'Pages', label: 'Next page', keys: 'Page Down', input: { key: 'PageDown' } },
 ]

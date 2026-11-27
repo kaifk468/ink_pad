@@ -20,6 +20,7 @@ import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
 import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeChoice } from './changeShape'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, pasteTranslation, type PasteResult } from './clipboard'
+import { axisLock, keepAspect, sizeReadoutText } from './resizeModifiers'
 import { gridDots, gridSnapApplies, gridSpacingFor, loadGridSnap, saveGridSnap, snapMoveDelta, snapResizeBounds, snapToGrid, unpaddedSelectionBounds } from './gridSnap'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
@@ -396,6 +397,8 @@ function App() {
   const guidesRef = useRef<Guide[]>([])
   // Round 10: the connector highlighted while one free box is dragged over it with the mouse (released there, the box is inserted); null otherwise.
   const dropConnectorRef = useRef<number | null>(null)
+  // The size pill ("W x H") shown near the pointer while a desktop resize or new-box drag is active; drawn only while that gesture is active, never saved or exported.
+  const sizeReadoutRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
   // Snap to grid (Desktop mode, mouse only; off by default, per device). `gridOverlayRef` holds the grid size while a snapped drag or resize is active, so the dot grid is drawn only then.
   const [gridSnap, setGridSnap] = useState(() => loadGridSnap())
   const gridSnapRef = useRef(gridSnap)
@@ -1930,6 +1933,12 @@ function App() {
     snapStateRef.current = null
     if (hadGuides && repaint) renderAll()
   }
+  // Shift while moving (Desktop mouse): the drag runs along its main axis; read live, so releasing Shift mid-drag frees it.
+  const shiftAxisLock = (event: React.PointerEvent<HTMLCanvasElement>, dx: number, dy: number): { dx: number; dy: number } =>
+    event.shiftKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop' ? axisLock(dx, dy) : { dx, dy }
+  // The snap may nudge the locked axis; keep it at zero so the move stays straight.
+  const lockSnapped = (lockedX: number, lockedY: number, snapped: { dx: number; dy: number }): { dx: number; dy: number } =>
+    lockedX === 0 && lockedY === 0 ? snapped : { dx: lockedX === 0 ? 0 : snapped.dx, dy: lockedY === 0 ? 0 : snapped.dy }
   // One drag move: the pointer's delta, nudged so the moving bounds line up with nearby boxes and labels. Off when the setting is off,
   // while Alt is held with a mouse in Desktop mode, and for selections without a box or label (ink and connectors alone never snap).
   const snapDragDelta = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], keys: ReadonlySet<string>, dx: number, dy: number): { dx: number; dy: number } => {
@@ -3018,6 +3027,27 @@ function App() {
         ctx.stroke()
         ctx.restore()
       }
+    }
+    const readout = sizeReadoutRef.current
+    if (readout && activeResizeRef.current?.moved) {
+      // Screen-sized pill, offset below-right of the pointer and clamped inside the visible canvas.
+      const k = 1 / viewport.scale
+      ctx.save()
+      ctx.font = `600 ${12 * k}px system-ui, sans-serif`
+      const text = sizeReadoutText(readout.width, readout.height)
+      const padX = 7 * k
+      const w = ctx.measureText(text).width + padX * 2
+      const h = 20 * k
+      const bx = Math.max(view.x + 4 * k, Math.min(readout.x + 14 * k, view.x + view.width - w - 4 * k))
+      const by = Math.max(view.y + 4 * k, Math.min(readout.y + 14 * k, view.y + view.height - h - 4 * k))
+      ctx.fillStyle = 'rgba(32, 38, 56, 0.88)'
+      ctx.beginPath()
+      ctx.roundRect(bx, by, w, h, 6 * k)
+      ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(text, bx + padX, by + h / 2)
+      ctx.restore()
     }
     const marqueeNow = activeMarqueeRef.current
     if (marqueeNow) {
@@ -4350,8 +4380,14 @@ function App() {
         bounds.width = side
         bounds.height = side
       }
+      // Shift on a corner of an existing box or selection keeps its proportions (Desktop mouse); grid snap is skipped then.
+      const keepRatio = event.shiftKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop' && !activeResize.created
+      if (keepRatio) {
+        const kept = keepAspect(activeResize.originalBounds, bounds, activeResize.handle)
+        bounds.x = kept.x; bounds.y = kept.y; bounds.width = kept.width; bounds.height = kept.height
+      }
       const resizeGrid = gridActive(event)
-      if (resizeGrid !== null && !(activeResize.created && event.shiftKey)) {
+      if (resizeGrid !== null && !(activeResize.created && event.shiftKey) && !keepRatio) {
         // The moved edge(s) land on the grid (a new shape's corner too: its press point was snapped when it was made).
         // A group's bounds are padded by stroke width; snap the unpadded edges so boxes (not their outlines) land on the grid.
         const raw = activeResize.rectangleId === null && activeResize.selectedKeys ? unpaddedSelectionBounds(routeConnectors(activeResize.originalItems), activeResize.selectedKeys) : null
@@ -4367,6 +4403,7 @@ function App() {
       const unchanged = bounds.x === original.x && bounds.y === original.y
         && bounds.width === original.width && bounds.height === original.height
       if (!activeResize.moved && unchanged) return
+      if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') sizeReadoutRef.current = { x: point.x, y: point.y, width: bounds.width, height: bounds.height }
       const nextItems = activeResize.rectangleId !== null
         ? (() => {
           const resized = resizeRectangleItems(activeResize.originalItems, activeResize.rectangleId, bounds)
@@ -4387,13 +4424,14 @@ function App() {
     if (lassoDrag?.pointerId === event.pointerId) {
       event.preventDefault()
       const point = getBoundedPoint(event)
-      const deltaX = point.x - lassoDrag.start.x
-      const deltaY = point.y - lassoDrag.start.y
-      if (!lassoDrag.moved && Math.hypot(deltaX, deltaY) < 2) return
+      const rawX = point.x - lassoDrag.start.x
+      const rawY = point.y - lassoDrag.start.y
+      if (!lassoDrag.moved && Math.hypot(rawX, rawY) < 2) return
+      const { dx: deltaX, dy: deltaY } = shiftAxisLock(event, rawX, rawY)
       const lassoDup = lassoDrag.duplicate ? beginDuplicate(lassoDrag, lassoDrag.originalItems, lassoDrag.keys, event) : null
       const lassoBase = lassoDup?.items ?? lassoDrag.originalItems
       const lassoKeys = lassoDup ? lassoDup.copyKeys : withCarriedLabels(event, lassoDrag.originalItems, lassoDrag.keys)
-      const lassoSnap = snapDragDelta(event, lassoBase, lassoKeys, deltaX, deltaY)
+      const lassoSnap = lockSnapped(deltaX, deltaY, snapDragDelta(event, lassoBase, lassoKeys, deltaX, deltaY))
       const nextItems = translateWithinWorkspace(lassoBase, lassoKeys, lassoSnap.dx, lassoSnap.dy)
       if (!lassoDrag.moved && nextItems.every((item, index) => item === lassoBase[index])) return
       if (!lassoDrag.moved) {
@@ -4429,13 +4467,14 @@ function App() {
     if (drag?.pointerId === event.pointerId) {
       event.preventDefault()
       const point = getBoundedPoint(event)
-      const deltaX = point.x - drag.start.x
-      const deltaY = point.y - drag.start.y
-      if (!drag.moved && Math.hypot(deltaX, deltaY) < 2) return
+      const rawX = point.x - drag.start.x
+      const rawY = point.y - drag.start.y
+      if (!drag.moved && Math.hypot(rawX, rawY) < 2) return
+      const { dx: deltaX, dy: deltaY } = shiftAxisLock(event, rawX, rawY)
       const dragDup = drag.duplicate ? beginDuplicate(drag, drag.originalItems, new Set([drag.itemKey]), event) : null
       const dragBase = dragDup?.items ?? drag.originalItems
       const dragKeys = dragDup ? dragDup.copyKeys : withCarriedLabels(event, drag.originalItems, new Set([drag.itemKey]))
-      const dragSnap = snapDragDelta(event, dragBase, dragKeys, deltaX, deltaY)
+      const dragSnap = lockSnapped(deltaX, deltaY, snapDragDelta(event, dragBase, dragKeys, deltaX, deltaY))
       const nextItems = translateWithinWorkspace(dragBase, dragKeys, dragSnap.dx, dragSnap.dy)
       if (!drag.moved && nextItems.every((item, index) => item === dragBase[index])) return
       if (!drag.moved) {
