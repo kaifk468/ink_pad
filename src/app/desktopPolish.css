@@ -77,3 +77,9 @@
   .home-desktop .home-card:hover,
   .home-desktop .home-card:focus-within { transform: none; transition: box-shadow 160ms; }
 }
+
+/* Chrome text is not selectable on desktop: a stray drag that starts on a panel must not paint blue selection over the UI. Inputs and editors stay selectable. */
+.app-shell[data-input-mode="desktop"] :where(.top-left-bar, .account-control, .tool-dock, .context-panel, .zoom-controls, .viewport-navigator, .page-controls, .ms-sheet, .canvas-context-menu) { -webkit-user-select: none; user-select: none; }
+.app-shell[data-input-mode="desktop"] :where(input, textarea, [contenteditable="true"]) { -webkit-user-select: text; user-select: text; }
+/* Menu sheet descriptions wrap to two lines instead of cutting mid-word. */
+.app-shell[data-input-mode="desktop"] .ms-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; line-height: 1.3; }
