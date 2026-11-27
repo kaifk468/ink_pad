@@ -1,10 +1,11 @@
 import type { SaveStatus } from '../FilePanel'
+import { desktopStatusTone } from './desktopChrome'
 
-type Props = { status: SaveStatus; text: string; onExport: () => void; exportOpen: boolean; hideExport?: boolean; /** Bumped by Ctrl+S: replays the dot pulse and flashes the pill once. */ flashKey?: number }
+type Props = { status: SaveStatus; text: string; /** The page has content (drives the idle tone: empty = neutral dot). */ hasContent?: boolean; onExport: () => void; exportOpen: boolean; hideExport?: boolean; /** Bumped by Ctrl+S: replays the dot pulse and flashes the pill once. */ flashKey?: number }
 
 /** Desktop only: save-status pill and the Export button, shown left of the account button. */
-export function DesktopStatusCluster({ status, text, onExport, exportOpen, hideExport, flashKey = 0 }: Props) {
-  const tone = status === 'saved' ? 'ok' : status === 'error' || status === 'locked' ? 'bad' : 'pending'
+export function DesktopStatusCluster({ status, text, onExport, exportOpen, hideExport, flashKey = 0, hasContent = true }: Props) {
+  const tone = desktopStatusTone(status, hasContent)
   return (
     <>
       <div key={`pill-${flashKey}`} className={`top-status-pill tone-${tone}${flashKey > 0 ? ' flash' : ''}`} role="status">
