@@ -12,6 +12,29 @@ export function isFlowBox(item: CanvasItem): item is RectangleObject {
   return item.kind === 'rectangle' && !item.classBox && (!item.inkBox || !!item.hldShape)
 }
 
+/**
+ * An end placed inside a box attaches to the middle of the side that faces the other end (not the nearest side, which for a line
+ * drawn into the middle of a box is often the top or bottom; found in the round 8 walk). Ends on or near the outline, ends whose
+ * other end is in the same box and rotated boxes keep `found`. Used by the pen recognizer and the desktop Arrow / Line tool.
+ */
+export function facingSideSnap<T extends { point: Point; attachment: { rectangleId: number; offsetX: number; offsetY: number } } | null>(boxes: readonly RectangleObject[], found: T, point: Point, other: Point, inset = 0): T {
+  if (!found) return found
+  const inside = (box: RectangleObject, p: { x: number; y: number }) => !box.angle && p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height
+  const box = boxes.find((item) => item.id === found.attachment.rectangleId)
+  // `inset` (world units): only a point deeper than this inside the outline counts as inside (a mouse drop a pixel or two in keeps its snap). The pen passes 0.
+  const deep = !!box && !box.angle && point.x >= box.x + inset && point.x <= box.x + box.width - inset && point.y >= box.y + inset && point.y <= box.y + box.height - inset
+  if (!box || !inside(box, point) || !deep || inside(box, other)) return found
+  const cx = box.x + box.width / 2
+  const cy = box.y + box.height / 2
+  const dx = (other.x - cx) / Math.max(1, box.width / 2)
+  const dy = (other.y - cy) / Math.max(1, box.height / 2)
+  const side = Math.abs(dx) >= Math.abs(dy)
+    ? { x: dx < 0 ? box.x : box.x + box.width, y: cy }
+    : { x: cx, y: dy < 0 ? box.y : box.y + box.height }
+  const sidePoint = { ...found.point, x: side.x, y: side.y }
+  return { point: sidePoint, attachment: { ...found.attachment, offsetX: side.x - box.x, offsetY: side.y - box.y } } as T
+}
+
 export const arrowToolCreates = (pressHit: boolean, releaseHit: boolean): 'connector' | 'stroke' => (pressHit || releaseHit ? 'connector' : 'stroke')
 
 /**
@@ -24,10 +47,12 @@ export function arrowToolConnector(
   release: Point,
   style: { id: number; color: string; width: number; dash?: LineDash },
   tolerance: number,
+  inset = 0,
 ): ConnectorObject | null {
   const boxes = items.filter(isFlowBox)
-  const startSnap = snapConnectorEndpoint(press, boxes, tolerance, true)
-  const endSnap = snapConnectorEndpoint(release, boxes, tolerance, true)
+  // An end well inside a box attaches to the middle of the side facing the other end (facingSideSnap, as the pen does); `inset` is in world units.
+  const startSnap = facingSideSnap(boxes, snapConnectorEndpoint(press, boxes, tolerance, true), press, release, inset)
+  const endSnap = facingSideSnap(boxes, snapConnectorEndpoint(release, boxes, tolerance, true), release, press, inset)
   if (arrowToolCreates(startSnap !== null, endSnap !== null) === 'stroke') return null
   const connector = createConnector(style.id, startSnap?.point ?? press, endSnap?.point ?? release, style.color, style.width, startSnap?.attachment, endSnap?.attachment, 'directed-association')
   return style.dash ? { ...connector, dash: style.dash } : connector

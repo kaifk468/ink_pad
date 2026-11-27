@@ -4,6 +4,7 @@ import { loadModule } from './helpers/loadModule.mjs'
 import { readAppSource } from './helpers/appSource.mjs'
 
 const pen = await loadModule('penConnector.ts')
+// (loadModule is also used below for diagramFlow.ts)
 const app = await readAppSource()
 const p = (x, y) => ({ x, y, pressure: 0.5 })
 const box = (id, x, y, w = 160, h = 100, extra = {}) => ({ kind: 'rectangle', id, x, y, width: w, height: h, strokeColor: '#c00000', strokeWidth: 3, ...extra })
@@ -29,8 +30,35 @@ test('the desktop Arrow / Line tool uses the pen facing-side rule for ends insid
 
 test('wiring: the tool applies it to both ends at move and release, desktop only, one history step', () => {
   assert.match(app, /const placeConnectorEnds = \(gesture/)
-  assert.match(app, /if \(inputModeRef\.current === 'desktop' && gesture\.rawStart\) \{[\s\S]*?facingSideSnap\(boxes, startSnap, gesture\.rawStart, rawEnd\)[\s\S]*?facingSideSnap\(boxes, endSnap, rawEnd, gesture\.rawStart\)/)
+  assert.match(app, /if \(inputModeRef\.current === 'desktop' && gesture\.rawStart\) \{[\s\S]*?facingSideSnap\(boxes, startSnap, gesture\.rawStart, rawEnd, FACING_SIDE_INSET_PX[\s\S]*?facingSideSnap\(boxes, endSnap, rawEnd, gesture\.rawStart, FACING_SIDE_INSET_PX/)
   assert.equal(app.split('placeConnectorEnds(activeConnector, point)').length - 1, 2)
   assert.equal(app.split('saveHistory()\n        strokesRef.current.push(createConnector(').length - 1, 1)
   assert.match(app, /rawStart: point,\s*\n\s*snappedStart,/)
+})
+
+test('inset: an end only a pixel or two inside the outline keeps its snap; deeper ends use the facing side', () => {
+  const wide = [box(1, 300, 200), box(2, 700, 200)]
+  const found = { point: p(780, 200), attachment: { rectangleId: 2, offsetX: 80, offsetY: 0 } }
+  assert.equal(pen.facingSideSnap(wide, found, p(780, 202), p(420, 250), 8), found)
+  assert.equal(pen.facingSideSnap(wide, found, p(701, 250), p(420, 250), 8), found)
+  const faced = pen.facingSideSnap(wide, found, p(750, 250), p(420, 250), 8)
+  assert.deepEqual([faced.point.x, faced.point.y], [700, 250])
+  // the pen path (inset 0) is unchanged
+  assert.notEqual(pen.facingSideSnap(wide, found, p(780, 202), p(420, 250)), found)
+})
+
+test('arrowToolConnector applies the facing-side rule to both ends (desktop inset)', async () => {
+  const flow = await loadModule('diagramFlow.ts')
+  const items = [box(1, 300, 200), box(2, 700, 200)]
+  const style = { id: 9, color: '#111', width: 2 }
+  const c = flow.arrowToolConnector(items, p(380, 250), p(750, 250), style, 20, 8)
+  assert.deepEqual([c.start.x, c.start.y, c.end.x, c.end.y], [460, 250, 700, 250])
+  // a release 2 px inside the top edge keeps the edge snap with an inset
+  const edge = flow.arrowToolConnector(items, p(380, 250), p(780, 202), style, 20, 8)
+  assert.equal(edge.end.y, 200)
+})
+
+test('wiring: desktop callers pass the screen inset converted by scale', () => {
+  assert.match(app, /const FACING_SIDE_INSET_PX = 8/)
+  assert.equal(app.split('FACING_SIDE_INSET_PX / viewportRef.current.scale').length - 1, 3)
 })

@@ -15,12 +15,12 @@ export const QUICK_CONNECT_MIN_BOX_PX = 24
 
 /**
  * Tablet (pen or finger tap): bigger buttons, drawn 14 px and hit within 18 px, kept clear of the 14 px resize-handle hit circles
- * (offset >= hit + 14) and of the 12 px rotate-handle hit circle 24 px above the top middle (the up button is moved sideways).
+ * (offset >= hit + 14) and of the 12 px rotate-handle hit circle 24 px above the top middle (the up button is moved sideways), and of the ink box move grip (26 px above the top middle, 24 px hit; the shift is >= 42 px away).
  */
 export const TABLET_QUICK_CONNECT_RADIUS_PX = 14
 export const TABLET_QUICK_CONNECT_HIT_RADIUS_PX = 18
 export const TABLET_QUICK_CONNECT_OFFSET_PX = 40
-export const TABLET_QUICK_CONNECT_UP_SHIFT_PX = 32
+export const TABLET_QUICK_CONNECT_UP_SHIFT_PX = 52
 export const TABLET_QUICK_CONNECT_MIN_BOX_PX = 40
 /** A tablet press that moves this far (screen px) is a drag, not a tap: it does nothing. */
 export const TABLET_QUICK_CONNECT_TAP_SLOP_PX = 10

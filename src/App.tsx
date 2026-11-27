@@ -96,6 +96,8 @@ import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
 import { facingSideSnap, penConnectorFor } from './penConnector'
+/** Desktop: a mouse end must be this far (screen px) inside a box outline before it jumps to the facing side's middle. */
+const FACING_SIDE_INSET_PX = 8
 import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
 import { selectionBoundsWithEndLabels, setConnectorEndLabel } from './connectorEndLabels'
 import { cornersChoice, setRoundedCorners } from './roundedCorners'
@@ -3442,8 +3444,8 @@ function App() {
     let startSnap = gesture.snappedStart ?? null
     if (inputModeRef.current === 'desktop' && gesture.rawStart) {
       const boxes = strokesRef.current.filter((item): item is RectangleObject => item.kind === 'rectangle')
-      const facedStart = facingSideSnap(boxes, startSnap, gesture.rawStart, rawEnd)
-      const facedEnd = facingSideSnap(boxes, endSnap, rawEnd, gesture.rawStart)
+      const facedStart = facingSideSnap(boxes, startSnap, gesture.rawStart, rawEnd, FACING_SIDE_INSET_PX / viewportRef.current.scale)
+      const facedEnd = facingSideSnap(boxes, endSnap, rawEnd, gesture.rawStart, FACING_SIDE_INSET_PX / viewportRef.current.scale)
       if (facedStart && isPointWithinBounds(facedStart.point, workspaceBoundsRef.current)) startSnap = facedStart
       if (facedEnd && isPointWithinBounds(facedEnd.point, workspaceBoundsRef.current)) endSnap = facedEnd
     }
@@ -3643,7 +3645,7 @@ function App() {
         const first = stroke.points[0]
         const last = stroke.points[stroke.points.length - 1]
         if (Math.hypot(last.x - first.x, last.y - first.y) >= 4) {
-          arrowConnector = arrowToolConnector(strokesRef.current, first, last, { id: nextConnectorIdRef.current, color: stroke.color, width: stroke.width, dash: lineDashDefaultRef.current === 'solid' ? undefined : lineDashDefaultRef.current }, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale)
+          arrowConnector = arrowToolConnector(strokesRef.current, first, last, { id: nextConnectorIdRef.current, color: stroke.color, width: stroke.width, dash: lineDashDefaultRef.current === 'solid' ? undefined : lineDashDefaultRef.current }, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale, FACING_SIDE_INSET_PX / viewportRef.current.scale)
           if (arrowConnector) { nextConnectorIdRef.current += 1; selectDesktopArrow = true }
         }
       }
@@ -4199,7 +4201,19 @@ function App() {
       return
     }
     if (activeEndpointRef.current?.pointerId === event.pointerId) { moveConnectorHandleGesture(event); return }
-    if (activeQuickRef.current?.pointerId === event.pointerId) { moveQuickConnectPress(event); return }
+    if (activeQuickRef.current?.pointerId === event.pointerId) {
+      const press = activeQuickRef.current
+      moveQuickConnectPress(event)
+      // One-finger pan on: a finger that drags off a quick-connect button past the tap slop becomes navigation (no shape is made).
+      if (press.pointerType === 'touch' && press.dragged && navigationSettingsRef.current.oneFingerPan) {
+        const { pointerId, startScreen } = press
+        cancelQuickConnectPress()
+        touchNav.down(pointerId, startScreen, performance.now())
+        touchNav.cancelTap()
+        updateTouchPoint(event)
+      }
+      return
+    }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       event.preventDefault()
       updateTouchPoint(event)

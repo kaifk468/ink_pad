@@ -65,3 +65,17 @@ test('wiring: tablet pen and touch tap, drag cancels, a second finger or the pen
   // buttons only start from the Select tool
   assert.match(app, /if \(selectionMode && startQuickConnectPress\(event, point\)\) return/)
 })
+
+test('tablet up button is clear of the ink box move grip and its hit circle', async () => {
+  const ink = await loadModule('inkClassBox.ts')
+  for (const scale of [0.5, 1, 2.5]) {
+    const grip = ink.inkBoxMoveGrip(box, scale)
+    const up = q.quickConnectButtons(box, scale, undefined, true).find((b) => b.direction === 'up')
+    assert.ok(Math.hypot(grip.x - up.center.x, grip.y - up.center.y) >= grip.radius + 6 / scale + up.hitRadius, `grip clear at ${scale}`)
+    assert.equal(q.hitQuickConnect(box, pt(grip.x, grip.y), scale, undefined, true), null)
+  }
+})
+
+test('wiring: a touch quick press dragged past the slop hands the finger to navigation only with one-finger pan', () => {
+  assert.match(app, /press\.pointerType === 'touch' && press\.dragged && navigationSettingsRef\.current\.oneFingerPan\) \{[\s\S]*?cancelQuickConnectPress\(\)\s*\n\s*touchNav\.down\(pointerId, startScreen/)
+})

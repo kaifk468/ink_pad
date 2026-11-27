@@ -2,26 +2,9 @@ import { createConnector, snapConnectorEndpoint, type CanvasItem, type Connector
 import { isContainerBox } from './boundary'
 import { isFlowBox } from './diagramFlow'
 
-/**
- * An end placed inside a box attaches to the middle of the side that faces the other end (not the nearest side, which for a line
- * drawn into the middle of a box is often the top or bottom; found in the round 8 walk). Ends on or near the outline, ends whose
- * other end is in the same box and rotated boxes keep `found`. Used by the pen recognizer and the desktop Arrow / Line tool.
- */
-export function facingSideSnap<T extends { point: Point; attachment: { rectangleId: number; offsetX: number; offsetY: number } } | null>(boxes: readonly RectangleObject[], found: T, point: Point, other: Point): T {
-  if (!found) return found
-  const inside = (box: RectangleObject, p: { x: number; y: number }) => !box.angle && p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height
-  const box = boxes.find((item) => item.id === found.attachment.rectangleId)
-  if (!box || !inside(box, point) || inside(box, other)) return found
-  const cx = box.x + box.width / 2
-  const cy = box.y + box.height / 2
-  const dx = (other.x - cx) / Math.max(1, box.width / 2)
-  const dy = (other.y - cy) / Math.max(1, box.height / 2)
-  const side = Math.abs(dx) >= Math.abs(dy)
-    ? { x: dx < 0 ? box.x : box.x + box.width, y: cy }
-    : { x: cx, y: dy < 0 ? box.y : box.y + box.height }
-  const sidePoint = { ...found.point, x: side.x, y: side.y }
-  return { point: sidePoint, attachment: { ...found.attachment, offsetX: side.x - box.x, offsetY: side.y - box.y } } as T
-}
+// facingSideSnap lives in diagramFlow.ts (the desktop Arrow tool uses it too, and modules cannot import each other in a cycle).
+export { facingSideSnap } from './diagramFlow'
+import { facingSideSnap } from './diagramFlow'
 
 /**
  * Pen and touch: a recognized (straightened) arrow or line stroke becomes an attached connector when it touches boxes.

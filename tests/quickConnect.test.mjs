@@ -76,7 +76,7 @@ test('wiring: desktop select gating, quickCreateShape call, overlay draw, pointe
   assert.match(app, /event\.pointerType === 'mouse' && event\.button === 0 && !event\.shiftKey/)
   assert.match(app, /if \(selectionMode && startQuickConnectPress\(event, point\)\) return\s*\n\s*if \(\(selectionMode \|\| lassoMode\)[^\n]*startConnectorHandleGesture/)
   assert.match(app, /quickConnectButtons\(quickSource, scale, quickInsideSheet, tabletButtons\)/)
-  assert.match(app, /activeQuickRef\.current\?\.pointerId === event\.pointerId\) \{ moveQuickConnectPress/)
+  assert.match(app, /activeQuickRef\.current\?\.pointerId === event\.pointerId\) \{\s*\n\s*const press = activeQuickRef\.current\s*\n\s*moveQuickConnectPress/)
   assert.match(app, /activeQuickRef\.current\?\.pointerId === event\.pointerId\) \{ finishQuickConnectPress/)
   assert.match(app, /activeQuickRef\.current\?\.pointerId === event\.pointerId\) \{ cancelQuickConnectPress/)
   assert.match(app, /quickHoverRef\.current !== null && inputModeRef\.current === 'desktop'[^\n]*cursor = 'pointer'/)
