@@ -657,17 +657,19 @@ export function ContextPanel(props: ContextPanelProps) {
     colour: <>{props.showStyle && colourEl}{selColorEl}</>,
     text: <>{fontsEl}{alignEl}{connSizeEl}{textSizeEl}{eraserEl}</>,
     width: <>{props.showStyle && widthEl}{selectionWidthEl}</>,
-    style: <>{lineStyleEl}{arrowheadsEl}{fillEl}{cornersEl}{newShapeDefaultEl}{rotationEl}{codeEl}{relationshipEl}</>,
+    style: <>{lineStyleEl}{arrowheadsEl}{fillEl}{cornersEl}{codeEl}{relationshipEl}</>,
     layer: <>{layerEl}{groupEl}</>,
-    arrange: <>{arrangeEl}</>,
+    arrange: <>{arrangeEl}{flipEl}{sameSizeEl}</>,
     actions: <>{clearEl}{copyEl}{deleteEl}</>,
     more: null,
   }
-  const hasMore = Boolean((props.changeShape && props.changeShape.choices.length > 0) || props.boundaryTools)
+  // Rotation and "Use as default" live in More on desktop, so the default panel stays short enough to show Copy / Duplicate / Delete without scrolling.
+  const hasDefaultAction = Boolean(props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet))
+  const hasMore = Boolean((props.changeShape && props.changeShape.choices.length > 0) || props.boundaryTools || props.rotation || hasDefaultAction)
   return (
     <aside className={`context-panel${props.desktop ? ' desktop-left' : ''}${collapsed ? ' is-collapsed' : ''}`} aria-label="Tool options">
       <div className="options-header">
-        <div className="options-header-title" onClick={toggleCollapsed}>
+        <div className="options-header-title" aria-hidden="true" onClick={toggleCollapsed}>
           <span className="options-swatch" aria-hidden="true" style={{ '--swatch': headerColor } as CSSProperties} />
           <span className="options-name">{props.contextName ?? 'Options'}</span>
         </div>
@@ -682,7 +684,7 @@ export function ContextPanel(props: ContextPanelProps) {
             <span>More actions</span>
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
-          {moreOpen && <div className="options-more-body" id="options-more-actions"><span className="panel-label">More</span>{changeShapeEl}{boundaryToolsEl}</div>}
+          {moreOpen && <div className="options-more-body" id="options-more-actions"><span className="panel-label">More</span>{rotationEl}{newShapeDefaultEl}{changeShapeEl}{boundaryToolsEl}</div>}
         </div>}
       </div>}
     </aside>
