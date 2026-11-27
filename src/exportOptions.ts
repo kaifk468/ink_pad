@@ -1,3 +1,4 @@
+import { documentFileName } from './documentFormat'
 import { canvasItemKey, type CanvasItem } from './canvasModel'
 import { cleanConnectorLabel } from './connectorLabel'
 
@@ -49,3 +50,9 @@ export function writeTransparentExport(storage: StorageLike | null | undefined, 
 }
 
 export const COPY_IMAGE_FAILED = 'Couldn’t copy image — use File > Export instead'
+
+/** The file name a whole-diagram image export downloads as (mirrors the export code in useDocuments: base name, '@2x' for PNG at 2x). */
+export function exportFileName(title: string, kind: 'png' | 'svg', scale: 1 | 2 = 1): string {
+  const base = documentFileName(title).replace(/\.inkpad$/, '')
+  return kind === 'svg' ? `${base}.svg` : `${base}${scale === 2 ? '@2x' : ''}.png`
+}
