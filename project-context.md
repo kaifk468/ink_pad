@@ -22,6 +22,12 @@ What got there: cached path is the only default (direct limit 0), the whole page
 
 ## Current Status — 2026-11-06
 
+### 2026-11-27 — UI rounds 1-2 (branch `ui-polish`, NOT merged; push blocked, patch in claude.ai project `claude/inkpad-ui-polish-2026-11-27-round2.patch`)
+- Round 1 (re-applied onto desktop-20x c2f2f68): design brief `docs/ui-design-brief.md`, tokens `src/app/tokens.css`, `data-input-mode` on `.app-shell`, desktop menu sheet with search, empty canvas/library welcome, toast above dock.
+- Round 2, Desktop only: one-surface top bar with undo/redo + status pill/Export (`DesktopStatusCluster.tsx`, `desktop-topbar.css`); icon-only dock with `DockTip` tooltips (`desktop-dock.css`); options panel + context menu restyle and dock-aware menu clamp (`desktop-panels.css`, `menuBottomClearance`); zoom/page/minimap chrome (`desktop-canvas-chrome.css`); Select as initial desktop tool (`initialSelectionMode`); Enter labels the selected shape, Esc commits labels (`labelEscapeAction`), export toasts. Tablet account area via `accountLeading()` = pre-round expression.
+- Shared fix: `renameDiagram` now refreshes the safety copy with bounded `flushCopy()` (rename was reverted by "Restored changes" on reload).
+- Checks: npm test 1728/1728, build ok, headless desktop capture 1440/1024 no page errors, tablet shots byte-identical, Opus review (11 findings fixed). Not verified on device. Report: docs/progress/inkpad-ui-round-2-2026-11-27.md.
+
 ### 2026-11-27 — Autonomous feature round 10 (branch `desktop-20x`, NOT merged to main)
 - Commits fecb19b..(this entry) on top of c2f2f68. Candidates (#240-#267), reasons and acceptance criteria: docs/feature-backlog.md "Round 10". Opus planned, reviewed and walked; seven Sonnet agents built in parallel worktrees (cherry-picked; App.tsx conflicts resolved by union), one Sonnet agent fixed the review findings, Opus fixed the walk findings.
 - Built (user problem → what the user can do):

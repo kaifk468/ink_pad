@@ -88,23 +88,31 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 - Empty state: hand-written headline, two big actions (New blank diagram, Start from a template), one tip line. Never a lone grey sentence.
 
 ### Top bar
-- Left cluster: menu, library, editable title (exists). Right: save status pill + share/export button. The orphan bottom-right "Saved" text moves into the top bar.
+- Left: ONE 44px surface: menu | library | divider | editable title (ellipsis 280/360px) | divider | undo, redo (32px icons). Top-centre history pill is tablet-only.
+- Right: save status pill (dot: success / delight / danger, single 180ms pulse on save) + Export button (opens export dialog) + account. Pill stays in focus mode. The bottom-right status text is hidden on desktop. (Built round 2.)
 
 ### Tool dock
-- Groups separated by 12px gaps (not hairlines): Select · Draw (pen, eraser) · Shapes · Connect · System shapes · More. Shortcut digit becomes a hover tooltip instead of an 8px corner number. Active tool: accent-soft fill + accent icon.
-- Under 1100px width: labels hide, icons stay 40px.
+- **Icon-only** (round 2): 40px buttons, 20px icons, no text labels or corner digits; groups (Select · Draw · Shapes · Connect · System shapes · More) separated by a small gap and a 1x20px tick. Dock is 54px tall, centred, token surface, shadow-2.
+- Tooltip (`DockTip`): dark pill above the button after 400ms hover or at once on keyboard focus: name + key chips, optional muted second line (e.g. "Shift: square"). Active tool: accent-soft fill + accent icon. Native titles dropped on desktop.
+- Zoom controls and right clusters sit on the dock row (bottom 16) and lift only when they would overlap it.
 
 ### Canvas
 - Dot grid at rest; selection handles 8px squares with 1.5px accent border and white fill; hover outline 1px accent at 40% opacity. Toasts sit **above** the dock, never over it.
 
 ### Options panel, context menu, palette, dialogs, toasts
-- Same surface, radius 14, shadow-2, 12px padding, 36px rows, overline section titles, `kbd` chips for shortcuts. The options panel moves from a wall of tiny text buttons to icon buttons in segmented groups.
+- Same surface, radius 14, shadow-2, 12px padding, overline section titles, `kbd` chips for shortcuts.
+- Options panel (round 2): 240px, 32px controls on surface-2 without borders, related choices as segmented controls with equal segments, layer as icons, one-row 28px swatches, max-height above the zoom controls with a scroll shadow.
+- Context menu (round 2): 32px rows at 14px, shortcuts 12px mono faint, 28px chips, accent focus ring; keeps 100px clear of the bottom only when it would cover the dock.
+
+### Interaction rules (round 2)
+- Desktop starts on the Select tool. Enter on one selected shape opens its label; Esc in the label editor commits (restores if an existing label was blanked). Export success shows a toast.
 
 ## 9. Round log
 
 | Round | Date | Built against brief | Changed in brief |
 |---|---|---|---|
 | 1 | 2026-11-27 | tokens, navigation sheet with search, empty canvas, toast placement, library empty state | brief created; dark theme held back (only new surfaces went dark); sheet sits top 72 / bottom 90 to clear the dock |
+| 2 | 2026-11-27 | top bar, icon-only dock + tooltips, options panel, context menu, canvas chrome, first-time label flow | dock changed from labelled to icon-only; status pill moved to top bar (removed from sheet header); Esc commits labels; Select is the desktop start tool |
 
 ## 10. Unfinished / next rounds
-Next: first-time user walk, tool dock redesign, options panel icon groups, top-bar status pill, bundle DM Sans, dark theme. See the newest `docs/progress/inkpad-ui-round-*.md` "Held back" section.
+Next: Library redesign (cards, recent/pinned, open affordance), Ctrl+S / save feedback, export dialog order, tool-reset hint, contextual mini toolbar, command palette + shortcut dialog restyle, bundle DM Sans, dark theme. See the newest `docs/progress/inkpad-ui-round-*.md` "Held back" section.
