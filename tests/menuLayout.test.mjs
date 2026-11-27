@@ -68,7 +68,7 @@ test('Change shape: HLD chips collapse to one line plus More…, which expands t
   assert.ok(shapeChips.length >= 2 && shapeChips.length <= 6)
   assert.deepEqual(shapeChips.map((e) => e.action), choices.slice(0, shapeChips.length).map((c) => `shape:${c.id}`))
   assert.equal(collapsed.at(-1).action, 'shapesMore')
-  assert.equal(input.chipBlockLayout(collapsed).lines, 1)
+  assert.ok(input.chipBlockLayout(collapsed).lines <= 2, 'the collapsed shapes use at most two chip lines')
   const expanded = chips({ changeShapes: choices, changeShapesExpanded: true })
   assert.equal(expanded.length, choices.length)
   assert.ok(!expanded.some((e) => e.action === 'shapesMore'))

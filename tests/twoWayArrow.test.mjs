@@ -96,14 +96,14 @@ test('selected arrows change together, skipping locked ones, and the menu offers
   assert.equal(entries(null).some((e) => e.action.startsWith('arrow')), false)
   const both = entries('both').find((e) => e.action === 'arrowBothEnds')
   assert.equal(both.label, 'Arrow: both ends')
-  assert.equal(both.chipGroup, 'Style')
+  assert.equal(both.chipGroup, 'Arrowheads')
   assert.equal(entries('one').find((e) => e.action === 'arrowOneEnd').label, 'Arrow: one end')
-  // It joins the Style chip block: no extra row.
-  assert.equal(input.contextMenuRows(entries('both')).length, input.contextMenuRows(entries(null)).length)
-  const styleBlock = (arrowEnds) => input.contextMenuRows(entries(arrowEnds)).find((row) => row.chips?.[0].chipGroup === 'Style')
-  assert.equal(input.chipBlockLayout(styleBlock('both').chips).inline, true, 'the chip fits the Style line')
+  // Own Arrowheads block (not a second Style caption).
+  assert.equal(input.contextMenuRows(entries('both')).length, input.contextMenuRows(entries(null)).length + 1)
+  const styleBlock = (arrowEnds) => input.contextMenuRows(entries(arrowEnds)).find((row) => row.chips?.[0].chipGroup === 'Arrowheads')
+  assert.equal(input.chipBlockLayout(styleBlock('both').chips).inline, true, 'the chip fits the Arrowheads line')
   assert.equal(input.chipBlockLayout(styleBlock('one').chips).inline, true)
-  assert.equal(input.contextMenuHeight(entries('both')), input.contextMenuHeight(entries(null)), 'the menu does not grow')
+  assert.equal(input.contextMenuHeight(entries('both')), input.contextMenuHeight(entries(null)) + 28 + 4, 'one 28px chip row plus the 4px gap')
 })
 
 test('copy style carries both-ends between arrows', () => {

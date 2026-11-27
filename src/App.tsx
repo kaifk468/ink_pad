@@ -121,7 +121,7 @@ import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, loadTapUndo, saveNavigationSettings, saveTapUndo } from './navigationSettings'
-import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, saveToastText, shouldShowKeepToolTip, KEEP_TOOL_TIP, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, CONTEXT_MENU_TOP_CLEARANCE, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, saveToastText, shouldShowKeepToolTip, KEEP_TOOL_TIP, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -6199,13 +6199,14 @@ function App() {
             canSelectSimilar: (() => { const key = soleSelectedKey(); return key !== null && similarItemKeys(strokesRef.current, key).length > 0 })(),
             movePages: moveMenuChips(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)),
           })
-          const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight - menuBottomClearance(contextMenu.x, CONTEXT_MENU_WIDTH, dockRange()))
+          const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight - menuBottomClearance(contextMenu.x, CONTEXT_MENU_WIDTH, dockRange()), CONTEXT_MENU_TOP_CLEARANCE)
+          const origin = `${position.x < contextMenu.x ? 'right' : 'left'} ${position.y < contextMenu.y ? 'bottom' : 'top'}`
           return (
-            <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y }} onContextMenu={(event) => event.preventDefault()} onKeyDown={onContextMenuKeyDown}>
+            <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y, transformOrigin: origin }} onContextMenu={(event) => event.preventDefault()} onKeyDown={onContextMenuKeyDown}>
               {contextMenuRows(entries).map((row, index) => row.separator
                 ? <div key={`separator-${index}`} className="canvas-context-separator" role="separator" />
                 : row.chips ? (
-                  <div key={`chips-${row.chips[0].chipGroup}`} className={chipBlockLayout(row.chips).inline ? 'canvas-context-chips inline' : 'canvas-context-chips'} role="group" aria-label={row.chips[0].chipGroup}>
+                  <div key={`chips-${row.chips[0].chipGroup}`} className="canvas-context-chips" role="group" aria-label={row.chips[0].chipGroup}>
                     <span className="canvas-context-chips-caption">{row.chips[0].chipGroup}</span>
                     <div className="canvas-context-chips-row">
                       {row.chips.map((chip) => (
