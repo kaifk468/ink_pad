@@ -95,3 +95,11 @@
     radial-gradient(farthest-side at 50% 100%, rgba(20, 22, 28, .24), transparent) 0 100% / 100% 12px no-repeat scroll;
   scrollbar-width: thin;
 }
+
+/* Library grid cards (desktop): a true 4:3 well; the picture is contained with padding so the whole diagram shows; the star sits in the title row, never over the drawing. */
+.home-desktop .home-grid .home-card { container-type: inline-size; }
+.home-desktop .home-grid .home-card-preview { height: auto; aspect-ratio: 4 / 3; }
+.home-desktop .home-grid .home-card-preview img { padding: 14px; box-sizing: border-box; object-fit: contain; }
+.home-desktop .home-grid .home-star { top: calc(75cqw + 4px); right: 8px; width: 28px; height: 28px; }
+.home-desktop .home-grid .home-star svg { width: 16px; height: 16px; }
+.home-desktop .home-grid .home-card-title { padding-right: 44px; }

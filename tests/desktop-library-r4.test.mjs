@@ -41,3 +41,13 @@ test('storage line stays on one line and focus rings come from the desktop rule'
   assert.match(css, /\.home-desktop \.home-storage > span \{[^}]*white-space: nowrap/)
   assert.match(read('../src/app/desktopPolish.css'), /\.home-desktop :where\(button, \[role="switch"\], a, select\):focus-visible/)
 })
+
+test('desktop library grid cards: 4:3 well, padded contained picture, star in the title row (scoped to .home-desktop)', () => {
+  const block = read('../src/app/desktopPolish.css').split('Library grid cards (desktop)')[1]
+  assert.match(block, /\.home-grid \.home-card-preview \{ height: auto; aspect-ratio: 4 \/ 3; \}/)
+  assert.match(block, /\.home-card-preview img \{ padding: 14px; box-sizing: border-box; object-fit: contain; \}/)
+  assert.match(block, /\.home-star \{ top: calc\(75cqw \+ 4px\)/)
+  for (const line of block.split('\n').filter((l) => l.includes('{'))) assert.match(line, /^\.home-desktop /)
+  assert.doesNotMatch(block, /transition|animation/)
+  assert.match(styles, /\.home-star \{ position: absolute; top: 8px; right: 8px/)
+})
