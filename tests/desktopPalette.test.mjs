@@ -33,7 +33,7 @@ test('palette markup: search icon, placeholder, Esc chip, overlines only without
   assert.match(palette, /command-palette-search-icon/)
   assert.match(palette, /placeholder="Search commands and diagrams"/)
   assert.match(palette, /command-palette-esc[^>]*>Esc</)
-  assert.match(palette, /\{groups && <div className="command-palette-group-title"/)
+  assert.match(palette, /\{groups && <div id=\{`command-palette-group-\$\{bucket\.group\}`\} className="command-palette-group-title"/)
   assert.match(palette, /\{!groups && <span className="command-palette-group-chip"/)
   assert.match(palette, /No commands match “/)
   for (const attr of ['role="dialog"', 'aria-modal="true"', 'role="listbox"', 'role="option"', 'aria-activedescendant', 'aria-selected']) assert.ok(palette.includes(attr), attr)

@@ -52,6 +52,7 @@ export function statusLabel(status: SaveStatus, storageKind: 'browser' | 'device
 
 export function FilePanel(props: FilePanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const firstTileRef = useRef<HTMLButtonElement>(null)
   const [draftTitle, setDraftTitle] = useState(props.title)
   const [titleSaved, setTitleSaved] = useState(false)
   const [pngScale, setPngScale] = useState<1 | 2>(2)
@@ -71,14 +72,15 @@ export function FilePanel(props: FilePanelProps) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+  useEffect(() => { if (props.desktop) firstTileRef.current?.focus() }, [])
   const saveTitle = () => { commitTitle(); setTitleSaved(true); window.setTimeout(() => setTitleSaved(false), 1500) }
 
   if (props.desktop) {
     return (
       <div className="file-panel-backdrop export-dialog-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) closePanel() }}>
-        <section className="file-panel export-dialog" role="dialog" aria-modal="true" aria-label="Diagrams and export">
+        <section className="file-panel export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
           <header className="file-panel-header">
-            <h2 className="export-dialog-title">Export</h2>
+            <h2 id="export-dialog-title" className="export-dialog-title">Export</h2>
             <button type="button" className="file-panel-close" aria-label="Close" onClick={closePanel}>×</button>
           </header>
           <p className={`file-panel-status status-${props.saveStatus}`} role="status">{statusLabel(props.saveStatus, props.storage.kind)}</p>
@@ -87,7 +89,7 @@ export function FilePanel(props: FilePanelProps) {
           <section className="export-section" aria-labelledby="export-image-heading">
             <h3 id="export-image-heading">Image</h3>
             <div className="export-tiles">
-              <button type="button" className="export-tile" disabled={!props.canExport} onClick={() => props.onExportPng(pngScale)}>
+              <button type="button" ref={firstTileRef} className="export-tile" disabled={!props.canExport} onClick={() => props.onExportPng(pngScale)}>
                 <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><circle cx="9" cy="10" r="1.6" /><path d="M4 17l5-4.5 3.5 3 3-2.5 4.5 4" /></svg>
                 <span className="export-tile-label">PNG</span>
                 <span className="export-tile-caption">Best for docs and chat</span>

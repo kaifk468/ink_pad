@@ -17,11 +17,13 @@ export function CommandPalette({ entries, onRun, onClose }: CommandPaletteProps)
   const groups = useMemo(() => (searching ? null : groupPaletteEntries(entries)), [entries, searching])
   // Empty query: grouped (each group contiguous, so arrows follow what is drawn). With a query: flat, ranked.
   const results = useMemo(() => (groups ? groups.flatMap((group) => group.entries) : filterCommands(entries, query)), [groups, entries, query])
+  const indexOf = useMemo(() => new Map(results.map((entry, position) => [entry, position] as const)), [results])
   const current = results.length === 0 ? -1 : Math.min(active, results.length - 1)
 
   useEffect(() => {
     const row = listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')
-    row?.scrollIntoView({ block: 'nearest' })
+    if (current === 0 && listRef.current) listRef.current.scrollTop = 0 // wrapping to the first row shows its group title too
+    else row?.scrollIntoView({ block: 'nearest' })
   }, [current, results])
 
   const run = (id: string) => {
@@ -67,10 +69,10 @@ export function CommandPalette({ entries, onRun, onClose }: CommandPaletteProps)
         <div ref={listRef} id="command-palette-list" className="command-palette-list" role="listbox" aria-label="Commands">
           {results.length === 0 && <p className="command-palette-empty">No commands match “{query.trim()}”</p>}
           {(groups ?? [{ group: '', entries: results }]).map((bucket) => (
-            <div key={bucket.group || 'results'} className="command-palette-group" role="presentation">
-              {groups && <div className="command-palette-group-title" role="presentation">{bucket.group}</div>}
+            <div key={bucket.group || 'results'} className="command-palette-group" role={groups ? 'group' : 'presentation'} aria-labelledby={groups ? `command-palette-group-${bucket.group}` : undefined}>
+              {groups && <div id={`command-palette-group-${bucket.group}`} className="command-palette-group-title">{bucket.group}</div>}
               {bucket.entries.map((entry) => {
-                const index = results.indexOf(entry)
+                const index = indexOf.get(entry) ?? -1
                 const { title, detail } = diagramIdFromEntry(entry.id) ? { title: entry.label, detail: '' } : splitCommandLabel(entry.label)
                 const sub = [detail, entry.hint].filter(Boolean).join(' · ')
                 return (
