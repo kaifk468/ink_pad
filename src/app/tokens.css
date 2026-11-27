@@ -1,5 +1,6 @@
-/* InkPad desktop design tokens (docs/ui-design-brief.md sections 2-5, 7). Scoped to Desktop mode; Tablet styles never read them. */
-.app-shell[data-input-mode="desktop"] {
+/* InkPad desktop design tokens (docs/ui-design-brief.md sections 2-5, 7). Scoped to Desktop mode (the app shell and the library, which sits outside the shell as .home-desktop); Tablet styles never read them. */
+.app-shell[data-input-mode="desktop"],
+.home-desktop {
   --ip-bg: #f7f6f2;
   --ip-surface: #ffffff;
   --ip-surface-2: #f1f0ec;
@@ -43,7 +44,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-shell[data-input-mode="desktop"] {
+  .app-shell[data-input-mode="desktop"],
+  .home-desktop {
     --ip-dur-fast: 0.01ms;
     --ip-dur-menu: 0.01ms;
     --ip-dur-sheet: 0.01ms;
