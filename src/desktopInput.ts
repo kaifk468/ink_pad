@@ -903,3 +903,8 @@ export function labelDoubleClickDecision(input: {
   if (input.tool === 'eraser' && input.itemsChanged) return { create: false }
   return { create: true, revert: input.itemsChanged }
 }
+
+/** Desktop toast after an export from the export dialog: the error text when the export failed, else "PNG downloaded" / "SVG downloaded". */
+export function exportToastText(kind: 'PNG' | 'SVG', error: string | null): string {
+  return error ?? `${kind} downloaded`
+}

@@ -18,6 +18,7 @@ export function EmptyCanvasHint({ desktop, onTemplates }: EmptyCanvasHintProps) 
           </div>
           <ul className="empty-chips" aria-label="Shortcuts">
             {DESKTOP_CHIPS.map((chip) => <li key={chip.key}><kbd>{chip.key}</kbd> {chip.label}</li>)}
+            <li className="empty-chip-muted">Double-click to label</li>
             <li className="empty-chip-muted">? All shortcuts</li>
           </ul>
         </>

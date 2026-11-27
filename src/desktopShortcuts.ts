@@ -46,6 +46,7 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'Edit', label: 'Smaller text (text, shape or arrow labels)', keys: 'Ctrl+Shift+,', input: { key: '<', code: 'Comma', ...ctrl, ...shift } },
   { group: 'Edit', label: 'Select all', keys: 'Ctrl+A', input: { key: 'a', ...ctrl } },
   { group: 'Edit', label: 'Edit the selected text, label or connector label', keys: 'Enter', input: { key: 'Enter' } },
+  { group: 'Edit', label: 'Label the selected shape (type inside it)', keys: 'Enter' },
   { group: 'Edit', label: 'Delete the selection', keys: 'Delete or Backspace', input: { key: 'Delete' } },
   { group: 'Edit', label: 'Curved connector: drag its middle dot to bend it, click the dot to make it straight (line shape in the panel, right-click or palette)', keys: 'Drag middle dot' },
   { group: 'Edit', label: 'Deselect, or cancel a drag', keys: 'Esc', input: { key: 'Escape' } },

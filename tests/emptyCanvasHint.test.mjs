@@ -6,7 +6,7 @@ const read = (path) => readFile(new URL(`../src/${path}`, import.meta.url), 'utf
 
 test('the empty-canvas hint has desktop and tablet texts and takes no pointer events', async () => {
   const hint = await read('app/EmptyCanvasHint.tsx')
-  for (const text of ['Start your diagram', 'Rectangle', 'Arrow', '? All shortcuts', 'Start from a template',
+  for (const text of ['Start your diagram', 'Rectangle', 'Arrow', 'Double-click to label', '? All shortcuts', 'Start from a template',
     'Write or draw with the pen', 'Two fingers to zoom · three fingers to pan', 'Insert has shapes, text and HLD parts']) assert.ok(hint.includes(text), text)
   assert.match(hint, /aria-hidden="true"/)
   const css = await read('styles.css')
