@@ -6,8 +6,8 @@ const read = (path) => readFile(new URL(`../src/${path}`, import.meta.url), 'utf
 
 test('options panel height leaves room for the zoom controls and scrolls with a shadow', async () => {
   const css = await read('app/desktop-panels.css')
-  assert.match(css, /max-height: calc\(100vh - 84px - 76px\)/)
-  assert.match(css, /max-width: 1157px\) \{[^}]*calc\(100vh - 84px - 130px\)/)
+  assert.match(css, /max-height: calc\(100vh - 84px - 100px\)/)
+  assert.match(css, /max-width: 1157px\) \{[^}]*calc\(100vh - 84px - 154px\)/)
   assert.match(css, /no-repeat local/)
   assert.doesNotMatch(css, /100vh - 250px/)
 })
