@@ -29,7 +29,7 @@ test('saveNow always cancels the browser Save page dialog, and has a shortcut ro
 
 test('App wires saveNow to the document save path, a toast and the status flash', async () => {
   const app = await readAppSource()
-  assert.match(app, /command\.kind === 'saveNow'\) \{ saveNowWithToast\(\); return true \}/)
+  assert.match(app, /command\.kind === 'saveNow'\) \{ if \(activeStrokeRef\.current === null && activePointerRef\.current === null\) saveNowWithToast\(\); return true \}/)
   assert.match(app, /saveToastText\(status/)
   assert.match(app, /flashKey=\{statusFlash\}/)
   const docs = await read('../src/app/useDocuments.ts')
@@ -104,7 +104,7 @@ test('the Ctrl+S toast is honest about the status', () => {
 test('Ctrl+S works in text fields and under dialogs', async () => {
   const app = await readAppSource()
   assert.match(app, /isTypingTarget[\s\S]{0,200}command\.kind === 'saveNow'\) \{ event\.preventDefault\(\); keyActionsRef\.current\(command\); return \}/)
-  const guard = app.indexOf("command.kind === 'saveNow') { saveNowWithToast()")
+  const guard = app.indexOf("command.kind === 'saveNow') { if (activeStrokeRef")
   assert.ok(guard > 0 && guard < app.indexOf('if (editingBlocksCanvas()) return false'))
   assert.match(app, /command\.kind === 'saveNowRepeat'\) return true/)
 })
@@ -138,4 +138,9 @@ test('desktop css: no paint transitions, selectable notices and editors, card to
   const file = await read('../src/FilePanel.tsx')
   assert.match(file, /aria-labelledby="export-dialog-title"/)
   assert.match(file, /if \(props\.desktop\) firstTileRef\.current\?\.focus\(\)/)
+})
+
+test('Ctrl+S never saves in the middle of a stroke or pointer gesture', async () => {
+  const src = await readAppSource()
+  assert.match(src, /command\.kind === 'saveNow'\) \{ if \(activeStrokeRef\.current === null && activePointerRef\.current === null\) saveNowWithToast\(\)/)
 })
