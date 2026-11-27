@@ -312,3 +312,38 @@
 .app-shell[data-input-mode="desktop"] .export-dialog button:focus-visible,
 .app-shell[data-input-mode="desktop"] .export-dialog summary:focus-visible,
 .app-shell[data-input-mode="desktop"] .export-dialog .export-switch:focus-visible { outline: 2px solid var(--ip-accent); outline-offset: 2px; }
+
+/* Connector section in plain language (round 6) */
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-plain { display: flex; flex-direction: column; align-items: stretch; gap: 12px; box-sizing: border-box; width: 100%; padding: 0; border: 0; min-width: 0; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-section { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-plain .routing-toggle button { gap: 4px; padding: 0 4px; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-plain svg { flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-arrow-row { display: grid; grid-template-columns: minmax(0, 1fr) 32px; gap: 8px; align-items: center; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-icon-button,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-action {
+  box-sizing: border-box; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ip-text);
+  font: 500 13px/1 'DM Sans', system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-icon-button { width: 32px; color: var(--ip-muted); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-action { width: 100%; justify-content: flex-start; padding: 0 8px; background: var(--ip-surface-2); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-icon-button:hover { background: var(--ip-surface-2); color: var(--ip-text); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-action:hover:not(:disabled) { background: var(--ip-line); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-action:disabled { color: var(--ip-faint); cursor: default; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-icon-button:focus-visible,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-action:focus-visible { outline: var(--ip-focus-ring); outline-offset: 2px; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-actions { display: flex; flex-direction: column; gap: 8px; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-uml .relationship-select {
+  box-sizing: border-box; width: 100%; max-width: none; height: 32px; padding: 0 8px; border: 0; border-radius: 8px;
+  background: var(--ip-surface-2); color: var(--ip-text); font: 500 13px/1 'DM Sans', system-ui, sans-serif;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-uml .end-labels { display: flex; flex-direction: column; align-items: stretch; gap: 8px; flex: none; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-uml .end-labels-inputs { display: flex; gap: 8px; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-uml .end-labels input {
+  box-sizing: border-box; flex: 1; min-width: 0; width: auto; height: 32px; padding: 0 8px; border: 0; border-radius: 8px;
+  background: var(--ip-surface-2); color: var(--ip-text); font: 500 13px/1 'DM Sans', system-ui, sans-serif;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-uml .end-labels input:focus-visible { outline: var(--ip-focus-ring); outline-offset: 1px; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .connector-uml .panel-hint { font-size: 12px; }
+/* Eraser: selected mode reads like other active segments */
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .eraser-mode-card.selected { background: var(--ip-accent-soft); color: var(--ip-accent); box-shadow: none; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .eraser-mode-card:not(.selected):hover { background: var(--ip-line); }
