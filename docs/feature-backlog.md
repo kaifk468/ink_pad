@@ -618,17 +618,17 @@ Follow-ups (ideas for the next round):
 ### Candidates (problem · who/how often · benefit · risk · size · decision)
 | # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
 |---|---|---|---|---|---|---|---|
-| 240 | Curved connector routing (#225) | Busy HLDs with crossing straight arrows are hard to read | everyone, busy diagrams | high | medium (routing value is additive; path is a sampled polyline so labels / hit / export follow) | M | picked |
-| 241 | Drop a box onto a connector to insert it (#229) | Adding a component between two boxes needs the menu | desktop, every growing HLD | medium-high | medium (drag drop path; only free single boxes, highlight before drop) | M | picked |
-| 242 | Shift+resize keeps proportions, Shift+drag locks to an axis (#230) | Icons distort; straight moves wobble | desktop, often | medium | low (desktop modifiers only) | S | picked |
-| 243 | Size readout while resizing / drawing a box | Equal sizes by eye | desktop, often | low-medium | low (overlay only) | S | picked |
-| 244 | Grid snap for arrow-key nudges and free connector ends; Shift keeps a free end at 15° steps | Nudges and arrow ends leave the grid | desktop, with snap on | medium | low | S | picked |
-| 245 | Equal-gap guides while dragging (desktop) | Even spacing by eye | desktop, often | medium | medium (snapping path; skipped while grid snap is on) | M | picked |
-| 246 | Move folders into folders (#228) | Folder hierarchy cannot be reorganised | everyone, sometimes | medium-high | medium (Drive parents; device folders not offered) | M | picked |
-| 247 | Six more HLD icons: DNS, Search, Function, Scheduler, External service, Monitoring | Common HLD parts drawn as plain boxes | HLD users, every design | high | low-medium (additive enum value; old builds draw a plain box) | M | picked |
-| 248 | Copy as Mermaid for ER pages (#224, ER half) | ER diagrams cannot go back to text | text-first, sometimes | medium | low (separate builder, only when every box is an entity) | M | picked |
-| 249 | Mermaid sequence typed participants both ways (round 9 follow-up) | Database / Queue participants lost in text | text-first, sometimes | low-medium | low | S | picked |
-| 250 | Quick-connect left button clear of the arrowhead (round 9 follow-up) | Button hides the arrowhead | both, often | low | low | S | picked (with 241) |
+| 240 | Curved connector routing (#225) | Busy HLDs with crossing straight arrows are hard to read | everyone, busy diagrams | high | medium (routing value is additive; path is a sampled polyline so labels / hit / export follow) | M | **done** 360a33c (+cca104e, 6fea883) |
+| 241 | Drop a box onto a connector to insert it (#229) | Adding a component between two boxes needs the menu | desktop, every growing HLD | medium-high | medium (drag drop path; only free single boxes, highlight before drop) | M | **done** f7286f7 (+cca104e) |
+| 242 | Shift+resize keeps proportions, Shift+drag locks to an axis (#230) | Icons distort; straight moves wobble | desktop, often | medium | low (desktop modifiers only) | S | **done** 5d81b81 (+cca104e, 6fea883) |
+| 243 | Size readout while resizing / drawing a box | Equal sizes by eye | desktop, often | low-medium | low (overlay only) | S | **done** 5d81b81 |
+| 244 | Grid snap for arrow-key nudges and free connector ends; Shift keeps a free end at 15° steps | Nudges and arrow ends leave the grid | desktop, with snap on | medium | low | S | **done** 638c2e8 |
+| 245 | Equal-gap guides while dragging (desktop) | Even spacing by eye | desktop, often | medium | medium (snapping path; skipped while grid snap is on) | M | **done** 638c2e8 (+cca104e) |
+| 246 | Move folders into folders (#228) | Folder hierarchy cannot be reorganised | everyone, sometimes | medium-high | medium (Drive parents; device folders not offered) | M | **done** f3d19f7 (+cca104e, 6fea883) |
+| 247 | Six more HLD icons: DNS, Search, Function, Scheduler, External service, Monitoring | Common HLD parts drawn as plain boxes | HLD users, every design | high | low-medium (additive enum value; old builds draw a plain box) | M | **done** 82b7283 |
+| 248 | Copy as Mermaid for ER pages (#224, ER half) | ER diagrams cannot go back to text | text-first, sometimes | medium | low (separate builder, only when every box is an entity) | M | **done** d3b6a00 (+cca104e) |
+| 249 | Mermaid sequence typed participants both ways (round 9 follow-up) | Database / Queue participants lost in text | text-first, sometimes | low-medium | low | S | **done** d3b6a00 |
+| 250 | Quick-connect left button clear of the arrowhead (round 9 follow-up) | Button hides the arrowhead | both, often | low | low | S | **done** f7286f7 |
 | 251 | Arrowhead kinds per end (cross / open / circle / bar) | Sequence ends and ER ends | sometimes | medium | medium-high (new head model vs relationship types) | M | idea |
 | 252 | Copy as Mermaid for state pages (#224, state half) | | sometimes | low | medium (composites) | M | idea |
 | 253 | Images on the canvas (#226) | | sometimes | medium | high (new kind, Drive size) | L | idea |
@@ -658,3 +658,16 @@ Follow-ups (ideas for the next round):
 247. **More HLD icons**: the More shapes tray, shape search (keywords such as "lambda", "cron", "elasticsearch", "third party", "grafana") and Change shape offer DNS, Search, Function, Scheduler, External service and Monitoring as HLD shapes in both modes, drawn in the same line style as the existing icons (clean and sketchy), with their label below / inside like the others; SVG / PNG / PDF / sheet / Excalidraw / Mermaid export draw or name them like the other HLD shapes. Saved as new `hldShape` values (additive); old files unchanged.
 248. **ER to Mermaid**: Copy as Mermaid on a page whose boxes are all entity class boxes (as built by the ER importer or drawn as ER entities) writes `erDiagram` with each entity's attributes and the relationships with their cardinalities (from end labels / relationship ends); importing that text again rebuilds the same entities and links. Other pages are unchanged.
 249. **Typed participants**: Copy as Mermaid for sequence pages writes Database / Queue / User participants as `participant X@{ "type": "database" }` / `"queue"` and `actor X`; the Mermaid sequence importer reads `@{ "type": ... }` for database, queue, collections, entity, boundary, control and maps database / queue / actor to the existing HLD shapes (others stay plain participants).
+
+### Round 10 result (2026-11-27)
+All 10 picked items built (#240-#249, plus #250 with #241) by seven Sonnet agents in parallel worktrees (cherry-picked onto fecb19b; App.tsx import / ref / overlay conflicts resolved by union). Independent Opus review: 1 high (dropping a box on an elbow connector never triggered: the route detoured around the dragged box), 4 medium (axis-lock helper dropped grid / guide snap on an axis with zero movement even without Shift; equal-gap snap ran on tablet pen drags; methodless class diagrams were copied as erDiagram; labels carried with a dropped box were left behind), 4 low (Shift-resize could pass the workspace edge; Shift on an edge handle turned grid snap off; Tidy turned curved connectors into elbows; same-parent folder move showed a "Moved" toast). All fixed in cca104e (decision: Tidy leaves curved connectors curved). Walk (headless Chromium, desktop 1440x900, tablet 1280x800 with CDP pen events) found 3 more, fixed in 6fea883: Shift held before pressing a corner handle deselected the box instead of resizing (Shift+click toggle won); a free (unattached) curved connector drew as a straight line; the folder Move to… picker stayed open after going to another folder.
+
+Decisions: drop-insert is desktop mouse only and only for a single free box (no attached connectors); Ctrl-drag duplicate never inserts (the brief said Alt; duplicate drag is Ctrl here). Grid snap is skipped while Shift keeps proportions. Shift on a free connector end gives 15° steps and wins over grid snap. Device folders do not offer folder moves (hint: use the file manager). New HLD icons export to Mermaid as plain labelled boxes. Sketchy style draws the new HLD icons with the clean outline, like the other newer icons.
+
+Follow-ups (ideas for the next round):
+- Drop-insert for a box in a multi-selection or group, and for the tablet pen drag.
+- Mermaid typed participant syntax `participant X@{ "type": "database" } as Label` is not checked against the real Mermaid renderer.
+- ER export drops attribute comments (the importer does not keep them).
+- Curved connectors: the bend is a single sideways offset (no second control point); Excalidraw export uses 9 points with roundness.
+- Size readout does not show while moving (position) or for rotation.
+
