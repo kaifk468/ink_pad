@@ -204,6 +204,16 @@ export function shapeDoubleClick(items: readonly CanvasItem[], boxId: number): S
   return { kind: 'newLabel', boxId, centre: { x: box.x + box.width / 2, y: box.y + box.height / 2, pressure: 1 } }
 }
 
+/** Enter on a single selected plain or HLD shape: the same label action a double-click on it gives (edit its label, or start one). */
+export function shapeLabelForSelection(items: readonly CanvasItem[], keys: ReadonlySet<string>, rectangleId: number | null): ShapeDoubleClick | null {
+  const all = new Set(keys)
+  if (rectangleId !== null) all.add(`rectangle:${rectangleId}`)
+  if (all.size !== 1) return null
+  const [key] = [...all]
+  const box = items.find((item) => canvasItemKey(item) === key)
+  return box && box.kind === 'rectangle' ? shapeDoubleClick(items, box.id) : null
+}
+
 /** `label` moved so its centre is at `centre`. */
 export function centreLabelOn(label: TextObject, centre: { x: number; y: number }): TextObject {
   return { ...label, x: centre.x - label.width / 2, y: centre.y - label.height / 2 }

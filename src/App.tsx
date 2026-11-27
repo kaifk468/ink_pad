@@ -100,7 +100,7 @@ import { buildEditedLabel, prepareEditorFit } from './textFit'
 import { facingSideSnap, penConnectorFor } from './penConnector'
 /** Desktop: a mouse end must be this far (screen px) inside a box outline before it jumps to the facing side's middle. */
 const FACING_SIDE_INSET_PX = 8
-import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, type FlowDirection } from './diagramFlow'
+import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, shapeLabelForSelection, type FlowDirection } from './diagramFlow'
 import { selectionBoundsWithEndLabels, setConnectorEndLabel } from './connectorEndLabels'
 import { cornersChoice, setRoundedCorners } from './roundedCorners'
 import { connectorLabelCentre, connectorLabelFontSize, connectorLabelPosition, labelPositionForDrag, pointOnConnectorLabel, setConnectorLabel, setConnectorLabelFontSize, setConnectorLabelPosition } from './connectorLabel'
@@ -117,7 +117,7 @@ import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, loadTapUndo, saveNavigationSettings, saveTapUndo } from './navigationSettings'
-import { CONTEXT_MENU_BOTTOM_CLEARANCE, canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { CONTEXT_MENU_BOTTOM_CLEARANCE, canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -5472,6 +5472,10 @@ function App() {
     if (item?.kind === 'rectangle' && item.classBox) { openClassBoxEditor({ rectangleId: item.id, x: item.x, y: item.y, content: item.classBox }); return true }
     return false
   }
+  const openShapeLabelAction = (shapeAction: NonNullable<ReturnType<typeof shapeDoubleClick>>) => {
+    if (shapeAction.kind === 'editLabel') openEditTarget({ kind: 'text', id: shapeAction.id })
+    else openTextEditor({ itemId: null, x: shapeAction.centre.x, y: shapeAction.centre.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: { x: shapeAction.centre.x, y: shapeAction.centre.y } })
+  }
   const onCanvasDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (inputModeRef.current !== 'desktop' || lastPointerTypeRef.current !== 'mouse' || event.button !== 0 || textEditorRef.current || classBoxEditor) return
     // The second click of a double-click on a quick-connect button already made its shape: no undo, no label editor.
@@ -5503,8 +5507,7 @@ function App() {
     const shapeAction = shapeHit?.kind === 'rectangle' ? shapeDoubleClick(strokesRef.current, shapeHit.id) : null
     if (shapeAction) {
       clickPairRef.current = null
-      if (shapeAction.kind === 'editLabel') openEditTarget({ kind: 'text', id: shapeAction.id })
-      else openTextEditor({ itemId: null, x: shapeAction.centre.x, y: shapeAction.centre.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: { x: shapeAction.centre.x, y: shapeAction.centre.y } })
+      openShapeLabelAction(shapeAction)
       return
     }
     const anyGesture = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null || activeQuickRef.current !== null || touchNav.touchCount() > 0
@@ -6049,7 +6052,15 @@ function App() {
       case 'walk': return walkTo(command.step)
       case 'walkLinked': return walkLinked(command.direction)
       case 'nudge': return nudgeSelection(command.dx, command.dy)
-      case 'edit': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); return target ? openEditTarget(target) : false }
+      case 'edit': {
+        const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current)
+        if (target) return openEditTarget(target)
+        // Desktop: Enter on one selected shape labels it, as a double-click does (letters stay tool shortcuts).
+        const shapeAction = inputModeRef.current === 'desktop' ? shapeLabelForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current) : null
+        if (!shapeAction) return false
+        openShapeLabelAction(shapeAction)
+        return true
+      }
       case 'copy': return copyWithToast()
       case 'cut': return cutWithToast()
       case 'copyPng': return copyAsPng()
@@ -6200,7 +6211,7 @@ function App() {
           measure={createTextMeasure}
           onChange={(value) => { textEditorValueRef.current = value }}
           onCommit={commitTextEditor}
-          onCancel={cancelTextEditor}
+          onCancel={inputMode === 'desktop' ? commitTextEditor : cancelTextEditor}
         />}
         {codeEditor && inputMode === 'desktop' && (() => {
           const block = strokesRef.current.find((candidate) => candidate.kind === 'code' && candidate.id === codeEditor.id)
@@ -6568,8 +6579,8 @@ function App() {
         onDownloadOutline={downloadOutline}
         onDownloadExcalidraw={downloadExcalidraw}
         onCopyExcalidraw={inputMode === 'desktop' ? copyExcalidraw : undefined}
-        onExportSvg={() => void exportSvgFile()}
-        onExportPng={(scale) => void exportPngFile(scale)}
+        onExportSvg={() => void exportSvgFile().then((error) => { if (inputMode === 'desktop') showToast(exportToastText('SVG', error)) })}
+        onExportPng={(scale) => void exportPngFile(scale).then((error) => { if (inputMode === 'desktop') showToast(exportToastText('PNG', error)) })}
         transparent={transparentExport}
         onTransparentChange={setTransparentExport}
         onExportNotebookLm={() => void exportToNotebookLm()}

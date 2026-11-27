@@ -731,7 +731,9 @@ export function useDocuments(host: DocumentHost) {
     const cleaned = cleanTitle(title)
     docMetaRef.current = { ...docMetaRef.current, title: cleaned }
     setDocTitle(cleaned)
-    return docIdRef.current || hasAnyItems() ? persistNow() : Promise.resolve()
+    if (!docIdRef.current && !hasAnyItems()) return Promise.resolve()
+    // The safety copy must carry the new title too: a copy left dirty with the old one would come back at the next start and replace the rename.
+    return persistNow().then(() => keeper.flush())
   }
 
   const exportDocumentFile = () => {
