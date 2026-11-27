@@ -103,6 +103,12 @@ test('header names', () => {
   assert.equal(n({ count: 0, eraser: true }), 'Eraser')
   assert.equal(n({ count: 0, text: true }), 'Text')
   assert.equal(n({ count: 0 }), 'Pen')
+  // Open editors: "Text" for text items, "Label" for connector/shape labels, over any selection or tool.
+  assert.equal(n({ count: 0, editing: 'text' }), 'Text')
+  assert.equal(n({ count: 0, editing: 'label' }), 'Label')
+  assert.equal(n({ count: 1, selectedKind: 'connector', editing: 'label' }), 'Label')
+  assert.equal(n({ count: 1, selectedKind: 'rectangle', editing: 'text', tool: 'rectangle' }), 'Text')
+  assert.equal(n({ count: 0, editing: null }), 'Pen')
 })
 
 test('tablet is unchanged: plain aside, original block order and the original tablet colour markup', () => {
@@ -132,4 +138,8 @@ test('text size row: exactly one segment is active (Fit wins over a number; othe
   assert.equal(model.activeTextSizeSegment(sizes, 24, false), 24)
   assert.equal(model.activeTextSizeSegment(sizes, 23.6, null), 24)
   assert.equal(model.activeTextSizeSegment(sizes, 21, false), null)
+})
+
+test('the header derives Text / Label from the open text editor', () => {
+  assert.match(app, /editing: textEditor \? \(textEditor\.connectorId !== undefined \|\| textEditor\.centerOn \? 'label' : 'text'\) : null/)
 })

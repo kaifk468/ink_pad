@@ -136,3 +136,14 @@ test('connector handles use the real text measure by default, so the middle dot 
   assert.ok(dot.x >= box.x + box.width || dot.x <= box.x, 'dot is outside the label box')
   assert.deepEqual(handles.hitConnectorHandle(c, dot, 1, 'mouse', wide), 'middle')
 })
+
+test('desktop: double-click on an arrow (not a box) opens the connector label editor, and an open editor blocks single-key shortcuts', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  // The double-click handler reuses editConnectorLabel (the panel's Add label handler) and undoes any routing toggle first.
+  assert.match(app, /if \(target\.kind === 'connector'\) return editConnectorLabel\(target\.id\)/)
+  assert.match(app, /onEditLabel: \(\) => \{ if \(selectedConnectorId !== null\) editConnectorLabel\(selectedConnectorId\) \}/)
+  assert.match(app, /if \(target\.kind === 'connector' && before && before\.owner === historyRef\.current && !clickItemsUnchanged/)
+  // An open text/label editor counts as an overlay, which blocks every canvas command (tool keys included).
+  assert.match(app, /const overlayOpen = \(\): boolean => [^\n]*Boolean\(textEditor\) \|\| textEditorRef\.current !== null/)
+})

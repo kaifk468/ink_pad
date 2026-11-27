@@ -38,7 +38,10 @@ const KIND_NAMES: Record<string, string> = { stroke: 'Stroke', rectangle: 'Shape
 const TOOL_NAMES: Record<string, string> = { rectangle: 'Rectangle', diamond: 'Diamond', ellipse: 'Ellipse', arrow: 'Arrow', line: 'Line' }
 
 /** Short header name: "3 objects", "Rectangle" (shape tool), "Connector" (one selected item), "Pen", "Eraser", "Text". */
-export function optionsContextName(input: { count: number; selectedKind?: string | null; tool?: string | null; eraser?: boolean; text?: boolean }): string {
+export function optionsContextName(input: { count: number; selectedKind?: string | null; tool?: string | null; eraser?: boolean; text?: boolean; editing?: 'text' | 'label' | null }): string {
+  // An open text or label editor names the panel by what is being typed, over any selection or tool.
+  if (input.editing === 'label') return 'Label'
+  if (input.editing === 'text') return 'Text'
   if (input.count > 1) return `${input.count} objects`
   if (input.count === 1) return (input.selectedKind && KIND_NAMES[input.selectedKind]) || 'Object'
   if (input.eraser) return 'Eraser'
