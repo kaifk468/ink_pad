@@ -41,7 +41,7 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 - Scale (px): 11 (shortcut keys, overlines) · 12 (hints) · 13 (secondary rows) · 14 (body / menu rows) · 16 (panel titles) · 20 (dialog titles) · 28 (empty-state headline).
 - Overlines: 11px, 600, letter-spacing .06em, uppercase, `--ip-muted`.
 - Never let a label wrap under a control: rows use grid with the control in its own column (this was the hamburger overlap bug).
-- Fonts must not depend on the network to look right: fallback stack `'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif`. (DM Sans 400/500/600/700 and Manrope 500/600/700/800 are bundled via @fontsource, latin woff2 only, so nothing needs the network.)
+- Fonts are bundled (round 5): DM Sans 400–700 and Manrope 500–800 via @fontsource, latin woff2 only, so nothing needs the network; latin-ext glyphs fall back to the system font. Stack: `'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif`.
 
 ## 4. Spacing, radius, elevation
 
@@ -94,15 +94,17 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 ### Tool dock
 - **Icon-only** (round 2): 40px buttons, 20px icons, no text labels or corner digits; groups (Select · Draw · Shapes · Connect · System shapes · More) separated by a small gap and a 1x20px tick. Dock is 54px tall, centred, token surface, shadow-2.
 - Tooltip (`DockTip`): dark pill above the button after 400ms hover or at once on keyboard focus: name + key chips, optional muted second line (e.g. "Shift: square"). Active tool: accent-soft fill + accent icon. Native titles dropped on desktop.
+- Compact (round 5): below 900px wide, 36px buttons / 18px icons and tighter gaps; below 740px the System shapes group moves into the More tray (with shape search and Sticky note) and More shows selected while a system shape tool is on.
 - Zoom controls and right clusters sit on the dock row (bottom 16) and lift only when they would overlap it.
 
 ### Canvas
-- Dot grid at rest; selection handles 8px squares with 1.5px accent border and white fill; hover outline 1px accent at 40% opacity. Toasts sit **above** the dock, never over it.
+- Dot grid at rest; selection handles 8px squares with 1.5px accent border and white fill; hover outline 1px accent at 40% opacity. Toasts sit **above** the dock, never over it, and above dialog scrims (`--ip-z-toast` 70 > scrim 60).
 
 ### Options panel, context menu, palette, dialogs, toasts
 - Same surface, radius 14, shadow-2, 12px padding, overline section titles, `kbd` chips for shortcuts.
 - Options panel (round 2): 240px, 32px controls on surface-2 without borders, related choices as segmented controls with equal segments, layer as icons, one-row 28px swatches, max-height above the zoom controls with a scroll shadow.
 - Options panel (round 4): collapsible. 36px header (current colour swatch, context name, chevron button with aria-expanded); collapsed = header only, remembered per viewer (localStorage). Order for every context: colour, width/size, style rows (fill, line, corners), layer/arrange (incl. Flip, Same size), then a closed "More actions" disclosure for Change shape, Focus, Add boundary, Select connected, rotation, Use as default. Expand = fade + translateY(-4px), no height animation.
+- Options panel (round 5): overlines are Stroke / Fill / Width (presets and px slider under one Width). Stroke swatches are circles, fill swatches rounded squares (radius 6); No fill is a square with a neutral --ip-muted diagonal (never red). Collapsed panel is max-content (min 140, max 240). Header reads Text or Label while an editor is open. Text-size row: exactly one active segment.
 - Context menu (round 2): 32px rows at 14px, shortcuts 12px mono faint, 28px chips, accent focus ring; keeps 100px clear of the bottom only when it would cover the dock.
 
 ### Export dialog (round 3)
@@ -110,7 +112,7 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 
 ### Command palette and shortcut dialog (round 3)
 - Palette 600px, radius 20, shadow-3: search icon + "Search commands and diagrams" + Esc chip; empty query shows overline groups, a query shows flat ranked rows with a muted group chip. Labels with a parenthetical split into a title and a muted second line (`splitCommandLabel`). Selected row: accent-soft fill + 3px accent bar.
-- Shortcut dialog: same surface, overline groups, two columns at >= 1100px.
+- Shortcut dialog: same surface, overline groups, two columns at >= 1100px; max-height 100dvh - 32px with a pinned header and a scrolling body with scroll shadows (round 5).
 
 ### Library chrome (round 4)
 - Desktop library reads the --ip tokens (scoped to `.home-desktop`): paper background, surface sidebar with hairline, one primary button (+ New diagram), ghost Back/Import, 40px surface-2 search, segmented grid/list toggle (aria-pressed), native sort select styled 36px with a custom chevron, one-line "Saved in" card.
@@ -121,7 +123,7 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 - First visit on a mouse-only computer starts in Desktop mode (touch devices stay Tablet).
 
 ### Library cards (round 3)
-- Radius 14, hairline border, token surface, paper-colour thumbnail well, 14px/600 title with ellipsis + tooltip, 12px muted meta, hover lift 2px (transform only; none while dragging or with reduced motion). Desktop thumbnails embed Excalifont so labels match the canvas.
+- Radius 14, hairline border, token surface, paper-colour thumbnail well, 14px/600 title with ellipsis + tooltip, 12px muted meta, hover lift 2px (transform only; none while dragging or with reduced motion). Round 5: true 4:3 well, thumbnail contained with 14px padding, star in the title row (never over the drawing). Desktop thumbnails embed Excalifont so labels match the canvas.
 
 ### Interaction rules (round 2)
 - Desktop starts on the Select tool. Enter on one selected shape opens its label; Esc in the label editor commits (restores if an existing label was blanked). Export success shows a toast. Ctrl+S saves now (also in text fields and under dialogs, never mid-stroke) with a toast ("Saved" / "Nothing to save yet" / the error) and a one-shot pill flash. The first auto-return to Select per session shows "Tip: press Q (Keep tool)". Chrome text is not selectable (inputs, editors and notices are).
@@ -134,6 +136,7 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 | 2 | 2026-11-27 | top bar, icon-only dock + tooltips, options panel, context menu, canvas chrome, first-time label flow | dock changed from labelled to icon-only; status pill moved to top bar (removed from sheet header); Esc commits labels; Select is the desktop start tool |
 | 3 | 2026-11-27 | export dialog, command palette + shortcut dialog, Ctrl+S feedback, keep-tool tip, library cards, walk fixes | export dialog order fixed (image first, no title field); palette groups as overlines; transitions on new surfaces limited to transform/opacity (state colour changes are instant) |
 | 4 | 2026-11-27 | collapsible options panel, save pill wording, page chip, library tokens, first-visit desktop default, review fixes | options panel order fixed (colour first, secondary actions in More); library joins the token system; Desktop is the first-visit default on mouse-only computers |
+| 5 | 2026-11-27 | options panel colour section, compact dock, shortcut dialog fit, toast layering, bundled fonts, panel naming, library thumbnails, menu scroll cue, review fixes | Stroke/Fill/Width naming and square fill swatches; fonts bundled; System shapes move into More below 740px |
 
 ## 10. Unfinished / next rounds
-Next (from round 4 walk and review): connectors — dragging a quick-connect handle onto another box creates nothing and arrows drawn with A do not attach (feature-level; needs the feature round or owner decision, see report); "Fill" vs "Colour of this object" look alike and the no-fill slash swatch is easy to misread; collapsed options pill could shrink to its content; text-size row shows two active values while editing a label; shortcut dialog clipped at the bottom at 900px; Export toast appears behind the dialog scrim. Then: library recent/pinned rows and card action menu, dark theme, bundle DM Sans locally, dock compact mode under ~900px. See the newest `docs/progress/inkpad-ui-round-*.md`.
+Next (from round 5 walk and review): connecting boxes — the quick-connect circles around a selected box look draggable but are click-to-spawn (dragging does nothing), and the Arrow tool gives no attach preview while dragging (owner decision / feature round; see report); the selected-arrow highlight is a thick soft band with an oversized head that hides the arrow's real look; tool reverts to Select after each shape and the keep-tool hint is easy to miss; no visible "Save" affordance for people who look for one (pill + Ctrl+S only); connector panel uses UML jargon ("Directed association", "End labels 1 / *") and needs a plain-language pass; Export dialog could close or show a preview after a download. Then: library recent/pinned rows and card action menu, dark theme, consolidating the right-edge floating islands (UML button, page rail, minimap), latin-ext font subset. See the newest `docs/progress/inkpad-ui-round-*.md`.
