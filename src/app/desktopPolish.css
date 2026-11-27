@@ -3,6 +3,7 @@
 
 /* Toast sits above the tool dock (dock: 16px bottom + 54px tall) and rises 8px while fading in. */
 .app-shell[data-input-mode="desktop"] .app-toast {
+  z-index: var(--ip-z-toast, 70);
   bottom: calc(max(16px, env(safe-area-inset-bottom)) + 54px + 16px);
   background: rgba(31, 33, 38, .94);
   box-shadow: var(--ip-shadow-2, 0 8px 24px rgba(20, 22, 28, .10), 0 2px 6px rgba(20, 22, 28, .06));

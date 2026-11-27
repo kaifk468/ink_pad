@@ -30,6 +30,8 @@
   --ip-dur-sheet: 240ms;
   --ip-ease-out: cubic-bezier(.2, .8, .2, 1);
   --ip-ease-in: cubic-bezier(.4, 0, 1, 1);
+  /* Dialog backdrops are z-index 60; toasts sit above them (desktop) so a confirmation stays readable behind a scrim. */
+  --ip-z-toast: 70;
   --ip-slide-x: -16px;
 
   --ip-focus-ring: 2px solid var(--ip-accent);
