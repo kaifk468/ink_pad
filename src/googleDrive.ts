@@ -350,7 +350,7 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
       const { folders } = organise(files)
       const decision = canMoveFolder(folders, id, parentId)
       if (!decision.ok) {
-        if (decision.reason === 'same-parent') return
+        if (decision.reason === 'same-parent') return 'noop'
         throw new Error(folderMoveRefusalText(decision.reason, folders.find((folder) => folder.id === id)?.name ?? ''))
       }
       const file = files.find((entry) => entry.id === id && entry.mimeType === FOLDER_MIME)

@@ -43,7 +43,7 @@ type HomeScreenProps = {
   /** False on device-folder storage: moving a directory is not reliable there, so "Move to…" is replaced by a hint. */
   canMoveFolders?: boolean
   /** Moves a folder with everything in it under another folder (null = top level); resolves false (with a notice) when refused. */
-  onMoveFolder?: (id: string, parentId: string | null) => Promise<boolean> | void
+  onMoveFolder?: (id: string, parentId: string | null) => Promise<boolean | 'noop'> | void
   onDeleteDiagram: (id: string) => Promise<boolean> | void
   onChangeStorage: () => void
   /** Desktop input mode: cards can be dragged onto folders with the mouse. */
@@ -143,14 +143,14 @@ export function HomeScreen(props: HomeScreenProps) {
     if (!props.onMoveFolder) return
     const before = folder.parentId && folders.some((entry) => entry.id === folder.parentId) ? folder.parentId : null
     const result = await props.onMoveFolder(folder.id, parentId)
-    if (result === false) return
+    if (result === false || result === 'noop') return
     const target = parentId ? folders.find((entry) => entry.id === parentId)?.name ?? 'folder' : null
     const name = folder.name
     clearStatus()
     clearMoveUndo()
     setMoveUndo({
       text: target ? `Moved “${name}” into “${target}”` : `Moved “${name}” to the top level`,
-      undo: () => { clearMoveUndo(); void (async () => { if ((await props.onMoveFolder?.(folder.id, before)) !== false) showStatus(`Moved “${name}” back`) })() },
+      undo: () => { clearMoveUndo(); void (async () => { const undone = await props.onMoveFolder?.(folder.id, before); if (undone !== false && undone !== 'noop') showStatus(`Moved “${name}” back`) })() },
     })
     moveUndoTimer.current = window.setTimeout(() => { moveUndoTimer.current = null; setMoveUndo(null) }, MOVE_UNDO_MS)
   }

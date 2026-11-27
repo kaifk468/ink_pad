@@ -35,9 +35,10 @@ export type StorageBackend = {
   /**
    * Moves a folder, with everything inside it, under another folder (null = top level). The folder keeps its id; nothing is copied or deleted.
    * Throws (with a sentence for the person) when the target is the folder itself or inside it, or already holds a folder of that name.
+   * Resolves 'noop' when the folder is already under that parent (nothing changed).
    * Not on device-folder storage (moving a directory is not reliable there).
    */
-  moveFolder?(id: string, parentId: string | null): Promise<void>
+  moveFolder?(id: string, parentId: string | null): Promise<void | 'noop'>
   /** Deletes a folder, its subfolders and every diagram inside. Returns the ids of the deleted diagrams. */
   deleteFolder(id: string): Promise<string[]>
   /** Only on storage that keeps stars with the file (Google Drive): stars or unstars a diagram without touching its contents. */
@@ -126,7 +127,7 @@ export function createBrowserBackend(): StorageBackend {
       const decision = canMoveFolder(folders, id, parentId)
       const existing = folders.find((folder) => folder.id === id)
       if (!decision.ok) {
-        if (decision.reason === 'same-parent') return
+        if (decision.reason === 'same-parent') return 'noop'
         throw new Error(folderMoveRefusalText(decision.reason, existing?.name ?? ''))
       }
       if (existing) await saveFolder({ ...existing, parentId })

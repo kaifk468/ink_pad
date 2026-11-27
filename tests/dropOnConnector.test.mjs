@@ -5,7 +5,7 @@ import { readAppSource } from './helpers/appSource.mjs'
 import { readFileSync } from 'node:fs'
 
 // Round 10 #241: drop an existing free box onto a connector.
-const { connectorUnderBox, insertExistingBoxIntoConnector } = await loadModule('insertIntoConnector.ts')
+const { connectorUnderBox, insertExistingBoxIntoConnector, connectorDropPaths } = await loadModule('insertIntoConnector.ts')
 const { getConnectorRenderSpec, connectorSecondEndpoint } = await loadModule('canvasModel.ts')
 const app = await readAppSource()
 
@@ -105,4 +105,27 @@ test('round 10 #241 wiring: highlight, single undo step, desktop mouse only, no 
   assert.match(app, /clearSnapGuides\(false\)\s*\n\s*dropConnectorRef\.current = null/)
   const shortcuts = readFileSync(new URL('../src/desktopShortcuts.ts', import.meta.url), 'utf8')
   assert.match(shortcuts, /Drop a box on an arrow to insert it/)
+})
+
+test('round 10 review: dropping a box on an ELBOW connector triggers and centres on the box-free line', () => {
+  const elbow = [box(1, 0, 0), box(2, 600, 300), conn(7, [100, 30], [600, 330], { routing: 'elbow', startAttachment: { rectangleId: 1, offsetX: 100, offsetY: 30 }, endAttachment: { rectangleId: 2, offsetX: 0, offsetY: 30 } })]
+  const dragged = free(0, 0)
+  const items = [...elbow, dragged]
+  const paths = connectorDropPaths(items, 20)
+  const path = paths.get(7)
+  assert.ok(path.length >= 3, 'elbow has bends')
+  // A point on the first horizontal run of the box-free path.
+  const mid = { x: (path[0].x + path[1].x) / 2, y: (path[0].y + path[1].y) / 2 }
+  const placed = items.map((i) => (i.id === 20 && i.kind === 'rectangle' ? { ...i, x: mid.x - 40, y: mid.y - 20 } : i))
+  assert.equal(connectorUnderBox(placed, 20, pt(mid.x, mid.y), 1, undefined, paths), 7)
+  const result = insertExistingBoxIntoConnector(placed, 7, 20, pt(mid.x, mid.y), { connector: 60 }, { path })
+  assert.ok(result)
+  assert.ok(Math.abs(result.box.x + 40 - mid.x) < 0.001 && Math.abs(result.box.y + 20 - mid.y) < 0.001, 'centred on the real line')
+})
+
+test('round 10 review: drop paths are computed once at drag start and carried labels follow the re-centred box', () => {
+  assert.match(app, /if \(!dropPathsRef\.current\) dropPathsRef\.current = connectorDropPaths\(items, box\.id\)/)
+  assert.match(app, /connectorUnderBox\([^\n]*dropPathsRef\.current\)/)
+  assert.match(app, /\{ workspace: workspaceBoundsRef\.current, \.\.\.\(path \? \{ path \} : \{\}\) \}/)
+  assert.match(app, /const labelKeys = new Set\(labelsInside\(strokesRef\.current, new Set\(\[boxKey\]\)\)\)[\s\S]{0,300}translateWithinWorkspace\(result\.items, labelKeys, shiftX, shiftY\)/)
 })

@@ -9,6 +9,9 @@ import type { CanvasItem, ConnectorObject, RectangleObject } from './canvasModel
 export type ErExport = { text: string; boxes: number; links: number; skipped: boolean; skippedLinks: number }
 
 const ATTRIBUTE = /^((?:(?:PK|FK|UK)\s*,\s*)*(?:PK|FK|UK))\s+([^\s:]+):\s*(\S+)$|^([^\s:]+):\s*(\S+)$/
+const ER_KEY_MARKER = /^\s*(?:(?:PK|FK|UK)\s*,\s*)*(?:PK|FK|UK)\s+[^\s:]+:\s*\S+\s*$/
+const CARDINALITY = /^(?:1|0\.\.1|1\.\.1|[01]\.\.[*n]|\*|n)$/i
+const isCardinality = (text: string | undefined): boolean => text !== undefined && CARDINALITY.test(text.replace(/\s+/g, ''))
 const PLAIN_ID = /^[\p{L}\p{N}_.\-]+$/u
 const LEFT: Record<string, string> = { '1': '||', '0..1': '|o', '1..*': '}|', '0..*': '}o' }
 const RIGHT: Record<string, string> = { '1': '||', '0..1': 'o|', '1..*': '|{', '0..*': 'o{' }
@@ -48,6 +51,7 @@ export function buildMermaidErText(items: readonly CanvasItem[]): ErExport | nul
   const rectangles = items.filter((item): item is RectangleObject => item.kind === 'rectangle')
   if (rectangles.length === 0 || !rectangles.every((box) => box.classBox)) return null
   const entities: Array<{ box: RectangleObject; name: string; attributes: string[] }> = []
+  let hasKeyMarker = false
   for (const box of rectangles) {
     const content = box.classBox!
     if (content.methods.trim() !== '') return null
@@ -58,14 +62,16 @@ export function buildMermaidErText(items: readonly CanvasItem[]): ErExport | nul
       if (line.trim() === '') continue
       const text = attributeText(line)
       if (text === null) return null
+      if (ER_KEY_MARKER.test(line)) hasKeyMarker = true
       attributes.push(text)
     }
     entities.push({ box, name, attributes })
   }
   const connectors = items.filter((item): item is ConnectorObject => item.kind === 'connector')
   if (connectors.some((connector) => connector.relationshipType !== 'association' || connector.twoWay === true)) return null
-  // Bare class boxes joined by plain lines are a class diagram: an ER page has an attribute list or cardinality labels somewhere.
-  if (!entities.some((entity) => entity.attributes.length > 0) && !connectors.some((connector) => connector.startLabel || connector.endLabel)) return null
+  // Methodless class boxes with `name: type` attributes and plain associations are a plain domain model (class diagram): an ER page has
+  // a PK / FK / UK marker on an attribute or a connector end label that reads as an ER cardinality.
+  if (!hasKeyMarker && !connectors.some((connector) => isCardinality(connector.startLabel) || isCardinality(connector.endLabel))) return null
   entities.sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x || a.box.id - b.box.id)
 
   const taken = new Set<string>()

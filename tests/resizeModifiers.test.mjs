@@ -55,11 +55,11 @@ test('sizeReadoutText rounds', () => {
 })
 
 test('wiring: Shift reads live from the pointer event, desktop mouse only; readout is an overlay, not an item', () => {
-  assert.match(app, /event\.shiftKey && event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop' \? axisLock\(dx, dy\)/)
-  assert.match(app, /const dragSnap = lockSnapped\(deltaX, deltaY, snapDragDelta\(/)
-  assert.match(app, /const lassoSnap = lockSnapped\(deltaX, deltaY, snapDragDelta\(/)
+  assert.match(app, /event\.shiftKey && event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop' \? \{ \.\.\.axisLock\(dx, dy\), locked: lockedAxis\(dx, dy\) \}/)
+  assert.match(app, /const dragSnap = lockSnapped\(lockedAxisName, snapDragDelta\(/)
+  assert.match(app, /const lassoSnap = lockSnapped\(lockedAxisName, snapDragDelta\(/)
   assert.match(app, /const keepRatio = event\.shiftKey && event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop' && !activeResize\.created/)
-  assert.match(app, /keepAspect\(activeResize\.originalBounds, bounds, activeResize\.handle\)/)
+  assert.match(app, /keepAspect\(activeResize\.originalBounds, bounds, activeResize\.handle, undefined, workspaceBoundsRef\.current\)/)
   assert.match(app, /!keepRatio\) \{/)
   assert.match(app, /sizeReadoutRef\.current = \{ x: point\.x, y: point\.y, width: bounds\.width, height: bounds\.height \}/)
   assert.match(app, /if \(readout && activeResizeRef\.current\?\.moved\)/)
@@ -70,4 +70,37 @@ test('help lists the Shift mouse modifiers', () => {
   const labels = shortcuts.DESKTOP_SHORTCUTS.map((row) => row.label)
   assert.ok(labels.some((l) => /Shift while resizing: keep proportions/.test(l)))
   assert.ok(labels.some((l) => /Shift while moving: straight line/.test(l)))
+})
+
+test('round 10 review: Shift axis lock zeroes only the locked axis; no Shift keeps the snap', () => {
+  assert.equal(rm.lockedAxis(30, 5), 'dy')
+  assert.equal(rm.lockedAxis(3, -40), 'dx')
+  assert.equal(rm.lockedAxis(0, 0), null)
+  // A purely horizontal raw drag without Shift: the snap on dy survives (locked = null).
+  assert.deepEqual(rm.keepLockedAxis(null, { dx: 20, dy: 4 }), { dx: 20, dy: 4 })
+  assert.deepEqual(rm.keepLockedAxis('dy', { dx: 20, dy: 4 }), { dx: 20, dy: 0 })
+  assert.deepEqual(rm.keepLockedAxis('dx', { dx: 20, dy: 4 }), { dx: 0, dy: 4 })
+  assert.match(app, /const lockSnapped = \(locked: 'dx' \| 'dy' \| null, snapped/)
+  assert.match(app, /: \{ dx, dy, locked: null \}/)
+})
+
+test('round 10 review: equal-gap snapping is Desktop mouse only; keep-ratio is for corner handles only', () => {
+  assert.match(app, /viewportRef\.current\.scale, !duplicating && inputModeRef\.current === 'desktop' && event\.pointerType === 'mouse'\)/)
+  assert.match(app, /!activeResize\.created && isCornerHandle\(activeResize\.handle\)/)
+  assert.equal(rm.isCornerHandle('se'), true)
+  assert.equal(rm.isCornerHandle('e'), false)
+  assert.equal(rm.isCornerHandle('n'), false)
+})
+
+test('round 10 review: keepAspect never pushes either side past the bound', () => {
+  const limit = { x: 0, y: 0, width: 500, height: 300 }
+  // se from (100,100) 200x100: asking for 4x would reach x=900; capped by the room (400 wide, 200 tall -> scale 2).
+  const se = rm.keepAspect(O, { x: 100, y: 100, width: 800, height: 120 }, 'se', 32, limit)
+  assert.deepEqual(se, { x: 100, y: 100, width: 400, height: 200 })
+  assert.ok(se.x + se.width <= 500 && se.y + se.height <= 300)
+  // nw anchors at (300,200): room 300 wide, 200 tall -> scale 1.5 at most.
+  const nw = rm.keepAspect(O, { x: -500, y: -500, width: 900, height: 700 }, 'nw', 32, limit)
+  assert.ok(nw.x >= 0 && nw.y >= 0)
+  assert.equal(nw.x + nw.width, 300)
+  assert.match(app, /keepAspect\(activeResize\.originalBounds, bounds, activeResize\.handle, undefined, workspaceBoundsRef\.current\)/)
 })

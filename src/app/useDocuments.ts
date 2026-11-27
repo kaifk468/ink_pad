@@ -614,19 +614,21 @@ export function useDocuments(host: DocumentHost) {
   }
 
   /** Moves a folder (with everything in it, same ids) under another folder; false with a notice when refused or unsupported (device folders). */
-  const moveFolder = async (id: string, parentId: string | null): Promise<boolean> => {
+  const moveFolder = async (id: string, parentId: string | null): Promise<boolean | 'noop'> => {
     setFileNotice(null)
-    let ok = true
-    const move = backendRef.current.moveFolder
-    try {
-      if (!move) throw new Error('Moving folders is not available for this storage.')
-      await move.call(backendRef.current, id, parentId)
-    } catch (error) {
-      setFileNotice(errorText(error, 'Could not move that folder.'))
-      ok = false
-    }
+    // Inside the save chain like deleteFolder, so it never overlaps an autosave, rename or delete. 'noop' = already under that parent.
+    const outcome = await inSaveChain(async (): Promise<boolean | 'noop'> => {
+      const move = backendRef.current.moveFolder
+      try {
+        if (!move) throw new Error('Moving folders is not available for this storage.')
+        return (await move.call(backendRef.current, id, parentId)) === 'noop' ? 'noop' : true
+      } catch (error) {
+        setFileNotice(errorText(error, 'Could not move that folder.'))
+        return false
+      }
+    })
     void refreshLibrary()
-    return ok
+    return outcome
   }
 
   /**

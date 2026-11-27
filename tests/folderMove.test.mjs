@@ -84,7 +84,7 @@ test('browser backend moveFolder refuses cycles and name clashes and changes not
   await assert.rejects(() => backend.moveFolder('lld', 'api'), /subfolders/)
   await assert.rejects(() => backend.moveFolder('lld', 'lld'), /itself/)
   await assert.rejects(() => backend.moveFolder('pay', 'hld'), /already has a folder named/)
-  await backend.moveFolder('pay', 'lld') // already there: nothing to do
+  assert.equal(await backend.moveFolder('pay', 'lld'), 'noop') // already there: nothing to do
   assert.equal(JSON.stringify(globalThis.__folders), before)
 })
 
@@ -123,7 +123,7 @@ test('Drive moveFolder refuses cycles and name clashes without changing anything
   requests.length = 0
   await assert.rejects(() => store.moveFolder(a, b), /subfolders/)
   await assert.rejects(() => store.moveFolder(x, a), /already has a folder named/)
-  await store.moveFolder(b, a) // same place
+  assert.equal(await store.moveFolder(b, a), 'noop') // same place
   assert.equal(requests.filter((r) => r.method !== 'GET').length, 0)
   assert.deepEqual(tree(fake), ['A/', 'A/B/', 'B/'])
 })
@@ -143,4 +143,6 @@ test('wiring: folder menu entry, drag and drop, undo toast, device hint', () => 
   assert.match(src('App.tsx'), /onMoveFolder=\{\(id, parentId\) => moveFolder\(id, parentId\)\}/)
   assert.doesNotMatch(src('deviceStore.ts'), /moveFolder/)
   assert.match(src('app/useDocuments.ts'), /const moveFolder = async/)
+  assert.match(src('app/useDocuments.ts'), /const moveFolder = async[\s\S]*?await inSaveChain\(async \(\): Promise<boolean \| 'noop'> =>[\s\S]*?=== 'noop' \? 'noop' : true/)
+  assert.match(home, /if \(result === false \|\| result === 'noop'\) return/)
 })

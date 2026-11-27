@@ -85,3 +85,15 @@ test('wiring: Copy as Mermaid toast for ER pages and the builder hook', async ()
   const exp = await readFile(new URL('../src/mermaidExport.ts', import.meta.url), 'utf8')
   assert.match(exp, /const er = buildMermaidErText\(items\)\n\s+if \(er\) return/)
 })
+
+test('round 10 review: a methodless domain model (name: type attributes, plain associations) stays a class diagram', () => {
+  const cls = (id, name, attributes, x) => ({ kind: 'rectangle', id, x, y: 0, width: 160, height: 100, strokeColor: '#000', strokeWidth: 2, classBox: { name, attributes, methods: '' } })
+  const link = (id, extra = {}) => ({ kind: 'connector', id, start: { x: 160, y: 50, pressure: 1 }, end: { x: 300, y: 50, pressure: 1 }, strokeColor: '#000', strokeWidth: 2, relationshipType: 'association', reversed: false, startAttachment: { rectangleId: 1, offsetX: 160, offsetY: 50 }, endAttachment: { rectangleId: 2, offsetX: 0, offsetY: 50 }, ...extra })
+  const boxes = [cls(1, 'Customer', 'name: string\nage: int', 0), cls(2, 'Order', 'total: number', 300)]
+  assert.equal(buildMermaid([...boxes, link(5)]).kind, 'class')
+  assert.equal(buildMermaid([...boxes, link(5, { label: 'places', endLabel: 'orders' })]).kind, 'class')
+  // A key marker or a cardinality label still makes it an ER page.
+  const keyed = [cls(1, 'Customer', 'PK id: int\nname: string', 0), boxes[1]]
+  assert.equal(buildMermaid([...keyed, link(5)]).kind, 'er')
+  assert.equal(buildMermaid([...boxes, link(5, { startLabel: '1', endLabel: '0..*' })]).kind, 'er')
+})

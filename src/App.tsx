@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
-import { CONNECTOR_SNAP_TOLERANCE, connectorPoints, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, type ConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, type ConnectorRouting } from './canvasModel'
 import { QUICK_CONNECT_DOUBLE_CLICK_MS, TABLET_QUICK_CONNECT_TAP_SLOP_PX, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHeadEnds, quickConnectHint, type QuickConnectDirection } from './quickConnect'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConnectorHandle, hitConnectorLabel, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
@@ -11,7 +11,7 @@ import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dr
 import { similarItemKeys } from './selectSimilar'
 import { canSameSize, sameSizeItems, type SameSizeMode } from './sameSize'
 import { canSwapPositions, swapPositionsItems } from './swapPositions'
-import { canInsertBoxIntoConnector, connectorUnderBox, insertBoxIntoConnector, insertExistingBoxIntoConnector } from './insertIntoConnector'
+import { canInsertBoxIntoConnector, connectorDropPaths, connectorUnderBox, insertBoxIntoConnector, insertExistingBoxIntoConnector } from './insertIntoConnector'
 import { canFlipSelection, flipSelectionItems, type FlipAxis } from './flipSelection'
 import { linkedNeighbour, revealViewport, walkCurrentKey, walkItemBounds, walkStep } from './keyboardWalk'
 import { addBoundary } from './boundary'
@@ -20,7 +20,7 @@ import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
 import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeChoice } from './changeShape'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, pasteTranslation, type PasteResult } from './clipboard'
-import { axisLock, keepAspect, sizeReadoutText } from './resizeModifiers'
+import { axisLock, isCornerHandle, keepAspect, keepLockedAxis, lockedAxis, sizeReadoutText } from './resizeModifiers'
 import { gridDots, gridSnapApplies, gridSpacingFor, loadGridSnap, saveGridSnap, gridNudgeDelta, snapAngle as snapPointAngle, snapMoveDelta, snapResizeBounds, snapToGrid, unpaddedSelectionBounds } from './gridSnap'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type GapMarker, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
@@ -397,6 +397,8 @@ function App() {
   const guidesRef = useRef<Guide[]>([])
   // Round 10: the connector highlighted while one free box is dragged over it with the mouse (released there, the box is inserted); null otherwise.
   const dropConnectorRef = useRef<number | null>(null)
+  // Connector paths routed once per drag without the dragged box (elbow routes would detour around it); see connectorDropPaths.
+  const dropPathsRef = useRef<Map<number, Point[]> | null>(null)
   // The size pill ("W x H") shown near the pointer while a desktop resize or new-box drag is active; drawn only while that gesture is active, never saved or exported.
   const sizeReadoutRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
   const gapMarkersRef = useRef<GapMarker[]>([])
@@ -1719,7 +1721,10 @@ function App() {
     const match = /^rectangle:(\d+)$/.exec(drag.itemKey)
     if (match && !drag.duplicate && inputModeRef.current === 'desktop' && event.pointerType === 'mouse') {
       const box = items.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === Number(match[1]))
-      if (box) target = connectorUnderBox(items, box.id, { x: box.x + box.width / 2, y: box.y + box.height / 2, pressure: 1 }, viewportRef.current.scale)
+      if (box) {
+        if (!dropPathsRef.current) dropPathsRef.current = connectorDropPaths(items, box.id)
+        target = connectorUnderBox(items, box.id, { x: box.x + box.width / 2, y: box.y + box.height / 2, pressure: 1 }, viewportRef.current.scale, undefined, dropPathsRef.current)
+      }
     }
     dropConnectorRef.current = target
   }
@@ -1728,10 +1733,15 @@ function App() {
     const box = match ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === Number(match[1])) : undefined
     if (!box) return false
     const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2, pressure: 1 }
-    const result = insertExistingBoxIntoConnector(strokesRef.current, connectorId, box.id, centre, { connector: nextConnectorIdRef.current }, { workspace: workspaceBoundsRef.current })
+    const path = dropPathsRef.current?.get(connectorId)
+    const result = insertExistingBoxIntoConnector(strokesRef.current, connectorId, box.id, centre, { connector: nextConnectorIdRef.current }, { workspace: workspaceBoundsRef.current, ...(path ? { path } : {}) })
     if (!result) return false
     nextConnectorIdRef.current += 1
-    strokesRef.current = result.items
+    // The labels that travelled with the box during the drag follow it to the line (same update, same undo step).
+    const labelKeys = new Set(labelsInside(strokesRef.current, new Set([boxKey])))
+    const shiftX = result.box.x - box.x
+    const shiftY = result.box.y - box.y
+    strokesRef.current = labelKeys.size > 0 && (shiftX !== 0 || shiftY !== 0) ? translateWithinWorkspace(result.items, labelKeys, shiftX, shiftY) : result.items
     historyCacheRef.current = null
     scheduleAutosave()
     showActionToast('Inserted into the arrow', { label: 'Undo', run: () => undo() })
@@ -1937,11 +1947,10 @@ function App() {
     if (hadGuides && repaint) renderAll()
   }
   // Shift while moving (Desktop mouse): the drag runs along its main axis; read live, so releasing Shift mid-drag frees it.
-  const shiftAxisLock = (event: React.PointerEvent<HTMLCanvasElement>, dx: number, dy: number): { dx: number; dy: number } =>
-    event.shiftKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop' ? axisLock(dx, dy) : { dx, dy }
-  // The snap may nudge the locked axis; keep it at zero so the move stays straight.
-  const lockSnapped = (lockedX: number, lockedY: number, snapped: { dx: number; dy: number }): { dx: number; dy: number } =>
-    lockedX === 0 && lockedY === 0 ? snapped : { dx: lockedX === 0 ? 0 : snapped.dx, dy: lockedY === 0 ? 0 : snapped.dy }
+  const shiftAxisLock = (event: React.PointerEvent<HTMLCanvasElement>, dx: number, dy: number): { dx: number; dy: number; locked: 'dx' | 'dy' | null } =>
+    event.shiftKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop' ? { ...axisLock(dx, dy), locked: lockedAxis(dx, dy) } : { dx, dy, locked: null }
+  // The snap may nudge the locked axis; keep only that axis at zero (only while Shift locked one) so the move stays straight.
+  const lockSnapped = (locked: 'dx' | 'dy' | null, snapped: { dx: number; dy: number }): { dx: number; dy: number } => keepLockedAxis(locked, snapped)
   // One drag move: the pointer's delta, nudged so the moving bounds line up with nearby boxes and labels. Off when the setting is off,
   // while Alt is held with a mouse in Desktop mode, and for selections without a box or label (ink and connectors alone never snap).
   const snapDragDelta = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], keys: ReadonlySet<string>, dx: number, dy: number, duplicating = false): { dx: number; dy: number } => {
@@ -1974,7 +1983,7 @@ function App() {
       snapStateRef.current = state
     }
     if (!state.moving) return { dx, dy }
-    const result = snapForDrag(true, false, { ...state.moving, x: state.moving.x + dx, y: state.moving.y + dy }, state.targets, event.pointerType, viewportRef.current.scale, !duplicating)
+    const result = snapForDrag(true, false, { ...state.moving, x: state.moving.x + dx, y: state.moving.y + dy }, state.targets, event.pointerType, viewportRef.current.scale, !duplicating && inputModeRef.current === 'desktop' && event.pointerType === 'mouse')
     guidesRef.current = result?.guides ?? []
     gapMarkersRef.current = result?.gapMarkers ?? []
     return result ? { dx: dx + result.dx, dy: dy + result.dy } : { dx, dy }
@@ -3028,12 +3037,12 @@ function App() {
     const dropConnectorId = dropConnectorRef.current
     if (dropConnectorId !== null) {
       // Round 10: the connector the dragged box would be inserted into: a wide accent halo along its drawn path (view only, never saved or exported).
-      const target = routeConnectors(strokesRef.current).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === dropConnectorId)
-      const path = target ? connectorPoints(target) : []
-      if (path.length > 1) {
+      const target = strokesRef.current.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === dropConnectorId)
+      const path = dropPathsRef.current?.get(dropConnectorId) ?? []
+      if (target && path.length > 1) {
         ctx.save()
         ctx.strokeStyle = 'rgba(83, 111, 224, 0.55)'
-        ctx.lineWidth = Math.max(target!.strokeWidth + 6, 8 / viewport.scale)
+        ctx.lineWidth = Math.max(target.strokeWidth + 6, 8 / viewport.scale)
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
         ctx.beginPath()
@@ -4418,9 +4427,9 @@ function App() {
         bounds.height = side
       }
       // Shift on a corner of an existing box or selection keeps its proportions (Desktop mouse); grid snap is skipped then.
-      const keepRatio = event.shiftKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop' && !activeResize.created
+      const keepRatio = event.shiftKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop' && !activeResize.created && isCornerHandle(activeResize.handle)
       if (keepRatio) {
-        const kept = keepAspect(activeResize.originalBounds, bounds, activeResize.handle)
+        const kept = keepAspect(activeResize.originalBounds, bounds, activeResize.handle, undefined, workspaceBoundsRef.current)
         bounds.x = kept.x; bounds.y = kept.y; bounds.width = kept.width; bounds.height = kept.height
       }
       const resizeGrid = gridActive(event)
@@ -4464,11 +4473,11 @@ function App() {
       const rawX = point.x - lassoDrag.start.x
       const rawY = point.y - lassoDrag.start.y
       if (!lassoDrag.moved && Math.hypot(rawX, rawY) < 2) return
-      const { dx: deltaX, dy: deltaY } = shiftAxisLock(event, rawX, rawY)
+      const { dx: deltaX, dy: deltaY, locked: lockedAxisName } = shiftAxisLock(event, rawX, rawY)
       const lassoDup = lassoDrag.duplicate ? beginDuplicate(lassoDrag, lassoDrag.originalItems, lassoDrag.keys, event) : null
       const lassoBase = lassoDup?.items ?? lassoDrag.originalItems
       const lassoKeys = lassoDup ? lassoDup.copyKeys : withCarriedLabels(event, lassoDrag.originalItems, lassoDrag.keys)
-      const lassoSnap = lockSnapped(deltaX, deltaY, snapDragDelta(event, lassoBase, lassoKeys, deltaX, deltaY, !!lassoDrag.duplicate))
+      const lassoSnap = lockSnapped(lockedAxisName, snapDragDelta(event, lassoBase, lassoKeys, deltaX, deltaY, !!lassoDrag.duplicate))
       const nextItems = translateWithinWorkspace(lassoBase, lassoKeys, lassoSnap.dx, lassoSnap.dy)
       if (!lassoDrag.moved && nextItems.every((item, index) => item === lassoBase[index])) return
       if (!lassoDrag.moved) {
@@ -4507,11 +4516,11 @@ function App() {
       const rawX = point.x - drag.start.x
       const rawY = point.y - drag.start.y
       if (!drag.moved && Math.hypot(rawX, rawY) < 2) return
-      const { dx: deltaX, dy: deltaY } = shiftAxisLock(event, rawX, rawY)
+      const { dx: deltaX, dy: deltaY, locked: lockedAxisName } = shiftAxisLock(event, rawX, rawY)
       const dragDup = drag.duplicate ? beginDuplicate(drag, drag.originalItems, new Set([drag.itemKey]), event) : null
       const dragBase = dragDup?.items ?? drag.originalItems
       const dragKeys = dragDup ? dragDup.copyKeys : withCarriedLabels(event, drag.originalItems, new Set([drag.itemKey]))
-      const dragSnap = lockSnapped(deltaX, deltaY, snapDragDelta(event, dragBase, dragKeys, deltaX, deltaY, !!drag.duplicate))
+      const dragSnap = lockSnapped(lockedAxisName, snapDragDelta(event, dragBase, dragKeys, deltaX, deltaY, !!drag.duplicate))
       const nextItems = translateWithinWorkspace(dragBase, dragKeys, dragSnap.dx, dragSnap.dy)
       if (!drag.moved && nextItems.every((item, index) => item === dragBase[index])) return
       if (!drag.moved) {
@@ -4713,6 +4722,7 @@ function App() {
       const dropConnectorId = dropConnectorRef.current
       dropConnectorRef.current = null
       if (drag.moved && dropConnectorId !== null) dropBoxOnConnector(drag.itemKey, dropConnectorId)
+      dropPathsRef.current = null
       if (!drag.moved && drag.editTextId != null) {
         const tapped = strokesRef.current.find((item): item is TextObject => item.kind === 'text' && item.id === drag.editTextId)
         if (tapped) editTextItem(tapped)
@@ -4800,6 +4810,7 @@ function App() {
     }
     if (activeDragRef.current?.pointerId === event.pointerId) {
       activeDragRef.current = null
+      dropPathsRef.current = null
       if (dropConnectorRef.current !== null) { dropConnectorRef.current = null; renderAll() }
       return
     }
@@ -5051,6 +5062,7 @@ function App() {
     if (!handled) return false
     clearSnapGuides(false)
     dropConnectorRef.current = null
+    dropPathsRef.current = null
     if (restored) strokesRef.current = restored
     // A duplicating drag put the selection on the copies: Escape removes them and selects the originals again.
     if (restoredSelection) applySelectionState(restoredSelection)

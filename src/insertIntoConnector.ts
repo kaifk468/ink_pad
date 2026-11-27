@@ -147,22 +147,36 @@ export function isDroppableBox(items: readonly CanvasItem[], box: CanvasItem | u
 }
 
 /**
+ * The drawn path of every connector with the box `boxId` taken out of the scene, by connector id. Elbow routing treats other boxes as obstacles,
+ * so the path with the dragged box present detours around it; computed once at drag start, this is the line the box is dropped on.
+ */
+export function connectorDropPaths(items: readonly CanvasItem[], boxId: number): Map<number, Point[]> {
+  const without = items.filter((item) => !(item.kind === 'rectangle' && item.id === boxId))
+  const paths = new Map<number, Point[]>()
+  routeConnectors(without).forEach((item) => {
+    if (item.kind === 'connector') paths.set(item.id, connectorPoints(item))
+  })
+  return paths
+}
+
+/**
  * The connector the dragged free box `boxId` (centre `centre`, canvas coordinates) is over: the nearest unlocked connector whose drawn path
  * passes within `toleranceScreenPx / scale` of the centre, or null. Null when the box is not droppable (see isDroppableBox).
  */
-export function connectorUnderBox(items: CanvasItem[], boxId: number, centre: Point, scale: number, toleranceScreenPx = DROP_ON_CONNECTOR_TOLERANCE_PX): number | null {
+export function connectorUnderBox(items: CanvasItem[], boxId: number, centre: Point, scale: number, toleranceScreenPx = DROP_ON_CONNECTOR_TOLERANCE_PX, paths?: ReadonlyMap<number, Point[]>): number | null {
   const box = items.find((item) => item.kind === 'rectangle' && item.id === boxId)
   if (!isDroppableBox(items, box) || !(scale > 0)) return null
   const tolerance = toleranceScreenPx / scale
-  const routed = routeConnectors(items)
+  // Paths computed without the dragged box (see connectorDropPaths); otherwise routed here with the box in place.
+  const routed = paths ? items : routeConnectors(items)
   let best: number | null = null
   let bestDistance = tolerance
   routed.forEach((item, index) => {
     const original = items[index]
     if (item.kind !== 'connector' || original.kind !== 'connector' || isItemLocked(original)) return
     if (original.startAttachment?.rectangleId === boxId || original.endAttachment?.rectangleId === boxId) return
-    const path = connectorPoints(item)
-    if (path.length < 2) return
+    const path = paths ? paths.get(original.id) : connectorPoints(item)
+    if (!path || path.length < 2) return
     const near = pointAtPathFraction(path, pathFractionNearest(path, centre))
     const distance = Math.hypot(near.x - centre.x, near.y - centre.y)
     if (distance <= bestDistance) { best = original.id; bestDistance = distance }
@@ -181,7 +195,7 @@ export function insertExistingBoxIntoConnector(
   boxId: number,
   drop: Point,
   ids: { connector: number },
-  options: { workspace?: RectangleBounds } = {},
+  options: { workspace?: RectangleBounds; path?: readonly Point[] } = {},
 ): InsertIntoConnectorResult | null {
   const index = items.findIndex((item) => item.kind === 'connector' && item.id === connectorId)
   if (index < 0) return null
@@ -191,7 +205,7 @@ export function insertExistingBoxIntoConnector(
   const original = items.find((item) => item.kind === 'rectangle' && item.id === boxId)
   if (!isDroppableBox(items, original)) return null
 
-  const path = connectorPoints(routeConnectors(items)[index] as ConnectorObject)
+  const path = options.path ? [...options.path] : (connectorDropPaths(items, boxId).get(connectorId) ?? [])
   if (path.length < 2) return null
   const onPath = pointAtPathFraction(path, pathFractionNearest(path, drop))
   let x = onPath.x - original.width / 2
