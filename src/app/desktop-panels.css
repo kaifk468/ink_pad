@@ -1,1 +1,97 @@
 /* Desktop panels styles (UI round 2). Every selector is scoped to .app-shell[data-input-mode="desktop"]; tablet never reads this file. */
+
+/* ---------- Options panel ---------- */
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left {
+  width: 240px; padding: 12px; gap: 12px; box-sizing: border-box;
+  background: var(--ip-surface); border: 1px solid var(--ip-line); border-radius: var(--ip-radius-panel); box-shadow: var(--ip-shadow-2);
+  /* top is 84px; stop above the zoom controls and the dock (about 165px of bottom clearance) */
+  max-height: calc(100vh - 250px); overflow-y: auto; overscroll-behavior: contain; color: var(--ip-text);
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .panel-label,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .popover-label {
+  color: var(--ip-muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .panel-hint { color: var(--ip-muted); }
+
+/* Uniform buttons */
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .clear-selection-button,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .eraser-mode-card {
+  box-sizing: border-box; min-height: 32px; height: 32px; padding: 0 8px; border: 0; border-radius: 8px;
+  background: var(--ip-surface-2); color: var(--ip-text); font: 500 13px/1 'DM Sans', system-ui, sans-serif;
+  display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; cursor: pointer;
+  transition: background var(--ip-dur-fast) var(--ip-ease-out);
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .clear-selection-button:hover:not(:disabled) { background: var(--ip-line); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .clear-selection-button:disabled { color: var(--ip-faint); cursor: default; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .selection-actions {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+}
+/* Segmented controls: shared track, equal segments */
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .layer-controls .selection-actions,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .change-shape-controls .selection-actions,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .routing-toggle,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .thickness-group,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .stroke-display-control {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 3px; box-sizing: border-box;
+  border: 0; border-radius: 10px; background: var(--ip-surface-2); width: 100%;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .layer-controls .clear-selection-button,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .change-shape-controls .clear-selection-button {
+  background: transparent; border-radius: 8px;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .layer-controls .clear-selection-button:hover,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .change-shape-controls .clear-selection-button:hover { background: var(--ip-surface); box-shadow: var(--ip-shadow-1); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .routing-toggle button,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .thickness-button,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .stroke-mode-button {
+  box-sizing: border-box; height: 32px; min-width: 0; width: auto; padding: 0 6px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--ip-text); font: 500 13px/1 'DM Sans', system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .routing-toggle button.active,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .thickness-button.selected,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .stroke-mode-button.selected {
+  background: var(--ip-surface); box-shadow: var(--ip-shadow-1); color: var(--ip-accent);
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .thickness-button span { background: currentColor; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .thickness-button:not(.selected) { color: var(--ip-muted); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .layer-controls svg { display: block; }
+
+/* Swatches: one row, 28px */
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .color-group,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .tool-group.color-group {
+  display: flex; flex-wrap: nowrap; gap: 8px; padding: 0; border: 0; justify-content: flex-start;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .color-swatch {
+  box-sizing: border-box; flex: none; width: 28px; height: 28px; padding: 0; border: 2px solid transparent; border-radius: 50%; background: transparent; cursor: pointer;
+  display: grid; place-items: center;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .color-swatch::before { width: 20px; height: 20px; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .color-swatch.selected { border-color: var(--ip-accent); box-shadow: none; background: transparent; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .color-picker-popover { left: calc(max(16px, env(safe-area-inset-left)) + 240px + 12px); }
+
+/* ---------- Right-click menu ---------- */
+.app-shell[data-input-mode="desktop"] .canvas-context-menu {
+  padding: 6px; gap: 2px; background: var(--ip-surface); border: 1px solid var(--ip-line); border-radius: var(--ip-radius-panel); box-shadow: var(--ip-shadow-2);
+  max-height: calc(100vh - 108px); overscroll-behavior: contain; font-family: 'DM Sans', system-ui, sans-serif; color: var(--ip-text);
+}
+.app-shell[data-input-mode="desktop"] .canvas-context-menu button {
+  min-height: 32px; height: 32px; padding: 0 10px; border-radius: 8px; font: 500 14px/1 'DM Sans', system-ui, sans-serif; color: var(--ip-text); flex: none;
+}
+.app-shell[data-input-mode="desktop"] .canvas-context-menu button:hover:not(:disabled),
+.app-shell[data-input-mode="desktop"] .canvas-context-menu button:focus-visible { background: var(--ip-surface-2); }
+.app-shell[data-input-mode="desktop"] .canvas-context-menu button:disabled { color: var(--ip-faint); }
+.app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-hint {
+  font: 400 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--ip-faint); margin-left: auto;
+}
+.app-shell[data-input-mode="desktop"] .canvas-context-separator { background: var(--ip-line); margin: 4px 6px; }
+.app-shell[data-input-mode="desktop"] .canvas-context-chips { padding: 4px 6px 6px; gap: 4px; }
+.app-shell[data-input-mode="desktop"] .canvas-context-chips-caption { color: var(--ip-muted); font: 600 11px/16px 'DM Sans', system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+.app-shell[data-input-mode="desktop"] .canvas-context-chips-row { gap: 4px; }
+.app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip {
+  min-height: 28px; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--ip-surface-2); font: 500 12px/1 'DM Sans', system-ui, sans-serif;
+}
+.app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip:hover:not(:disabled) { background: var(--ip-line); }
+.app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip:disabled { color: var(--ip-faint); }
+
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .selection-actions > .clear-selection-button:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip { padding: 0 7px; }
