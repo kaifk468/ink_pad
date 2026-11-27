@@ -49,7 +49,7 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'Edit', label: 'Label the selected shape (type inside it)', keys: 'Enter' },
   { group: 'Edit', label: 'Delete the selection', keys: 'Delete or Backspace', input: { key: 'Delete' } },
   { group: 'Edit', label: 'Curved connector: drag its middle dot to bend it, click the dot to make it straight (line shape in the panel, right-click or palette)', keys: 'Drag middle dot' },
-  { group: 'Edit', label: 'Deselect, or cancel a drag', keys: 'Esc', input: { key: 'Escape' } },
+  { group: 'Edit', label: 'Deselect, cancel a drag, or finish text editing', keys: 'Esc', input: { key: 'Escape' } },
   { group: 'View', label: 'Zoom in', keys: 'Ctrl++', input: { key: '=', ...ctrl } },
   { group: 'View', label: 'Zoom out', keys: 'Ctrl+-', input: { key: '-', ...ctrl } },
   { group: 'View', label: 'Zoom to 100%', keys: 'Ctrl+0', input: { key: '0', ...ctrl } },

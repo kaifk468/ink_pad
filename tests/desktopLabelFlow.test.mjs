@@ -38,8 +38,8 @@ test('letters stay tool shortcuts; Enter maps to the edit command only on deskto
 
 test('App wiring: Enter falls back to the shape label (desktop only); Escape commits in the label editor on desktop; export toasts on desktop', () => {
   assert.match(app, /inputModeRef\.current === 'desktop' \? shapeLabelForSelection\(/)
-  assert.match(app, /onCancel=\{inputMode === 'desktop' \? commitTextEditor : cancelTextEditor\}/)
-  assert.match(app, /onExportPng=\{\(scale\) => void exportPngFile\(scale\)\.then\(\(error\) => \{ if \(inputMode === 'desktop'\) showToast\(exportToastText\('PNG', error\)\) \}\)\}/)
+  assert.match(app, /onCancel=\{inputMode === 'desktop' \? \(\) => \{[^]*?labelEscapeAction[^]*?: cancelTextEditor\}/)
+  assert.match(app, /onExportPng=\{\(scale\) => void exportPngFile\(scale, undefined, inputMode === 'desktop'\)\.then\(\(error\) => \{ if \(inputMode === 'desktop'\) showToast\(exportToastText\('PNG', error\)\) \}\)\}/)
   assert.match(app, /onExportSvg=\{\(\) => void exportSvgFile\(\)\.then\(\(error\) => \{ if \(inputMode === 'desktop'\) showToast\(exportToastText\('SVG', error\)\) \}\)\}/)
 })
 
@@ -48,4 +48,32 @@ test('export toast text and the shortcut row', () => {
   assert.equal(input.exportToastText('SVG', null), 'SVG downloaded')
   assert.equal(input.exportToastText('PNG', 'Could not export'), 'Could not export')
   assert.ok(shortcuts.DESKTOP_SHORTCUTS.some((row) => row.keys === 'Enter' && /Label the selected shape/.test(row.label)))
+})
+
+test('Esc in the desktop label editor commits, but never deletes an existing label', () => {
+  assert.equal(input.labelEscapeAction(false, 'Hello'), 'commit')
+  assert.equal(input.labelEscapeAction(false, '  '), 'commit') // a new, blank label is simply not created
+  assert.equal(input.labelEscapeAction(true, 'Edited'), 'commit')
+  assert.equal(input.labelEscapeAction(true, ''), 'cancel')
+  assert.equal(input.labelEscapeAction(true, '   \n'), 'cancel')
+  assert.ok(shortcuts.DESKTOP_SHORTCUTS.some((row) => row.keys === 'Esc' && /finish text editing/.test(row.label)))
+})
+
+test('context menu bottom clearance applies only over the dock', () => {
+  const dock = { left: 400, right: 900 }
+  assert.equal(input.menuBottomClearance(100, 248, dock), 0)
+  assert.equal(input.menuBottomClearance(1000, 248, dock), 0)
+  assert.equal(input.menuBottomClearance(300, 248, dock), input.CONTEXT_MENU_BOTTOM_CLEARANCE)
+  assert.equal(input.menuBottomClearance(850, 248, dock), input.CONTEXT_MENU_BOTTOM_CLEARANCE)
+  assert.equal(input.menuBottomClearance(100, 248, null), input.CONTEXT_MENU_BOTTOM_CLEARANCE)
+  assert.match(app, /menuBottomClearance\(contextMenu\.x, CONTEXT_MENU_WIDTH, dockRange\(\)\)/)
+})
+
+test('tablet leading content of the account button is exactly the pre-round-2 expression', async () => {
+  const { accountLeading } = await loadModule('app/accountLeading.ts')
+  assert.equal(accountLeading(true, 'tablet', 'PEN'), 'PEN')
+  assert.equal(accountLeading(false, 'tablet', 'PEN'), undefined) // no status pill or Export on tablet with another tool
+  assert.equal(accountLeading(true, 'desktop', 'PEN'), undefined)
+  assert.match(app, /: accountLeading\(penModeActive, inputMode, /)
+  assert.match(app, /inputMode === 'desktop' \? <DesktopStatusCluster [^]*?hideExport=\{zoomLockActive\}/)
 })

@@ -512,8 +512,8 @@ test('rename: the dirty safety copy is rewritten with the new title once the sto
   assert.equal(safety.isDirty(record), false)
 })
 
-test('wiring: renameDiagram flushes the safety copy after saving', async () => {
+test('wiring: renameDiagram flushes the safety copy after saving (bounded, never waits forever)', async () => {
   const { readFile } = await import('node:fs/promises')
   const src = await readFile(new URL('../src/app/useDocuments.ts', import.meta.url), 'utf8')
-  assert.match(src, /const renameDiagram = [\s\S]*?persistNow\(\)\.then\(\(\) => keeper\.flush\(\)\)/)
+  assert.match(src, /const renameDiagram = [\s\S]*?persistNow\(\)\.then\(\(\) => flushCopy\(\)\)/)
 })
