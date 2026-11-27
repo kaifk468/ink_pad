@@ -63,6 +63,35 @@
 .app-shell[data-input-mode="desktop"] .page-controls .page-indicator small { border-top-color: var(--ip-line); color: var(--ip-muted); }
 .app-shell[data-input-mode="desktop"] .page-controls .page-indicator .page-indicator-name { color: var(--ip-muted); }
 
+/* Page chip: one line "1 / 3" (tooltip and aria-label read "Page 1 of 3"). */
+.app-shell[data-input-mode="desktop"] .page-controls .page-indicator.page-indicator-inline { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 2px; padding: 6px 0; font-size: 13px; }
+.app-shell[data-input-mode="desktop"] .page-controls .page-indicator-inline span { font-size: 13px; font-weight: 700; }
+.app-shell[data-input-mode="desktop"] .page-controls .page-indicator-inline i { font-style: normal; color: var(--ip-faint, var(--ip-muted)); font-weight: 500; }
+.app-shell[data-input-mode="desktop"] .page-controls .page-indicator-inline small { margin: 0; padding: 0; min-width: 0; border-top: 0; font-size: 12px; font-weight: 500; color: var(--ip-muted); }
+.app-shell[data-input-mode="desktop"] .page-controls .page-indicator-inline .page-indicator-name { flex: 1 0 100%; text-align: center; }
+
+/* An empty toast (cleared text while it fades out) never shows as a blank pill above the dock. */
+.app-shell[data-input-mode="desktop"] .app-toast.app-toast-empty { visibility: hidden; }
+
+/* Connector-tools button (top right): tooltip drops to its left, same dark pill as the dock tips. */
+.app-shell[data-input-mode="desktop"] .uml-toolbox-restore { position: relative; }
+.app-shell[data-input-mode="desktop"] .uml-toolbox-restore:focus-visible { outline: 2px solid var(--ip-accent); outline-offset: 2px; }
+.app-shell[data-input-mode="desktop"] .uml-toolbox-restore .dock-tip {
+  position: absolute; right: calc(100% + 10px); top: 50%; z-index: 6;
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 8px;
+  background: var(--ip-text); color: #fff; font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap;
+  opacity: 0; transform: translate(4px, -50%); pointer-events: none;
+  transition: opacity var(--ip-dur-fast) var(--ip-ease-out), transform var(--ip-dur-fast) var(--ip-ease-out);
+}
+.app-shell[data-input-mode="desktop"] .uml-toolbox-restore .dock-tip .dock-tip-hint { flex: 1 0 100%; color: rgba(255, 255, 255, .65); font-size: 11px; font-weight: 500; line-height: 1.2; }
+@media (hover: hover) {
+  .app-shell[data-input-mode="desktop"] .uml-toolbox-restore:hover .dock-tip { opacity: 1; transform: translate(0, -50%); transition-delay: 400ms; }
+}
+.app-shell[data-input-mode="desktop"] .uml-toolbox-restore:focus-visible .dock-tip { opacity: 1; transform: translate(0, -50%); transition-delay: 0s; }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell[data-input-mode="desktop"] .uml-toolbox-restore .dock-tip { transform: translate(0, -50%); }
+}
+
 /* Collisions: lift a cluster above the dock only when it would overlap it. */
 @media (max-width: 1157px) {
   .app-shell[data-input-mode="desktop"] .zoom-controls { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 62px); }
