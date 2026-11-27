@@ -6587,6 +6587,7 @@ function App() {
         onTransparentChange={setTransparentExport}
         onExportNotebookLm={() => void exportToNotebookLm()}
         exportBusy={exportBusy}
+        desktop={inputMode === 'desktop'}
       />}
       {PERFORMANCE_DIAGNOSTICS_ENABLED && performanceDiagnosticsOpen && <section id="inkpad-performance-panel" className="performance-panel" aria-label="Development performance diagnostics">
         <div className="performance-panel-header">
