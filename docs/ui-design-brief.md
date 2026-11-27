@@ -102,6 +102,7 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 ### Options panel, context menu, palette, dialogs, toasts
 - Same surface, radius 14, shadow-2, 12px padding, overline section titles, `kbd` chips for shortcuts.
 - Options panel (round 2): 240px, 32px controls on surface-2 without borders, related choices as segmented controls with equal segments, layer as icons, one-row 28px swatches, max-height above the zoom controls with a scroll shadow.
+- Options panel (round 4): collapsible. 36px header (current colour swatch, context name, chevron button with aria-expanded); collapsed = header only, remembered per viewer (localStorage). Order for every context: colour, width/size, style rows (fill, line, corners), layer/arrange (incl. Flip, Same size), then a closed "More actions" disclosure for Change shape, Focus, Add boundary, Select connected, rotation, Use as default. Expand = fade + translateY(-4px), no height animation.
 - Context menu (round 2): 32px rows at 14px, shortcuts 12px mono faint, 28px chips, accent focus ring; keeps 100px clear of the bottom only when it would cover the dock.
 
 ### Export dialog (round 3)
@@ -110,6 +111,14 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 ### Command palette and shortcut dialog (round 3)
 - Palette 600px, radius 20, shadow-3: search icon + "Search commands and diagrams" + Esc chip; empty query shows overline groups, a query shows flat ranked rows with a muted group chip. Labels with a parenthetical split into a title and a muted second line (`splitCommandLabel`). Selected row: accent-soft fill + 3px accent bar.
 - Shortcut dialog: same surface, overline groups, two columns at >= 1100px.
+
+### Library chrome (round 4)
+- Desktop library reads the --ip tokens (scoped to `.home-desktop`): paper background, surface sidebar with hairline, one primary button (+ New diagram), ghost Back/Import, 40px surface-2 search, segmented grid/list toggle (aria-pressed), native sort select styled 36px with a custom chevron, one-line "Saved in" card.
+
+### Status and pages (round 4)
+- Save pill: "Autosave on" (faint dot) on an empty never-saved page; "Saving soon" only while the autosave timer runs; "Not saved yet" otherwise when idle with content; saved/error wording unchanged.
+- Page rail: one-line "1 / 1" chip, slash muted, aria "Page 1 of 1".
+- First visit on a mouse-only computer starts in Desktop mode (touch devices stay Tablet).
 
 ### Library cards (round 3)
 - Radius 14, hairline border, token surface, paper-colour thumbnail well, 14px/600 title with ellipsis + tooltip, 12px muted meta, hover lift 2px (transform only; none while dragging or with reduced motion). Desktop thumbnails embed Excalifont so labels match the canvas.
@@ -124,6 +133,7 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 | 1 | 2026-11-27 | tokens, navigation sheet with search, empty canvas, toast placement, library empty state | brief created; dark theme held back (only new surfaces went dark); sheet sits top 72 / bottom 90 to clear the dock |
 | 2 | 2026-11-27 | top bar, icon-only dock + tooltips, options panel, context menu, canvas chrome, first-time label flow | dock changed from labelled to icon-only; status pill moved to top bar (removed from sheet header); Esc commits labels; Select is the desktop start tool |
 | 3 | 2026-11-27 | export dialog, command palette + shortcut dialog, Ctrl+S feedback, keep-tool tip, library cards, walk fixes | export dialog order fixed (image first, no title field); palette groups as overlines; transitions on new surfaces limited to transform/opacity (state colour changes are instant) |
+| 4 | 2026-11-27 | collapsible options panel, save pill wording, page chip, library tokens, first-visit desktop default, review fixes | options panel order fixed (colour first, secondary actions in More); library joins the token system; Desktop is the first-visit default on mouse-only computers |
 
 ## 10. Unfinished / next rounds
-Next: options panel opens over the canvas when a drawing tool is picked (first-time user's first drag landed on it): rethink as a contextual mini toolbar near the selection or a collapsible panel. Then: Library layout beyond cards (recent/pinned rows, open affordance, uneven 3+1 action buttons), dark theme, bundle DM Sans, status pill wording ("Not saved yet" while autosave waits), page counter "1 over 1", dock compact mode under ~900px. See the newest `docs/progress/inkpad-ui-round-*.md`.
+Next (from round 4 walk and review): connectors — dragging a quick-connect handle onto another box creates nothing and arrows drawn with A do not attach (feature-level; needs the feature round or owner decision, see report); "Fill" vs "Colour of this object" look alike and the no-fill slash swatch is easy to misread; collapsed options pill could shrink to its content; text-size row shows two active values while editing a label; shortcut dialog clipped at the bottom at 900px; Export toast appears behind the dialog scrim. Then: library recent/pinned rows and card action menu, dark theme, bundle DM Sans locally, dock compact mode under ~900px. See the newest `docs/progress/inkpad-ui-round-*.md`.
