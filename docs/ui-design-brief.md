@@ -41,7 +41,7 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 - Scale (px): 11 (shortcut keys, overlines) · 12 (hints) · 13 (secondary rows) · 14 (body / menu rows) · 16 (panel titles) · 20 (dialog titles) · 28 (empty-state headline).
 - Overlines: 11px, 600, letter-spacing .06em, uppercase, `--ip-muted`.
 - Never let a label wrap under a control: rows use grid with the control in its own column (this was the hamburger overlap bug).
-- Fonts must not depend on the network to look right: fallback stack `'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif`. (Google Fonts import is blocked offline; bundling DM Sans is a held-back item.)
+- Fonts must not depend on the network to look right: fallback stack `'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif`. (DM Sans 400/500/600/700 and Manrope 500/600/700/800 are bundled via @fontsource, latin woff2 only, so nothing needs the network.)
 
 ## 4. Spacing, radius, elevation
 
