@@ -335,6 +335,20 @@ function tracePath(ctx: CanvasRenderingContext2D, path: Point[], atStart: boolea
   for (let index = 1; index < points.length; index += 1) ctx.lineTo(points[index].x, points[index].y)
 }
 
+/** Desktop selection halo: a soft band along the plain connector path only (no arrowhead, which the thick selection stroke used to scale up). */
+export function drawConnectorHalo(ctx: CanvasRenderingContext2D, connector: ConnectorObject, color: string, width: number): void {
+  ctx.save()
+  ctx.globalAlpha = 0.28
+  ctx.strokeStyle = color
+  ctx.lineWidth = width
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.setLineDash([])
+  tracePath(ctx, connectorPoints(connector), false)
+  ctx.stroke()
+  ctx.restore()
+}
+
 export function drawConnector(ctx: CanvasRenderingContext2D, connector: ConnectorObject, color = connector.strokeColor, width = connector.strokeWidth, sketchy = false): void {
   const spec = getConnectorRenderSpec(connector)
   const geometry = getConnectorSymbolGeometry(connector, width)
