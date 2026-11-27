@@ -396,7 +396,8 @@ export function HomeScreen(props: HomeScreenProps) {
           </button>
           <label className="home-search">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/></svg>
-            <input ref={searchRef} type="search" aria-label="Search diagrams" placeholder="Search diagrams or folders (press /)" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <input ref={searchRef} type="search" aria-label="Search diagrams" placeholder={props.desktop ? 'Search diagrams' : 'Search diagrams or folders (press /)'} value={query} onChange={(event) => setQuery(event.target.value)} />
+            {props.desktop && !query && <kbd className="home-search-kbd" aria-hidden="true">/</kbd>}
           </label>
           <button type="button" className="home-secondary" onClick={() => importRef.current?.click()}>Import .inkpad</button>
           <div ref={newMenuRef} className="home-new">
