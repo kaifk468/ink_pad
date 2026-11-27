@@ -716,6 +716,8 @@ export function contextMenuRows(entries: readonly ContextMenuEntry[]): ContextMe
 
 /** Menu geometry in px; the stylesheet uses the same numbers (.canvas-context-menu). */
 export const CONTEXT_MENU_WIDTH = 248
+/** Desktop: the right-click menu stays this far above the bottom edge so it never covers the tool dock. */
+export const CONTEXT_MENU_BOTTOM_CLEARANCE = 100
 const MENU_PADDING = 6 + 1 // vertical padding plus border, per side
 const MENU_ENTRY_HEIGHT = 28
 const MENU_GAP = 2

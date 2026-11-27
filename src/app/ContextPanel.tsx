@@ -281,10 +281,10 @@ export function ContextPanel(props: ContextPanelProps) {
       {props.layer && <div className="layer-controls" role="group" aria-label="Layer order">
         <span className="panel-label">Layer</span>
         <div className="selection-actions">
-          <button className="clear-selection-button" type="button" aria-label="Bring to front" title="Bring to front (Ctrl+Shift+])" onClick={() => props.layer?.onMove('front')}>To front</button>
-          <button className="clear-selection-button" type="button" aria-label="Bring forward" title="Bring forward (Ctrl+])" onClick={() => props.layer?.onMove('forward')}>Forward</button>
-          <button className="clear-selection-button" type="button" aria-label="Send backward" title="Send backward (Ctrl+[)" onClick={() => props.layer?.onMove('backward')}>Backward</button>
-          <button className="clear-selection-button" type="button" aria-label="Send to back" title="Send to back (Ctrl+Shift+[)" onClick={() => props.layer?.onMove('back')}>To back</button>
+          <button className="clear-selection-button" type="button" aria-label="Bring to front" title="Bring to front (Ctrl+Shift+])" onClick={() => props.layer?.onMove('front')}>{props.desktop ? <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4l7 4-7 4-7-4zM5 12l7 4 7-4M5 16l7 4 7-4" /></svg> : 'To front'}</button>
+          <button className="clear-selection-button" type="button" aria-label="Bring forward" title="Bring forward (Ctrl+])" onClick={() => props.layer?.onMove('forward')}>{props.desktop ? <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5l7 4-7 4-7-4zM5 15l7 4 7-4" /></svg> : 'Forward'}</button>
+          <button className="clear-selection-button" type="button" aria-label="Send backward" title="Send backward (Ctrl+[)" onClick={() => props.layer?.onMove('backward')}>{props.desktop ? <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 11l7 4-7 4-7-4zM5 9l7-4 7 4" /></svg> : 'Backward'}</button>
+          <button className="clear-selection-button" type="button" aria-label="Send to back" title="Send to back (Ctrl+Shift+[)" onClick={() => props.layer?.onMove('back')}>{props.desktop ? <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12l7 4-7 4-7-4zM5 8l7 4 7-4-7-4z" /></svg> : 'To back'}</button>
         </div>
       </div>}
       {props.group && (props.group.canGroup || props.group.canUngroup) && <div className="selection-actions" role="group" aria-label="Group">
