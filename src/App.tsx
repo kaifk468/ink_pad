@@ -6461,7 +6461,7 @@ function App() {
         strokeDisplayMode={strokeDisplayMode}
         onStrokeDisplayMode={setStrokeDisplayMode}
         showTextSizes={(optionsFor === 'text' || inputMode === 'desktop') && textMode}
-        textSize={textSize}
+        textSize={inputMode === 'desktop' ? (textEditor ? textEditor.fontSize : (selectedTextItem()?.fontSize ?? textSize)) : textSize}
         onTextSize={pickTextSize}
         textSizeChoices={inputMode === 'desktop' ? TEXT_FONT_SIZES_DESKTOP : undefined}
         textAlign={textAlignPanel}

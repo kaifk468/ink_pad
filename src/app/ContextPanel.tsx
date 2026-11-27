@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { DESKTOP_SECTION_ORDER, browserStorage, readOptionsCollapsed, writeOptionsCollapsed, type DesktopSectionId } from './optionsPanelModel'
+import { DESKTOP_SECTION_ORDER, activeTextSizeSegment, browserStorage, readOptionsCollapsed, writeOptionsCollapsed, type DesktopSectionId } from './optionsPanelModel'
 import { ColorPicker } from './ColorPicker'
 import { ERASER_SIZES } from './appConfig'
 import type { Arrowheads, ConnectorRelationshipType, ConnectorRouting, LayerMove } from '../canvasModel'
@@ -501,17 +501,20 @@ export function ContextPanel(props: ContextPanelProps) {
     <>
       {(props.showTextSizes || props.textFit) && <span className="panel-label">Text size</span>}
       {(props.showTextSizes || props.textFit) && <div className="tool-group text-size-group" role="group" aria-label="Text size" onMouseDown={props.textFit ? (event) => event.preventDefault() : undefined}>
-        {(props.textSizeChoices ?? TEXT_FONT_SIZES).map((size) => (
-          <button
-            className={`text-size-button${props.textSize === size ? ' selected' : ''}`}
-            key={size}
-            type="button"
-            aria-label={`Text size ${size}`}
-            aria-pressed={props.textSize === size}
-            title={`${size}px text`}
-            onClick={() => props.onTextSize(size)}
-          >{size}</button>
-        ))}
+        {(props.textSizeChoices ?? TEXT_FONT_SIZES).map((size) => {
+          const active = props.desktop ? activeTextSizeSegment(props.textSizeChoices ?? TEXT_FONT_SIZES, props.textSize, props.textFit?.on) === size : props.textSize === size
+          return (
+            <button
+              className={`text-size-button${active ? ' selected' : ''}`}
+              key={size}
+              type="button"
+              aria-label={`Text size ${size}`}
+              aria-pressed={active}
+              title={`${size}px text`}
+              onClick={() => props.onTextSize(size)}
+            >{size}</button>
+          )
+        })}
         {props.textFit && <button
           className={`text-size-button text-fit-toggle${props.textFit.on ? ' selected' : ''}`}
           type="button"
