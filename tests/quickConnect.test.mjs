@@ -75,7 +75,7 @@ test('wiring: desktop select gating, quickCreateShape call, overlay draw, pointe
   assert.match(app, /if \(press && !press\.dragged\) quickCreateShape\(press\.direction\)/)
   assert.match(app, /event\.pointerType === 'mouse' && event\.button === 0 && !event\.shiftKey/)
   assert.match(app, /if \(selectionMode && startQuickConnectPress\(event, point\)\) return\s*\n\s*if \(\(selectionMode \|\| lassoMode\)[^\n]*startConnectorHandleGesture/)
-  assert.match(app, /quickConnectButtons\(quickSource, scale, quickInsideSheet, tabletButtons\)/)
+  assert.match(app, /quickConnectButtons\(quickSource, scale, quickInsideSheet, tabletButtons, quickConnectHeadEnds\(strokesRef\.current, quickSource\.id\)\)/)
   assert.match(app, /activeQuickRef\.current\?\.pointerId === event\.pointerId\) \{\s*\n\s*const press = activeQuickRef\.current\s*\n\s*moveQuickConnectPress/)
   assert.match(app, /activeQuickRef\.current\?\.pointerId === event\.pointerId\) \{ finishQuickConnectPress/)
   assert.match(app, /activeQuickRef\.current\?\.pointerId === event\.pointerId\) \{ cancelQuickConnectPress/)
@@ -100,9 +100,9 @@ test('quick-connect review fixes are wired in App', () => {
   assert.match(app, /quickClickAtRef\.current = performance\.now\(\)/)
   assert.match(app, /performance\.now\(\) - quickClickAtRef\.current < QUICK_CONNECT_DOUBLE_CLICK_MS\) return/)
   // 2: hidden outside the sheet, in draw and hit.
-  assert.match(app, /quickConnectButtons\(quickSource, scale, quickInsideSheet, tabletButtons\)/)
-  assert.match(app, /hitQuickConnect\(source, point, viewportRef\.current\.scale, quickInsideSheet, tablet\)/)
-  assert.match(app, /hitQuickConnect\(quickBox, point, viewportRef\.current\.scale, quickInsideSheet\)/)
+  assert.match(app, /quickConnectButtons\(quickSource, scale, quickInsideSheet, tabletButtons, quickConnectHeadEnds\(strokesRef\.current, quickSource\.id\)\)/)
+  assert.match(app, /hitQuickConnect\(source, point, viewportRef\.current\.scale, quickInsideSheet, tablet, quickConnectHeadEnds\(strokesRef\.current, source\.id\)\)/)
+  assert.match(app, /hitQuickConnect\(quickBox, point, viewportRef\.current\.scale, quickInsideSheet, false, quickConnectHeadEnds\(strokesRef\.current, quickBox\.id\)\)/)
   // 3: the press counts as an active gesture everywhere.
   const gestureLines = app.split('\n').filter((l) => /const (penGestureActive|canvasGestureActive|cancelableGesture|anyGesture) =/.test(l))
   assert.equal(gestureLines.length, 4)

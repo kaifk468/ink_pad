@@ -3,15 +3,15 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
-import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, type ConnectorRouting } from './canvasModel'
-import { QUICK_CONNECT_DOUBLE_CLICK_MS, TABLET_QUICK_CONNECT_TAP_SLOP_PX, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
+import { CONNECTOR_SNAP_TOLERANCE, connectorPoints, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, type ConnectorRouting } from './canvasModel'
+import { QUICK_CONNECT_DOUBLE_CLICK_MS, TABLET_QUICK_CONNECT_TAP_SLOP_PX, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHeadEnds, quickConnectHint, type QuickConnectDirection } from './quickConnect'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConnectorHandle, hitConnectorLabel, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
 import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
 import { similarItemKeys } from './selectSimilar'
 import { canSameSize, sameSizeItems, type SameSizeMode } from './sameSize'
 import { canSwapPositions, swapPositionsItems } from './swapPositions'
-import { canInsertBoxIntoConnector, insertBoxIntoConnector } from './insertIntoConnector'
+import { canInsertBoxIntoConnector, connectorUnderBox, insertBoxIntoConnector, insertExistingBoxIntoConnector } from './insertIntoConnector'
 import { canFlipSelection, flipSelectionItems, type FlipAxis } from './flipSelection'
 import { linkedNeighbour, revealViewport, walkCurrentKey, walkItemBounds, walkStep } from './keyboardWalk'
 import { addBoundary } from './boundary'
@@ -394,6 +394,8 @@ function App() {
   // What a drag snaps to (read once when it starts) and the guide lines to draw. Guides live only here: never items, history or saved data.
   const snapStateRef = useRef<{ pointerId: number; moving: Bounds | null; targets: Bounds[] } | null>(null)
   const guidesRef = useRef<Guide[]>([])
+  // Round 10: the connector highlighted while one free box is dragged over it with the mouse (released there, the box is inserted); null otherwise.
+  const dropConnectorRef = useRef<number | null>(null)
   // Snap to grid (Desktop mode, mouse only; off by default, per device). `gridOverlayRef` holds the grid size while a snapped drag or resize is active, so the dot grid is drawn only then.
   const [gridSnap, setGridSnap] = useState(() => loadGridSnap())
   const gridSnapRef = useRef(gridSnap)
@@ -1705,6 +1707,32 @@ function App() {
     renderAll()
     return true
   }
+  // Round 10, drop onto a connector (Desktop mouse): while one free box is dragged, the connector under its centre is remembered (and highlighted);
+  // releasing there inserts the box (insertExistingBoxIntoConnector). The drag already recorded the history step, so move + insert is one undo step.
+  const updateConnectorDropTarget = (event: React.PointerEvent<HTMLCanvasElement>, drag: { itemKey: string; duplicate?: boolean }, items: CanvasItem[]) => {
+    let target: number | null = null
+    const match = /^rectangle:(\d+)$/.exec(drag.itemKey)
+    if (match && !drag.duplicate && inputModeRef.current === 'desktop' && event.pointerType === 'mouse') {
+      const box = items.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === Number(match[1]))
+      if (box) target = connectorUnderBox(items, box.id, { x: box.x + box.width / 2, y: box.y + box.height / 2, pressure: 1 }, viewportRef.current.scale)
+    }
+    dropConnectorRef.current = target
+  }
+  const dropBoxOnConnector = (boxKey: string, connectorId: number): boolean => {
+    const match = /^rectangle:(\d+)$/.exec(boxKey)
+    const box = match ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === Number(match[1])) : undefined
+    if (!box) return false
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2, pressure: 1 }
+    const result = insertExistingBoxIntoConnector(strokesRef.current, connectorId, box.id, centre, { connector: nextConnectorIdRef.current }, { workspace: workspaceBoundsRef.current })
+    if (!result) return false
+    nextConnectorIdRef.current += 1
+    strokesRef.current = result.items
+    historyCacheRef.current = null
+    scheduleAutosave()
+    showActionToast('Inserted into the arrow', { label: 'Undo', run: () => undo() })
+    renderAll()
+    return true
+  }
   // Flip selection (Shift+H / Shift+V, right-click chips, palette, context panel): mirrors the selection about its bounding-box centre; one undo step.
   const flipKeysWithLabels = (): Set<string> => {
     const keys = new Set(currentSelectionKeys())
@@ -1964,7 +1992,7 @@ function App() {
     const target = ready ? hoverTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale) : null
     const key = target?.key ?? null
     const quickBox = ready ? quickConnectSource() : null
-    const quick = quickBox && point ? hitQuickConnect(quickBox, point, viewportRef.current.scale, quickInsideSheet) : null
+    const quick = quickBox && point ? hitQuickConnect(quickBox, point, viewportRef.current.scale, quickInsideSheet, false, quickConnectHeadEnds(strokesRef.current, quickBox.id)) : null
     const changed = key !== hoverKeyRef.current || quick !== quickHoverRef.current
     hoverKeyRef.current = key
     quickHoverRef.current = quick
@@ -2062,7 +2090,7 @@ function App() {
       : event.pointerType === 'mouse' && event.button === 0 && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
     if (!allowed) return false
     const source = quickConnectSource()
-    const direction = source ? hitQuickConnect(source, point, viewportRef.current.scale, quickInsideSheet, tablet) : null
+    const direction = source ? hitQuickConnect(source, point, viewportRef.current.scale, quickInsideSheet, tablet, quickConnectHeadEnds(strokesRef.current, source.id)) : null
     if (!direction) return false
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -2892,7 +2920,7 @@ function App() {
       ctx.strokeStyle = '#5269df'
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
-      for (const button of quickConnectButtons(quickSource, scale, quickInsideSheet, tabletButtons)) {
+      for (const button of quickConnectButtons(quickSource, scale, quickInsideSheet, tabletButtons, quickConnectHeadEnds(strokesRef.current, quickSource.id))) {
         const { x, y } = button.center
         const r = button.radius
         const k = r * 0.4
@@ -2972,6 +3000,24 @@ function App() {
       }
       ctx.stroke()
       ctx.restore()
+    }
+    const dropConnectorId = dropConnectorRef.current
+    if (dropConnectorId !== null) {
+      // Round 10: the connector the dragged box would be inserted into: a wide accent halo along its drawn path (view only, never saved or exported).
+      const target = routeConnectors(strokesRef.current).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === dropConnectorId)
+      const path = target ? connectorPoints(target) : []
+      if (path.length > 1) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(83, 111, 224, 0.55)'
+        ctx.lineWidth = Math.max(target!.strokeWidth + 6, 8 / viewport.scale)
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.beginPath()
+        ctx.moveTo(path[0].x, path[0].y)
+        for (let i = 1; i < path.length; i += 1) ctx.lineTo(path[i].x, path[i].y)
+        ctx.stroke()
+        ctx.restore()
+      }
     }
     const marqueeNow = activeMarqueeRef.current
     if (marqueeNow) {
@@ -4397,6 +4443,7 @@ function App() {
         drag.moved = true
       }
       strokesRef.current = nextItems
+      updateConnectorDropTarget(event, drag, nextItems)
       if (dragDup && !dragDup.selected) { dragDup.selected = true; applySelectionState(normalizeSelection(dragDup.selectedKeys)) }
       renderAll()
       return
@@ -4587,6 +4634,9 @@ function App() {
       const drag = activeDragRef.current
       activeDragRef.current = null
       if (drag.moved) switchConnectorSides(drag.dup ? drag.dup.copyKeys : new Set([drag.itemKey]))
+      const dropConnectorId = dropConnectorRef.current
+      dropConnectorRef.current = null
+      if (drag.moved && dropConnectorId !== null) dropBoxOnConnector(drag.itemKey, dropConnectorId)
       if (!drag.moved && drag.editTextId != null) {
         const tapped = strokesRef.current.find((item): item is TextObject => item.kind === 'text' && item.id === drag.editTextId)
         if (tapped) editTextItem(tapped)
@@ -4674,6 +4724,7 @@ function App() {
     }
     if (activeDragRef.current?.pointerId === event.pointerId) {
       activeDragRef.current = null
+      if (dropConnectorRef.current !== null) { dropConnectorRef.current = null; renderAll() }
       return
     }
     finishStroke(event.pointerId)
@@ -4923,6 +4974,7 @@ function App() {
     }
     if (!handled) return false
     clearSnapGuides(false)
+    dropConnectorRef.current = null
     if (restored) strokesRef.current = restored
     // A duplicating drag put the selection on the copies: Escape removes them and selects the originals again.
     if (restoredSelection) applySelectionState(restoredSelection)
