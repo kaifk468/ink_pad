@@ -600,3 +600,61 @@ Follow-ups (ideas for the next round):
 - Insert box: Flip / Insert box are not in the tablet Insert tray (panel only).
 - Sequence ends: cross / open / async heads draw as the plain arrow (no head kinds in the model); Copy as Mermaid writes Database / Queue participants as `participant`.
 - Grid snap: arrow-key nudges, connector endpoints and rotation are not snapped.
+
+## Round 10 — 2026-11-27 (branch desktop-20x)
+
+### User journeys walked (friction found, on top of rounds 1-9)
+1. Drawing an HLD in Excalidraw style: arrows are straight or elbow only; crossing arrows on a busy HLD read better as curves (Excalidraw's default arrow is curved, draw.io / tldraw offer curved). Every busy diagram.
+2. Growing an HLD: round 9 added "Insert box" for a selected connector, but the natural move (draw.io) is to drag an existing box onto the arrow.
+3. Neat layouts on the laptop: resizing a database or user icon distorts it (no Shift = keep proportions); moving a box straight sideways wobbles (no Shift = lock to an axis); there is no size readout while resizing, so making two boxes "the same size by eye" is guesswork (Same size exists for selections only).
+4. Grid snap (round 9) stops at drags: arrow-key nudges move 1 / 10 px off the grid, and free connector ends do not snap.
+5. Evenly spaced rows of services: smart guides line up edges and centres but do not show equal gaps (Figma / tldraw show them), so the user nudges by eye.
+6. Organising: folders can be created, renamed and deleted but never moved into another folder ("Interview prep" -> "2026" means recreating it and moving every diagram).
+7. HLD vocabulary: 14 HLD icons; DNS, search index, serverless function, scheduler / cron, third-party / external service and monitoring are drawn as plain labelled boxes in almost every system-design answer.
+8. Text round trip: Copy as Mermaid writes flowcharts, class and sequence pages; an ER page (imported from `erDiagram` or drawn as entities) cannot be copied back to Mermaid for notes.
+9. Sequence text: Database / Queue participants are written back as `participant` and Mermaid's typed participants (`participant DB@{ "type": "database" }`) import as plain boxes.
+10. Quick-connect (round 9): the left + button sits on the arrowhead of the connector that created the box (cosmetic, both modes).
+
+### Candidates (problem · who/how often · benefit · risk · size · decision)
+| # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
+|---|---|---|---|---|---|---|---|
+| 240 | Curved connector routing (#225) | Busy HLDs with crossing straight arrows are hard to read | everyone, busy diagrams | high | medium (routing value is additive; path is a sampled polyline so labels / hit / export follow) | M | picked |
+| 241 | Drop a box onto a connector to insert it (#229) | Adding a component between two boxes needs the menu | desktop, every growing HLD | medium-high | medium (drag drop path; only free single boxes, highlight before drop) | M | picked |
+| 242 | Shift+resize keeps proportions, Shift+drag locks to an axis (#230) | Icons distort; straight moves wobble | desktop, often | medium | low (desktop modifiers only) | S | picked |
+| 243 | Size readout while resizing / drawing a box | Equal sizes by eye | desktop, often | low-medium | low (overlay only) | S | picked |
+| 244 | Grid snap for arrow-key nudges and free connector ends; Shift keeps a free end at 15° steps | Nudges and arrow ends leave the grid | desktop, with snap on | medium | low | S | picked |
+| 245 | Equal-gap guides while dragging (desktop) | Even spacing by eye | desktop, often | medium | medium (snapping path; skipped while grid snap is on) | M | picked |
+| 246 | Move folders into folders (#228) | Folder hierarchy cannot be reorganised | everyone, sometimes | medium-high | medium (Drive parents; device folders not offered) | M | picked |
+| 247 | Six more HLD icons: DNS, Search, Function, Scheduler, External service, Monitoring | Common HLD parts drawn as plain boxes | HLD users, every design | high | low-medium (additive enum value; old builds draw a plain box) | M | picked |
+| 248 | Copy as Mermaid for ER pages (#224, ER half) | ER diagrams cannot go back to text | text-first, sometimes | medium | low (separate builder, only when every box is an entity) | M | picked |
+| 249 | Mermaid sequence typed participants both ways (round 9 follow-up) | Database / Queue participants lost in text | text-first, sometimes | low-medium | low | S | picked |
+| 250 | Quick-connect left button clear of the arrowhead (round 9 follow-up) | Button hides the arrowhead | both, often | low | low | S | picked (with 241) |
+| 251 | Arrowhead kinds per end (cross / open / circle / bar) | Sequence ends and ER ends | sometimes | medium | medium-high (new head model vs relationship types) | M | idea |
+| 252 | Copy as Mermaid for state pages (#224, state half) | | sometimes | low | medium (composites) | M | idea |
+| 253 | Images on the canvas (#226) | | sometimes | medium | high (new kind, Drive size) | L | idea |
+| 254 | Dark UI theme (#227) | | sometimes | low-medium | medium (all CSS) | L | idea |
+| 255 | Version history per diagram (#231) | | rare | medium | high | L | idea |
+| 256 | Insert table (#232) | | sometimes | medium | medium | L | idea |
+| 257 | Elbow bend clamp (#236) | | rare | low | medium | S | idea |
+| 258 | State layout crossings (#237) | | sometimes | low | medium | M | idea |
+| 259 | Finger tap selects on the tablet | Finger users cannot reach quick-connect | tablet, sometimes | medium | high (touch is navigation; hard rule) | S | skipped (touch must stay navigation) |
+| 260 | Scribble-to-erase | | | | high (writing path) | | skipped again |
+| 261 | Multi-waypoint connectors | Long routes around groups | rare | medium | high (handles, routing, export) | L | idea |
+| 262 | Flip / Insert box in the tablet Insert tray | | tablet | low | low | S | skipped (the context panel has both) |
+| 263 | Rich text (bold / italic) in labels | | sometimes | low-medium | high (text model) | L | idea |
+| 264 | Hover pen preview of eraser size (S Pen hover) | | tablet | low | medium (unverifiable here) | S | idea |
+| 265 | PNG export scale choice (#131) | | rare | low | low | S | idea (2x covers most) |
+| 266 | Alt held while dragging skips guides and grid | Snapping fights a fine placement | desktop, sometimes | low | low | S | idea |
+| 267 | Colour themes for a whole diagram (one click restyle by HLD role) | | sometimes | low-medium | medium | M | idea |
+
+### Acceptance criteria (picked items)
+240. **Curved connectors**: the line-shape choice (context panel, right-click menu, palette "Curved connector") offers Straight / Elbow / Curved in both modes. A curved connector is drawn as a smooth curve that leaves each attached box at right angles to its side (free ends aim at the other end); the arrowhead points along the curve's end; labels, end labels, flow steps, hit testing, selection bounds, PNG / SVG / PDF / sheet export and Excalidraw export follow the curve. With the Select tool the middle dot of a curved connector can be dragged to bend the curve (one undo step); a click on it makes the connector straight. Switching routing is one undo step. Old files load unchanged; `routing: 'curved'` is additive (the file version stays).
+241. **Drop onto a connector**: on the desktop, while dragging one free box (a plain, HLD or sticky box with no connectors attached, not locked), when the box's centre comes over a connector the connector is highlighted; releasing there inserts the box into that connector exactly like the round 9 "Insert box" command (the box keeps its size and position centred on the drop point snapped onto the path; one undo step for move + insert). Moving away removes the highlight; dropping elsewhere is an ordinary move. Holding Alt (duplicate drag) does not insert. **250**: the left quick-connect button moves so it never sits on the arrowhead of a connector ending on that side (both modes).
+242. **Shift modifiers**: on the desktop, Shift while dragging a corner resize handle keeps the box's width : height ratio (HLD icons, ellipses, rectangles, multi-item selections); Shift while moving a selection locks the move to the main axis (horizontal or vertical) of the drag. Releasing Shift during the drag returns to free movement. Tablet pen and touch unchanged.
+243. **Size readout**: on the desktop, while resizing a box (or a selection) or drawing a new box with a shape tool, a small pill near the pointer shows "W × H" in canvas units (rounded); it disappears on release. Not drawn into exports, not saved.
+244. **Grid snap extension**: with Snap to grid on (desktop), Arrow keys move the selection by one grid step (Shift+Arrow by five) and leave its top-left on the grid; dragging a free connector end (endpoint handle, not attached) snaps the end to the grid; Shift while dragging a free connector end keeps its angle to the other end at 15° steps (with or without grid snap). With snap off nudges stay 1 / 10 px.
+245. **Equal-gap guides**: on the desktop, while dragging a box (grid snap off), when the gap to a neighbour on one side matches the gap between two other boxes in the same row or column (within the snap tolerance), the box snaps to the equal gap and short measure markers with the gap size are drawn between the boxes. Not drawn when grid snap is on or the drag is Alt-duplicate. View only, nothing saved.
+246. **Move folders**: the Library folder menu has "Move to…" listing the top level and every folder that is not the folder itself or inside it; choosing one moves the folder with everything inside; on the desktop a folder can also be dragged onto another folder (or the top level) in the sidebar. A toast says "Moved “A” into “B”" with Undo (moves it back). Works for diagrams stored in this browser and Google Drive; device-folder storage does not show the entry (a short hint explains why). Nothing is deleted or copied; ids stay the same.
+247. **More HLD icons**: the More shapes tray, shape search (keywords such as "lambda", "cron", "elasticsearch", "third party", "grafana") and Change shape offer DNS, Search, Function, Scheduler, External service and Monitoring as HLD shapes in both modes, drawn in the same line style as the existing icons (clean and sketchy), with their label below / inside like the others; SVG / PNG / PDF / sheet / Excalidraw / Mermaid export draw or name them like the other HLD shapes. Saved as new `hldShape` values (additive); old files unchanged.
+248. **ER to Mermaid**: Copy as Mermaid on a page whose boxes are all entity class boxes (as built by the ER importer or drawn as ER entities) writes `erDiagram` with each entity's attributes and the relationships with their cardinalities (from end labels / relationship ends); importing that text again rebuilds the same entities and links. Other pages are unchanged.
+249. **Typed participants**: Copy as Mermaid for sequence pages writes Database / Queue / User participants as `participant X@{ "type": "database" }` / `"queue"` and `actor X`; the Mermaid sequence importer reads `@{ "type": ... }` for database, queue, collections, entity, boundary, control and maps database / queue / actor to the existing HLD shapes (others stay plain participants).
