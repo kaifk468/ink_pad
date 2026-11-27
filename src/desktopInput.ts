@@ -558,7 +558,7 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
 
 export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'useAsDefaultStyle' | 'exportPng' | 'exportSvg'
   | 'editText' | 'zoomSelection' | 'focus' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps' | 'saveTemplate'
-  | 'sameWidth' | 'sameHeight' | 'sameSize' | 'swapPositions' | 'insertBox' | 'flipHorizontal' | 'flipVertical' | 'addBoundary' | 'selectConnected' | 'arrowBothEnds' | 'arrowOneEnd' | 'cornersRound' | 'cornersSharp' | 'shapesMore'
+  | 'sameWidth' | 'sameHeight' | 'sameSize' | 'swapPositions' | 'insertBox' | 'flipHorizontal' | 'flipVertical' | 'addBoundary' | 'selectConnected' | 'arrowBothEnds' | 'arrowOneEnd' | 'lineStraight' | 'lineElbow' | 'lineCurved' | 'cornersRound' | 'cornersSharp' | 'shapesMore'
   | `shape:${string}` | `movePage:${string}`
 export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select' | 'flow'
 /** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
@@ -632,6 +632,8 @@ export type ContextMenuState = {
   canFlip?: boolean
   /** One selected box has connectors attached (the Connected chip is offered). */
   canSelectConnected?: boolean
+  /** Exactly one connector is selected: its line shape; Straight / Elbow / Curved chips are offered (the current one is disabled). */
+  lineShape?: 'straight' | 'elbow' | 'curved' | null
   /** The selection holds unlocked arrow connectors: 'both' offers Both ends (some are one-way), 'one' offers One end (all are two-way). Shown as a chip in the Style block. */
   arrowEnds?: 'both' | 'one' | null
   /** The selection holds unlocked plain rectangles: 'round' offers Round (some are sharp), 'sharp' offers Sharp (all are rounded). Shown as a chip in the Style block. */
@@ -646,7 +648,7 @@ export type ContextMenuState = {
  * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
  */
 export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
-  const { canCopyStyle = false, canPasteStyle = false, canSetDefaultStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], changeShapesExpanded = false, canNumberSteps = false, canSameSize = false, canSwap = false, canInsertBox = false, canFlip = false, canSelectConnected = false, arrowEnds = null, corners = null, movePages = [] } = state
+  const { canCopyStyle = false, canPasteStyle = false, canSetDefaultStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], changeShapesExpanded = false, canNumberSteps = false, canSameSize = false, canSwap = false, canInsertBox = false, canFlip = false, canSelectConnected = false, arrowEnds = null, lineShape = null, corners = null, movePages = [] } = state
   const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean, chip?: string, chipGroup?: string): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled, ...(chip !== undefined ? { chip, chipGroup: chipGroup ?? 'Change shape' } : {}) })
   return [
     entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
@@ -658,6 +660,11 @@ export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] 
     entry('copyStyle', 'Copy style', 'Ctrl+Alt+C', 'shape', canCopyStyle, 'Copy', 'Style'),
     entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'shape', canPasteStyle, 'Paste', 'Style'),
     ...(canSetDefaultStyle ? [entry('useAsDefaultStyle', 'Use as default for new shapes', '', 'shape', true, 'Default', 'Style')] : []),
+    ...(lineShape !== null ? [
+      entry('lineStraight', 'Line: straight', '', 'shape', lineShape !== 'straight', 'Straight', 'Line shape'),
+      entry('lineElbow', 'Line: elbow', '', 'shape', lineShape !== 'elbow', 'Elbow', 'Line shape'),
+      entry('lineCurved', 'Line: curved', '', 'shape', lineShape !== 'curved', 'Curved', 'Line shape'),
+    ] : []),
     ...(arrowEnds === 'both' ? [entry('arrowBothEnds', 'Arrow: both ends', '', 'shape', true, 'Two-way', 'Style')] : arrowEnds === 'one' ? [entry('arrowOneEnd', 'Arrow: one end', '', 'shape', true, 'One-way', 'Style')] : []),
     ...(corners === 'round' ? [entry('cornersRound', 'Corners: round', '', 'shape', true, 'Round', 'Style')] : corners === 'sharp' ? [entry('cornersSharp', 'Corners: sharp', '', 'shape', true, 'Sharp', 'Style')] : []),
     ...compactChangeShapes(changeShapes, changeShapesExpanded).map((choice) => entry(`shape:${choice.id}`, `Change shape to ${choice.label}`, '', 'shape', true, shortShapeLabel(choice.label))),

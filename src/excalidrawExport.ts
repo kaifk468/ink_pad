@@ -255,7 +255,10 @@ function strokeElement(stroke: Stroke): El {
 function connectorElements(connector: ConnectorObject, rectangleIds: ReadonlySet<number>, bind: (boxId: number, id: string, type: string) => void): El[] {
   const spec = getConnectorRenderSpec(connector)
   const id = `c${connector.id}`
-  const path = connector.routing === 'elbow' && connector.routedPath && connector.routedPath.length >= 2 ? connector.routedPath : [connector.start, connector.end]
+  const routed = (connector.routing === 'elbow' || connector.routing === 'curved') && connector.routedPath && connector.routedPath.length >= 2 ? connector.routedPath : null
+  const curved = connector.routing === 'curved' && routed !== null
+  // A curve is written with every 4th sampled point (Excalidraw rounds the arrow through them: roundness type 2); the end point is always kept.
+  const path = routed === null ? [connector.start, connector.end] : curved ? routed.filter((_, index) => index % 4 === 0 || index === routed.length - 1) : routed
   const geometry = pointsRelative(path)
   const dashed = connector.dash === 'solid' ? 'solid' : connector.dash ? styleOf(connector.dash) : spec.lineStyle === 'dashed' ? 'dashed' : 'solid'
   const head = spec.symbol === 'hollow-triangle' ? 'triangle_outline' : spec.symbol === 'hollow-diamond' ? 'diamond_outline' : spec.symbol === 'filled-diamond' ? 'diamond' : 'arrow'
@@ -295,6 +298,7 @@ function connectorElements(connector: ConnectorObject, rectangleIds: ReadonlySet
     // Never elbowed: Excalidraw's restore drops the bindings of an elbow arrow that has no fixedPoint, so an elbow connector is written as an ordinary
     // bound arrow whose points follow the routed path (re-importing it gives a plain polyline connector, not an elbow one).
     elbowed: false,
+    ...(curved ? { roundness: { type: 2 } } : {}),
     boundElements: bound.length > 0 ? bound : null,
   }, connector.group)
   // Multiplicity texts beside the ends.

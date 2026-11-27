@@ -124,7 +124,10 @@ export function flipSelectionItems(items: CanvasItem[], keys: ReadonlySet<string
     const next: ConnectorObject = { ...item, start: start.point, end: end.point }
     if (start.attachment) next.startAttachment = start.attachment
     if (end.attachment) next.endAttachment = end.attachment
-    if (item.routing === 'elbow' && item.bend && (selected || (startMoves && endMoves))) {
+    if (item.routing === 'curved' && item.bend && (selected || (startMoves && endMoves))) {
+      // A mirrored curve bulges to the other side of its direction of travel, so the bend changes sign for either flip.
+      next.bend = -item.bend
+    } else if (item.routing === 'elbow' && item.bend && (selected || (startMoves && endMoves))) {
       const { bend: _bend, ...unbent } = item
       const middle = bendableMiddle(routeConnector(unbent, rectangles).routedPath ?? [])
       if (middle && (middle.axis === 'x') === horizontal) next.bend = -item.bend

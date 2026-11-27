@@ -22,7 +22,7 @@ export type TextAlign = 'center' | 'right'
 export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId; angle?: number; fit?: 'off' | 'wrap'; /** Lines inside the label box: centred or right-aligned. Omitted = left. Saved. */ align?: TextAlign; locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
-export type ConnectorRouting = 'straight' | 'elbow'
+export type ConnectorRouting = 'straight' | 'elbow' | 'curved'
 /** Largest saved elbow `bend` (canvas units, either direction). */
 export const MAX_CONNECTOR_BEND = 5000
 export type ConnectorAttachment = { rectangleId: number; offsetX: number; offsetY: number }
@@ -38,9 +38,9 @@ export type ConnectorObject = {
   reversed: boolean
   startAttachment?: ConnectorAttachment
   endAttachment?: ConnectorAttachment
-  /** Line shape: straight (default when missing) or elbow (right angles). Saved. */
+  /** Line shape: straight (default when missing), elbow (right angles) or curved (smooth bezier, sampled into routedPath). Saved. */
   routing?: ConnectorRouting
-  /** Elbow only: how far (canvas units) the middle segment of the Z route is moved from its default middle, sideways. Finite, |bend| <= MAX_CONNECTOR_BEND; omitted when 0. Saved. */
+  /** Elbow or curved: how far (canvas units) the middle segment of the Z route (the middle of the curve) is moved from its default middle, sideways. Finite, |bend| <= MAX_CONNECTOR_BEND; omitted when 0. Saved. */
   bend?: number
   /** Own line style: wins over the dash of the relationship type ('solid' = draw solid although the relationship type is dashed). Missing = the relationship type decides. */
   dash?: LineDash | 'solid'
@@ -59,7 +59,7 @@ export type ConnectorObject = {
   locked?: true
   /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */
   group?: number
-  /** The right-angle path worked out for an elbow connector. Derived while drawing, never saved: only on copies made by routeConnectors. */
+  /** The path worked out for an elbow or curved connector. Derived while drawing, never saved: only on copies made by routeConnectors. */
   routedPath?: Point[]
 }
 /** A code block: monospaced, syntax coloured, with line numbers. `theme` and `fontSize` are written only when not the default (light, 13). */
@@ -71,6 +71,8 @@ export type CodeObject = { kind: 'code'; id: number; x: number; y: number; width
 export type OpaqueObject = { kind: 'opaque'; id: number; box: RectangleBounds | null; raw: Record<string, unknown> }
 export type CanvasItem = Stroke | RectangleObject | ConnectorObject | TextObject | CodeObject | OpaqueObject
 export const CONNECTOR_SNAP_TOLERANCE = 36
+/** Curved connectors: how far from the tip (canvas units) the arrowhead / symbol direction is measured. */
+const CURVE_SYMBOL_REACH = 48
 
 export function createConnector(
   id: number,
@@ -200,7 +202,15 @@ export function getConnectorSymbolGeometry(connector: ConnectorObject, width = c
   const path = connectorPoints(connector)
   const atStart = endpoint === 'start'
   const tip = atStart ? path[0] : path[path.length - 1]
-  const neighbour = atStart ? path[1] : path[path.length - 2]
+  let neighbour = atStart ? path[1] : path[path.length - 2]
+  if (connector.routing === 'curved') {
+    // A curve is a dense polyline whose last segment is tiny: take the first sampled point CURVE_SYMBOL_REACH away, so the symbol has room and points along the end of the curve.
+    for (let index = 1; index < path.length; index += 1) {
+      const candidate = atStart ? path[index] : path[path.length - 1 - index]
+      neighbour = candidate
+      if (Math.hypot(candidate.x - tip.x, candidate.y - tip.y) >= CURVE_SYMBOL_REACH) break
+    }
+  }
   const other = atStart ? path[path.length - 1] : path[0]
   // The symbol sits on the last straight piece of the line at that end, so on a bent line it follows the bend.
   const dx = neighbour.x - tip.x
@@ -407,9 +417,9 @@ export function arrowEndsChoice(items: readonly CanvasItem[], keys: ReadonlySet<
 export function updateConnectorRouting(items: CanvasItem[], connectorId: number, routing: ConnectorRouting): CanvasItem[] {
   return items.map((item) => {
     if (item.kind !== 'connector' || item.id !== connectorId || (item.routing ?? 'straight') === routing) return item
-    // The bend belongs to the elbow route: dropped on every switch so a later re-toggle starts clean.
+    // The bend belongs to the elbow / curved route: dropped on every switch so a later re-toggle starts clean.
     const { routing: _old, routedPath: _path, bend: _bend, ...rest } = item
-    return routing === 'elbow' ? { ...rest, routing } : rest
+    return routing === 'straight' ? rest : { ...rest, routing }
   })
 }
 

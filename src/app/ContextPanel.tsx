@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ColorPicker } from './ColorPicker'
 import { ERASER_SIZES } from './appConfig'
-import type { Arrowheads, ConnectorRelationshipType, LayerMove } from '../canvasModel'
+import type { Arrowheads, ConnectorRelationshipType, ConnectorRouting, LayerMove } from '../canvasModel'
 import type { AlignOp, DistributeOp } from '../arrange'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import type { TextAlign, TextFontId } from '../canvasModel'
@@ -13,7 +13,7 @@ import { COLORS, MAX_STROKE_WIDTH, MIN_STROKE_WIDTH, WIDTHS } from './appConfig'
 type RelationshipProps = {
   type: ConnectorRelationshipType
   reversed: boolean
-  elbow: boolean
+  routing: ConnectorRouting
   twoWay: boolean
   onTwoWay: (twoWay: boolean) => void
   hasLabel: boolean
@@ -23,7 +23,7 @@ type RelationshipProps = {
   onInsertBox: () => void
   onChange: (type: ConnectorRelationshipType) => void
   onReverse: () => void
-  onElbow: (elbow: boolean) => void
+  onRouting: (routing: ConnectorRouting) => void
   /** Multiplicity text at each end of the connector; `onEndLabel` commits one (blur / Enter). */
   startLabel: string
   endLabel: string
@@ -504,8 +504,9 @@ export function ContextPanel(props: ContextPanelProps) {
           <span>Reverse</span>
         </button>
         <div className="routing-toggle" role="group" aria-label="Connector line shape">
-          <button type="button" className={relationship.elbow ? '' : 'active'} aria-pressed={!relationship.elbow} onClick={() => relationship.onElbow(false)}>Straight</button>
-          <button type="button" className={relationship.elbow ? 'active' : ''} aria-pressed={relationship.elbow} onClick={() => relationship.onElbow(true)}>Elbow</button>
+          <button type="button" className={relationship.routing === 'straight' ? 'active' : ''} aria-pressed={relationship.routing === 'straight'} onClick={() => relationship.onRouting('straight')}>Straight</button>
+          <button type="button" className={relationship.routing === 'elbow' ? 'active' : ''} aria-pressed={relationship.routing === 'elbow'} onClick={() => relationship.onRouting('elbow')}>Elbow</button>
+          <button type="button" className={relationship.routing === 'curved' ? 'active' : ''} aria-pressed={relationship.routing === 'curved'} title="Smooth curve; drag its middle dot to bend it" onClick={() => relationship.onRouting('curved')}>Curved</button>
         </div>
         {relationship.type === 'directed-association' && (
           <div className="routing-toggle" role="group" aria-label="Arrow ends" title="Draw the arrowhead at one end or at both ends">

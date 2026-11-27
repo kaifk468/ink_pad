@@ -1,4 +1,4 @@
-import { bendableMiddle, routeConnectors } from './connectorRoute'
+import { bendableMiddle, curveNormal, routeConnectors } from './connectorRoute'
 import { connectorLabelFontSize, connectorLabelLayout, pointOnConnectorLabel } from './connectorLabel'
 import { pathLength, pathMidpoint, pointAlongPath } from './pathGeometry'
 import { DEFAULT_TEXT_FONT, getCachedTextMeasure, type TextMeasure } from './textLayout'
@@ -24,7 +24,7 @@ export { pathMidpoint }
 export const MIDDLE_DOT_LABEL_GAP = 12
 
 /**
- * Where the middle dot sits: the middle of the drawn path, or for an elbow with a movable middle segment the middle of that segment.
+ * Where the middle dot sits: the middle of the drawn path, or for an elbow with a movable middle segment the middle of that segment. A curved connector's dot sits on the middle of the curve.
  * With a label the dot moves along the path to just past the label pad (the label stays on the path middle), so both can be clicked.
  */
 export function connectorMiddleDot(connector: ConnectorObject, measure?: TextMeasure): Point {
@@ -113,11 +113,11 @@ export function moveConnectorEndpoint(items: CanvasItem[], connectorId: number, 
   })
 }
 
-/** A click on the middle dot: straight becomes elbow and elbow becomes straight. */
+/** A click on the middle dot: straight becomes elbow, elbow becomes straight, and a curved connector becomes straight. */
 export function toggleConnectorRouting(items: CanvasItem[], connectorId: number): CanvasItem[] {
   const connector = items.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
   if (!connector) return items
-  return updateConnectorRouting(items, connectorId, connector.routing === 'elbow' ? 'straight' : 'elbow')
+  return updateConnectorRouting(items, connectorId, connector.routing === 'elbow' || connector.routing === 'curved' ? 'straight' : 'elbow')
 }
 
 /** The items with one connector's elbow bend set (clamped; 0 or not finite removes it). Same array when nothing changes. */
@@ -155,8 +155,16 @@ export function bendForDrag(items: CanvasItem[], connectorId: number, from: Poin
 
 function bendOffset(items: CanvasItem[], connectorId: number, point: Point): number | null {
   const routed = routeConnectors(setConnectorBend(items, connectorId, 0)).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
-  if (!routed || routed.routing !== 'elbow') return null
+  if (!routed) return null
   const path = connectorPoints(routed)
+  if (routed.routing === 'curved') {
+    // Curved: the offset of the pointer across the chord, from the middle of the unbent curve (the bend moves that middle by exactly `bend`).
+    const normal = curveNormal(routed.start, routed.end)
+    if (!normal) return null
+    const middle = pathMidpoint(path)
+    return (point.x - middle.x) * normal.x + (point.y - middle.y) * normal.y
+  }
+  if (routed.routing !== 'elbow') return null
   const middle = bendableMiddle(path)
   if (!middle) return null
   return middle.axis === 'x' ? point.x - path[middle.index].x : point.y - path[middle.index].y

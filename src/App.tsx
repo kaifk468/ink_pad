@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
-import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, type ConnectorRouting } from './canvasModel'
 import { QUICK_CONNECT_DOUBLE_CLICK_MS, TABLET_QUICK_CONNECT_TAP_SLOP_PX, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHint, type QuickConnectDirection } from './quickConnect'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConnectorHandle, hitConnectorLabel, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
@@ -847,7 +847,7 @@ function App() {
   const [selectedConnectorId, setSelectedConnectorId] = useState<number | null>(null)
   const [selectedConnectorType, setSelectedConnectorType] = useState<ConnectorRelationshipType | null>(null)
   const [selectedConnectorReversed, setSelectedConnectorReversed] = useState(false)
-  const [selectedConnectorElbow, setSelectedConnectorElbow] = useState(false)
+  const [selectedConnectorRouting, setSelectedConnectorRouting] = useState<ConnectorRouting>('straight')
   const [selectedConnectorTwoWay, setSelectedConnectorTwoWay] = useState(false)
   const [selectedConnectorLabel, setSelectedConnectorLabel] = useState(false)
   // The eraser mode and size used last are remembered (saved), so holding the S Pen button erases the way the person last chose.
@@ -887,7 +887,7 @@ function App() {
     setSelectedTextId(keys.length === 1 && keys[0].startsWith('text:') ? Number(keys[0].slice('text:'.length)) : null)
     setSelectedConnectorType(connector?.relationshipType ?? null)
     setSelectedConnectorReversed(connector?.reversed ?? false)
-    setSelectedConnectorElbow(connector?.routing === 'elbow')
+    setSelectedConnectorRouting(connector?.routing ?? 'straight')
     setSelectedConnectorTwoWay(connector?.twoWay === true)
     setSelectedConnectorLabel(!!connector?.label)
   }
@@ -929,11 +929,12 @@ function App() {
     setUmlConnectorType(null)
   }, [color])
 
-  const changeSelectedConnectorRouting = (elbow: boolean) => {
-    if (selectedConnectorId === null || selectedConnectorElbow === elbow) return
+  const changeSelectedConnectorRouting = (routing: ConnectorRouting) => {
+    if (selectedConnectorId === null || selectedConnectorRouting === routing) return
     saveHistory()
-    strokesRef.current = updateConnectorRouting(strokesRef.current, selectedConnectorId, elbow ? 'elbow' : 'straight')
-    setSelectedConnectorElbow(elbow)
+    strokesRef.current = updateConnectorRouting(strokesRef.current, selectedConnectorId, routing)
+    setSelectedConnectorRouting(routing)
+    scheduleAutosave()
     renderAll()
   }
 
@@ -2124,7 +2125,7 @@ function App() {
       return
     }
     if (gesture.which === 'middle') {
-      // Dragging the middle dot of an elbow connector moves its middle segment (one undo step); on any other connector it does nothing.
+      // Dragging the middle dot of an elbow connector moves its middle segment, of a curved one bends the curve (one undo step); on a straight connector it does nothing.
       const bend = bendForDrag(gesture.originalItems, gesture.id, gesture.startPoint, getBoundedPoint(event), gesture.startBend)
       if (bend === null) return
       const next = setConnectorBend(gesture.originalItems, gesture.id, bend)
@@ -5397,6 +5398,9 @@ function App() {
       case 'copyPng': copyAsPng(); break
       case 'copyStyle': copyStyleWithToast(); break
       case 'pasteStyle': pasteStyleWithToast(); break
+      case 'lineStraight': changeSelectedConnectorRouting('straight'); break
+      case 'lineElbow': changeSelectedConnectorRouting('elbow'); break
+      case 'lineCurved': changeSelectedConnectorRouting('curved'); break
       case 'arrowBothEnds': setSelectedArrowEnds(true); break
       case 'arrowOneEnd': setSelectedArrowEnds(false); break
       case 'cornersRound': setSelectedCorners(true); break
@@ -5621,6 +5625,11 @@ function App() {
     { id: 'select:previous', label: 'Select previous item', group: 'Select', keywords: 'shift tab walk keyboard step back reading order', run: () => { if (!walkTo(-1) && !selectionMode) showToast('Switch to the Select tool first') } },
     ...(soleSelectedKey() !== null ? (['right', 'left', 'up', 'down'] as const).map((direction) => ({ id: `select:linked-${direction}`, label: `Select linked box: ${direction}`, group: 'Select', keywords: 'alt arrow walk neighbour connected keyboard', run: () => { if (!walkLinked(direction)) showToast('No linked box that way') } })) : []),
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
+    ...(selectedConnectorId !== null ? [
+      { id: 'connector:straight', label: 'Straight connector', group: 'Edit', keywords: 'line shape routing connector arrow', run: () => changeSelectedConnectorRouting('straight') },
+      { id: 'connector:elbow', label: 'Elbow connector', group: 'Edit', keywords: 'line shape routing right angle connector arrow', run: () => changeSelectedConnectorRouting('elbow') },
+      { id: 'connector:curved', label: 'Curved connector', group: 'Edit', keywords: 'line shape routing smooth bezier curve connector arrow', run: () => changeSelectedConnectorRouting('curved') },
+    ] : []),
     ...(canInsertBoxNow() ? [{ id: 'connector:insert-box', label: 'Insert box into connector', group: 'Edit', keywords: 'add rectangle middle split connector arrow line box between', run: () => { insertBoxIntoSelectedConnector() } }] : []),
     ...(canSwapPositions(strokesRef.current, currentSelectionKeys()) ? [{ id: 'arrange:swap', label: 'Swap positions', group: 'Arrange', keywords: 'exchange switch two boxes places', run: () => { swapPositionsSelection() } }] : []),
     ...(canFlipSelection(strokesRef.current, flipKeysWithLabels()) ? [
@@ -5984,6 +5993,7 @@ function App() {
             canInsertBox: canInsertBoxNow(),
             canFlip: canFlipSelection(strokesRef.current, flipKeysWithLabels()),
             canSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()),
+            lineShape: selectedConnectorId !== null ? selectedConnectorRouting : null,
             arrowEnds: arrowEndsChoice(strokesRef.current, selectedKeysRef.current),
             corners: cornersChoice(strokesRef.current, currentSelectionKeys()),
             canSetDefaultStyle: defaultStyleSource() !== null,
@@ -6268,7 +6278,7 @@ function App() {
         onPaste={() => { pasteClipboard() }}
         onDuplicate={() => { duplicateSelection() }}
         relationship={selectedConnectorId !== null && selectedConnectorType !== null
-          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, hasLabel: selectedConnectorLabel, twoWay: selectedConnectorTwoWay, onTwoWay: setSelectedArrowEnds, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, canInsertBox: canInsertBoxNow(), onInsertBox: () => { insertBoxIntoSelectedConnector() }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting, ...endLabelProps(selectedConnectorId) }
+          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, routing: selectedConnectorRouting, hasLabel: selectedConnectorLabel, twoWay: selectedConnectorTwoWay, onTwoWay: setSelectedArrowEnds, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, canInsertBox: canInsertBoxNow(), onInsertBox: () => { insertBoxIntoSelectedConnector() }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onRouting: changeSelectedConnectorRouting, ...endLabelProps(selectedConnectorId) }
           : null}
       />
       {pageOverviewOpen && <PageOverview count={pageCount} current={pageIndex} names={pagesRef.current.map((slot) => slot.name ?? '')} onRename={renamePage} loadThumbnail={renderPageThumbnail} onGo={(index) => { goToPage(index); setPageOverviewOpen(false) }} onMove={movePageTo} onClose={() => setPageOverviewOpen(false)} />}
