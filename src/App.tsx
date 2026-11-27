@@ -68,7 +68,9 @@ import { addLaserPoint, laserOnTouchDown, laserSegments, laserVisible, PEN_TOOL_
 import { createStickyNote, STICKY_HEIGHT, STICKY_WIDTH } from './stickyNote'
 import { HistoryBar } from './app/HistoryBar'
 import { accountLeading } from './app/accountLeading'
+import { DockTip } from './app/DockTip'
 import { DesktopStatusCluster } from './app/DesktopStatusCluster'
+import { desktopStatusText, hideEmptyToast, UML_RESTORE_TIP } from './app/desktopChrome'
 import { ToolDock } from './app/ToolDock'
 import { TopLeftBar } from './app/TopLeftBar'
 import { HomeScreen } from './app/HomeScreen'
@@ -6219,7 +6221,7 @@ function App() {
             </div>
           )
         })()}
-        <div className={`app-toast${toast ? ' app-toast-visible' : ''}`} role="status" aria-live="polite">{toast?.text ?? ''}{toast?.action && <button type="button" className="app-toast-action" onClick={() => { const run = toast.action?.run; setToast(null); run?.() }}>{toast.action.label}</button>}</div>
+        <div className={`app-toast${toast ? ' app-toast-visible' : ''}${hideEmptyToast(toast?.text, inputMode === 'desktop') ? ' app-toast-empty' : ''}`} role="status" aria-live="polite">{toast?.text ?? ''}{toast?.action && <button type="button" className="app-toast-action" onClick={() => { const run = toast.action?.run; setToast(null); run?.() }}>{toast.action.label}</button>}</div>
         {DRAW_READOUT_ENABLED && (
           <div className="draw-readouts" aria-hidden="true">
             <div className="draw-readout">{DRAW_FLAGS_TEXT}</div>
@@ -6253,7 +6255,7 @@ function App() {
               className="uml-toolbox-restore"
               type="button"
               aria-label="Restore UML connector tools"
-              title="Restore UML connector tools (drag to move)"
+              title={inputMode === 'desktop' ? undefined : 'Restore UML connector tools (drag to move)'}
               onPointerDown={startUmlToolboxDrag}
               onPointerMove={moveUmlToolbox}
               onPointerUp={endUmlToolboxDrag}
@@ -6262,6 +6264,7 @@ function App() {
               onClick={restoreUmlToolbox}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="6" rx="1"/><rect x="14" y="14" width="7" height="6" rx="1"/><path d="m9 9 6 6"/></svg>
+              {inputMode === 'desktop' && <DockTip name={UML_RESTORE_TIP} hint="Drag to move" />}
             </button>
           ) : (
             <>
@@ -6307,7 +6310,7 @@ function App() {
           )}
         </aside>
         <aside className={`viewport-navigator${navigatorMinimized ? ' minimized' : ''}`} aria-label="Canvas navigation">
-          <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDuplicate={duplicatePage} canDuplicate={canAddPage(pageCount)} duplicateHint={canAddPage(pageCount) ? 'Duplicate page: copy this page right after it' : 'Page limit reached'} onDelete={deletePage} onOverview={() => setPageOverviewOpen(true)} name={pagesRef.current[pageIndex]?.name ?? ''} />
+          <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDuplicate={duplicatePage} canDuplicate={canAddPage(pageCount)} duplicateHint={canAddPage(pageCount) ? 'Duplicate page: copy this page right after it' : 'Page limit reached'} onDelete={deletePage} onOverview={() => setPageOverviewOpen(true)} name={pagesRef.current[pageIndex]?.name ?? ''} desktop={inputMode === 'desktop'} />
           {navigatorMinimized ? (
             <button className="navigator-restore" type="button" aria-label="Show workspace map" title="Show workspace map" onClick={() => setNavigatorMinimized(false)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><rect x="7" y="8.5" width="6" height="5" rx="1"/></svg>
@@ -6393,7 +6396,7 @@ function App() {
         />
       )}
       {(inputMode !== 'desktop' || zoomLockActive) && <HistoryBar desktop={inputMode !== 'tablet'} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />}
-      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={inputMode === 'desktop' ? <DesktopStatusCluster status={saveStatus} text={statusLabel(saveStatus, storage.kind)} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} hideExport={zoomLockActive} flashKey={statusFlash} /> : accountLeading(penModeActive, inputMode, <PenColors color={color} onColor={selectColor} />)} />
+      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={inputMode === 'desktop' ? <DesktopStatusCluster status={saveStatus} hasContent={hasInk} text={desktopStatusText(saveStatus, statusLabel(saveStatus, storage.kind), hasInk, true)} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} hideExport={zoomLockActive} flashKey={statusFlash} /> : accountLeading(penModeActive, inputMode, <PenColors color={color} onColor={selectColor} />)} />
       <ContextPanel
         desktop={inputMode === 'desktop'}
         contextName={inputMode === 'desktop' ? optionsContextName({ count: selectedItemCount + (hasSelectedRectangle && selectedItemCount === 0 ? 1 : 0), selectedKind: hasSelectedRectangle && selectedItemCount === 0 ? 'rectangle' : (selectedItemCount === 1 ? (strokesRef.current.find((item) => currentSelectionKeys().has(canvasItemKey(item)))?.kind ?? null) : null), tool: shapeTool, eraser, text: textMode }) : undefined}
