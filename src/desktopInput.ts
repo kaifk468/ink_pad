@@ -50,12 +50,34 @@ export function defaultInputModeFor(hints: InputDeviceHints | null): InputMode {
   return hints.maxTouchPoints === 0 && hints.finePointer && hints.canHover ? 'desktop' : DEFAULT_INPUT_MODE
 }
 
-export function loadInputMode(storage?: Pick<Storage, 'getItem'>, hints?: InputDeviceHints | null): InputMode {
+/**
+ * True only on a genuine first visit: the storage holds no 'inkpad.*' key at all. Every first-party localStorage key
+ * (current document ids, drive profile, safety copy, settings) starts with 'inkpad.'. Diagrams themselves live in IndexedDB
+ * (databases 'inkpad' and 'inkpad-recovery'), but a user who has saved a diagram always has 'inkpad.currentDocument*' in
+ * localStorage too, so the localStorage scan is enough. A storage that cannot be enumerated counts as "not first visit" (Tablet).
+ */
+function isFirstVisit(storage: Partial<Storage>): boolean {
+  if (typeof storage.length !== 'number' || typeof storage.key !== 'function') return false
+  for (let i = 0; i < storage.length; i += 1) {
+    const key = storage.key(i)
+    if (key !== null && key.startsWith('inkpad.')) return false
+  }
+  return true
+}
+
+/**
+ * The stored choice wins. With none, the device-based default applies only on a true first visit (existing users who never
+ * touched the switch keep Tablet). A first-visit Desktop decision is saved so it stays stable on the next visit.
+ */
+export function loadInputMode(storage?: Pick<Storage, 'getItem'> & Partial<Pick<Storage, 'length' | 'key' | 'setItem'>>, hints?: InputDeviceHints | null): InputMode {
   try {
     const source = storage ?? window.localStorage
     const stored = source.getItem(INPUT_MODE_KEY)
     if (stored === 'desktop' || stored === 'tablet') return stored
-    return defaultInputModeFor(hints === undefined ? readDeviceHints() : hints)
+    if (!isFirstVisit(source)) return DEFAULT_INPUT_MODE
+    const mode = defaultInputModeFor(hints === undefined ? readDeviceHints() : hints)
+    if (mode === 'desktop' && source.setItem) saveInputMode(mode, { setItem: source.setItem.bind(source) })
+    return mode
   } catch {
     return DEFAULT_INPUT_MODE
   }
