@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { exportFileName } from './exportOptions'
 import type { StorageInfo } from './app/useDocuments'
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'locked'
@@ -86,6 +87,23 @@ export function FilePanel(props: FilePanelProps) {
           <p className={`file-panel-status status-${props.saveStatus}`} role="status">{statusLabel(props.saveStatus, props.storage.kind)}</p>
           {props.notice && <p className="file-panel-notice" role="alert">{props.notice}</p>}
 
+          <section className="export-section export-options" aria-labelledby="export-options-heading">
+            <h3 id="export-options-heading">Options</h3>
+            <div className="export-options-row">
+              <div className="export-scale-row">
+                <span id="export-scale-label">Scale</span>
+                <div className="export-segmented" role="group" aria-labelledby="export-scale-label">
+                  <button type="button" aria-pressed={pngScale === 1} className={pngScale === 1 ? 'selected' : ''} onClick={() => setPngScale(1)}>1x</button>
+                  <button type="button" aria-pressed={pngScale === 2} className={pngScale === 2 ? 'selected' : ''} onClick={() => setPngScale(2)}>2x</button>
+                </div>
+              </div>
+              <label className="export-switch-row">
+                <span>Transparent background</span>
+                <input type="checkbox" role="switch" className="export-switch" checked={props.transparent} onChange={(event) => props.onTransparentChange(event.target.checked)} />
+              </label>
+            </div>
+          </section>
+
           <section className="export-section" aria-labelledby="export-image-heading">
             <h3 id="export-image-heading">Image</h3>
             <div className="export-tiles">
@@ -93,24 +111,15 @@ export function FilePanel(props: FilePanelProps) {
                 <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><circle cx="9" cy="10" r="1.6" /><path d="M4 17l5-4.5 3.5 3 3-2.5 4.5 4" /></svg>
                 <span className="export-tile-label">PNG</span>
                 <span className="export-tile-caption">Best for docs and chat</span>
+                <span className="export-tile-file">{exportFileName(props.title, 'png', pngScale)}</span>
               </button>
               <button type="button" className="export-tile" disabled={!props.canExport} onClick={props.onExportSvg}>
                 <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 18c3-1 4-5 7-6s4-5 7-6" /><circle cx="5" cy="18" r="1.8" /><circle cx="19" cy="6" r="1.8" /></svg>
                 <span className="export-tile-label">SVG</span>
                 <span className="export-tile-caption">Sharp at any size</span>
+                <span className="export-tile-file">{exportFileName(props.title, 'svg')}</span>
               </button>
             </div>
-            <div className="export-scale-row">
-              <span id="export-scale-label">Scale</span>
-              <div className="export-segmented" role="group" aria-labelledby="export-scale-label">
-                <button type="button" aria-pressed={pngScale === 1} className={pngScale === 1 ? 'selected' : ''} onClick={() => setPngScale(1)}>1x</button>
-                <button type="button" aria-pressed={pngScale === 2} className={pngScale === 2 ? 'selected' : ''} onClick={() => setPngScale(2)}>2x</button>
-              </div>
-            </div>
-            <label className="export-switch-row">
-              <span>Transparent background</span>
-              <input type="checkbox" role="switch" className="export-switch" checked={props.transparent} onChange={(event) => props.onTransparentChange(event.target.checked)} />
-            </label>
             <p className="file-panel-hint">Images are cropped to your drawing. Transparent background also applies to Copy as PNG.</p>
           </section>
 

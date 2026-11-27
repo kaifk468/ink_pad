@@ -49,3 +49,21 @@ test('export dialog CSS is desktop-scoped and respects reduced motion', () => {
     for (const piece of selector.split(',')) assert.match(piece.trim(), /^\.app-shell\[data-input-mode="desktop"\]/, piece)
   }
 })
+
+test('desktop export: Options (scale + transparent) come before the PNG/SVG tiles, which name their files', async () => {
+  const options = desktopBranch.indexOf('>Options<')
+  const image = desktopBranch.indexOf('>Image<')
+  assert.ok(options > 0 && options < image)
+  assert.ok(desktopBranch.indexOf('export-scale-label') < image && desktopBranch.indexOf('role="switch"') < image)
+  assert.match(desktopBranch, /exportFileName\(props\.title, 'png', pngScale\)/)
+  assert.match(desktopBranch, /exportFileName\(props\.title, 'svg'\)/)
+  assert.match(desktopBranch, /ref=\{firstTileRef\}[^]*?>PNG</)
+})
+
+test('exportFileName mirrors the download names (@2x only on PNG at 2x)', async () => {
+  const { loadModule } = await import('./helpers/loadModule.mjs')
+  const { exportFileName } = await loadModule('exportOptions.ts')
+  assert.equal(exportFileName('Untitled diagram', 'png', 2), 'Untitled-diagram@2x.png')
+  assert.equal(exportFileName('Untitled diagram', 'png', 1), 'Untitled-diagram.png')
+  assert.equal(exportFileName('Untitled diagram', 'svg'), 'Untitled-diagram.svg')
+})
