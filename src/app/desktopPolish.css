@@ -45,8 +45,6 @@
 /* Focus rings: accent, 2px, offset 2px, keyboard focus only. */
 .app-shell[data-input-mode="desktop"] :where(button, [role="switch"], a, select):focus-visible,
 .home-desktop :where(button, [role="switch"], a, select):focus-visible { outline: 2px solid var(--ip-accent, #2f54d6); outline-offset: 2px; }
-/* The context menu highlights the focused item with a background instead of a ring (styles.css), so it keeps no outline. */
-.app-shell[data-input-mode="desktop"] .canvas-context-menu button:focus-visible { outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .app-shell[data-input-mode="desktop"] .app-toast,

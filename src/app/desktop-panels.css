@@ -4,14 +4,26 @@
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left {
   width: 240px; padding: 12px; gap: 12px; box-sizing: border-box;
   background: var(--ip-surface); border: 1px solid var(--ip-line); border-radius: var(--ip-radius-panel); box-shadow: var(--ip-shadow-2);
-  /* top is 84px; stop above the zoom controls and the dock (about 165px of bottom clearance) */
-  max-height: calc(100vh - 250px); overflow-y: auto; overscroll-behavior: contain; color: var(--ip-text);
+  /* top is 84px; stop 76px above the bottom edge (zoom controls are 44px tall at bottom 16px, plus a gap) */
+  max-height: calc(100vh - 84px - 76px); overflow-y: auto; overscroll-behavior: contain; color: var(--ip-text);
+  /* soft shadow at the bottom edge while more content is hidden below (scrolling shadow trick, no JS) */
+  background:
+    linear-gradient(var(--ip-surface) 30%, transparent) top / 100% 24px no-repeat local,
+    linear-gradient(transparent, var(--ip-surface) 70%) bottom / 100% 24px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, .14), transparent) top / 100% 8px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, .14), transparent) bottom / 100% 8px no-repeat scroll,
+    var(--ip-surface);
 }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .panel-label,
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .popover-label {
   color: var(--ip-muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
 }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .panel-hint { color: var(--ip-muted); }
+
+/* Below 1158px the zoom controls are lifted above the dock (bottom 78px, 44px tall), so stop above them. */
+@media (max-width: 1157px) {
+  .app-shell[data-input-mode="desktop"] .context-panel.desktop-left { max-height: calc(100vh - 84px - 130px); }
+}
 
 /* Uniform buttons */
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .clear-selection-button,
@@ -95,3 +107,6 @@
 
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .selection-actions > .clear-selection-button:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip { padding: 0 7px; }
+
+/* Context menu keyboard focus: an accent ring inside the row. */
+.app-shell[data-input-mode="desktop"] .canvas-context-menu button:focus-visible { outline: 2px solid var(--ip-accent); outline-offset: -2px; }

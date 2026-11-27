@@ -894,10 +894,6 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .app-shell[data-input-mode="desktop"] .ms-head { flex: 0 0 auto; padding: 10px 12px 8px; border-bottom: 1px solid var(--ip-line); }
 .app-shell[data-input-mode="desktop"] .ms-brand { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 4px 6px; }
 .app-shell[data-input-mode="desktop"] .ms-brand .brand-name { flex: 0 0 auto; color: var(--ip-text); font-size: 15px; }
-.app-shell[data-input-mode="desktop"] .ms-status { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; flex: 1 1 auto; min-width: 0; color: var(--ip-muted); font-size: 12px; font-weight: 600; }
-.app-shell[data-input-mode="desktop"] .ms-status > span:first-child { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--ip-delight); }
-.app-shell[data-input-mode="desktop"] .ms-status.ok > span:first-child { background: var(--ip-success); }
-.app-shell[data-input-mode="desktop"] .ms-status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-shell[data-input-mode="desktop"] .ms-search { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid var(--ip-line); border-radius: var(--ip-radius-control); background: var(--ip-surface-2); color: var(--ip-muted); }
 .app-shell[data-input-mode="desktop"] .ms-search:focus-within { border-color: var(--ip-accent); }
 .app-shell[data-input-mode="desktop"] .ms-search svg { flex: 0 0 16px; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }

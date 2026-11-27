@@ -65,10 +65,10 @@ type ToolDockProps = {
   canDuplicatePage?: boolean
 }
 
-const DESKTOP_SHAPES: Array<{ kind: 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'; label: string; key: string; num: string; icon: JSX.Element }> = [
-  { kind: 'rectangle', label: 'Rectangle', key: 'R', num: '2', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1.5"/></svg> },
-  { kind: 'diamond', label: 'Diamond', key: 'D', num: '3', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 20.5 12 12 20.5 3.5 12Z"/></svg> },
-  { kind: 'ellipse', label: 'Ellipse', key: 'O', num: '4', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="8.5" ry="7"/></svg> },
+const DESKTOP_SHAPES: Array<{ kind: 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'; label: string; key: string; num: string; icon: JSX.Element; hint?: string }> = [
+  { kind: 'rectangle', hint: 'Shift: square', label: 'Rectangle', key: 'R', num: '2', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1.5"/></svg> },
+  { kind: 'diamond', hint: 'Shift: square', label: 'Diamond', key: 'D', num: '3', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 20.5 12 12 20.5 3.5 12Z"/></svg> },
+  { kind: 'ellipse', hint: 'Shift: circle', label: 'Ellipse', key: 'O', num: '4', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="8.5" ry="7"/></svg> },
   { kind: 'arrow', label: 'Arrow', key: 'A', num: '5', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16m0 0-5-5m5 5-5 5"/></svg> },
   { kind: 'line', label: 'Line', key: 'I', num: '6', icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5"/></svg> },
 ]
@@ -124,9 +124,9 @@ export function ToolDock(props: ToolDockProps) {
         {divider}
         {penEraser}
         {divider}
-        {DESKTOP_SHAPES.map(({ kind, label: shapeName, key, num, icon }) => (
+        {DESKTOP_SHAPES.map(({ kind, label: shapeName, key, num, icon, hint }) => (
           <button className={`tool-button shape-draw-button shape-${kind}${props.shapeTool === kind ? ' selected' : ''}`} type="button" key={kind} aria-label={shapeName} aria-pressed={props.shapeTool === kind} onClick={() => props.onShapeTool?.(kind)}>
-            {icon}<DockTip name={shapeName} keys={[key, num]} />
+            {icon}<DockTip name={shapeName} keys={[key, num]} hint={hint} />
           </button>
         ))}
         {divider}
