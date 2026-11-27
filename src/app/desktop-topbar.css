@@ -42,15 +42,18 @@
 .app-shell[data-input-mode="desktop"] .top-status-pill:hover { background: var(--ip-surface-2); }
 .app-shell[data-input-mode="desktop"] .top-status-pill:focus-visible { outline: 2px solid var(--ip-accent); outline-offset: 2px; }
 .app-shell[data-input-mode="desktop"] .top-status-text { overflow: hidden; text-overflow: ellipsis; }
+/* The pill and its text are never selectable (the status text lives in a role=status element, which is otherwise selectable). */
+.app-shell[data-input-mode="desktop"] .top-status-pill, .app-shell[data-input-mode="desktop"] .top-status-pill * { -webkit-user-select: none; user-select: none; }
+.app-shell[data-input-mode="desktop"] .ip-visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 .app-shell[data-input-mode="desktop"] .top-status-dot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--ip-delight); }
 .app-shell[data-input-mode="desktop"] .top-status-pill.tone-ok .top-status-dot { background: var(--ip-success); }
 .app-shell[data-input-mode="desktop"] .top-status-pill.tone-idle .top-status-dot { background: var(--ip-faint, var(--ip-muted)); }
 .app-shell[data-input-mode="desktop"] .top-status-pill.tone-bad .top-status-dot { background: var(--ip-danger); }
 .app-shell[data-input-mode="desktop"] .top-status-pill.tone-bad { color: var(--ip-danger); }
 .app-shell[data-input-mode="desktop"] .top-status-dot.just-saved { animation: ip-status-pulse var(--ip-dur-menu) var(--ip-ease-out) 1; }
-/* Ctrl+S: the pill is re-keyed, so this one-shot accent wash replays. A pseudo-element fades in and out (opacity only). */
+/* Ctrl+S: the decorative flash span is re-keyed, so this one-shot accent wash replays. The span fades in and out (opacity only). */
 .app-shell[data-input-mode="desktop"] .top-status-pill { position: relative; isolation: isolate; }
-.app-shell[data-input-mode="desktop"] .top-status-pill.flash::before {
+.app-shell[data-input-mode="desktop"] .top-status-flash {
   content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--ip-accent-soft); opacity: 0; z-index: -1; pointer-events: none;
   animation: ip-status-flash 240ms var(--ip-ease-out) 1;
 }
@@ -58,7 +61,7 @@
 @keyframes ip-status-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.6); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) {
   .app-shell[data-input-mode="desktop"] .top-status-dot.just-saved { animation: none; }
-  .app-shell[data-input-mode="desktop"] .top-status-pill.flash::before { animation: none; }
+  .app-shell[data-input-mode="desktop"] .top-status-flash { animation: none; }
 }
 .app-shell[data-input-mode="desktop"] .top-export-button {
   display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; box-sizing: border-box;

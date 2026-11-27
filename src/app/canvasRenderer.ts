@@ -338,7 +338,7 @@ function tracePath(ctx: CanvasRenderingContext2D, path: Point[], atStart: boolea
 /** Desktop selection halo: a soft band along the plain connector path only (no arrowhead, which the thick selection stroke used to scale up). */
 export function drawConnectorHalo(ctx: CanvasRenderingContext2D, connector: ConnectorObject, color: string, width: number): void {
   ctx.save()
-  ctx.globalAlpha = 0.28
+  ctx.globalAlpha = 0.4
   ctx.strokeStyle = color
   ctx.lineWidth = width
   ctx.lineCap = 'round'

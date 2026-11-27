@@ -37,8 +37,8 @@ test('App wires saveNow to the document save path, a toast and the status flash'
   const cluster = await read('../src/app/DesktopStatusCluster.tsx')
   assert.match(cluster, /flashKey/)
   const css = await read('../src/app/desktop-topbar.css')
-  assert.match(css, /\.top-status-pill\.flash::before/)
-  assert.match(css, /prefers-reduced-motion[\s\S]*\.top-status-pill\.flash::before \{ animation: none; \}/)
+  assert.match(css, /\.top-status-flash \{/)
+  assert.match(css, /prefers-reduced-motion[\s\S]*\.top-status-flash \{ animation: none; \}/)
 })
 
 test('the Keep tool tip shows once, on desktop, with Keep tool off', () => {
