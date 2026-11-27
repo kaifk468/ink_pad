@@ -138,3 +138,16 @@ test('wiring: panel offers Straight / Elbow / Curved; palette entry; handler cas
   assert.match(app, /case 'lineCurved': changeSelectedConnectorRouting\('curved'\)/)
   assert.match(app, /updateConnectorRouting\(strokesRef\.current, selectedConnectorId, routing\)/)
 })
+
+test('a free diagonal curved connector bows away from the straight line (walk fix)', () => {
+  const start = { x: 0, y: 0, pressure: 0.5 }
+  const end = { x: 600, y: 250, pressure: 0.5 }
+  const path = route.curvedPath(start, end)
+  const len = Math.hypot(600, 250)
+  const off = Math.max(...path.map((p) => Math.abs((p.x * 250 - p.y * 600) / len)))
+  assert.ok(off > 20, `curve should leave the straight line, max offset ${off}`)
+  assert.deepEqual([path[0].x, path[0].y, path.at(-1).x, path.at(-1).y], [0, 0, 600, 250])
+  // A free horizontal connector stays straight.
+  const flat = route.curvedPath(start, { x: 500, y: 0, pressure: 0.5 })
+  assert.ok(flat.every((p) => Math.abs(p.y) < 1e-6))
+})

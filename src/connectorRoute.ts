@@ -378,9 +378,10 @@ export function curvedPath(start: Point, end: Point, startBox?: Box, endBox?: Bo
   const normal = curveNormal(start, end)
   if (!normal) return [start, end]
   const distance = Math.hypot(end.x - start.x, end.y - start.y)
-  const toward = { x: (end.x - start.x) / distance, y: (end.y - start.y) / distance }
-  const startDir = startBox ? outwardDirection(startBox, start) : toward
-  const endDir = endBox ? outwardDirection(endBox, end) : { x: -toward.x, y: -toward.y }
+  // A free end leaves along the longer axis towards the other end (as draw.io does), so a free diagonal connector still
+  // shows a curve; aiming straight at the other end would make both control points collinear and draw a straight line.
+  const startDir = startBox ? outwardDirection(startBox, start) : dominantDirection(start, end)
+  const endDir = endBox ? outwardDirection(endBox, end) : dominantDirection(end, start)
   const reach = Math.max(CURVE_MIN_REACH, Math.min(CURVE_MAX_REACH, distance * 0.4))
   // Moving both inner control points by d moves the curve middle (t = 0.5) by 3/4 d, so d = bend / 0.75 puts it exactly `bend` aside.
   const shift = bend / 0.75

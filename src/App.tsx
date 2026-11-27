@@ -2105,6 +2105,19 @@ function App() {
     return quickConnectFits(item, viewportRef.current.scale, tablet) ? item : null
   }
   /** Starts a quick-connect press when a mouse pointer lands on one of the buttons. A click (not a drag) runs Ctrl+Arrow for that side. */
+  /** Desktop Shift + press: true when the press is on a resize handle of the current selection (one box, or a group / text / code selection). */
+  const shiftPressOnSelectionHandle = (point: Point): boolean => {
+    const tolerance = 14 / viewportRef.current.scale
+    const box = selectedRectangleIdRef.current === null ? null : strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === selectedRectangleIdRef.current) ?? null
+    if (box && hitTestRectangleResizeHandle(box, point, tolerance)) return true
+    const soleKey = selectedKeysRef.current.size === 1 ? [...selectedKeysRef.current][0] : null
+    if (selectedKeysRef.current.size > 1 || soleKey?.startsWith('text:') || soleKey?.startsWith('code:')) {
+      const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), selectedKeysRef.current)
+      if (bounds && hitTestRectangleResizeHandle(bounds, point, tolerance)) return true
+    }
+    return false
+  }
+
   const startQuickConnectPress = (event: React.PointerEvent<HTMLCanvasElement>, point: Point): boolean => {
     const tablet = inputModeRef.current === 'tablet'
     // Desktop: the mouse (main button, no modifier). Tablet: the pen (not while its button erases) or a lone finger with no pen near.
@@ -3968,8 +3981,9 @@ function App() {
     if ((selectionMode || lassoMode) && (event.pointerType !== 'mouse' || event.button === 0) && startConnectorHandleGesture(event, point)) return
     if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') {
       if (event.shiftKey && !eraser) {
-        // Shift + click adds or removes one item (a stroke too) without starting anything else.
-        const shiftHit = shiftClickTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
+        // Shift + click adds or removes one item (a stroke too) without starting anything else,
+        // except on a resize handle of the current selection: Shift held before grabbing a corner keeps proportions (round 10).
+        const shiftHit = shiftPressOnSelectionHandle(point) ? null : shiftClickTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
         if (shiftHit) {
           applySelectionState(normalizeSelection(toggleGroupKeys(strokesRef.current, selectionKeysWithBox(), shiftHit.key)))
           return

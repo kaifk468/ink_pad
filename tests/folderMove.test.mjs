@@ -146,3 +146,8 @@ test('wiring: folder menu entry, drag and drop, undo toast, device hint', () => 
   assert.match(src('app/useDocuments.ts'), /const moveFolder = async[\s\S]*?await inSaveChain\(async \(\): Promise<boolean \| 'noop'> =>[\s\S]*?=== 'noop' \? 'noop' : true/)
   assert.match(home, /if \(result === false \|\| result === 'noop'\) return/)
 })
+
+test('going to another folder closes the folder Move to… picker (walk fix)', () => {
+  const home = src('app/HomeScreen.tsx')
+  assert.match(home, /useEffect\(\(\) => \{ setMovingFolderId\(null\) \}, \[here\]\)/)
+})

@@ -270,6 +270,8 @@ export function HomeScreen(props: HomeScreenProps) {
   }
   const confirmFolder = confirmFolderId ? folders.find((folder) => folder.id === confirmFolderId) : undefined
   const movingFolder = movingFolderId ? folders.find((folder) => folder.id === movingFolderId) : undefined
+  // The picker belongs to the folder it was opened on: going to another folder closes it (found in the round 10 walk).
+  useEffect(() => { setMovingFolderId(null) }, [here])
   const moveTarget = movingId ? library.find((entry) => entry.id === movingId) : undefined
 
   const closeRef = useRef(props.onClose)

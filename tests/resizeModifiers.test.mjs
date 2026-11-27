@@ -104,3 +104,8 @@ test('round 10 review: keepAspect never pushes either side past the bound', () =
   assert.equal(nw.x + nw.width, 300)
   assert.match(app, /keepAspect\(activeResize\.originalBounds, bounds, activeResize\.handle, undefined, workspaceBoundsRef\.current\)/)
 })
+
+test('Shift held before pressing a resize handle resizes instead of toggling the selection (walk fix)', () => {
+  assert.match(app, /const shiftHit = shiftPressOnSelectionHandle\(point\) \? null : shiftClickTarget\(/)
+  assert.match(app, /const shiftPressOnSelectionHandle = \(point: Point\): boolean => \{[\s\S]{0,700}hitTestRectangleResizeHandle\(box, point, tolerance\)[\s\S]{0,500}hitTestRectangleResizeHandle\(bounds, point, tolerance\)/)
+})
