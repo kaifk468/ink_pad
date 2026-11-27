@@ -6022,7 +6022,7 @@ function App() {
   keyActionsRef.current = (command) => {
     if (command.kind === 'library' && libraryOpen) return true // the Library is already open: only keep the browser's open dialog away
     if (command.kind === 'saveNowRepeat') return true // a held Ctrl+S: swallowed, the first press already saved
-    if (command.kind === 'saveNow') { saveNowWithToast(); return true } // saving works under dialogs, the Library and the palette too
+    if (command.kind === 'saveNow') { if (activeStrokeRef.current === null && activePointerRef.current === null) saveNowWithToast(); return true } // saving works under dialogs, the Library and the palette too; never mid-stroke (the autosave follows when the stroke ends)
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (editingBlocksCanvas()) return false
     const gestureActive = canvasGestureActive()
