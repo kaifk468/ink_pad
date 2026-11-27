@@ -185,6 +185,7 @@ export function ContextPanel(props: ContextPanelProps) {
   const { relationship } = props
   const [collapsed, setCollapsed] = useState(() => (props.desktop ? readOptionsCollapsed(browserStorage()) : false))
   const [moreOpen, setMoreOpen] = useState(false)
+  const [umlOpen, setUmlOpen] = useState(false)
   const toggleCollapsed = () => { const next = !collapsed; setCollapsed(next); writeOptionsCollapsed(browserStorage(), next) }
   const headerColor = props.showStyle ? props.color : (props.selectionColor ?? 'var(--ip-muted)')
   if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !(props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet)) && !props.flip && !props.sameSize && !props.boundaryTools) return null
@@ -229,7 +230,7 @@ export function ContextPanel(props: ContextPanelProps) {
   const lineStyleEl = (
     <>
       {props.lineStyle && <div className="line-style-controls" role="group" aria-label={props.lineStyle.label}>
-        <span className="panel-label">{props.lineStyle.label}</span>
+        <span className="panel-label" title={props.lineStyle.label === 'Line style for new shapes' ? props.lineStyle.label : undefined}>{props.lineStyle.label === 'Line style for new shapes' && props.desktop ? 'Line style' : props.lineStyle.label}</span>
         <div className="routing-toggle" role="group" aria-label="Line style">
           {(['solid', 'dashed', 'dotted'] as const).map((dash) => (
             <button key={dash} type="button" className={props.lineStyle?.value === dash ? 'active' : ''} aria-pressed={props.lineStyle?.value === dash} aria-label={`${dash} line`} title={`${dash[0].toUpperCase()}${dash.slice(1)} line`} onClick={() => props.lineStyle?.onChange(dash)}>
@@ -548,7 +549,79 @@ export function ContextPanel(props: ContextPanelProps) {
   )
   const relationshipEl = (
     <>
-      {relationship && <div className="relationship-controls" role="group" aria-label="Selected connector relationship">
+      {relationship && props.desktop && <div className="connector-plain" role="group" aria-label="Selected connector relationship">
+        <div className="connector-section">
+          <span className="panel-label">Line</span>
+          <div className="routing-toggle" role="group" aria-label="Connector line shape">
+            <button type="button" className={relationship.routing === 'straight' ? 'active' : ''} aria-pressed={relationship.routing === 'straight'} onClick={() => relationship.onRouting('straight')}>
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 18 20 6"/></svg><span>Straight</span>
+            </button>
+            <button type="button" className={relationship.routing === 'elbow' ? 'active' : ''} aria-pressed={relationship.routing === 'elbow'} onClick={() => relationship.onRouting('elbow')}>
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 18h8V6h8"/></svg><span>Elbow</span>
+            </button>
+            <button type="button" className={relationship.routing === 'curved' ? 'active' : ''} aria-pressed={relationship.routing === 'curved'} title="Smooth curve; drag its middle dot to bend it" onClick={() => relationship.onRouting('curved')}>
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 18C4 8 20 16 20 6"/></svg><span>Curved</span>
+            </button>
+          </div>
+        </div>
+        {relationship.type === 'directed-association' && (
+          <div className="connector-section">
+            <span className="panel-label">Arrowheads</span>
+            <div className="connector-arrow-row">
+              <div className="routing-toggle" role="group" aria-label="Arrow ends" title="Draw the arrowhead at one end or at both ends">
+                <button type="button" className={relationship.twoWay ? '' : 'active'} aria-pressed={!relationship.twoWay} onClick={() => relationship.onTwoWay(false)}>End</button>
+                <button type="button" className={relationship.twoWay ? 'active' : ''} aria-pressed={relationship.twoWay} onClick={() => relationship.onTwoWay(true)}>Both</button>
+              </div>
+              <button className="connector-icon-button" type="button" title={`Reverse direction (${relationship.reversed ? 'back to start' : 'to end'})`} aria-label="Reverse direction" onClick={relationship.onReverse}>
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 8h15l-4-4m4 4-4 4M20 16H5l4 4m-4-4 4-4"/></svg>
+              </button>
+            </div>
+          </div>
+        )}
+        <div className="connector-actions">
+          <button type="button" className="connector-action" aria-label={relationship.hasLabel ? 'Edit connector label' : 'Add connector label'} title="Text drawn on the middle of the connector (double-click it, or press Enter)" onClick={relationship.onEditLabel}>
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M5 7V5h14v2M12 5v14M9 19h6"/></svg>
+            <span>{relationship.hasLabel ? 'Edit label' : 'Add label'}</span>
+          </button>
+          <button type="button" className="connector-action" aria-label="Insert box" title="Put a box on the middle of this connector" disabled={!relationship.canInsertBox} onClick={relationship.onInsertBox}>
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="5" y="6" width="14" height="12" rx="2"/></svg>
+            <span>Insert box</span>
+          </button>
+        </div>
+        <div className="options-more connector-uml">
+          <button className="options-more-toggle" type="button" aria-expanded={umlOpen} aria-controls="connector-uml-notation" onClick={() => setUmlOpen((open) => !open)}>
+            <span>Diagram notation (UML)</span>
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          {umlOpen && <div className="options-more-body" id="connector-uml-notation">
+            <label className="panel-label" htmlFor="connector-relationship-type">Relationship</label>
+            <select id="connector-relationship-type" className="relationship-select" aria-label="Connector relationship type" value={relationship.type} onChange={(event) => relationship.onChange(event.target.value as ConnectorRelationshipType)}>
+              <option value="association">Plain line (association)</option>
+              <option value="directed-association">Arrow (directed association)</option>
+              <option value="inheritance">Inherits from (inheritance)</option>
+              <option value="realization">Implements (realization)</option>
+              <option value="dependency">Depends on (dependency)</option>
+              <option value="aggregation">Has a (aggregation)</option>
+              <option value="composition">Owns (composition)</option>
+            </select>
+            {relationship.type !== 'directed-association' && relationship.type !== 'association' && (
+              <button className="connector-action" type="button" title={`Reverse ${relationship.reversed ? 'to start' : 'to end'}`} aria-label="Reverse connector direction" onClick={relationship.onReverse}>
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 8h15l-4-4m4 4-4 4M20 16H5l4 4m-4-4 4-4"/></svg>
+                <span>Reverse direction</span>
+              </button>
+            )}
+            <div className="end-labels" role="group" aria-label="End labels" title="Multiplicity or cardinality at this end">
+              <span className="panel-label end-labels-heading">End labels</span>
+              <div className="end-labels-inputs">
+                <EndLabelInput key={`${relationship.connectorId}:start`} connectorId={relationship.connectorId} end="start" value={relationship.startLabel} placeholder="1" label="Start end label" onCommit={relationship.onEndLabel} />
+                <EndLabelInput key={`${relationship.connectorId}:end`} connectorId={relationship.connectorId} end="end" value={relationship.endLabel} placeholder="*" label="End end label" onCommit={relationship.onEndLabel} />
+              </div>
+              <span className="panel-hint">e.g. 1 and * for one-to-many</span>
+            </div>
+          </div>}
+        </div>
+      </div>}
+      {relationship && !props.desktop && <div className="relationship-controls" role="group" aria-label="Selected connector relationship">
         <label className="relationship-label" htmlFor="connector-relationship-type">Relationship</label>
         <select
           id="connector-relationship-type"

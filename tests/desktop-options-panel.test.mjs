@@ -165,3 +165,28 @@ test('below 740px the More tray carries the Sticky note tile, shape search and t
   assert.match(dockCss, /calc\(100dvh - 140px\)/)
   assert.doesNotMatch(dockCss, /100vh/)
 })
+
+test('round 6: desktop connector section is plain language with a closed UML disclosure; tablet keeps the UML select text', () => {
+  const start = panel.indexOf('const relationshipEl')
+  const end = panel.indexOf('const colourEl')
+  const block = panel.slice(start, end)
+  const [desktop, tablet] = block.split('relationship && !props.desktop')
+  assert.ok(tablet, 'tablet branch is separate')
+  // desktop: overlines, plain labels, disclosure closed by default
+  for (const text of ['>Line<', '>Arrowheads<', '>End<', '>Both<', 'Diagram notation (UML)', 'Plain line (association)', 'Arrow (directed association)', 'Inherits from (inheritance)', 'Implements (realization)', 'Depends on (dependency)', 'Has a (aggregation)', 'Owns (composition)', 'e.g. 1 and * for one-to-many', 'aria-label="Reverse direction"', 'Add label', 'Insert box']) assert.ok(desktop.includes(text), text)
+  assert.ok(panel.includes('const [umlOpen, setUmlOpen] = useState(false)'))
+  assert.ok(desktop.includes('{umlOpen && '))
+  assert.ok(desktop.includes("relationship.type === 'directed-association'"))
+  assert.ok(!desktop.includes('Directed association<'))
+  // tablet: original text untouched
+  for (const text of ['>Association<', '>Directed association<', '>Inheritance<', 'One way', 'Both ends', 'End labels']) assert.ok(tablet.includes(text), text)
+  assert.ok(!tablet.includes('Plain line'))
+})
+
+test('round 6: desktop line-style heading is short, eraser active segment uses the accent tokens, connector CSS is desktop scoped', () => {
+  assert.ok(panel.includes("props.desktop ? 'Line style'"))
+  assert.match(css, /\.eraser-mode-card\.selected \{ background: var\(--ip-accent-soft\); color: var\(--ip-accent\)/)
+  const tail = css.slice(css.indexOf('Connector section in plain language'))
+  for (const line of tail.split('\n').filter((l) => /^\.[\w-]|^\.app-shell/.test(l))) assert.ok(line.startsWith('.app-shell[data-input-mode="desktop"]'), line)
+  assert.ok(!/transition/.test(tail))
+})
