@@ -45,7 +45,7 @@ import { createTestInk, isTestInk } from './testInk'
 import { createFrameRecorder, createRedrawTracker, formatDrawFlags, formatFrameSummary, formatRedrawSummary } from './app/frameRecorder'
 import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
 import { chooseDrawMode, countVisiblePoints, DEFAULT_DIRECT_MAX_VISIBLE_POINTS, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
-import { setConnectorLabelBackground, createFontMeasure, createTextMeasure, drawConnector, drawSideMidpointDots, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, layerCanvasOptions, rawDrawingOptions } from './app/canvasRenderer'
+import { setConnectorLabelBackground, createFontMeasure, createTextMeasure, drawConnector, drawConnectorHalo, drawSideMidpointDots, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, layerCanvasOptions, rawDrawingOptions } from './app/canvasRenderer'
 import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
 import { UmlConnectorIcon } from './app/UmlConnectorIcon'
 import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
@@ -2725,7 +2725,8 @@ function App() {
         else ctx.strokeRect(item.x - 6, item.y - 6, item.width + 12, item.height + 12)
         ctx.restore()
       } else if (item.kind === 'connector') {
-        drawConnector(ctx, item, '#5574ed', item.strokeWidth + 8)
+        if (inputModeRef.current === 'desktop') drawConnectorHalo(ctx, item, '#5574ed', item.strokeWidth + 6)
+        else drawConnector(ctx, item, '#5574ed', item.strokeWidth + 8)
       } else if (item.kind === 'stroke' && !item.erase) {
         ctx.save()
         ctx.globalAlpha = 0.28
