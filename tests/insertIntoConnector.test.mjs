@@ -151,3 +151,12 @@ test('menu row, panel button, palette entry and wiring', () => {
   const panel = readFileSync(new URL('../src/app/ContextPanel.tsx', import.meta.url), 'utf8')
   assert.match(panel, /aria-label="Insert box"[\s\S]*?disabled=\{!relationship\.canInsertBox\}[\s\S]*?onClick=\{relationship\.onInsertBox\}/)
 })
+
+test('insert box: the new box joins the connector group', () => {
+  const a = { kind: 'rectangle', id: 1, x: 0, y: 0, width: 50, height: 50, strokeColor: '#000', strokeWidth: 2 }
+  const c = { kind: 'connector', id: 1, start: { x: 50, y: 25, pressure: 1 }, end: { x: 300, y: 25, pressure: 1 }, strokeColor: '#000', strokeWidth: 2, relationshipType: 'association', reversed: false, group: 3 }
+  const out = insertBoxIntoConnector([a, c], 1, { rectangle: 2, connector: 2 })
+  assert.equal(out.box.group, 3)
+  assert.equal(out.first.group, 3)
+  assert.equal(out.second.group, 3)
+})

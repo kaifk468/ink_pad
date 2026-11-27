@@ -82,7 +82,7 @@ test('search reads local copies only: browser store and Drive cache, never a dev
 test('wiring: the search path uses only the local loader, and results follow title matches', async () => {
   const hook = await read('app/useDocuments.ts')
   const line = hook.split('\n').find((l) => l.includes('const loadForSearch'))
-  assert.ok(line.includes('loadLocalCopyForSearch') && line.includes('loadStoredDocument') && line.includes('getDriveCache().get'))
+  assert.ok(line.includes('loadLocalCopyForSearch') && line.includes('loadStoredDocument') && line.includes('getDriveCache().get') && line.includes('useCallback'))
   assert.ok(!/backendRef\.current\.(load|loadFresh|list)\b/.test(line))
   for (const file of ['librarySearchText.ts', 'librarySearchLoad.ts']) {
     const src = await read(file)

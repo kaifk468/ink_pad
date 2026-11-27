@@ -20,7 +20,7 @@ import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
 import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeChoice } from './changeShape'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, pasteTranslation, type PasteResult } from './clipboard'
-import { gridDots, gridSnapApplies, gridSpacingFor, loadGridSnap, saveGridSnap, snapMoveDelta, snapResizeBounds, snapToGrid } from './gridSnap'
+import { gridDots, gridSnapApplies, gridSpacingFor, loadGridSnap, saveGridSnap, snapMoveDelta, snapResizeBounds, snapToGrid, unpaddedSelectionBounds } from './gridSnap'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
 import { shapeKeywords } from './shapeSearch'
@@ -1705,9 +1705,15 @@ function App() {
     return true
   }
   // Flip selection (Shift+H / Shift+V, right-click chips, palette, context panel): mirrors the selection about its bounding-box centre; one undo step.
+  const flipKeysWithLabels = (): Set<string> => {
+    const keys = new Set(currentSelectionKeys())
+    for (const key of labelsInside(strokesRef.current, keys)) keys.add(key) // labels inside a flipped box go with it
+    return keys
+  }
   const flipSelection = (axis: FlipAxis): boolean => {
-    const result = flipSelectionItems(strokesRef.current, currentSelectionKeys(), axis)
-    if (!result) { showToast(canFlipSelection(strokesRef.current, currentSelectionKeys()) ? 'Nothing to flip' : 'Select two or more items (or a stroke or connector) to flip'); return false }
+    const flipKeys = flipKeysWithLabels()
+    const result = flipSelectionItems(strokesRef.current, flipKeys, axis)
+    if (!result) { showToast(canFlipSelection(strokesRef.current, flipKeys) ? 'Nothing to flip' : 'Select two or more items (or a stroke or connector) to flip'); return false }
     saveHistory()
     strokesRef.current = result
     historyCacheRef.current = null
@@ -1904,7 +1910,7 @@ function App() {
       guidesRef.current = []
       let gridState = snapStateRef.current
       if (!gridState || gridState.pointerId !== event.pointerId) {
-        gridState = { pointerId: event.pointerId, moving: getCanvasSelectionBounds(routeConnectors(originalItems), keys), targets: [] }
+        gridState = { pointerId: event.pointerId, moving: unpaddedSelectionBounds(routeConnectors(originalItems), keys), targets: [] }
         snapStateRef.current = gridState
       }
       gridOverlayRef.current = grid
@@ -3904,9 +3910,12 @@ function App() {
       // Press where the box's top-left corner goes, then drag to size it; a plain tap makes a default-sized box.
       event.currentTarget.setPointerCapture(event.pointerId)
       saveHistory()
+      const classGrid = gridActive(event)
+      const boxX = classGrid !== null ? snapToGrid(point.x, classGrid) : point.x
+      const boxY = classGrid !== null ? snapToGrid(point.y, classGrid) : point.y
       const newBox = hldShapeTool
-        ? styleNewShape(createHldShape(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, hldShapeTool))
-        : createInkClassBox(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH)
+        ? styleNewShape(createHldShape(nextRectangleIdRef.current++, boxX, boxY, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, hldShapeTool))
+        : createInkClassBox(nextRectangleIdRef.current++, boxX, boxY, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH)
       const box = sketchyRef.current ? withSketchSeed(newBox) : newBox
       strokesRef.current.push(box)
       setHasInk(true)
@@ -4297,7 +4306,12 @@ function App() {
       const resizeGrid = gridActive(event)
       if (resizeGrid !== null && !(activeResize.created && event.shiftKey)) {
         // The moved edge(s) land on the grid (a new shape's corner too: its press point was snapped when it was made).
-        const snapped = snapResizeBounds(bounds, activeResize.handle, resizeGrid)
+        // A group's bounds are padded by stroke width; snap the unpadded edges so boxes (not their outlines) land on the grid.
+        const raw = activeResize.rectangleId === null && activeResize.selectedKeys ? unpaddedSelectionBounds(routeConnectors(activeResize.originalItems), activeResize.selectedKeys) : null
+        const o = activeResize.originalBounds
+        const pad = raw ? { l: raw.x - o.x, t: raw.y - o.y, r: o.x + o.width - raw.x - raw.width, b: o.y + o.height - raw.y - raw.height } : { l: 0, t: 0, r: 0, b: 0 }
+        const inner = snapResizeBounds({ x: bounds.x + pad.l, y: bounds.y + pad.t, width: bounds.width - pad.l - pad.r, height: bounds.height - pad.t - pad.b }, activeResize.handle, resizeGrid)
+        const snapped = { x: inner.x - pad.l, y: inner.y - pad.t, width: inner.width + pad.l + pad.r, height: inner.height + pad.t + pad.b }
         bounds.x = snapped.x; bounds.y = snapped.y; bounds.width = snapped.width; bounds.height = snapped.height
         if (snapStateRef.current?.pointerId !== event.pointerId) snapStateRef.current = { pointerId: event.pointerId, moving: null, targets: [] }
         gridOverlayRef.current = resizeGrid
@@ -5609,7 +5623,7 @@ function App() {
     ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
     ...(canInsertBoxNow() ? [{ id: 'connector:insert-box', label: 'Insert box into connector', group: 'Edit', keywords: 'add rectangle middle split connector arrow line box between', run: () => { insertBoxIntoSelectedConnector() } }] : []),
     ...(canSwapPositions(strokesRef.current, currentSelectionKeys()) ? [{ id: 'arrange:swap', label: 'Swap positions', group: 'Arrange', keywords: 'exchange switch two boxes places', run: () => { swapPositionsSelection() } }] : []),
-    ...(canFlipSelection(strokesRef.current, currentSelectionKeys()) ? [
+    ...(canFlipSelection(strokesRef.current, flipKeysWithLabels()) ? [
       { id: 'arrange:flip-horizontal', label: 'Flip horizontal', group: 'Arrange', keywords: 'mirror reflect left right selection', run: () => { flipSelection('horizontal') } },
       { id: 'arrange:flip-vertical', label: 'Flip vertical', group: 'Arrange', keywords: 'mirror reflect up down selection', run: () => { flipSelection('vertical') } },
     ] : []),
@@ -5968,7 +5982,7 @@ function App() {
             canSameSize: canSameSize(strokesRef.current, currentSelectionKeys()),
             canSwap: canSwapPositions(strokesRef.current, currentSelectionKeys()),
             canInsertBox: canInsertBoxNow(),
-            canFlip: canFlipSelection(strokesRef.current, currentSelectionKeys()),
+            canFlip: canFlipSelection(strokesRef.current, flipKeysWithLabels()),
             canSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()),
             arrowEnds: arrowEndsChoice(strokesRef.current, selectedKeysRef.current),
             corners: cornersChoice(strokesRef.current, currentSelectionKeys()),
@@ -6196,7 +6210,7 @@ function App() {
         newShapeDefault={currentSelectionKeys().size > 0 || newShapeStyle ? { canSet: defaultStyleSource() !== null, isSet: newShapeStyle !== null, onSet: () => { useAsDefaultShapeStyle() }, onReset: () => { resetDefaultShapeStyle() } } : null}
         corners={(() => { const choice = cornersChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { rounded: choice === 'sharp', onChange: setSelectedCorners } })()}
         changeShape={(() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })()}
-        flip={canFlipSelection(strokesRef.current, currentSelectionKeys()) ? { onFlip: (axis) => { flipSelection(axis) } } : null}
+        flip={canFlipSelection(strokesRef.current, flipKeysWithLabels()) ? { onFlip: (axis) => { flipSelection(axis) } } : null}
         sameSize={canSameSize(strokesRef.current, currentSelectionKeys()) ? { onSameSize: (mode) => { sameSizeSelection(mode) } } : null}
         boundaryTools={currentSelectionKeys().size > 0 ? { onFocus: () => { startFocus() }, onAddBoundary: () => { addBoundaryAroundSelection() }, onSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()) ? () => { selectConnectedItems(false) } : null } : null}
         selectionTools={inputMode !== 'desktop' && currentSelectionKeys().size > 0 ? (() => {

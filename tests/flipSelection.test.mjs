@@ -96,10 +96,11 @@ test('attached connector ends mirror inside their box and follow it, selected or
 
 test('a connector ending on an unselected box keeps that anchor; free ends mirror', () => {
   const items = [box(1, 500, 0), conn(1, { start: pt(0, 0), end: pt(600, 30), endAttachment: { rectangleId: 1, offsetX: 100, offsetY: 30 } })]
-  const out = flipSelectionItems(items, keys('connector:1'), 'horizontal')
+  assert.equal(flipSelectionItems(items, keys('connector:1'), 'horizontal'), null, 'only the free point defines the extent, so it maps onto itself: nothing changes')
+  const out = flipSelectionItems([...items, conn(2, { start: pt(0, 50), end: pt(100, 50) })], keys('connector:1', 'connector:2'), 'horizontal')
   const c = find(out, 'connector', 1)
   assert.equal(c.end.x, 600)
-  assert.equal(c.start.x, 0, 'only the free point defines the extent, so it maps onto itself')
+  assert.equal(c.start.x, 100, 'free end mirrored in the extent of the selected free points')
   assert.deepEqual(c.endAttachment, items[1].endAttachment)
 })
 
@@ -177,4 +178,26 @@ test('help list, menu chips, palette, panel and wiring', () => {
   assert.match(app, /flip=\{canFlipSelection\(/)
   assert.match(panel, /aria-label="Flip horizontal"[\s\S]*?onFlip\('horizontal'\)/)
   assert.match(panel, /aria-label="Flip vertical"[\s\S]*?onFlip\('vertical'\)/)
+})
+
+test('flip: box labels move with their box and stay centred in it', () => {
+  const items = [box(1, 0, 0, 100, 60), box(2, 300, 0, 100, 60), text(1, 30, 20), text(2, 330, 20)]
+  const out = flipSelectionItems(items, all(items), 'horizontal')
+  for (const id of [1, 2]) {
+    const r = find(out, 'rectangle', id); const l = find(out, 'text', id)
+    assert.equal(l.x - r.x, find(items, 'text', id).x - find(items, 'rectangle', id).x, 'label keeps its offset in its box')
+  }
+  assert.equal(find(out, 'rectangle', 1).x, 300)
+  assert.equal(find(out, 'text', 1).x, 330)
+})
+
+test('flip: nothing moved returns null', () => {
+  const items = [box(1, 0, 0, 100, 60), box(2, 0, 100, 100, 60)]
+  assert.equal(flipSelectionItems(items, all(items), 'horizontal'), null)
+  assert.notEqual(flipSelectionItems(items, all(items), 'vertical'), null)
+})
+
+test('flip wiring: App adds labels inside selected boxes before flipping', () => {
+  assert.match(app, /flipKeysWithLabels/)
+  assert.ok(!/canFlipSelection\(strokesRef\.current, currentSelectionKeys\(\)\)/.test(app))
 })

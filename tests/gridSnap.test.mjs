@@ -53,7 +53,7 @@ test('gridSnapApplies: desktop mouse only', () => {
 test('gridDots covers the view and is capped', () => {
   const dots = grid.gridDots({ x: -10, y: -10, width: 50, height: 30 }, 20)
   assert.deepEqual(dots.map((d) => [d.x, d.y]), [[0, 0], [20, 0], [40, 0], [0, 20], [20, 20], [40, 20]])
-  assert.equal(grid.gridDots({ x: 0, y: 0, width: 100000, height: 100000 }, 20).length, 0)
+  assert.ok(grid.gridDots({ x: 0, y: 0, width: 100000, height: 100000 }, 20).length <= 4000)
 })
 
 test('setting: off by default, saved per device, safe with throwing storage', () => {
@@ -88,7 +88,21 @@ test('wiring: palette, menu, toast, guides skipped, gated to desktop mouse', () 
   const gridBranch = app.indexOf('if (grid !== null)', dragStart)
   const guideSnap = app.indexOf('snapForDrag(true', dragStart)
   assert.ok(dragStart > 0 && gridBranch > dragStart && gridBranch < guideSnap, 'grid branch returns before smart guides')
-  assert.match(app, /snapResizeBounds\(bounds, activeResize\.handle, resizeGrid\)/)
+  assert.match(app, /snapResizeBounds\([^;]*activeResize\.handle, resizeGrid\)/)
   assert.match(app, /snapToGrid\(point\.x, createGrid\)/)
   assert.match(app, /gridSize !== null && pageTemplateRef\.current === 'blank'/)
+})
+
+test('gridDots doubles the step instead of vanishing when over the cap', () => {
+  const dots = grid.gridDots({ x: 0, y: 0, width: 1920, height: 1080 }, 5, 4000)
+  assert.ok(dots.length > 0 && dots.length <= 4000)
+  assert.ok(dots.every((d) => d.x % 5 === 0 && d.y % 5 === 0))
+  assert.equal(grid.gridDots({ x: 0, y: 0, width: 100, height: 100 }, 20).length, 36)
+})
+
+test('unpaddedSelectionBounds uses the raw box edge, not the stroke-padded one', () => {
+  const b = { kind: 'rectangle', id: 1, x: 40, y: 60, width: 100, height: 50, strokeColor: '#000', strokeWidth: 4 }
+  const bounds = grid.unpaddedSelectionBounds([b], new Set(['rectangle:1']))
+  assert.deepEqual([bounds.x, bounds.y], [40, 60])
+  assert.match(app, /unpaddedSelectionBounds\(routeConnectors\(originalItems\), keys\)/)
 })

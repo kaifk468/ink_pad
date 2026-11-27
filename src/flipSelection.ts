@@ -7,6 +7,7 @@
  */
 import { canvasItemKey, isItemLocked, translateInkBox, type CanvasItem, type ConnectorAttachment, type ConnectorObject, type Point, type RectangleObject } from './canvasModel'
 import { bendableMiddle, routeConnector } from './connectorRoute'
+import { isFlowBox, labelInsideBox } from './diagramFlow'
 
 export type FlipAxis = 'horizontal' | 'vertical'
 
@@ -35,10 +36,22 @@ export function flipSelectionItems(items: CanvasItem[], keys: ReadonlySet<string
   const picked = targets(items, keys)
   const flippedBoxes = new Map<number, RectangleObject>()
   for (const item of picked) if (item.kind === 'rectangle') flippedBoxes.set(item.id, item)
+  // A selected label sitting inside a selected box travels with that box (translated by the box's delta, never mirrored on its own).
+  const labelOwner = new Map<number, RectangleObject>()
+  for (const item of picked) {
+    if (item.kind !== 'text') continue
+    let owner: RectangleObject | null = null
+    for (const box of flippedBoxes.values()) {
+      if (!isFlowBox(box) || !labelInsideBox(item, box)) continue
+      if (!owner || box.width * box.height < owner.width * owner.height) owner = box
+    }
+    if (owner) labelOwner.set(item.id, owner)
+  }
   const extent: Extent = { min: Infinity, max: -Infinity }
   const lo = (b: { x: number; y: number }) => (horizontal ? b.x : b.y)
   const size = (b: { width: number; height: number }) => (horizontal ? b.width : b.height)
   for (const item of picked) {
+    if (item.kind === 'text' && labelOwner.has(item.id)) continue
     if (item.kind === 'rectangle' || item.kind === 'text' || item.kind === 'code') { grow(extent, lo(item)); grow(extent, lo(item) + size(item)) }
     else if (item.kind === 'stroke') for (const p of item.points) grow(extent, horizontal ? p.x : p.y)
     else if (item.kind === 'connector') {
@@ -55,6 +68,7 @@ export function flipSelectionItems(items: CanvasItem[], keys: ReadonlySet<string
   const movedBox = (box: RectangleObject): RectangleObject => {
     const original = rectangles.get(box.id) as RectangleObject
     const next = horizontal ? mirror(original.x) - original.width : mirror(original.y) - original.height
+    if (next === (horizontal ? original.x : original.y)) return original
     return horizontal ? { ...original, x: next } : { ...original, y: next }
   }
   const endpoint = (point: Point, attachment: ConnectorAttachment | undefined, selected: boolean) => {
@@ -77,17 +91,31 @@ export function flipSelectionItems(items: CanvasItem[], keys: ReadonlySet<string
       const moved = movedBox(item)
       const dx = horizontal ? moved.x - item.x : 0
       const dy = horizontal ? 0 : moved.y - item.y
+      if (moved === item && !item.angle) return item
       return { ...moved, ...(item.inkBox ? { inkBox: translateInkBox(item.inkBox, dx, dy) } : {}), ...(item.angle ? { angle: negate(item.angle) } : {}) }
     }
     if (item.kind === 'text') {
       if (!selected) return item
-      return { ...item, ...(horizontal ? { x: mirror(item.x) - item.width } : { y: mirror(item.y) - item.height }), ...(item.angle ? { angle: negate(item.angle) } : {}) }
+      const owner = labelOwner.get(item.id)
+      if (owner) {
+        const moved = movedBox(owner)
+        const shift = horizontal ? moved.x - owner.x : moved.y - owner.y
+        return shift === 0 ? item : { ...item, ...(horizontal ? { x: item.x + shift } : { y: item.y + shift }) }
+      }
+      const nextPos = horizontal ? mirror(item.x) - item.width : mirror(item.y) - item.height
+      if (nextPos === (horizontal ? item.x : item.y) && !item.angle) return item
+      return { ...item, ...(horizontal ? { x: nextPos } : { y: nextPos }), ...(item.angle ? { angle: negate(item.angle) } : {}) }
     }
     if (item.kind === 'code') {
       if (!selected) return item
-      return { ...item, ...(horizontal ? { x: mirror(item.x) - item.width } : { y: mirror(item.y) - item.height }) }
+      const next = horizontal ? mirror(item.x) - item.width : mirror(item.y) - item.height
+      return next === (horizontal ? item.x : item.y) ? item : { ...item, ...(horizontal ? { x: next } : { y: next }) }
     }
-    if (item.kind === 'stroke') return selected ? { ...item, points: item.points.map(mirrorPoint) } : item
+    if (item.kind === 'stroke') {
+      if (!selected) return item
+      const points = item.points.map(mirrorPoint)
+      return points.every((p, i) => p.x === item.points[i].x && p.y === item.points[i].y) ? item : { ...item, points }
+    }
     const startMoves = !!item.startAttachment && flippedBoxes.has(item.startAttachment.rectangleId)
     const endMoves = !!item.endAttachment && flippedBoxes.has(item.endAttachment.rectangleId)
     if (!selected && !startMoves && !endMoves) return item
@@ -101,6 +129,9 @@ export function flipSelectionItems(items: CanvasItem[], keys: ReadonlySet<string
       const middle = bendableMiddle(routeConnector(unbent, rectangles).routedPath ?? [])
       if (middle && (middle.axis === 'x') === horizontal) next.bend = -item.bend
     }
+    const same = (a: Point, b: Point) => a.x === b.x && a.y === b.y
+    const sameAttachment = (a?: ConnectorAttachment, b?: ConnectorAttachment) => a?.offsetX === b?.offsetX && a?.offsetY === b?.offsetY
+    if (same(next.start, item.start) && same(next.end, item.end) && sameAttachment(next.startAttachment, item.startAttachment) && sameAttachment(next.endAttachment, item.endAttachment) && next.bend === item.bend) return item
     return next
   })
   const changed = result.some((item, index) => item !== items[index])

@@ -78,7 +78,8 @@ export function insertBoxIntoConnector(
     y = Math.max(workspace.y, Math.min(y, workspace.y + workspace.height - INSERT_BOX_HEIGHT))
   }
   const plain = createShapeBox(ids.rectangle, x, y, INSERT_BOX_WIDTH, INSERT_BOX_HEIGHT, connector.strokeColor, connector.strokeWidth, 'rectangle')
-  const box = applyNewShapeStyle(plain, options.style ?? null)
+  const styled = applyNewShapeStyle(plain, options.style ?? null)
+  const box: RectangleObject = connector.group !== undefined ? { ...styled, group: connector.group } : styled
 
   const toBox = (side: Side): { point: Point; attachment: ConnectorAttachment } => {
     const attachment = sideAttachment(box, side)

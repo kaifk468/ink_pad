@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CanvasItem } from '../canvasModel'
 import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, isLossyParse, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
 import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadStoredDocument, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
@@ -1221,7 +1221,8 @@ export function useDocuments(host: DocumentHost) {
   }, [])
 
   /** Library search inside diagrams: reads only a local copy (this browser's store, or Drive's browser cache). No network, no device-folder access. */
-  const loadForSearch = (id: string) => loadLocalCopyForSearch(backendRef.current.kind, id, { browserDocument: loadStoredDocument, driveCached: (docId) => getDriveCache().get(docId) })
+  // Stable identity: HomeScreen's search scan depends on it and must not restart on every render.
+  const loadForSearch = useCallback((id: string) => loadLocalCopyForSearch(backendRef.current.kind, id, { browserDocument: loadStoredDocument, driveCached: (docId) => getDriveCache().get(docId) }), [])
 
   return {
     loadForSearch, filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,

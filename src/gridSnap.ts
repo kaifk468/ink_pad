@@ -4,7 +4,7 @@
  * never call into this. The faint dot grid drawn during a gesture is transient render output, not an item.
  */
 
-import type { RectangleBounds, RectangleResizeHandle } from './canvasModel'
+import { getCanvasSelectionBounds, type CanvasItem, type RectangleBounds, type RectangleResizeHandle } from './canvasModel'
 import { pageSpacingUnits, type PageSpacing, type PageTemplate } from './pageTemplates'
 
 export const GRID_SNAP_KEY = 'inkpad.snapToGrid'
@@ -72,8 +72,21 @@ export function gridDots(view: RectangleBounds, grid: number, maxDots = 4000): {
   const y1 = Math.floor((view.y + view.height) / grid)
   const cols = x1 - x0 + 1
   const rows = y1 - y0 + 1
-  if (cols <= 0 || rows <= 0 || cols * rows > maxDots) return []
+  if (cols <= 0 || rows <= 0) return []
+  // Over the cap: double the step (dots stay on multiples of the grid) until the count fits.
+  let step = 1
+  while (Math.ceil(cols / step) * Math.ceil(rows / step) > maxDots && step < 1 << 20) step *= 2
   const dots: { x: number; y: number }[] = []
-  for (let row = y0; row <= y1; row++) for (let col = x0; col <= x1; col++) dots.push({ x: col * grid + 0, y: row * grid + 0 })
+  for (let row = Math.ceil(y0 / step) * step; row <= y1; row += step) for (let col = Math.ceil(x0 / step) * step; col <= x1; col += step) dots.push({ x: col * grid + 0, y: row * grid + 0 })
   return dots
+}
+
+/** Selection bounds without the stroke-width padding of getCanvasSelectionBounds: the raw top-left a grid snap should use. */
+export function unpaddedSelectionBounds(items: CanvasItem[], keys: ReadonlySet<string>): RectangleBounds | null {
+  const bare = items.map((item): CanvasItem => {
+    if (item.kind === 'rectangle' || item.kind === 'connector') return { ...item, strokeWidth: 0 }
+    if (item.kind === 'stroke') return { ...item, width: 0 }
+    return item
+  })
+  return getCanvasSelectionBounds(bare, keys)
 }
