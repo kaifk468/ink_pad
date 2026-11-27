@@ -21,10 +21,41 @@ export const DEFAULT_INPUT_MODE: InputMode = 'tablet'
 
 const INPUT_MODE_KEY = 'inkpad.inputMode'
 
-export function loadInputMode(storage?: Pick<Storage, 'getItem'>): InputMode {
+/** What the device looks like, for the first-visit default (no stored choice yet). */
+export interface InputDeviceHints {
+  maxTouchPoints: number
+  finePointer: boolean
+  canHover: boolean
+}
+
+function readDeviceHints(): InputDeviceHints | null {
+  try {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null
+    return {
+      maxTouchPoints: typeof navigator !== 'undefined' ? navigator.maxTouchPoints ?? 0 : 0,
+      finePointer: window.matchMedia('(pointer: fine)').matches,
+      canHover: window.matchMedia('(hover: hover)').matches,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * First-visit default: a mouse-only computer (no touch points, fine pointer, hover) starts in Desktop mode.
+ * Anything with touch (tablets, phones, touch laptops) keeps the Tablet default, so pen devices are unchanged.
+ */
+export function defaultInputModeFor(hints: InputDeviceHints | null): InputMode {
+  if (!hints) return DEFAULT_INPUT_MODE
+  return hints.maxTouchPoints === 0 && hints.finePointer && hints.canHover ? 'desktop' : DEFAULT_INPUT_MODE
+}
+
+export function loadInputMode(storage?: Pick<Storage, 'getItem'>, hints?: InputDeviceHints | null): InputMode {
   try {
     const source = storage ?? window.localStorage
-    return source.getItem(INPUT_MODE_KEY) === 'desktop' ? 'desktop' : DEFAULT_INPUT_MODE
+    const stored = source.getItem(INPUT_MODE_KEY)
+    if (stored === 'desktop' || stored === 'tablet') return stored
+    return defaultInputModeFor(hints === undefined ? readDeviceHints() : hints)
   } catch {
     return DEFAULT_INPUT_MODE
   }

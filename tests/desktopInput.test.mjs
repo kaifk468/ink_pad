@@ -384,3 +384,21 @@ test('App deletes the selection as one undo step (keys and the single selected b
   const format = await readFile(new URL('../src/documentFormat.ts', import.meta.url), 'utf8')
   assert.doesNotMatch(format, /deleteSelection|selectAll|canDelete/)
 })
+
+test('first visit on a mouse-only computer starts in Desktop mode; touch devices and stored choices are unchanged', () => {
+  const mouse = { maxTouchPoints: 0, finePointer: true, canHover: true }
+  const tablet = { maxTouchPoints: 10, finePointer: false, canHover: false }
+  const penTablet = { maxTouchPoints: 10, finePointer: true, canHover: true }
+  const touchLaptop = { maxTouchPoints: 10, finePointer: true, canHover: true }
+  assert.equal(input.defaultInputModeFor(mouse), 'desktop')
+  assert.equal(input.defaultInputModeFor(tablet), 'tablet')
+  assert.equal(input.defaultInputModeFor(penTablet), 'tablet')
+  assert.equal(input.defaultInputModeFor(touchLaptop), 'tablet')
+  assert.equal(input.defaultInputModeFor({ maxTouchPoints: 0, finePointer: false, canHover: false }), 'tablet')
+  assert.equal(input.defaultInputModeFor(null), 'tablet')
+  assert.equal(input.loadInputMode(memoryStorage(), mouse), 'desktop')
+  assert.equal(input.loadInputMode(memoryStorage(), tablet), 'tablet')
+  assert.equal(input.loadInputMode(memoryStorage({ 'inkpad.inputMode': 'tablet' }), mouse), 'tablet')
+  assert.equal(input.loadInputMode(memoryStorage({ 'inkpad.inputMode': 'desktop' }), tablet), 'desktop')
+  assert.equal(input.loadInputMode(brokenStorage, mouse), 'tablet')
+})
