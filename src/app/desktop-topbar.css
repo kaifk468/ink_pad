@@ -42,7 +42,7 @@
 .app-shell[data-input-mode="desktop"] .top-status-text { overflow: hidden; text-overflow: ellipsis; }
 .app-shell[data-input-mode="desktop"] .top-status-dot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--ip-delight); }
 .app-shell[data-input-mode="desktop"] .top-status-pill.tone-ok .top-status-dot { background: var(--ip-success); }
-.app-shell[data-input-mode="desktop"] .top-status-pill.tone-idle .top-status-dot { background: var(--ip-faint, var(--ip-muted)); opacity: .6; }
+.app-shell[data-input-mode="desktop"] .top-status-pill.tone-idle .top-status-dot { background: var(--ip-faint, var(--ip-muted)); }
 .app-shell[data-input-mode="desktop"] .top-status-pill.tone-bad .top-status-dot { background: var(--ip-danger); }
 .app-shell[data-input-mode="desktop"] .top-status-pill.tone-bad { color: var(--ip-danger); }
 .app-shell[data-input-mode="desktop"] .top-status-dot.just-saved { animation: ip-status-pulse var(--ip-dur-menu) var(--ip-ease-out) 1; }

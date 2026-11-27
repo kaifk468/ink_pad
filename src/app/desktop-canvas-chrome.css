@@ -66,7 +66,7 @@
 /* Page chip: one line "1 / 3" (tooltip and aria-label read "Page 1 of 3"). */
 .app-shell[data-input-mode="desktop"] .page-controls .page-indicator.page-indicator-inline { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 2px; padding: 6px 0; font-size: 13px; }
 .app-shell[data-input-mode="desktop"] .page-controls .page-indicator-inline span { font-size: 13px; font-weight: 700; }
-.app-shell[data-input-mode="desktop"] .page-controls .page-indicator-inline i { font-style: normal; color: var(--ip-faint, var(--ip-muted)); font-weight: 500; }
+.app-shell[data-input-mode="desktop"] .page-controls .page-indicator-inline i { font-style: normal; color: var(--ip-muted); margin: 0 2px; font-weight: 500; }
 .app-shell[data-input-mode="desktop"] .page-controls .page-indicator-inline small { margin: 0; padding: 0; min-width: 0; border-top: 0; font-size: 12px; font-weight: 500; color: var(--ip-muted); }
 .app-shell[data-input-mode="desktop"] .page-controls .page-indicator-inline .page-indicator-name { flex: 1 0 100%; text-align: center; }
 

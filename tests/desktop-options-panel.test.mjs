@@ -31,7 +31,7 @@ test('the rendered desktop order follows DESKTOP_SECTION_ORDER and colour includ
 test('header has a name, a swatch and a chevron button with aria-expanded and a label', () => {
   assert.match(panel, /className="options-header"/)
   assert.match(panel, /className="options-chevron"[^>]*aria-label=\{collapsed \? 'Expand options' : 'Collapse options'\}[^>]*aria-expanded=\{!collapsed\}/)
-  assert.match(panel, /className="options-header-title" onClick=\{toggleCollapsed\}/)
+  assert.match(panel, /className="options-header-title" aria-hidden="true" onClick=\{toggleCollapsed\}/)
   assert.match(panel, /props\.contextName \?\? 'Options'/)
   assert.match(panel, /collapsed \? ' is-collapsed' : ''/)
   assert.match(panel, /\{!collapsed && <div className="options-body"/)
@@ -44,10 +44,24 @@ test('secondary actions sit behind a closed "More actions" disclosure, not in th
   assert.match(panel, /const \[moreOpen, setMoreOpen\] = useState\(false\)/)
   assert.match(panel, /className="options-more-toggle"[^>]*aria-expanded=\{moreOpen\}/)
   assert.match(panel, /<span>More actions<\/span>/)
-  assert.match(panel, /moreOpen && <div className="options-more-body"[^>]*><span className="panel-label">More<\/span>\{changeShapeEl\}\{boundaryToolsEl\}/)
+  assert.match(panel, /moreOpen && <div className="options-more-body"[^>]*><span className="panel-label">More<\/span>\{rotationEl\}\{newShapeDefaultEl\}\{changeShapeEl\}\{boundaryToolsEl\}/)
   // Change shape / boundary tools are not part of the always-visible sections.
   const sections = panel.slice(panel.indexOf('const sectionNodes'), panel.indexOf('const hasMore'))
-  assert.doesNotMatch(sections, /changeShapeEl|boundaryToolsEl/)
+  assert.doesNotMatch(sections, /changeShapeEl|boundaryToolsEl|rotationEl|newShapeDefaultEl/)
+})
+
+test('every element built in ContextPanel is rendered on tablet or in a desktop section (no silently dropped controls)', () => {
+  const built = [...panel.matchAll(/\n  const (\w+El) = /g)].map((m) => m[1])
+  assert.ok(built.length > 20)
+  const tablet = panel.slice(panel.indexOf('const tabletBody'), panel.indexOf('if (!props.desktop)'))
+  const desktop = panel.slice(panel.indexOf('const sectionNodes'))
+  // App passes these only on tablet (inputMode !== 'desktop'), so the desktop panel never needs them.
+  const tabletOnly = new Set(['selectionToolsEl', 'movePagesEl'])
+  for (const name of tabletOnly) assert.match(app, new RegExp(`${name.replace('El', '')}=\\{inputMode !== 'desktop'`), name)
+  for (const name of built) {
+    assert.match(tablet, new RegExp(`\\b${name}\\b`), `${name} is on tablet`)
+    if (!tabletOnly.has(name)) assert.match(desktop, new RegExp(`\\b${name}\\b`), `${name} is rendered on desktop`)
+  }
 })
 
 test('motion: fade + translateY(-4px) at the menu duration, only opacity/transform, no height animation', () => {
