@@ -98,7 +98,7 @@
 .app-shell[data-input-mode="desktop"] .canvas-context-separator { background: var(--ip-line); margin: 4px 6px; }
 .app-shell[data-input-mode="desktop"] .canvas-context-chips { padding: 4px 6px 6px; gap: 4px; }
 .app-shell[data-input-mode="desktop"] .canvas-context-chips-caption { color: var(--ip-muted); font: 600 11px/16px 'DM Sans', system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; }
-.app-shell[data-input-mode="desktop"] .canvas-context-chips-row { gap: 4px; }
+.app-shell[data-input-mode="desktop"] .canvas-context-chips-row { display: flex; flex-wrap: wrap; gap: 4px; }
 .app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip {
   min-height: 28px; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--ip-surface-2); font: 500 12px/1 'DM Sans', system-ui, sans-serif;
 }
@@ -106,7 +106,49 @@
 .app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip:disabled { color: var(--ip-faint); }
 
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .selection-actions > .clear-selection-button:last-child:nth-child(odd) { grid-column: 1 / -1; }
-.app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip { padding: 0 7px; }
+.app-shell[data-input-mode="desktop"] .canvas-context-menu .canvas-context-chip { padding: 0 6px; font-size: 12px; }
+
+/* Command palette and shortcut help (both render inside .app-shell). Only transform/opacity animate. */
+.app-shell[data-input-mode="desktop"] .command-palette-backdrop { padding-top: 15vh; background: rgba(31, 33, 38, .32); }
+.app-shell[data-input-mode="desktop"] .command-palette,
+.app-shell[data-input-mode="desktop"] .shortcut-help {
+  border: 1px solid var(--ip-line); border-radius: var(--ip-radius-sheet); background: var(--ip-surface); color: var(--ip-text); box-shadow: var(--ip-shadow-3);
+  font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; animation: ip-dialog-in var(--ip-dur-menu) var(--ip-ease-out) both;
+}
+@keyframes ip-dialog-in { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell[data-input-mode="desktop"] .command-palette,
+  .app-shell[data-input-mode="desktop"] .shortcut-help { animation: none; }
+}
+.app-shell[data-input-mode="desktop"] .command-palette { width: min(600px, 100%); }
+.app-shell[data-input-mode="desktop"] .command-palette-search { display: flex; align-items: center; gap: 10px; height: 52px; box-sizing: border-box; padding: 0 16px; border-bottom: 1px solid var(--ip-line); }
+.app-shell[data-input-mode="desktop"] .command-palette-search-icon { flex: none; color: var(--ip-muted); }
+.app-shell[data-input-mode="desktop"] .command-palette-input { flex: 1; min-width: 0; width: auto; padding: 0; border: 0; font: 400 16px/1.2 'DM Sans', system-ui, sans-serif; color: var(--ip-text); }
+.app-shell[data-input-mode="desktop"] .command-palette-input::placeholder { color: var(--ip-faint); }
+.app-shell[data-input-mode="desktop"] .command-palette-list { max-height: min(420px, 60vh); padding: 6px 8px 8px; }
+.app-shell[data-input-mode="desktop"] .command-palette-group-title { padding: 10px 10px 4px; color: var(--ip-muted); font: 700 11px/16px 'DM Sans', system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+.app-shell[data-input-mode="desktop"] .command-palette-row { position: relative; height: auto; min-height: 40px; padding: 6px 10px 6px 12px; border-radius: 10px; color: var(--ip-text); }
+.app-shell[data-input-mode="desktop"] .command-palette-row.active { background: var(--ip-accent-soft); }
+.app-shell[data-input-mode="desktop"] .command-palette-row.active::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--ip-accent); }
+.app-shell[data-input-mode="desktop"] .command-palette-label { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; overflow: visible; white-space: normal; font-size: 14px; line-height: 20px; }
+.app-shell[data-input-mode="desktop"] .command-palette-label small { margin: 0; color: var(--ip-muted); font-size: 12px; line-height: 16px; }
+.app-shell[data-input-mode="desktop"] .command-palette-group-chip { flex: none; padding: 1px 8px; border-radius: 999px; background: var(--ip-surface-2); color: var(--ip-muted); font-size: 11px; line-height: 16px; }
+.app-shell[data-input-mode="desktop"] .command-palette-row kbd,
+.app-shell[data-input-mode="desktop"] .command-palette-esc,
+.app-shell[data-input-mode="desktop"] .shortcut-row kbd {
+  flex: none; padding: 1px 6px; border: 1px solid var(--ip-line); border-bottom-width: 2px; border-radius: var(--ip-radius-chip); background: var(--ip-surface); color: var(--ip-muted);
+  font: 600 11px/16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.app-shell[data-input-mode="desktop"] .command-palette-empty { padding: 24px 10px; color: var(--ip-muted); }
+.app-shell[data-input-mode="desktop"] .shortcut-help { width: min(560px, 100%); padding: 18px 22px 22px; }
+.app-shell[data-input-mode="desktop"] .shortcut-help h3 { margin: 18px 0 6px; color: var(--ip-muted); font: 700 11px/16px 'DM Sans', system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+.app-shell[data-input-mode="desktop"] .shortcut-row { border-bottom: 1px solid var(--ip-line); }
+.app-shell[data-input-mode="desktop"] .shortcut-row dt { color: var(--ip-text); }
+@media (min-width: 1100px) {
+  .app-shell[data-input-mode="desktop"] .shortcut-help { width: min(960px, 100%); }
+  .app-shell[data-input-mode="desktop"] .shortcut-help-groups { column-count: 2; column-gap: 40px; }
+  .app-shell[data-input-mode="desktop"] .shortcut-help-group { break-inside: avoid; }
+}
 
 /* Context menu keyboard focus: an accent ring inside the row. */
 .app-shell[data-input-mode="desktop"] .canvas-context-menu button:focus-visible { outline: 2px solid var(--ip-accent); outline-offset: -2px; }
