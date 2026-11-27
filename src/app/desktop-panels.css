@@ -128,6 +128,8 @@
   box-shadow: inset 0 0 0 1px var(--ip-line);
 }
 
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .color-choices.has-heading { display: flex; flex-direction: column; gap: 8px; }
+
 /* Width block: presets row, then a compact one-line slider with the px value right-aligned. */
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .selection-width .stroke-width-slider {
   grid-template-columns: minmax(0, 1fr) auto; gap: 8px; min-height: 24px;
