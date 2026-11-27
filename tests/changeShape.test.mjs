@@ -28,7 +28,7 @@ test('HLD boxes offer the other HLD shapes only', () => {
   const b = hld(1, 'database')
   const offer = changeShapeChoices([b], keys(b))
   assert.equal(offer.family, 'hld')
-  assert.equal(offer.choices.length, 13)
+  assert.equal(offer.choices.length, 19)
   assert.ok(!ids(offer).includes('database'))
   assert.ok(ids(offer).includes('queue'))
   assert.ok(!ids(offer).includes('diamond'))

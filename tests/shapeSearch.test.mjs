@@ -15,7 +15,7 @@ const first = (query) => search.searchShapes(query)[0]
 test('every HLD shape in the trays, and every basic tray entry, is in the table', () => {
   const ids = new Set(search.SHAPE_SEARCH_TABLE.map((entry) => entry.id))
   const trayShapes = [...insertTray.matchAll(/\{ shape: '(\w+)'/g)].map((m) => m[1])
-  assert.equal(trayShapes.length, 14)
+  assert.equal(trayShapes.length, 20)
   for (const shape of trayShapes) assert.ok(ids.has(shape), `${shape} missing`)
   for (const shape of hld.HLD_SHAPES) assert.ok(ids.has(shape), `${shape} missing`)
   for (const id of ['text', 'shapes', 'sticky', 'classBox']) assert.ok(ids.has(id))
@@ -29,7 +29,7 @@ test('tech names find their shape', () => {
   const expected = {
     redis: 'cache', memcached: 'cache', valkey: 'cache', kafka: 'stream', kinesis: 'stream', pubsub: 'stream', s3: 'objectStorage', minio: 'objectStorage',
     nginx: 'loadBalancer', envoy: 'loadBalancer', postgres: 'database', dynamodb: 'database', cassandra: 'database', cloudfront: 'cdn', cloudflare: 'cdn',
-    ec2: 'server', pod: 'server', lambda: 'worker', cron: 'worker', kong: 'apiGateway', apigee: 'apiGateway', sqs: 'queue', rabbitmq: 'queue', celery: 'queue',
+    ec2: 'server', pod: 'server', lambda: 'function', cron: 'scheduler', elasticsearch: 'search', route53: 'dns', stripe: 'external', grafana: 'monitoring', serverless: 'function', prometheus: 'monitoring', opensearch: 'search', 'third party': 'external', 'cron job': 'scheduler', 'domain name': 'dns', kong: 'apiGateway', apigee: 'apiGateway', sqs: 'queue', rabbitmq: 'queue', celery: 'queue',
     microservice: 'service', actor: 'user', spa: 'browser', android: 'mobile', diamond: 'shapes', rectangle: 'shapes', 'code block': 'classBox', sticky: 'sticky',
   }
   for (const [query, id] of Object.entries(expected)) assert.equal(first(query)?.id, id, query)

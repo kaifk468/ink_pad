@@ -5,7 +5,7 @@ export { HLD_SHAPES } from './canvasModel'
 export type { HldShape } from './canvasModel'
 
 /**
- * HLD (system design) shapes: Database, Queue, Service, User, Browser, Mobile, Cache, Load balancer, CDN, API gateway, Server, Object storage, Stream and Worker. Each is one rectangle with an ink area (the same object as an
+ * HLD (system design) shapes: Database, Queue, Service, User, Browser, Mobile, Cache, Load balancer, CDN, API gateway, Server, Object storage, Stream, Worker, DNS, Search, Function, Scheduler, External service and Monitoring. Each is one rectangle with an ink area (the same object as an
  * ink class box, without the three sections) and an `hldShape` kind that only changes how the outline is drawn. So
  * writing, moving, resizing, lasso, erasers, connector snapping, export and saving all work as they do for class boxes.
  * The outline is one SVG path string shared by the canvas (Path2D) and the SVG/PNG export.
@@ -14,6 +14,7 @@ export const HLD_SHAPE_LABELS: Record<HldShape, string> = {
   database: 'Database', queue: 'Queue', service: 'Service',
   user: 'User', browser: 'Browser', mobile: 'Mobile', cache: 'Cache', loadBalancer: 'Load balancer', cdn: 'CDN',
   apiGateway: 'API gateway', server: 'Server', objectStorage: 'Object storage', stream: 'Stream', worker: 'Worker',
+  dns: 'DNS', search: 'Search', function: 'Function', scheduler: 'Scheduler', external: 'External service', monitoring: 'Monitoring',
 }
 /** Size of a shape made by a plain tap. */
 export const HLD_DEFAULT_SIZE: Record<HldShape, { width: number; height: number }> = {
@@ -31,6 +32,12 @@ export const HLD_DEFAULT_SIZE: Record<HldShape, { width: number; height: number 
   objectStorage: { width: 260, height: 240 },
   stream: { width: 460, height: 130 },
   worker: { width: 340, height: 170 },
+  dns: { width: 320, height: 170 },
+  search: { width: 340, height: 190 },
+  function: { width: 320, height: 170 },
+  scheduler: { width: 320, height: 170 },
+  external: { width: 320, height: 190 },
+  monitoring: { width: 340, height: 190 },
 }
 
 /** A finger tap moves a pixel or two, which counts as a drag and left the shape at its minimum size: growing less than this many screen pixels is still a tap. */
@@ -69,6 +76,37 @@ const streamTick = (h: number) => Math.min(h * 0.2, 18)
 const workerRadius = (w: number, h: number) => Math.max(8, Math.min(Math.min(w, h) * 0.13, 22))
 const workerCorner = (w: number, h: number) => Math.min(Math.min(w, h) * 0.22, 36)
 const workerGearCentre = (w: number, h: number) => workerRadius(w, h) + workerCorner(w, h) * 0.3 + 6
+// DNS, Search, Function, Scheduler and Monitoring: a rounded box with a small mark centred at the top (label below). External service is a cloud with a small arrow.
+const badgeSize = (w: number, h: number) => Math.max(12, Math.min(h * 0.24, w * 0.3, 34))
+const badgeBand = (w: number, h: number) => badgeSize(w, h) + 14
+const BADGE_SHAPES: readonly HldShape[] = ['dns', 'search', 'function', 'scheduler', 'monitoring']
+
+/** The mark of a badge shape, centred at the top of the box. */
+function badgePath(shape: HldShape, x: number, y: number, w: number, h: number): string {
+  const m = badgeSize(w, h)
+  const cx = x + w / 2
+  const cy = y + 8 + m / 2
+  const r = m / 2
+  const p = (u: number, v: number) => `${n(cx + (u - 0.5) * m)} ${n(cy + (v - 0.5) * m)}`
+  if (shape === 'dns') {
+    const rx = r * 0.45
+    return circlePath(cx, cy, r) + `M${n(cx)} ${n(cy - r)}A${n(rx)} ${n(r)} 0 0 1 ${n(cx)} ${n(cy + r)}A${n(rx)} ${n(r)} 0 0 1 ${n(cx)} ${n(cy - r)}Z`
+      + `M${n(cx - r)} ${n(cy)}H${n(cx + r)}`
+  }
+  if (shape === 'search') {
+    // A magnifier over a stack of index rows.
+    const lx = cx + r * 0.4 + r * 0.1
+    const ly = cy - r * 0.25
+    const lr = r * 0.55
+    const bars = [-0.7, 0, 0.7].map((dy) => `M${n(cx - r * 1.3)} ${n(cy + r * dy)}H${n(cx - r * 0.35)}`).join('')
+    return circlePath(lx, ly, lr) + `M${n(lx + lr * 0.71)} ${n(ly + lr * 0.71)}L${n(cx + r * 1.35)} ${n(cy + r * 0.9)}` + bars
+  }
+  if (shape === 'function') return `M${p(0.18, 0.02)}L${p(0.38, 0.02)}L${p(0.86, 0.98)}M${p(0.6, 0.48)}L${p(0.14, 0.98)}`
+  if (shape === 'scheduler') return circlePath(cx, cy, r) + `M${n(cx)} ${n(cy - r * 0.62)}L${n(cx)} ${n(cy)}L${n(cx + r * 0.45)} ${n(cy + r * 0.25)}`
+  // monitoring: a pulse line
+  const q = (u: number, v: number) => `${n(cx + (u - 0.5) * 2 * m)} ${n(cy + (v - 0.5) * m)}`
+  return `M${q(0, 0.6)}H${n(cx + (0.28 - 0.5) * 2 * m)}L${q(0.4, 0.05)}L${q(0.56, 0.98)}L${q(0.68, 0.55)}H${n(cx + m)}`
+}
 
 /** Space the icon of a newer HLD shape takes inside the box: label text should stay out of it. Labels are centred in the box, so insets are symmetric (each side takes the larger one). */
 export function hldIconInsets(shape: HldShape, width: number, height: number): { left: number; right: number; top: number; bottom: number } {
@@ -82,6 +120,7 @@ export function hldIconInsets(shape: HldShape, width: number, height: number): {
     }
     case 'stream': { const side = streamArrow(width); return { ...none, left: side, right: side, top: streamTick(height), bottom: streamTick(height) } }
     case 'worker': { const band = workerGearCentre(width, height) + workerRadius(width, height); return { ...none, top: band, bottom: band } }
+    case 'dns': case 'search': case 'function': case 'scheduler': case 'monitoring': { const band = badgeBand(width, height); return { ...none, top: band, bottom: band } }
     default: return none
   }
 }
@@ -212,6 +251,14 @@ export function hldOutlinePath(rectangle: RectangleBounds, shape: HldShape): str
       }
     }
     return roundedRectPath(x, y, w, h, workerCorner(w, h)) + gear + 'Z' + circlePath(x + c, y + c, r * 0.3)
+  }
+  if (BADGE_SHAPES.includes(shape)) return roundedRectPath(x, y, w, h, Math.min(Math.min(w, h) * 0.2, 26)) + badgePath(shape, x, y, w, h)
+  if (shape === 'external') {
+    // A cloud (third party, outside our system) with a small arrow pointing out.
+    const cx = x + w / 2
+    const cy = y + h * 0.78
+    const s = Math.max(2, Math.min(w, h) * 0.07)
+    return hldOutlinePath(rectangle, 'cdn') + `M${n(cx - s)} ${n(cy + s)}L${n(cx + s)} ${n(cy - s)}M${n(cx - s * 0.1)} ${n(cy - s)}H${n(cx + s)}V${n(cy + s * 0.1)}`
   }
   return roundedRectPath(x, y, w, h, Math.min(Math.min(w, h) * 0.28, 44))
 }

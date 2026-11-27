@@ -38,6 +38,7 @@ export function shapeInnerArea(shape: RectangleObject): FitArea {
   else if (shape.hldShape === 'mobile') area = { width: w, height: h - hldMobileMargins.top - hldMobileMargins.bottom }
   else if (shape.hldShape === 'cache') area = { width: w, height: h - cacheBolt(w, h) - 12 }
   else if (shape.hldShape === 'loadBalancer') area = { width: w, height: h - balancerMark(h) - 16 }
+  else if (shape.hldShape === 'external') area = { width: w * 0.56, height: h * 0.34 }
   else if (shape.hldShape === 'cdn') area = { width: w * 0.6, height: h * 0.45 }
   else if (shape.hldShape) {
     // apiGateway, server, objectStorage, stream, worker: keep the label out of the icon.

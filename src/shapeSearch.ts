@@ -22,7 +22,13 @@ export const SHAPE_SEARCH_TABLE: ShapeSearchEntry[] = [
   { id: 'server', name: 'Server', aliases: ['ec2', 'vm', 'host', 'instance', 'container', 'pod', 'docker', 'kubernetes', 'machine'] },
   { id: 'objectStorage', name: 'Object storage', aliases: ['s3', 'blob', 'gcs', 'bucket', 'minio', 'azure blob', 'file storage'] },
   { id: 'stream', name: 'Stream', aliases: ['kafka', 'kinesis', 'pulsar', 'event stream', 'pubsub', 'pub/sub', 'event log', 'redpanda', 'eventhub'] },
-  { id: 'worker', name: 'Worker', aliases: ['lambda', 'cron', 'job', 'consumer', 'function', 'batch', 'background', 'scheduler'] },
+  { id: 'worker', name: 'Worker', aliases: ['job', 'consumer', 'batch', 'background'] },
+  { id: 'dns', name: 'DNS', aliases: ['domain name', 'route53', 'route 53', 'domain', 'nameserver', 'resolver'] },
+  { id: 'search', name: 'Search', aliases: ['elasticsearch', 'opensearch', 'solr', 'index', 'lucene', 'algolia', 'full text'] },
+  { id: 'function', name: 'Function', aliases: ['lambda', 'serverless', 'faas', 'cloud function', 'azure function'] },
+  { id: 'scheduler', name: 'Scheduler', aliases: ['cron', 'cron job', 'timer', 'clock', 'airflow', 'eventbridge'] },
+  { id: 'external', name: 'External service', aliases: ['third party', 'third-party', 'saas', 'third party api', 'cloud', 'stripe', 'twilio', 'vendor'] },
+  { id: 'monitoring', name: 'Monitoring', aliases: ['metrics', 'grafana', 'prometheus', 'alerting', 'logs', 'observability', 'datadog', 'cloudwatch'] },
 ]
 
 /** Lowest rank wins: 0 exact name, 1 name prefix, 2 alias exact, 3 alias prefix, 4 substring of name or alias. Ties keep table (tray) order. An empty query returns everything in tray order. */

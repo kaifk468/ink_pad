@@ -15,6 +15,7 @@ const line = (id, points, erase = false) => ({ kind: 'stroke', id, points, color
 const make = (shape, id = 1) => shapes.createHldShape(id, 100, 100, 300, 200, '#111', 3, shape)
 const NEW_SHAPES = ['user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn']
 const FIVE = ['apiGateway', 'server', 'objectStorage', 'stream', 'worker']
+const SIX = ['dns', 'search', 'function', 'scheduler', 'external', 'monitoring']
 const sheet = { width: 1000, height: 800, template: 'blank', backgroundColor: '#fff' }
 
 test('an HLD shape is an ink box with a shape kind and sensible default sizes', () => {
@@ -26,7 +27,7 @@ test('an HLD shape is an ink box with a shape kind and sensible default sizes', 
     assert.ok(size.width > 100 && size.height > 80)
     assert.ok(shapes.HLD_SHAPE_LABELS[shape])
   }
-  assert.deepEqual([...model.HLD_SHAPES], ['database', 'queue', 'service', ...NEW_SHAPES, ...FIVE])
+  assert.deepEqual([...model.HLD_SHAPES], ['database', 'queue', 'service', ...NEW_SHAPES, ...FIVE, ...SIX])
 })
 
 test('outlines: a cylinder has a full top ellipse and curved base, a queue has two caps with arrows, a service is a rounded box', () => {
@@ -207,13 +208,14 @@ function pathEndpoints(d) {
   const points = []
   let cx = 0
   let cy = 0
-  for (const [, cmd, args] of d.matchAll(/([MLHVAZ])([^MLHVAZ]*)/g)) {
+  for (const [, cmd, args] of d.matchAll(/([MLHVACZ])([^MLHVACZ]*)/g)) {
     const v = args.trim() === '' ? [] : args.trim().split(/[\s,]+/).map(Number)
     assert.ok(v.every(Number.isFinite), `finite numbers in ${cmd}${args}`)
     if (cmd === 'M' || cmd === 'L') [cx, cy] = v
     else if (cmd === 'H') cx = v[0]
     else if (cmd === 'V') cy = v[0]
     else if (cmd === 'A') [cx, cy] = [v[5], v[6]]
+    else if (cmd === 'C') [cx, cy] = [v[4], v[5]]
     else continue
     points.push([cx, cy])
   }
@@ -290,12 +292,57 @@ test('five more HLD shapes: wired into trays, command palette, change shape and 
   const tray = await readFile(new URL('../src/app/InsertTray.tsx', import.meta.url), 'utf8')
   for (const shape of FIVE) assert.match(tray, new RegExp(`shape: '${shape}'`))
   const more = tray.slice(tray.indexOf('export const MORE_HLD_ENTRIES'))
-  assert.equal((more.match(/shape: '/g) ?? []).length, 11, 'six round-1 shapes plus the five new ones share the More grid')
+  assert.equal((more.match(/shape: '/g) ?? []).length, 17, 'six round-1 shapes plus the five and the six newest share the More grid')
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
   assert.match(app, /HLD_SHAPES\.map\(\(shape\) => \(\{ id: `hld:\$\{shape\}`/)
   const change = await loadModule('changeShape.ts')
   const choices = change.changeShapeChoices([make('apiGateway', 1)].map((r) => box.addStrokeToInkBox(r, line(9, [p(150, 150), p(250, 160)]))), new Set(['rectangle:1']))
   assert.deepEqual(choices.choices.map((c) => c.id), [...model.HLD_SHAPES].filter((id) => id !== 'apiGateway'))
   assert.ok(FIVE.filter((shape) => shape !== 'apiGateway').every((shape) => choices.choices.some((c) => c.id === shape)))
-  assert.deepEqual([...model.HLD_SHAPES].slice(-5), FIVE)
+  assert.deepEqual([...model.HLD_SHAPES].slice(-11), [...FIVE, ...SIX])
+})
+
+test('round 10: six more HLD shapes (DNS, Search, Function, Scheduler, External service, Monitoring)', async () => {
+  assert.deepEqual(SIX.map((shape) => shapes.HLD_SHAPE_LABELS[shape]), ['DNS', 'Search', 'Function', 'Scheduler', 'External service', 'Monitoring'])
+  for (const shape of SIX) assert.ok(shapes.HLD_DEFAULT_SIZE[shape].width > 0 && shapes.HLD_DEFAULT_SIZE[shape].height > 0)
+  for (const shape of SIX) {
+    for (const [w, h] of [[32, 32], [96, 64], [190, 110], [300, 200], [460, 130], [900, 500], [40, 400]]) {
+      const x = 40
+      const y = 70
+      const d = shapes.hldOutlinePath({ x, y, width: w, height: h }, shape)
+      assert.ok(d.length > 20 && d.startsWith('M') && !/NaN|undefined|Infinity/.test(d), `${shape} ${w}x${h} path`)
+      for (const [px, py] of pathEndpoints(d)) assert.ok(px >= x - 0.01 && px <= x + w + 0.01 && py >= y - 0.01 && py <= y + h + 0.01, `${shape} ${w}x${h} point ${px},${py} inside`)
+    }
+  }
+  const r = { x: 0, y: 0, width: 300, height: 200 }
+  assert.equal(new Set([...FIVE, ...SIX, 'cdn', 'service'].map((shape) => shapes.hldOutlinePath(r, shape))).size, FIVE.length + SIX.length + 2, 'each has its own outline')
+  const fit = await loadModule('textFit.ts')
+  const mk = (shape) => [{ kind: 'rectangle', id: 1, x: 0, y: 0, width: 300, height: 200, strokeColor: '#111', strokeWidth: 2, hldShape: shape, inkBox: { top: 0, mid: 0, ink: [] } }]
+  const plain = fit.shapeInnerArea(mk('service')[0])
+  for (const shape of SIX) {
+    const a = fit.shapeInnerArea(mk(shape)[0])
+    assert.ok(a.width > 0 && a.height > 0 && (a.width < plain.width || a.height < plain.height), `${shape} label area`)
+    assert.ok(fit.findFitArea(mk(shape), { x: 150, y: 100 }))
+  }
+  for (const shape of SIX.filter((s) => s !== 'external')) { const i = shapes.hldIconInsets(shape, 300, 200); assert.ok(i.top > 0 && i.top === i.bottom, `${shape} symmetric insets`) }
+  const items = SIX.map((shape, i) => make(shape, i + 1))
+  const text = format.stringifyDocument(format.createDocument({ template: 'blank', background: 'white', items }))
+  const parsed = format.parseDocument(text)
+  assert.equal(parsed.ok, true)
+  assert.deepEqual(parsed.document.items.map((item) => item.hldShape), SIX)
+  assert.equal(JSON.parse(text).version, format.DOCUMENT_VERSION)
+  const again = format.parseDocument(format.stringifyDocument(format.createDocument({ template: 'blank', background: 'white', items: parsed.document.items })))
+  assert.deepEqual(again.document.items, parsed.document.items, 'resave unchanged')
+  const svg = exp.buildSheetSvg(items, { sheet, template: 'blank', backgroundColor: '#fff' })
+  for (const shape of SIX) assert.ok(svg.includes(shapes.hldOutlinePath(items[SIX.indexOf(shape)], shape)), `${shape} in SVG export`)
+  const change = await loadModule('changeShape.ts')
+  const choices = change.changeShapeChoices([box.addStrokeToInkBox(make('dns', 1), line(9, [p(150, 150), p(250, 160)]))], new Set(['rectangle:1']))
+  for (const shape of SIX.filter((s) => s !== 'dns')) assert.ok(choices.choices.some((c) => c.id === shape && c.label === shapes.HLD_SHAPE_LABELS[shape]), shape)
+  const { buildMermaid } = await loadModule('mermaidExport.ts')
+  const mm = buildMermaid(items)
+  for (const label of ['dns', 'search', 'function', 'scheduler', 'external service', 'monitoring']) assert.ok(mm.text.includes(`"${label}"`), `mermaid names ${label}`)
+  const { buildExcalidrawElements } = await loadModule('excalidrawExport.ts')
+  const ex = buildExcalidrawElements(items)
+  assert.ok(ex.count >= 6)
+  assert.ok(JSON.stringify(ex.elements).includes('External service'))
 })
