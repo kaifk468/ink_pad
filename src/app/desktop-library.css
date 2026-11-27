@@ -35,6 +35,8 @@
 .home-desktop .home-back:hover, .home-desktop .home-secondary:hover { background: var(--ip-surface-2); color: var(--ip-text); }
 .home-desktop .home-search { height: 40px; border: 1px solid transparent; border-radius: var(--ip-radius-control); background: var(--ip-surface-2); color: var(--ip-muted); }
 .home-desktop .home-search:focus-within { border-color: var(--ip-accent); background: var(--ip-surface); box-shadow: 0 0 0 2px var(--ip-accent-soft); }
+.home-desktop .home-search-kbd { flex: none; padding: 1px 7px; border: 1px solid var(--ip-line); border-bottom-width: 2px; border-radius: var(--ip-radius-chip); background: var(--ip-surface); color: var(--ip-muted); font: 600 11px/16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.home-desktop .home-search:focus-within .home-search-kbd { display: none; }
 .home-desktop .home-search input::placeholder { color: var(--ip-muted); opacity: 1; }
 .home-desktop .home-primary { border-color: var(--ip-accent) !important; border-radius: var(--ip-radius-control); background: var(--ip-accent) !important; color: var(--ip-on-accent) !important; font-weight: 600 !important; }
 .home-desktop .home-primary:hover { filter: brightness(1.08); }

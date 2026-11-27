@@ -51,3 +51,12 @@ test('desktop library grid cards: 4:3 well, padded contained picture, star in th
   assert.doesNotMatch(block, /transition|animation/)
   assert.match(styles, /\.home-star \{ position: absolute; top: 8px; right: 8px/)
 })
+
+test('desktop library search: short placeholder plus a "/" key chip hidden while typing or focused; tablet keeps the long placeholder', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const home = await readFile(new URL('../src/app/HomeScreen.tsx', import.meta.url), 'utf8')
+  const css = await readFile(new URL('../src/app/desktop-library.css', import.meta.url), 'utf8')
+  assert.match(home, /placeholder=\{props\.desktop \? 'Search diagrams' : 'Search diagrams or folders \(press \/\)'\}/)
+  assert.match(home, /\{props\.desktop && !query && <kbd className="home-search-kbd" aria-hidden="true">\/<\/kbd>\}/)
+  assert.match(css, /\.home-search:focus-within \.home-search-kbd \{ display: none; \}/)
+})
