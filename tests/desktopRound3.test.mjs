@@ -73,3 +73,13 @@ test('library pictures embed Excalifont so labels are not drawn in the browser s
   assert.match(docs, /await getThumbnailExport\('first'\)/)
   assert.match(docs, /await getThumbnailExport\(index\)/)
 })
+
+test('round 3 walk fixes: desktop says Click to rename, chrome text unselectable, menu descriptions wrap', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const bar = await readFile(new URL('../src/app/TopLeftBar.tsx', import.meta.url), 'utf8')
+  const css = await readFile(new URL('../src/app/desktopPolish.css', import.meta.url), 'utf8')
+  const assert = (await import('node:assert/strict')).default
+  assert.match(bar, /desktop \? 'Click to rename this diagram' : 'Tap to rename this diagram'/)
+  assert.match(css, /\.tool-dock, \.context-panel[^}]*user-select: none/)
+  assert.match(css, /\.ms-desc \{[^}]*-webkit-line-clamp: 2/)
+})

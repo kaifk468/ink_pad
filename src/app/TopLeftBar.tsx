@@ -267,7 +267,7 @@ export function TopLeftBar(props: TopLeftBarProps) {
             if (event.key === 'Escape') { event.stopPropagation(); finishTitleEdit(false) }
           }}
         />
-        : <button className="diagram-title" type="button" title="Tap to rename this diagram" aria-label={`Diagram title: ${props.title || 'Untitled diagram'}. Tap to rename`} onClick={beginTitleEdit}>
+        : <button className="diagram-title" type="button" title={desktop ? 'Click to rename this diagram' : 'Tap to rename this diagram'} aria-label={`Diagram title: ${props.title || 'Untitled diagram'}. ${desktop ? 'Click' : 'Tap'} to rename`} onClick={beginTitleEdit}>
           <span className="diagram-title-text">{props.title || 'Untitled diagram'}</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>
         </button>}
