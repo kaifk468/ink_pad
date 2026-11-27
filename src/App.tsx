@@ -66,6 +66,7 @@ import { withSketchSeed, withSketchSeeds } from './sketchy'
 import { addLaserPoint, laserOnTouchDown, laserSegments, laserVisible, PEN_TOOL_FLAGS, pruneLaser, toolToRestoreAfterLaser, type LaserPoint, type ToolFlags } from './laserPointer'
 import { createStickyNote, STICKY_HEIGHT, STICKY_WIDTH } from './stickyNote'
 import { HistoryBar } from './app/HistoryBar'
+import { DesktopStatusCluster } from './app/DesktopStatusCluster'
 import { ToolDock } from './app/ToolDock'
 import { TopLeftBar } from './app/TopLeftBar'
 import { HomeScreen } from './app/HomeScreen'
@@ -6318,6 +6319,7 @@ function App() {
       {/* With the zoom lock on the screen is in focus mode: the menu, folders, title and account hide; undo/redo, the dock, the pen colours and the zoom controls stay. */}
       {!zoomLockActive && (
         <TopLeftBar
+          history={inputMode === 'desktop' ? { canUndo, canRedo, onUndo: undo, onRedo: redo } : undefined}
           title={docTitle}
           onRenameTitle={renameDiagram}
           pageTemplate={pageTemplate}
@@ -6354,8 +6356,8 @@ function App() {
           diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open), onFillTestInk: fillTestInk, onRemoveTestInk: removeTestInk }}
         />
       )}
-      <HistoryBar desktop={inputMode === 'desktop'} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
-      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={penModeActive && inputMode !== 'desktop' ? <PenColors color={color} onColor={selectColor} /> : undefined} />
+      {(inputMode !== 'desktop' || zoomLockActive) && <HistoryBar desktop={inputMode !== 'tablet'} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />}
+      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={penModeActive && inputMode !== 'desktop' ? <PenColors color={color} onColor={selectColor} /> : !zoomLockActive ? <DesktopStatusCluster status={saveStatus} text={statusLabel(saveStatus, storage.kind)} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} /> : undefined} />
       <ContextPanel
         desktop={inputMode === 'desktop'}
         showDisplayMode={shapeTool === null}
