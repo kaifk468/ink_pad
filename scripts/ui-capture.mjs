@@ -60,6 +60,16 @@ const state = async (name, fn) => {
 }
 const wait = (page, ms = 300) => page.waitForTimeout(ms)
 
+/** Box drag rectangles (fractions of the canvas) for the mixed diagram; narrow viewports shift right so no drag starts under the 240px options panel. */
+function mixedRects(w) {
+  const off = MODE === 'desktop' && w < 1200 ? 0.12 : 0 // tablet shots keep the original layout
+  return [
+    [[0.22 + off, 0.30], [0.36 + off, 0.42]],
+    [[0.50 + off, 0.30], [0.64 + off, 0.42]],
+    [[0.36 + off, 0.60], [0.50 + off, 0.72]],
+  ]
+}
+
 /** Drag with the mouse on the canvas, in page coordinates relative to the canvas box. */
 async function drag(page, from, to) {
   await page.mouse.move(from.x, from.y)
@@ -147,19 +157,15 @@ for (const viewport of VIEWPORTS) {
   // Mixed diagram: 3 rectangles (R + drag), 1 arrow (A + drag), 1 label (T + click).
   await state(`${w}-mixed-diagram`, async () => {
     const box = await canvasBox(page)
-    const rects = [
-      [[0.22, 0.30], [0.36, 0.42]],
-      [[0.50, 0.30], [0.64, 0.42]],
-      [[0.36, 0.60], [0.50, 0.72]],
-    ]
+    const rects = mixedRects(w)
     for (const [a, b] of rects) {
       await page.keyboard.press('r')
       await drag(page, at(box, a[0], a[1]), at(box, b[0], b[1]))
     }
     await page.keyboard.press('a')
-    await drag(page, at(box, 0.36, 0.36), at(box, 0.50, 0.36))
+    await drag(page, at(box, rects[0][1][0], 0.36), at(box, rects[1][0][0], 0.36))
     await page.keyboard.press('t')
-    await page.mouse.click(at(box, 0.24, 0.80).x, at(box, 0.24, 0.80).y)
+    await page.mouse.click(at(box, rects[0][0][0] + 0.02, 0.80).x, at(box, rects[0][0][0] + 0.02, 0.80).y)
     await page.keyboard.type('Label')
     await page.keyboard.press('Escape')
     await page.keyboard.press('v') // Select tool, so nothing stays armed
@@ -172,7 +178,10 @@ for (const viewport of VIEWPORTS) {
     await state(`${w}-panel-shape-selected`, async () => {
       const box = await canvasBox(page)
       await page.keyboard.press('v')
-      await page.mouse.click(at(box, 0.29, 0.36).x, at(box, 0.29, 0.36).y)
+      // centre of the first box, computed from the drag coordinates used above for this viewport
+      const [a, b] = mixedRects(w)[0]
+      const centre = at(box, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+      await page.mouse.click(centre.x, centre.y)
       await wait(page, 400)
       await shot(page, w, 'panel-shape-selected')
     })
