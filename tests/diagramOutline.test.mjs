@@ -170,7 +170,7 @@ test('wiring: file panel buttons and palette entries', async () => {
 test('wiring: the outline buttons use their own enable flag (any page has items), not the current page', async () => {
   const panel = await read('FilePanel.tsx')
   assert.match(panel, /canOutline: boolean/)
-  assert.equal((panel.match(/disabled=\{!props\.canOutline\}/g) ?? []).length, 2)
+  assert.equal((panel.match(/disabled=\{!props\.canOutline\}/g) ?? []).length, 4) // tablet and desktop layouts: two outline buttons each
   assert.doesNotMatch(panel, /disabled=\{!props\.canExport\}[^>]*onClick=\{props\.onCopyOutline\}/)
   const app = await (await import('./helpers/appSource.mjs')).readAppSource()
   assert.match(app, /canOutline=\{/)

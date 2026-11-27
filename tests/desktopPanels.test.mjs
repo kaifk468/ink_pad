@@ -10,7 +10,7 @@ test('desktop-panels.css is desktop-scoped and imported', async () => {
   let checked = 0
   for (const chunk of bare.split('}')) {
     const selector = chunk.split('{')[0].trim()
-    if (!selector || selector.startsWith('@') || chunk.indexOf('{') < 0) continue
+    if (!selector || selector.startsWith('@') || selector === 'from' || selector === 'to' || chunk.indexOf('{') < 0) continue
     for (const piece of selector.split(',')) { checked++; assert.match(piece.trim(), /^\.app-shell\[data-input-mode="desktop"\]/, piece) }
   }
   assert.ok(checked > 10)
