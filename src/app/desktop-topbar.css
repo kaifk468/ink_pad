@@ -37,8 +37,10 @@
 .app-shell[data-input-mode="desktop"] .top-status-pill {
   display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; box-sizing: border-box; max-width: 240px;
   border: 1px solid var(--ip-line); border-radius: 14px; background: var(--ip-surface); box-shadow: var(--ip-shadow-1);
-  color: var(--ip-muted); font-size: 13px; font-weight: 500; white-space: nowrap;
+  color: var(--ip-muted); font-size: 13px; font-weight: 500; white-space: nowrap; font-family: inherit; cursor: pointer;
 }
+.app-shell[data-input-mode="desktop"] .top-status-pill:hover { background: var(--ip-surface-2); }
+.app-shell[data-input-mode="desktop"] .top-status-pill:focus-visible { outline: 2px solid var(--ip-accent); outline-offset: 2px; }
 .app-shell[data-input-mode="desktop"] .top-status-text { overflow: hidden; text-overflow: ellipsis; }
 .app-shell[data-input-mode="desktop"] .top-status-dot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--ip-delight); }
 .app-shell[data-input-mode="desktop"] .top-status-pill.tone-ok .top-status-dot { background: var(--ip-success); }
