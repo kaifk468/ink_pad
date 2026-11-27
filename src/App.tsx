@@ -66,6 +66,7 @@ import { withSketchSeed, withSketchSeeds } from './sketchy'
 import { addLaserPoint, laserOnTouchDown, laserSegments, laserVisible, PEN_TOOL_FLAGS, pruneLaser, toolToRestoreAfterLaser, type LaserPoint, type ToolFlags } from './laserPointer'
 import { createStickyNote, STICKY_HEIGHT, STICKY_WIDTH } from './stickyNote'
 import { HistoryBar } from './app/HistoryBar'
+import { accountLeading } from './app/accountLeading'
 import { DesktopStatusCluster } from './app/DesktopStatusCluster'
 import { ToolDock } from './app/ToolDock'
 import { TopLeftBar } from './app/TopLeftBar'
@@ -117,7 +118,7 @@ import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, loadTapUndo, saveNavigationSettings, saveTapUndo } from './navigationSettings'
-import { CONTEXT_MENU_BOTTOM_CLEARANCE, canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -5186,7 +5187,7 @@ function App() {
   const exportSelectionAs = (kind: 'png' | 'svg') => {
     const keys = selectionKeysWithBox()
     if (keys.size === 0) return
-    void (kind === 'png' ? exportPngFile(2, keys) : exportSvgFile(keys)).then((error) => { if (error) showToast(error) })
+    void (kind === 'png' ? exportPngFile(2, keys, true) : exportSvgFile(keys)).then((error) => { if (error) showToast(error) })
   }
   // Cut = copy + delete: one undo step (deleteSelection records it).
   const cutSelection = (): boolean => copySelection() && deleteSelection()
@@ -5617,12 +5618,13 @@ function App() {
       : event.key === 'ArrowDown' ? (current + 1) % buttons.length : (current <= 0 ? buttons.length - 1 : current - 1)
     buttons[next].focus()
   }
+  const dockRange = () => { const r = document.querySelector('.tool-dock')?.getBoundingClientRect(); return r ? { left: r.left, right: r.right } : null }
   // The height estimate can be a little low (chip wrapping, fonts): after layout, a menu that still runs past the bottom edge is moved up to fit.
   useLayoutEffect(() => {
     const menu = contextMenuElementRef.current
     if (!contextMenu || !menu) return
     const rect = menu.getBoundingClientRect()
-    const overflow = rect.bottom - (window.innerHeight - CONTEXT_MENU_BOTTOM_CLEARANCE)
+    const overflow = rect.bottom - (window.innerHeight - menuBottomClearance(rect.left, rect.width, dockRange()))
     if (overflow > 0) menu.style.top = `${Math.max(8, rect.top - overflow)}px`
   }, [contextMenu])
   // Opening the menu puts focus on its first enabled row so the keyboard works at once.
@@ -5779,7 +5781,7 @@ function App() {
     { id: 'mermaid:insert', label: 'Insert from Mermaid…', group: 'Templates', keywords: 'import flowchart graph diagram text paste plantuml uml class sequence', run: () => setMermaidOpen(true) },
     { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout my templates saved', run: () => setTemplateChooserOpen(true) },
     ...(selectionKeysWithBox().size > 0 ? [{ id: 'template:save', label: 'Save selection as template…', group: 'Templates', keywords: 'my templates store reuse', run: openSaveTemplate }] : []),
-    { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2).then((error) => { if (error) showToast(error) }) },
+    { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2, undefined, true).then((error) => { if (error) showToast(error) }) },
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
     { id: 'page:overview', label: 'Page overview', group: 'Pages', keywords: 'pages thumbnails grid reorder move jump', run: () => setPageOverviewOpen(true) },
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
@@ -6172,7 +6174,7 @@ function App() {
             canSelectSimilar: (() => { const key = soleSelectedKey(); return key !== null && similarItemKeys(strokesRef.current, key).length > 0 })(),
             movePages: moveMenuChips(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)),
           })
-          const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight - CONTEXT_MENU_BOTTOM_CLEARANCE)
+          const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight - menuBottomClearance(contextMenu.x, CONTEXT_MENU_WIDTH, dockRange()))
           return (
             <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y }} onContextMenu={(event) => event.preventDefault()} onKeyDown={onContextMenuKeyDown}>
               {contextMenuRows(entries).map((row, index) => row.separator
@@ -6211,7 +6213,7 @@ function App() {
           measure={createTextMeasure}
           onChange={(value) => { textEditorValueRef.current = value }}
           onCommit={commitTextEditor}
-          onCancel={inputMode === 'desktop' ? commitTextEditor : cancelTextEditor}
+          onCancel={inputMode === 'desktop' ? () => { const e = textEditorRef.current; if (e && labelEscapeAction(e.itemId !== null || e.connectorId !== undefined, textEditorValueRef.current)==='cancel') cancelTextEditor(); else commitTextEditor() } : cancelTextEditor}
         />}
         {codeEditor && inputMode === 'desktop' && (() => {
           const block = strokesRef.current.find((candidate) => candidate.kind === 'code' && candidate.id === codeEditor.id)
@@ -6369,7 +6371,7 @@ function App() {
         />
       )}
       {(inputMode !== 'desktop' || zoomLockActive) && <HistoryBar desktop={inputMode !== 'tablet'} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />}
-      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={penModeActive && inputMode !== 'desktop' ? <PenColors color={color} onColor={selectColor} /> : !zoomLockActive ? <DesktopStatusCluster status={saveStatus} text={statusLabel(saveStatus, storage.kind)} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} /> : undefined} />
+      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={inputMode === 'desktop' ? <DesktopStatusCluster status={saveStatus} text={statusLabel(saveStatus, storage.kind)} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} hideExport={zoomLockActive} /> : accountLeading(penModeActive, inputMode, <PenColors color={color} onColor={selectColor} />)} />
       <ContextPanel
         desktop={inputMode === 'desktop'}
         showDisplayMode={shapeTool === null}
@@ -6580,7 +6582,7 @@ function App() {
         onDownloadExcalidraw={downloadExcalidraw}
         onCopyExcalidraw={inputMode === 'desktop' ? copyExcalidraw : undefined}
         onExportSvg={() => void exportSvgFile().then((error) => { if (inputMode === 'desktop') showToast(exportToastText('SVG', error)) })}
-        onExportPng={(scale) => void exportPngFile(scale).then((error) => { if (inputMode === 'desktop') showToast(exportToastText('PNG', error)) })}
+        onExportPng={(scale) => void exportPngFile(scale, undefined, inputMode === 'desktop').then((error) => { if (inputMode === 'desktop') showToast(exportToastText('PNG', error)) })}
         transparent={transparentExport}
         onTransparentChange={setTransparentExport}
         onExportNotebookLm={() => void exportToNotebookLm()}

@@ -733,7 +733,7 @@ export function useDocuments(host: DocumentHost) {
     setDocTitle(cleaned)
     if (!docIdRef.current && !hasAnyItems()) return Promise.resolve()
     // The safety copy must carry the new title too: a copy left dirty with the old one would come back at the next start and replace the rename.
-    return persistNow().then(() => keeper.flush())
+    return persistNow().then(() => flushCopy())
   }
 
   const exportDocumentFile = () => {
@@ -862,7 +862,7 @@ export function useDocuments(host: DocumentHost) {
     return null
   }
 
-  const exportPngFile = async (scale: 1 | 2, keys?: ReadonlySet<string> | null): Promise<string | null> => {
+  const exportPngFile = async (scale: 1 | 2, keys?: ReadonlySet<string> | null, quiet = false): Promise<string | null> => {
     const exported = await getUserImageExport(keys)
     if (!exported) return 'Nothing to export'
     try {
@@ -872,7 +872,7 @@ export function useDocuments(host: DocumentHost) {
       return null
     } catch (error) {
       const message = error instanceof Error ? error.message : 'PNG export failed.'
-      setFileNotice(message)
+      if (!quiet) setFileNotice(message) // quiet: the caller shows the failure as a toast instead
       return message
     }
   }

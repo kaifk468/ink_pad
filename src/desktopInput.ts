@@ -723,6 +723,15 @@ export function contextMenuRows(entries: readonly ContextMenuEntry[]): ContextMe
 export const CONTEXT_MENU_WIDTH = 248
 /** Desktop: the right-click menu stays this far above the bottom edge so it never covers the tool dock. */
 export const CONTEXT_MENU_BOTTOM_CLEARANCE = 100
+/** Clearance to keep under a menu opened at menuX: only needed when the menu's horizontal range overlaps the dock (null rect: unknown, so apply it). */
+export function menuBottomClearance(menuX: number, menuWidth: number, dock: { left: number; right: number } | null): number {
+  if (!dock) return CONTEXT_MENU_BOTTOM_CLEARANCE
+  return menuX < dock.right && menuX + menuWidth > dock.left ? CONTEXT_MENU_BOTTOM_CLEARANCE : 0
+}
+/** Desktop label editor: Esc commits what was typed, except that blanking an EXISTING label never deletes it (Esc cancels and restores). */
+export function labelEscapeAction(editingExisting: boolean, value: string): 'commit' | 'cancel' {
+  return editingExisting && value.trim() === '' ? 'cancel' : 'commit'
+}
 const MENU_PADDING = 6 + 1 // vertical padding plus border, per side
 const MENU_ENTRY_HEIGHT = 28
 const MENU_GAP = 2

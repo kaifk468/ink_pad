@@ -103,7 +103,6 @@ export function DesktopMenuSheet(props: TopLeftBarProps & { onClose: (restoreFoc
         <div className="ms-brand">
           <span className="brand-mark" aria-hidden="true"><span /></span>
           <span className="brand-name">Ink Pad</span>
-          <span className={`ms-status${props.statusOk ? ' ok' : ''}`} role="status" title={props.statusText}><span aria-hidden="true" /><span className="ms-status-text">{props.statusText}</span></span>
         </div>
         <label className="ms-search">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" /><path d="m20 20-4.2-4.2" /></svg>
