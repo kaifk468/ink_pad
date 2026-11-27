@@ -66,3 +66,6 @@ export function activeTextSizeSegment(choices: readonly number[], size: number, 
   if (fitOn) return 'fit'
   return choices.find((choice) => choice === Math.round(size)) ?? null
 }
+
+/** Desktop connector section: anything but a plain or directed association is UML notation, so its disclosure opens by default. */
+export function isUmlRelationship(type: string): boolean { return type !== 'association' && type !== 'directed-association' }
