@@ -90,3 +90,29 @@ export function unpaddedSelectionBounds(items: CanvasItem[], keys: ReadonlySet<s
   })
   return getCanvasSelectionBounds(bare, keys)
 }
+
+/**
+ * The arrow-key nudge with Snap to grid on: the direction is the sign of (dx, dy), the distance one grid step (five for a
+ * large nudge, |step| above 1), and the top-left of `bounds` ends on a grid line. An off-grid edge first goes to the next line.
+ */
+export function gridNudgeDelta(bounds: Pick<RectangleBounds, 'x' | 'y'>, dx: number, dy: number, grid: number): { dx: number; dy: number } {
+  if (!(grid > 0)) return { dx, dy }
+  const steps = Math.max(Math.abs(dx), Math.abs(dy)) > 1 ? 5 : 1
+  const EPS = 1e-6
+  const axis = (from: number, delta: number): number => {
+    if (delta === 0) return 0
+    const lines = from / grid
+    const target = delta > 0 ? (Math.floor(lines + EPS) + steps) * grid : (Math.ceil(lines - EPS) - steps) * grid
+    return target - from
+  }
+  return { dx: axis(bounds.x, dx), dy: axis(bounds.y, dy) }
+}
+
+/** `to` rotated about `from` to the nearest multiple of `stepDeg`, keeping the distance between them. */
+export function snapAngle(from: { x: number; y: number }, to: { x: number; y: number }, stepDeg = 15): { x: number; y: number } {
+  const length = Math.hypot(to.x - from.x, to.y - from.y)
+  if (length === 0 || !(stepDeg > 0)) return { x: to.x, y: to.y }
+  const step = (stepDeg * Math.PI) / 180
+  const angle = Math.round(Math.atan2(to.y - from.y, to.x - from.x) / step) * step
+  return { x: from.x + Math.cos(angle) * length, y: from.y + Math.sin(angle) * length }
+}

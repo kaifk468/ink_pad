@@ -21,8 +21,8 @@ import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeC
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, pasteTranslation, type PasteResult } from './clipboard'
 import { axisLock, keepAspect, sizeReadoutText } from './resizeModifiers'
-import { gridDots, gridSnapApplies, gridSpacingFor, loadGridSnap, saveGridSnap, snapMoveDelta, snapResizeBounds, snapToGrid, unpaddedSelectionBounds } from './gridSnap'
-import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
+import { gridDots, gridSnapApplies, gridSpacingFor, loadGridSnap, saveGridSnap, gridNudgeDelta, snapAngle as snapPointAngle, snapMoveDelta, snapResizeBounds, snapToGrid, unpaddedSelectionBounds } from './gridSnap'
+import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type GapMarker, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
 import { shapeKeywords } from './shapeSearch'
 import { HLD_DEFAULT_SIZE, HLD_SHAPES, HLD_SHAPE_LABELS, createHldShape, isHldTapCreate, type HldShape } from './hldShapes'
@@ -399,6 +399,7 @@ function App() {
   const dropConnectorRef = useRef<number | null>(null)
   // The size pill ("W x H") shown near the pointer while a desktop resize or new-box drag is active; drawn only while that gesture is active, never saved or exported.
   const sizeReadoutRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
+  const gapMarkersRef = useRef<GapMarker[]>([])
   // Snap to grid (Desktop mode, mouse only; off by default, per device). `gridOverlayRef` holds the grid size while a snapped drag or resize is active, so the dot grid is drawn only then.
   const [gridSnap, setGridSnap] = useState(() => loadGridSnap())
   const gridSnapRef = useRef(gridSnap)
@@ -541,6 +542,7 @@ function App() {
     lassoDragRef.current = null
     activeMarqueeRef.current = null
     guidesRef.current = []
+    gapMarkersRef.current = []
     snapStateRef.current = null
     gridOverlayRef.current = null
     pasteCountRef.current = 0
@@ -1927,8 +1929,9 @@ function App() {
 
   // The guides and snap state end with the drag, however it ends; the canvas is repainted only when a guide was showing.
   const clearSnapGuides = (repaint = true) => {
-    const hadGuides = guidesRef.current.length > 0 || gridOverlayRef.current !== null
+    const hadGuides = guidesRef.current.length > 0 || gapMarkersRef.current.length > 0 || gridOverlayRef.current !== null
     guidesRef.current = []
+    gapMarkersRef.current = []
     gridOverlayRef.current = null
     snapStateRef.current = null
     if (hadGuides && repaint) renderAll()
@@ -1941,7 +1944,8 @@ function App() {
     lockedX === 0 && lockedY === 0 ? snapped : { dx: lockedX === 0 ? 0 : snapped.dx, dy: lockedY === 0 ? 0 : snapped.dy }
   // One drag move: the pointer's delta, nudged so the moving bounds line up with nearby boxes and labels. Off when the setting is off,
   // while Alt is held with a mouse in Desktop mode, and for selections without a box or label (ink and connectors alone never snap).
-  const snapDragDelta = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], keys: ReadonlySet<string>, dx: number, dy: number): { dx: number; dy: number } => {
+  const snapDragDelta = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], keys: ReadonlySet<string>, dx: number, dy: number, duplicating = false): { dx: number; dy: number } => {
+    gapMarkersRef.current = []
     // Grid snap replaces the smart guides while it is on (Desktop mouse): the selection's top-left lands on a grid point and everything moves together.
     const grid = gridActive(event)
     if (grid !== null) {
@@ -1970,8 +1974,9 @@ function App() {
       snapStateRef.current = state
     }
     if (!state.moving) return { dx, dy }
-    const result = snapForDrag(true, false, { ...state.moving, x: state.moving.x + dx, y: state.moving.y + dy }, state.targets, event.pointerType, viewportRef.current.scale)
+    const result = snapForDrag(true, false, { ...state.moving, x: state.moving.x + dx, y: state.moving.y + dy }, state.targets, event.pointerType, viewportRef.current.scale, !duplicating)
     guidesRef.current = result?.guides ?? []
+    gapMarkersRef.current = result?.gapMarkers ?? []
     return result ? { dx: dx + result.dx, dy: dy + result.dy } : { dx, dy }
   }
 
@@ -2174,8 +2179,18 @@ function App() {
     }
     const point = getBoundedPoint(event)
     const snapped = snapEndpointTarget(point, gesture.originalItems, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale, (p) => isPointWithinBounds(p, workspaceBoundsRef.current))
+    // A free end (not attaching to a box): Shift keeps its angle to the other end at 15 degree steps, otherwise Snap to grid puts it on a grid point. Attaching wins over both.
+    let freePoint = point
+    if (!snapped && gesture.pointerType === 'mouse' && inputModeRef.current === 'desktop') {
+      const grid = gridActive(event)
+      const connector = gesture.originalItems.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === gesture.id)
+      let candidate: { x: number; y: number } = point
+      if (event.shiftKey && connector) candidate = snapPointAngle(gesture.which === 'start' ? connector.end : connector.start, point, 15)
+      else if (grid !== null) candidate = { x: snapToGrid(point.x, grid), y: snapToGrid(point.y, grid) }
+      if (isPointWithinBounds(candidate as Point, workspaceBoundsRef.current)) freePoint = { ...point, x: candidate.x, y: candidate.y }
+    }
     if (!gesture.saved) { saveHistory(); gesture.saved = true }
-    strokesRef.current = moveConnectorEndpoint(gesture.originalItems, gesture.id, gesture.which, snapped?.point ?? point, snapped)
+    strokesRef.current = moveConnectorEndpoint(gesture.originalItems, gesture.id, gesture.which, snapped?.point ?? freePoint, snapped)
     gesture.target = snapped?.attachment.rectangleId ?? null
     renderAll()
   }
@@ -3047,6 +3062,28 @@ function App() {
       ctx.fillStyle = '#ffffff'
       ctx.textBaseline = 'middle'
       ctx.fillText(text, bx + padX, by + h / 2)
+      ctx.restore()
+    }
+    const gapMarkers = gapMarkersRef.current
+    if (gapMarkers.length > 0) {
+      // Equal-gap measure markers: a short line with end ticks and the gap size, drawn on the guide layer (never an item).
+      const px = 1 / viewport.scale
+      const tick = 4 * px
+      ctx.save()
+      ctx.strokeStyle = '#e0245e'
+      ctx.fillStyle = '#e0245e'
+      ctx.lineWidth = px
+      ctx.font = `${11 * px}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'bottom'
+      ctx.beginPath()
+      for (const marker of gapMarkers) {
+        ctx.moveTo(marker.x1, marker.y1); ctx.lineTo(marker.x2, marker.y2)
+        if (marker.y1 === marker.y2) { ctx.moveTo(marker.x1, marker.y1 - tick); ctx.lineTo(marker.x1, marker.y1 + tick); ctx.moveTo(marker.x2, marker.y2 - tick); ctx.lineTo(marker.x2, marker.y2 + tick) }
+        else { ctx.moveTo(marker.x1 - tick, marker.y1); ctx.lineTo(marker.x1 + tick, marker.y1); ctx.moveTo(marker.x2 - tick, marker.y2); ctx.lineTo(marker.x2 + tick, marker.y2) }
+      }
+      ctx.stroke()
+      for (const marker of gapMarkers) ctx.fillText(String(Math.round(marker.size)), (marker.x1 + marker.x2) / 2 + (marker.y1 === marker.y2 ? 0 : 12 * px), (marker.y1 + marker.y2) / 2 - (marker.y1 === marker.y2 ? 3 * px : -5 * px))
       ctx.restore()
     }
     const marqueeNow = activeMarqueeRef.current
@@ -4431,7 +4468,7 @@ function App() {
       const lassoDup = lassoDrag.duplicate ? beginDuplicate(lassoDrag, lassoDrag.originalItems, lassoDrag.keys, event) : null
       const lassoBase = lassoDup?.items ?? lassoDrag.originalItems
       const lassoKeys = lassoDup ? lassoDup.copyKeys : withCarriedLabels(event, lassoDrag.originalItems, lassoDrag.keys)
-      const lassoSnap = lockSnapped(deltaX, deltaY, snapDragDelta(event, lassoBase, lassoKeys, deltaX, deltaY))
+      const lassoSnap = lockSnapped(deltaX, deltaY, snapDragDelta(event, lassoBase, lassoKeys, deltaX, deltaY, !!lassoDrag.duplicate))
       const nextItems = translateWithinWorkspace(lassoBase, lassoKeys, lassoSnap.dx, lassoSnap.dy)
       if (!lassoDrag.moved && nextItems.every((item, index) => item === lassoBase[index])) return
       if (!lassoDrag.moved) {
@@ -4474,7 +4511,7 @@ function App() {
       const dragDup = drag.duplicate ? beginDuplicate(drag, drag.originalItems, new Set([drag.itemKey]), event) : null
       const dragBase = dragDup?.items ?? drag.originalItems
       const dragKeys = dragDup ? dragDup.copyKeys : withCarriedLabels(event, drag.originalItems, new Set([drag.itemKey]))
-      const dragSnap = lockSnapped(deltaX, deltaY, snapDragDelta(event, dragBase, dragKeys, deltaX, deltaY))
+      const dragSnap = lockSnapped(deltaX, deltaY, snapDragDelta(event, dragBase, dragKeys, deltaX, deltaY, !!drag.duplicate))
       const nextItems = translateWithinWorkspace(dragBase, dragKeys, dragSnap.dx, dragSnap.dy)
       if (!drag.moved && nextItems.every((item, index) => item === dragBase[index])) return
       if (!drag.moved) {
@@ -5278,6 +5315,11 @@ function App() {
   const nudgeSelection = (dx: number, dy: number): boolean => {
     const keys = selectionKeysWithBox()
     if (keys.size === 0) return false
+    // Snap to grid on (Desktop): one grid step (five with Shift) and the selection's top-left ends on a grid line.
+    if (gridSnapApplies(gridSnapRef.current, inputModeRef.current, 'mouse')) {
+      const bounds = unpaddedSelectionBounds(routeConnectors(strokesRef.current), keys)
+      if (bounds) ({ dx, dy } = gridNudgeDelta(bounds, dx, dy, gridSpacingFor(pageTemplateRef.current, pageSpacingRef.current)))
+    }
     const next = translateWithinWorkspace(strokesRef.current, keys, dx, dy)
     if (next.every((item, index) => item === strokesRef.current[index])) return true
     const now = performance.now()

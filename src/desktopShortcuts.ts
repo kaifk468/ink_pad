@@ -61,6 +61,7 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'View', label: 'Pan', keys: 'Space + drag, or middle mouse drag' },
   { group: 'View', label: 'Zoom around the pointer', keys: 'Ctrl + wheel' },
   { group: 'View', label: 'Snap to grid on or off (mouse drags, resizes and new shapes snap to the grid)', keys: "Ctrl+'", input: { key: "'", code: 'Quote', ...ctrl } },
+  { group: 'View', label: 'Snapping: Arrow keys step one grid square (Shift five) with grid snap on; Shift while dragging a free arrow end keeps 15° steps; dragging a box shows equal-gap markers and snaps to equal spacing (grid snap off)', keys: 'Arrow keys, Shift' },
   { group: 'View', label: 'Open the library', keys: 'Ctrl+O', input: { key: 'o', ...ctrl } },
   { group: 'View', label: 'Command palette', keys: 'Ctrl+K', input: { key: 'k', ...ctrl } },
   { group: 'View', label: 'Find on the canvas (text, labels, class boxes, code)', keys: 'Ctrl+F', input: { key: 'f', ...ctrl } },

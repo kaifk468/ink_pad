@@ -11,7 +11,9 @@ import { canvasItemKey, getCanvasSelectionBounds, type CanvasItem, type Rectangl
 export type Bounds = RectangleBounds
 /** A guide line in canvas units: `axis: 'x'` is a vertical line at x = position from `start` to `end` in y; `'y'` is horizontal. */
 export type Guide = { axis: 'x' | 'y'; position: number; start: number; end: number }
-export type SnapResult = { dx: number; dy: number; guides: Guide[] }
+/** A measure marker for an equal gap: a short line from (x1, y1) to (x2, y2) with end ticks and the gap `size` as a label. */
+export type GapMarker = { x1: number; y1: number; x2: number; y2: number; size: number }
+export type SnapResult = { dx: number; dy: number; guides: Guide[]; gapMarkers?: GapMarker[] }
 
 /** Screen pixels: a finger-sized slip must not make a box jump, so the pen gets less than the mouse. */
 export const SNAP_TOLERANCE_MOUSE_PX = 6
@@ -110,6 +112,82 @@ export function snapTargetsFor(items: readonly CanvasItem[], movingKeys: Readonl
   return targets
 }
 
+type GapSide = { delta: number; markers: GapMarker[] } | null
+
+/** Best equal-gap snap along one axis. `horizontal`: gaps run along x and boxes must share a row (vertical overlap). */
+function equalGapAxis(moving: Bounds, targets: readonly Bounds[], limit: number, horizontal: boolean): GapSide {
+  const lo = (b: Bounds) => (horizontal ? b.x : b.y)
+  const size = (b: Bounds) => (horizontal ? b.width : b.height)
+  const hi = (b: Bounds) => lo(b) + size(b)
+  const crossLo = (b: Bounds) => (horizontal ? b.y : b.x)
+  const crossHi = (b: Bounds) => crossLo(b) + (horizontal ? b.height : b.width)
+  const row = targets.filter((t) => crossLo(t) < crossHi(moving) && crossHi(t) > crossLo(moving)).sort((a, b) => lo(a) - lo(b))
+  if (row.length < 2) return null
+  // Existing gaps between neighbouring boxes of the row (consecutive in order, a real gap only).
+  const gaps: { size: number; a: Bounds; b: Bounds }[] = []
+  for (let i = 0; i + 1 < row.length; i++) {
+    const gap = lo(row[i + 1]) - hi(row[i])
+    if (gap > SAME_LINE) gaps.push({ size: gap, a: row[i], b: row[i + 1] })
+  }
+  // The neighbours of the moving box: the nearest box ending before it and the nearest starting after it.
+  let before: Bounds | null = null
+  let after: Bounds | null = null
+  for (const t of row) {
+    if (hi(t) <= lo(moving) + limit && (!before || hi(t) > hi(before))) before = t
+    if (lo(t) >= hi(moving) - limit && (!after || lo(t) < lo(after))) after = t
+  }
+  const mid = (a: number, b: number) => (a + b) / 2
+  const place = (from: number, to: number, cross: number): GapMarker =>
+    horizontal ? { x1: from, y1: cross, x2: to, y2: cross, size: to - from } : { x1: cross, y1: from, x2: cross, y2: to, size: to - from }
+  const refMarker = (g: { a: Bounds; b: Bounds }): GapMarker => {
+    const start = Math.max(crossLo(g.a), crossLo(g.b))
+    const end = Math.min(crossHi(g.a), crossHi(g.b))
+    const cross = end > start ? mid(start, end) : mid(crossLo(g.a), crossHi(g.a))
+    return place(hi(g.a), lo(g.b), cross)
+  }
+  let best: GapSide = null
+  const consider = (delta: number, markers: GapMarker[]) => {
+    if (Math.abs(delta) <= limit && (!best || Math.abs(delta) < Math.abs(best.delta))) best = { delta, markers }
+  }
+  const crossMid = mid(crossLo(moving), crossHi(moving))
+  for (const g of gaps) {
+    if (before) {
+      const start = hi(before)
+      const delta = start + g.size - lo(moving)
+      // the gap to the box before must not make the moving box overlap the one after
+      if (!after || lo(moving) + delta + size(moving) <= lo(after)) consider(delta, [place(start, start + g.size, crossMid), refMarker(g)])
+    }
+    if (after) {
+      const end = lo(after)
+      const delta = end - g.size - size(moving) - lo(moving)
+      if (!before || lo(moving) + delta >= hi(before)) consider(delta, [place(end - g.size, end, crossMid), refMarker(g)])
+    }
+  }
+  // Centred between the two neighbours: both gaps equal.
+  if (before && after) {
+    const free = lo(after) - hi(before) - size(moving)
+    if (free > SAME_LINE) {
+      const start = hi(before) + free / 2
+      consider(start - lo(moving), [place(hi(before), start, crossMid), place(start + size(moving), lo(after), crossMid)])
+    }
+  }
+  return best
+}
+
+/**
+ * Equal-gap snap: when the gap between the moving box and its nearest neighbour on one side can be made equal to a gap
+ * between two other boxes in the same row (or column), the box snaps there. Returns the delta per axis (0 when that axis
+ * has no match) and the measure markers to draw, or null when nothing matches. `tolerance` is screen px, divided by `scale`.
+ */
+export function findEqualGapSnap(moving: Bounds, targets: readonly Bounds[], tolerance: number, scale = 1): { dx: number; dy: number; markers: GapMarker[]; axes: { x: boolean; y: boolean } } | null {
+  if (targets.length < 2) return null
+  const limit = tolerance / scale
+  const x = equalGapAxis(moving, targets, limit, true)
+  const y = equalGapAxis(moving, targets, limit, false)
+  if (!x && !y) return null
+  return { dx: x?.delta ?? 0, dy: y?.delta ?? 0, markers: [...(x?.markers ?? []), ...(y?.markers ?? [])], axes: { x: x !== null, y: y !== null } }
+}
+
 /** Snapping only runs when the setting is on; Alt with a mouse turns it off for that drag. `null` means no snap. */
 export function snapForDrag(
   settingOn: boolean,
@@ -118,9 +196,31 @@ export function snapForDrag(
   targets: readonly Bounds[],
   pointerType: string,
   scale: number,
+  equalGaps = true,
 ): SnapResult | null {
   if (!settingOn || altHeldWithMouse) return null
-  return findSnap(moving, targets, snapTolerancePx(pointerType), scale)
+  const tolerance = snapTolerancePx(pointerType)
+  const align = findSnap(moving, targets, tolerance, scale)
+  if (!equalGaps) return align
+  const gap = findEqualGapSnap(moving, targets, tolerance, scale)
+  if (!gap) return align
+  // Per axis the nearer snap wins; alignment keeps its guide when it is as near or nearer.
+  const alignsX = align.guides.some((guide) => guide.axis === 'x')
+  const alignsY = align.guides.some((guide) => guide.axis === 'y')
+  const useX = gap.axes.x && (!alignsX || Math.abs(gap.dx) < Math.abs(align.dx))
+  const useY = gap.axes.y && (!alignsY || Math.abs(gap.dy) < Math.abs(align.dy))
+  if (!useX && !useY) return align
+  return {
+    dx: useX ? gap.dx : align.dx,
+    dy: useY ? gap.dy : align.dy,
+    guides: align.guides.filter((guide) => !(guide.axis === 'x' && useX) && !(guide.axis === 'y' && useY)),
+    gapMarkers: gapMarkersFor(gap, useX, useY),
+  }
+}
+
+function gapMarkersFor(gap: { markers: GapMarker[] }, useX: boolean, useY: boolean): GapMarker[] {
+  // Horizontal markers (y1 === y2) belong to the x axis, vertical ones to the y axis.
+  return gap.markers.filter((marker) => (marker.y1 === marker.y2 ? useX : useY))
 }
 
 const SNAPPING_KEY = 'inkpad.snapping'
