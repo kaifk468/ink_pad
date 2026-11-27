@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { loadModule } from './helpers/loadModule.mjs'
 
 const panel = await readFile(new URL('../src/app/ContextPanel.tsx', import.meta.url), 'utf8')
@@ -8,6 +9,7 @@ const css = await readFile(new URL('../src/app/desktop-panels.css', import.meta.
 const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
 const await_model_source = await readFile(new URL('../src/app/optionsPanelModel.ts', import.meta.url), 'utf8')
 const model = await loadModule('app/optionsPanelModel.ts')
+const fills = await loadModule('shapeFill.ts')
 
 test('section order: colour first, then text/size, width, style rows, layer, arrange, actions, secondary last', () => {
   const order = [...model.DESKTOP_SECTION_ORDER]
@@ -142,4 +144,24 @@ test('text size row: exactly one segment is active (Fit wins over a number; othe
 
 test('the header derives Text / Label from the open text editor', () => {
   assert.match(app, /editing: textEditor \? \(textEditor\.connectorId !== undefined \|\| textEditor\.centerOn \? 'label' : 'text'\) : null/)
+})
+
+test('fill More-colours swatch is idle for no fill and for every preset fill, not for a custom colour', () => {
+  assert.equal(model.fillMoreColoursIdle(null), true)
+  assert.equal(model.fillMoreColoursIdle('none'), true)
+  for (const preset of fills.FILL_PRESETS) { assert.equal(model.fillMoreColoursIdle(preset.fill), true); assert.equal(model.fillMoreColoursIdle(preset.fill.toUpperCase()), true) }
+  assert.equal(model.fillMoreColoursIdle('#123456'), false)
+  assert.match(panel, /idle=\{props\.desktop && fillMoreColoursIdle\(props\.fill\.color\)\}/)
+})
+
+test('below 740px the More tray carries the Sticky note tile, shape search and the selected state; tray height uses dvh', () => {
+  const more = readFileSync(new URL('../src/app/MoreTray.tsx', import.meta.url), 'utf8')
+  const dockCss = readFileSync(new URL('../src/app/desktop-dock.css', import.meta.url), 'utf8')
+  assert.match(more, /aria-label="Search shapes"/)
+  assert.match(more, /aria-label="Sticky note"/)
+  assert.match(more, /desktopTip && hldActive \? ' hld-active' : ''/)
+  assert.match(readFileSync(new URL('../src/app/ToolDock.tsx', import.meta.url), 'utf8'), /<MoreTray desktopTip[^\n]*onSticky=\{props\.onSticky\}/)
+  assert.match(dockCss, /max-width: 739px\) \{\s*\.app-shell\[data-input-mode="desktop"\] \.tool-dock\.desktop-dock \.tool-button\.more-button\.hld-active/)
+  assert.match(dockCss, /calc\(100dvh - 140px\)/)
+  assert.doesNotMatch(dockCss, /100vh/)
 })

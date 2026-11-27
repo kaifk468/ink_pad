@@ -77,6 +77,12 @@
 /* Still too wide for the dock (below 740px): the System shapes group leaves the dock and lives in the More tray. */
 @media (max-width: 739px) {
   .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-system-group { display: none; }
-  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .more-tray { max-height: calc(100vh - 140px); overflow-y: auto; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .more-tray { max-height: calc(100dvh - 140px); overflow-y: auto; }
   .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .more-tray-system { display: block; }
+}
+
+/* Below 740px the System shapes group is inside the More tray, so an active system shape shows on the More button. */
+@media (max-width: 739px) {
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button.more-button.hld-active,
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button.more-button.hld-active:hover { background: var(--ip-accent-soft); color: var(--ip-accent); box-shadow: none; }
 }

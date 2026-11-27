@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { DESKTOP_SECTION_ORDER, activeTextSizeSegment, browserStorage, readOptionsCollapsed, writeOptionsCollapsed, type DesktopSectionId } from './optionsPanelModel'
+import { DESKTOP_SECTION_ORDER, activeTextSizeSegment, browserStorage, fillMoreColoursIdle, readOptionsCollapsed, writeOptionsCollapsed, type DesktopSectionId } from './optionsPanelModel'
 import { ColorPicker } from './ColorPicker'
 import { ERASER_SIZES } from './appConfig'
 import type { Arrowheads, ConnectorRelationshipType, ConnectorRouting, LayerMove } from '../canvasModel'
@@ -372,7 +372,7 @@ export function ContextPanel(props: ContextPanelProps) {
             <button key={preset.fill} className={`color-swatch${props.fill?.color?.toLowerCase() === preset.fill ? ' selected' : ''}`} type="button" title={`${preset.name} fill`} aria-label={`${preset.name} fill`} aria-pressed={props.fill?.color?.toLowerCase() === preset.fill} style={{ '--swatch': preset.fill } as CSSProperties} onClick={() => props.fill?.onFill(preset.fill, true)} />
           ))}
         </div>
-        <ColorChoices square={props.desktop} idle={props.desktop && props.fill.color === 'none'} value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" onChange={(hex, commit) => props.fill?.onFill(hex, commit)} />
+        <ColorChoices square={props.desktop} idle={props.desktop && fillMoreColoursIdle(props.fill.color)} value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" onChange={(hex, commit) => props.fill?.onFill(hex, commit)} />
         {props.fill.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null) && <button className="clear-selection-button" type="button" title="Use the darker outline that goes with this fill" onClick={() => { const hex = props.fill?.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null); if (hex) props.fill?.onMatchOutline(hex) }}>Matching outline</button>}
       </div>}
     </>

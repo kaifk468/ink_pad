@@ -3,6 +3,7 @@ import { DockTip } from './DockTip'
 import { HLD_ENTRIES, MORE_HLD_ENTRIES } from './InsertTray'
 import { HLD_SHAPE_LABELS } from '../hldShapes'
 import type { HldShape } from '../hldShapes'
+import { searchShapes } from '../shapeSearch'
 
 type MoreTrayProps = {
   /** Desktop dock: icon-only button with a hover/focus tooltip instead of a label and native title. */
@@ -10,6 +11,8 @@ type MoreTrayProps = {
   /** Desktop only: with onHldShape, the tray also lists the system shapes; CSS shows that section only when the dock is too narrow to hold them (< 740px). */
   hldActive?: HldShape | null
   onHldShape?: (shape: HldShape) => void
+  /** Desktop, with onHldShape: the Sticky note tile of the system shapes section (below 740px this is the only place for it). */
+  onSticky?: () => void
   /** "Tidy selected" when two or more class boxes are selected, otherwise "Tidy all". */
   tidyLabel: string
   onTidy: () => void
@@ -43,12 +46,13 @@ type MoreTrayProps = {
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, desktopTip, hldActive, onHldShape, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onMermaid, onExcalidraw, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, onPageOverview, canDuplicatePage = true }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, desktopTip, hldActive, onHldShape, onSticky, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onMermaid, onExcalidraw, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, onPageOverview, canDuplicatePage = true }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
+  const [shapeQuery, setShapeQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!open) return
+    if (!open) { setShapeQuery(''); return }
     const onPointerDown = (event: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
     }
@@ -61,10 +65,19 @@ export function MoreTray({ tidyLabel, onTidy, desktopTip, hldActive, onHldShape,
     }
   }, [open])
 
+  const searching = shapeQuery.trim() !== ''
+  const allShapes = [...HLD_ENTRIES, ...MORE_HLD_ENTRIES]
+  const matches = searching ? searchShapes(shapeQuery) : []
+  const shownShapes = allShapes.map((entry) => ({ ...entry, alias: matches.find((match) => match.id === entry.shape)?.alias ?? null, index: searching ? matches.findIndex((match) => match.id === entry.shape) : 0 }))
+    .filter((tile) => tile.index >= 0).sort((a, b) => (searching ? a.index - b.index : 0))
+  const stickyMatch = matches.find((match) => match.id === 'sticky')
+  const firstMatch = matches.find((match) => match.id === 'sticky' ? Boolean(onSticky) : allShapes.some((entry) => entry.shape === match.id))
+  const insertMatch = (id: string) => { if (id === 'sticky') onSticky?.(); else onHldShape?.(id as HldShape); setOpen(false) }
+
   return (
     <div ref={rootRef} className="insert-control more-control">
       <button
-        className={`tool-button more-button${open || laserActive ? ' selected' : ''}`}
+        className={`tool-button more-button${open || laserActive ? ' selected' : ''}${desktopTip && hldActive ? ' hld-active' : ''}`}
         type="button"
         aria-label="More"
         aria-haspopup="true"
@@ -77,13 +90,19 @@ export function MoreTray({ tidyLabel, onTidy, desktopTip, hldActive, onHldShape,
       {open && <div className="insert-tray more-tray" role="group" aria-label="More tray">
         {desktopTip && onHldShape && <div className="more-tray-system">
           <div className="insert-tray-heading">System shapes</div>
+          <input className="shape-search-field" type="search" aria-label="Search shapes" placeholder="Search shapes (redis, kafka…)" value={shapeQuery} onChange={(event) => setShapeQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter' && firstMatch) { event.preventDefault(); insertMatch(firstMatch.id) } }} />
+          {searching && matches.length === 0 && <div className="shape-search-empty" role="status">No shape matches</div>}
           <div className="insert-shape-grid">
-            {[...HLD_ENTRIES, ...MORE_HLD_ENTRIES].map(({ shape, icon, hint }) => (
-              <button className={`insert-entry${hldActive === shape ? ' selected' : ''}`} type="button" key={shape} aria-label={HLD_SHAPE_LABELS[shape]} aria-pressed={hldActive === shape} title={`Click or drag to add ${hint} you write in`} onClick={() => { onHldShape(shape); setOpen(false) }}>
-                {icon}<span>{HLD_SHAPE_LABELS[shape]}</span>
+            {shownShapes.map(({ shape, icon, hint, alias }) => (
+              <button className={`insert-entry${hldActive === shape ? ' selected' : ''}`} type="button" key={shape} aria-label={HLD_SHAPE_LABELS[shape]} aria-pressed={hldActive === shape} title={`Click or drag to add ${hint} you write in`} onClick={() => insertMatch(shape)}>
+                {icon}<span>{HLD_SHAPE_LABELS[shape]}{alias && <small className="shape-search-alias">{alias}</small>}</span>
               </button>
             ))}
           </div>
+          {onSticky && (!searching || stickyMatch) && <button className="insert-entry" type="button" aria-label="Sticky note" title="Add a yellow sticky note at the pointer and type in it (N)" onClick={() => insertMatch('sticky')}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v10l-5 5H5z"/><path d="M14 19.5v-5h5"/></svg><span>Sticky note{stickyMatch?.alias && <small className="shape-search-alias">{stickyMatch.alias}</small>}</span>
+          </button>}
         </div>}
         {onTypedClass && <>
           <div className="insert-tray-heading">LLD</div>

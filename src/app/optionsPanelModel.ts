@@ -1,4 +1,5 @@
 /** Desktop options panel: section order, the collapsed-state preference and the header name. Pure logic, no React. */
+import { FILL_PRESETS } from '../shapeFill'
 
 /** Top-to-bottom order of the desktop panel for every context. Colour is always first, the secondary actions ("more") always last. */
 export const DESKTOP_SECTION_ORDER = ['colour', 'text', 'width', 'style', 'layer', 'arrange', 'actions', 'more'] as const
@@ -32,6 +33,12 @@ export function browserStorage(): PrefStorage {
   } catch {
     return null
   }
+}
+
+/** Desktop fill row: the More-colours swatch looks idle (not selected) when there is no fill or the fill is one of the preset swatches, which show the selection themselves. */
+export function fillMoreColoursIdle(color: string | null | undefined): boolean {
+  if (!color || color === 'none') return true
+  return FILL_PRESETS.some((preset) => preset.fill === color.toLowerCase())
 }
 
 const KIND_NAMES: Record<string, string> = { stroke: 'Stroke', rectangle: 'Shape', connector: 'Connector', text: 'Text', code: 'Code block' }
