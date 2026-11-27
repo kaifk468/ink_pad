@@ -1,0 +1,113 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { readFile } from 'node:fs/promises'
+import { loadModule } from './helpers/loadModule.mjs'
+
+const panel = await readFile(new URL('../src/app/ContextPanel.tsx', import.meta.url), 'utf8')
+const css = await readFile(new URL('../src/app/desktop-panels.css', import.meta.url), 'utf8')
+const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const await_model_source = await readFile(new URL('../src/app/optionsPanelModel.ts', import.meta.url), 'utf8')
+const model = await loadModule('app/optionsPanelModel.ts')
+
+test('section order: colour first, then text/size, width, style rows, layer, arrange, actions, secondary last', () => {
+  const order = [...model.DESKTOP_SECTION_ORDER]
+  assert.equal(order[0], 'colour')
+  assert.equal(order.at(-1), 'more')
+  assert.ok(order.indexOf('colour') < order.indexOf('width'))
+  assert.ok(order.indexOf('width') < order.indexOf('style'))
+  assert.ok(order.indexOf('style') < order.indexOf('layer'))
+  assert.ok(order.indexOf('layer') < order.indexOf('more'))
+  assert.equal(new Set(order).size, order.length)
+})
+
+test('the rendered desktop order follows DESKTOP_SECTION_ORDER and colour includes the selection colour (fill is a style row)', () => {
+  assert.match(panel, /DESKTOP_SECTION_ORDER\.filter\(\(id\) => id !== 'more'\)\.map/)
+  assert.match(panel, /colour: <>\{props\.showStyle && colourEl\}\{selColorEl\}<\/>/)
+  assert.match(panel, /width: <>\{props\.showStyle && widthEl\}\{selectionWidthEl\}<\/>/)
+  // Every section id has a node.
+  for (const id of model.DESKTOP_SECTION_ORDER) assert.match(panel, new RegExp(`\\n    ${id}: `), id)
+})
+
+test('header has a name, a swatch and a chevron button with aria-expanded and a label', () => {
+  assert.match(panel, /className="options-header"/)
+  assert.match(panel, /className="options-chevron"[^>]*aria-label=\{collapsed \? 'Expand options' : 'Collapse options'\}[^>]*aria-expanded=\{!collapsed\}/)
+  assert.match(panel, /className="options-header-title" onClick=\{toggleCollapsed\}/)
+  assert.match(panel, /props\.contextName \?\? 'Options'/)
+  assert.match(panel, /collapsed \? ' is-collapsed' : ''/)
+  assert.match(panel, /\{!collapsed && <div className="options-body"/)
+  assert.match(css, /\.options-header \{[^}]*height: 36px/)
+  assert.match(css, /\.options-chevron:focus-visible/)
+  assert.match(app, /contextName=\{inputMode === 'desktop' \? optionsContextName/)
+})
+
+test('secondary actions sit behind a closed "More actions" disclosure, not in the default flow', () => {
+  assert.match(panel, /const \[moreOpen, setMoreOpen\] = useState\(false\)/)
+  assert.match(panel, /className="options-more-toggle"[^>]*aria-expanded=\{moreOpen\}/)
+  assert.match(panel, /<span>More actions<\/span>/)
+  assert.match(panel, /moreOpen && <div className="options-more-body"[^>]*><span className="panel-label">More<\/span>\{changeShapeEl\}\{boundaryToolsEl\}/)
+  // Change shape / boundary tools are not part of the always-visible sections.
+  const sections = panel.slice(panel.indexOf('const sectionNodes'), panel.indexOf('const hasMore'))
+  assert.doesNotMatch(sections, /changeShapeEl|boundaryToolsEl/)
+})
+
+test('motion: fade + translateY(-4px) at the menu duration, only opacity/transform, no height animation', () => {
+  assert.match(css, /@keyframes ip-options-in \{ from \{ opacity: 0; transform: translateY\(-4px\); \} to \{ opacity: 1; transform: none; \} \}/)
+  assert.match(css, /\.options-body \{ animation: ip-options-in var\(--ip-dur-menu\)/)
+  const added = css.slice(css.indexOf('/* Header row, collapse'), css.indexOf('/* Below 1158px'))
+  assert.doesNotMatch(added, /transition:[^;]*(height|max-height|width|top|left)/)
+  assert.doesNotMatch(added, /@keyframes[^}]*height/)
+})
+
+test('preference: round-trips, and never throws when storage is missing or blocked', () => {
+  const store = new Map()
+  const ok = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) }
+  assert.equal(model.readOptionsCollapsed(ok), false)
+  model.writeOptionsCollapsed(ok, true)
+  assert.equal(store.get('inkpad.desktop.optionsCollapsed'), '1')
+  assert.equal(model.readOptionsCollapsed(ok), true)
+  model.writeOptionsCollapsed(ok, false)
+  assert.equal(model.readOptionsCollapsed(ok), false)
+  const blocked = { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') } }
+  assert.equal(model.readOptionsCollapsed(blocked), false)
+  assert.doesNotThrow(() => model.writeOptionsCollapsed(blocked, true))
+  assert.equal(model.readOptionsCollapsed(null), false)
+  assert.doesNotThrow(() => model.writeOptionsCollapsed(undefined, true))
+  assert.equal(model.browserStorage(), null) // node has no localStorage
+  const source = (modelSource) => modelSource.replace(/\/\*[\s\S]*?\*\//g, '')
+  const src = source(await_model_source)
+  assert.equal((src.match(/\btry \{/g) ?? []).length, 3)
+})
+
+test('header names', () => {
+  const n = model.optionsContextName
+  assert.equal(n({ count: 3 }), '3 objects')
+  assert.equal(n({ count: 1, selectedKind: 'connector' }), 'Connector')
+  assert.equal(n({ count: 1, selectedKind: 'rectangle' }), 'Shape')
+  assert.equal(n({ count: 1 }), 'Object')
+  assert.equal(n({ count: 0, tool: 'rectangle' }), 'Rectangle')
+  assert.equal(n({ count: 0, tool: 'arrow' }), 'Arrow')
+  assert.equal(n({ count: 0, eraser: true }), 'Eraser')
+  assert.equal(n({ count: 0, text: true }), 'Text')
+  assert.equal(n({ count: 0 }), 'Pen')
+})
+
+test('tablet is unchanged: plain aside, original block order and the original tablet colour markup', () => {
+  assert.match(panel, /if \(!props\.desktop\) return <aside className="context-panel" aria-label="Tool options">\{tabletBody\}<\/aside>/)
+  assert.match(panel, /props\.desktop \? <ColorChoices[^\n]*: <div className="tool-group color-group" role="group" aria-label="Pen color">/)
+  const body = panel.slice(panel.indexOf('const tabletBody'), panel.indexOf("if (!props.desktop) return"))
+  const order = [...body.matchAll(/\{(\w+El)\}/g)].map((m) => m[1])
+  assert.deepEqual(order, ['colourEl', 'widthEl', 'selectionWidthEl', 'lineStyleEl', 'arrowheadsEl', 'layerEl', 'groupEl', 'changeShapeEl', 'selectionToolsEl', 'movePagesEl', 'arrangeEl', 'flipEl', 'sameSizeEl', 'boundaryToolsEl',
+    'selColorEl', 'fillEl', 'newShapeDefaultEl', 'cornersEl', 'rotationEl', 'codeEl', 'eraserEl', 'fontsEl', 'alignEl', 'connSizeEl', 'textSizeEl', 'clearEl', 'copyEl', 'deleteEl', 'relationshipEl'])
+  // The desktop header and collapse state never reach the tablet branch.
+  assert.ok(panel.indexOf("if (!props.desktop) return") < panel.indexOf('className="options-header"'))
+  assert.match(panel, /useState\(\(\) => \(props\.desktop \? readOptionsCollapsed\(browserStorage\(\)\) : false\)\)/)
+})
+
+test('new CSS is scoped to the desktop shell', () => {
+  const added = css.slice(css.indexOf('/* Header row, collapse'), css.indexOf('/* Below 1158px')).replace(/\/\*[\s\S]*?\*\//g, '')
+  for (const chunk of added.split('}')) {
+    const selector = chunk.split('{')[0].trim()
+    if (!selector || selector.startsWith('@') || selector === 'from' || selector === 'to') continue
+    for (const piece of selector.split(',')) assert.match(piece.trim(), /^\.app-shell\[data-input-mode="desktop"\]/, piece)
+  }
+})

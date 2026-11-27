@@ -55,6 +55,7 @@ import { MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, codeFontSize, createCodeObject,
 import { onCodeHighlighterReady } from './codeHighlight'
 import { ClassBoxDialog } from './ClassBoxDialog'
 import { AccountButton } from './app/AccountButton'
+import { optionsContextName } from './app/optionsPanelModel'
 import { ContextPanel } from './app/ContextPanel'
 import { applyStyle, captureStyle, type StyleSnapshot } from './styleClipboard'
 import { applyNewShapeStyle, loadNewShapeStyle, newShapeStyleFrom, saveNewShapeStyle, withNewShapeDash, type NewShapeStyle } from './newShapeStyle'
@@ -6395,6 +6396,7 @@ function App() {
       <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={inputMode === 'desktop' ? <DesktopStatusCluster status={saveStatus} text={statusLabel(saveStatus, storage.kind)} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} hideExport={zoomLockActive} flashKey={statusFlash} /> : accountLeading(penModeActive, inputMode, <PenColors color={color} onColor={selectColor} />)} />
       <ContextPanel
         desktop={inputMode === 'desktop'}
+        contextName={inputMode === 'desktop' ? optionsContextName({ count: selectedItemCount + (hasSelectedRectangle && selectedItemCount === 0 ? 1 : 0), selectedKind: hasSelectedRectangle && selectedItemCount === 0 ? 'rectangle' : (selectedItemCount === 1 ? (strokesRef.current.find((item) => currentSelectionKeys().has(canvasItemKey(item)))?.kind ?? null) : null), tool: shapeTool, eraser, text: textMode }) : undefined}
         showDisplayMode={shapeTool === null}
         showSelectionColor={inputMode === 'desktop' && (selectedItemCount > 0 || hasSelectedRectangle)}
         selectionColor={selectionColor(strokesRef.current, currentSelectionKeys())}

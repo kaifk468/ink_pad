@@ -5,7 +5,7 @@
   width: 240px; padding: 12px; gap: 12px; box-sizing: border-box;
   background: var(--ip-surface); border: 1px solid var(--ip-line); border-radius: var(--ip-radius-panel); box-shadow: var(--ip-shadow-2);
   /* top is 84px; stop 76px above the bottom edge (zoom controls are 44px tall at bottom 16px, plus a gap) */
-  max-height: calc(100vh - 84px - 76px); overflow-y: auto; overscroll-behavior: contain; color: var(--ip-text);
+  max-height: calc(100vh - 84px - 100px); overflow-y: auto; overscroll-behavior: contain; color: var(--ip-text);
   /* soft shadow at the bottom edge while more content is hidden below (scrolling shadow trick, no JS) */
   background:
     linear-gradient(var(--ip-surface) 30%, transparent) top / 100% 24px no-repeat local,
@@ -20,9 +20,46 @@
 }
 .app-shell[data-input-mode="desktop"] .context-panel.desktop-left .panel-hint { color: var(--ip-muted); }
 
+/* Header row, collapse and "More actions" (round 4). Only opacity/transform animate; --ip-dur-menu is ~0 with reduced motion. */
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-header {
+  display: flex; align-items: center; gap: 8px; height: 36px; min-height: 36px; flex: none; margin: -6px 0;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-header-title {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 36px; cursor: pointer;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-swatch {
+  flex: none; width: 16px; height: 16px; border-radius: 50%; background: var(--swatch, var(--ip-muted)); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18);
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 14px/1 'DM Sans', system-ui, sans-serif; color: var(--ip-text);
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-chevron {
+  flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ip-muted);
+  display: grid; place-items: center; cursor: pointer;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-chevron:hover { background: var(--ip-surface-2); color: var(--ip-text); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-chevron svg { transition: transform var(--ip-dur-menu) var(--ip-ease-out); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left.is-collapsed .options-chevron svg { transform: rotate(-90deg); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left.is-collapsed { padding: 12px; overflow: visible; max-height: none; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-body,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-more-body {
+  display: flex; flex-direction: column; gap: 12px; min-width: 0;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-body { animation: ip-options-in var(--ip-dur-menu) var(--ip-ease-out) both; }
+@keyframes ip-options-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-more { display: flex; flex-direction: column; gap: 12px; }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-more-toggle {
+  box-sizing: border-box; height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ip-muted);
+  font: 500 13px/1 'DM Sans', system-ui, sans-serif; display: flex; align-items: center; justify-content: space-between; cursor: pointer;
+}
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-more-toggle:hover { background: var(--ip-surface-2); color: var(--ip-text); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-more-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-chevron:focus-visible,
+.app-shell[data-input-mode="desktop"] .context-panel.desktop-left .options-more-toggle:focus-visible { outline: var(--ip-focus-ring); outline-offset: 2px; }
+
 /* Below 1158px the zoom controls are lifted above the dock (bottom 78px, 44px tall), so stop above them. */
 @media (max-width: 1157px) {
-  .app-shell[data-input-mode="desktop"] .context-panel.desktop-left { max-height: calc(100vh - 84px - 130px); }
+  .app-shell[data-input-mode="desktop"] .context-panel.desktop-left { max-height: calc(100vh - 84px - 154px); }
 }
 
 /* Uniform buttons */
