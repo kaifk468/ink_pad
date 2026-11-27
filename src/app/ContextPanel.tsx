@@ -140,11 +140,12 @@ type ContextPanelProps = {
 }
 
 /** The five quick colours, a rainbow button that opens the full picker, and the picker itself. */
-function ColorChoices({ value, label, onChange, square, idle }: { value: string; label: string; onChange: (hex: string, commit: boolean) => void; square?: boolean; idle?: boolean }) {
+function ColorChoices({ value, label, onChange, square, idle, heading }: { value: string; label: string; onChange: (hex: string, commit: boolean) => void; square?: boolean; idle?: boolean; heading?: string }) {
   const [open, setOpen] = useState(false)
   const quick = idle || COLORS.some((item) => item.value.toLowerCase() === value.toLowerCase())
   return (
-    <div className={`color-choices${square ? ' is-fill' : ''}`} role="group" aria-label={label}>
+    <div className={`color-choices${square ? ' is-fill' : ''}${heading ? ' has-heading' : ''}`} role="group" aria-label={label}>
+      {heading && <span className="panel-label">{heading}</span>}
       <div className="tool-group color-group">
         {COLORS.map((item) => (
           <button
@@ -602,7 +603,7 @@ export function ContextPanel(props: ContextPanelProps) {
   )
   const colourEl = (
     <>
-        {props.desktop ? <div className="selection-color"><span className="panel-label">Stroke</span><ColorChoices value={props.color} label="Stroke colour" onChange={(hex) => props.onColor(hex)} /></div> : <div className="tool-group color-group" role="group" aria-label="Pen color">
+        {props.desktop ? <ColorChoices value={props.color} label="Stroke colour" onChange={(hex) => props.onColor(hex)} heading="Stroke" /> : <div className="tool-group color-group" role="group" aria-label="Pen color">
           {COLORS.map((item) => (
             <button
               className={`color-swatch${props.color === item.value ? ' selected' : ''}`}
