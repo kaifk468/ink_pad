@@ -203,8 +203,21 @@
   font: 600 11px/16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 .app-shell[data-input-mode="desktop"] .command-palette-empty { padding: 24px 10px; color: var(--ip-muted); }
-.app-shell[data-input-mode="desktop"] .shortcut-help { width: min(560px, 100%); padding: 18px 22px 22px; }
-.app-shell[data-input-mode="desktop"] .shortcut-help h3 { margin: 18px 0 6px; color: var(--ip-muted); font: 700 11px/16px 'DM Sans', system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+/* The dialog never exceeds the window: header pinned, body scrolls. Scroll shadows (background-attachment: local trick) show there is more above/below. */
+.app-shell[data-input-mode="desktop"] .shortcut-help {
+  display: flex; flex-direction: column; box-sizing: border-box; width: min(560px, 100%);
+  max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); padding: 0; overflow: hidden;
+}
+.app-shell[data-input-mode="desktop"] .shortcut-help .file-panel-header { flex: none; margin: 0; padding: 18px 22px 12px; border-bottom: 1px solid var(--ip-line); }
+.app-shell[data-input-mode="desktop"] .shortcut-help-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 22px 22px;
+  background:
+    linear-gradient(var(--ip-surface) 30%, rgba(255, 255, 255, 0)) 0 0 / 100% 24px no-repeat local,
+    linear-gradient(rgba(255, 255, 255, 0), var(--ip-surface) 70%) 0 100% / 100% 24px no-repeat local,
+    linear-gradient(rgba(20, 22, 28, .12), rgba(20, 22, 28, 0)) 0 0 / 100% 8px no-repeat scroll,
+    linear-gradient(rgba(20, 22, 28, 0), rgba(20, 22, 28, .12)) 0 100% / 100% 8px no-repeat scroll;
+}
+.app-shell[data-input-mode="desktop"] .shortcut-help h3 { margin: 16px 0 6px; color: var(--ip-muted); font: 700 11px/16px 'DM Sans', system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
 .app-shell[data-input-mode="desktop"] .shortcut-row { border-bottom: 1px solid var(--ip-line); }
 .app-shell[data-input-mode="desktop"] .shortcut-row dt { color: var(--ip-text); }
 @media (min-width: 1100px) {
