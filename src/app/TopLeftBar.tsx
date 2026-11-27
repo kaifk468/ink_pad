@@ -7,6 +7,8 @@ import type { InputMode } from '../desktopInput'
 import { DesktopMenuSheet } from './DesktopMenuSheet'
 
 export type TopLeftBarProps = {
+  /** Desktop only: undo and redo render inside the bar as icon buttons (the top-centre HistoryBar is not used). */
+  history?: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void }
   /** Desktop only: opens the keyboard shortcut list. */
   onShortcutHelp?: () => void
   /** Desktop only: opens the command palette (Help section of the menu sheet). */
@@ -248,6 +250,7 @@ export function TopLeftBar(props: TopLeftBarProps) {
       <button className={`top-icon-button library-toggle${props.libraryOpen ? ' selected' : ''}`} type="button" aria-label="Library" aria-pressed={props.libraryOpen} title="Library: all diagrams and folders (Ctrl+O on a computer)" onClick={props.onOpenLibrary}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
       </button>
+      {desktop && <span className="top-bar-divider" aria-hidden="true" />}
       {editingTitle
         ? <input
           className="diagram-title-input"
@@ -268,6 +271,17 @@ export function TopLeftBar(props: TopLeftBarProps) {
           <span className="diagram-title-text">{props.title || 'Untitled diagram'}</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>
         </button>}
+      {desktop && props.history && <>
+        <span className="top-bar-divider" aria-hidden="true" />
+        <div className="top-history" role="group" aria-label="History">
+          <button className="top-history-button" type="button" onClick={props.history.onUndo} disabled={!props.history.canUndo} aria-label="Undo" title="Undo (Ctrl+Z)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12h-2"/></svg>
+          </button>
+          <button className="top-history-button" type="button" onClick={props.history.onRedo} disabled={!props.history.canRedo} aria-label="Redo" title="Redo (Ctrl+Y)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h-2"/></svg>
+          </button>
+        </div>
+      </>}
     </div>
   )
 }

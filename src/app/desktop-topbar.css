@@ -1,1 +1,62 @@
 /* Desktop topbar styles (UI round 2). Every selector is scoped to .app-shell[data-input-mode="desktop"]; tablet never reads this file. */
+.app-shell[data-input-mode="desktop"] .top-left-bar {
+  top: 16px; gap: 2px; height: 44px; padding: 0 6px; box-sizing: border-box;
+  border: 1px solid var(--ip-line); border-radius: 14px; background: var(--ip-surface); box-shadow: var(--ip-shadow-1);
+}
+.app-shell[data-input-mode="desktop"] .top-left-bar .top-icon-button,
+.app-shell[data-input-mode="desktop"] .top-left-bar .top-history-button {
+  display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 10px;
+  background: transparent; color: var(--ip-text); box-shadow: none; cursor: pointer;
+}
+.app-shell[data-input-mode="desktop"] .top-left-bar .top-icon-button svg,
+.app-shell[data-input-mode="desktop"] .top-left-bar .top-history-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.app-shell[data-input-mode="desktop"] .top-left-bar .top-icon-button:hover,
+.app-shell[data-input-mode="desktop"] .top-left-bar .top-history-button:hover:not(:disabled) { background: var(--ip-surface-2); }
+.app-shell[data-input-mode="desktop"] .top-left-bar .top-icon-button.selected { background: var(--ip-accent-soft); color: var(--ip-accent); }
+.app-shell[data-input-mode="desktop"] .top-left-bar .top-history-button:disabled { opacity: .4; cursor: default; }
+.app-shell[data-input-mode="desktop"] .top-history { display: flex; align-items: center; gap: 2px; }
+.app-shell[data-input-mode="desktop"] .top-bar-divider { flex: 0 0 1px; width: 1px; height: 20px; margin: 0 6px; background: var(--ip-line); }
+.app-shell[data-input-mode="desktop"] .top-left-bar .diagram-title {
+  height: 32px; max-width: 280px; padding: 0 8px; border: 0; border-radius: 10px; background: transparent; box-shadow: none;
+  color: var(--ip-text); font-size: 14px; font-weight: 600;
+}
+.app-shell[data-input-mode="desktop"] .top-left-bar .diagram-title:hover { background: var(--ip-surface-2); }
+.app-shell[data-input-mode="desktop"] .top-left-bar .diagram-title svg { stroke: var(--ip-faint); }
+.app-shell[data-input-mode="desktop"] .top-left-bar .diagram-title-input {
+  height: 32px; width: 280px; max-width: 280px; min-width: 160px; padding: 0 8px; border: 2px solid var(--ip-accent); border-radius: 10px; box-shadow: none; box-sizing: border-box;
+}
+@media (min-width: 1400px) {
+  .app-shell[data-input-mode="desktop"] .top-left-bar .diagram-title,
+  .app-shell[data-input-mode="desktop"] .top-left-bar .diagram-title-input { max-width: 360px; }
+  .app-shell[data-input-mode="desktop"] .top-left-bar .diagram-title-input { width: 360px; }
+}
+
+/* Right cluster */
+.app-shell[data-input-mode="desktop"] .account-control { top: 16px; gap: 8px; }
+.app-shell[data-input-mode="desktop"] .account-control .account-button { width: 44px; height: 44px; border-color: var(--ip-line); background: var(--ip-surface); box-shadow: var(--ip-shadow-1); }
+.app-shell[data-input-mode="desktop"] .top-status-pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; box-sizing: border-box; max-width: 240px;
+  border: 1px solid var(--ip-line); border-radius: 14px; background: var(--ip-surface); box-shadow: var(--ip-shadow-1);
+  color: var(--ip-muted); font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+.app-shell[data-input-mode="desktop"] .top-status-text { overflow: hidden; text-overflow: ellipsis; }
+.app-shell[data-input-mode="desktop"] .top-status-dot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--ip-delight); }
+.app-shell[data-input-mode="desktop"] .top-status-pill.tone-ok .top-status-dot { background: var(--ip-success); }
+.app-shell[data-input-mode="desktop"] .top-status-pill.tone-bad .top-status-dot { background: var(--ip-danger); }
+.app-shell[data-input-mode="desktop"] .top-status-pill.tone-bad { color: var(--ip-danger); }
+.app-shell[data-input-mode="desktop"] .top-status-dot.just-saved { animation: ip-status-pulse var(--ip-dur-menu) var(--ip-ease-out) 1; }
+@keyframes ip-status-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.6); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell[data-input-mode="desktop"] .top-status-dot.just-saved { animation: none; }
+}
+.app-shell[data-input-mode="desktop"] .top-export-button {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; box-sizing: border-box;
+  border: 1px solid var(--ip-line); border-radius: 14px; background: var(--ip-surface); box-shadow: var(--ip-shadow-1);
+  color: var(--ip-text); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.app-shell[data-input-mode="desktop"] .top-export-button:hover { background: var(--ip-surface-2); }
+.app-shell[data-input-mode="desktop"] .top-export-button.selected { background: var(--ip-accent-soft); color: var(--ip-accent); }
+.app-shell[data-input-mode="desktop"] .top-export-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* The bottom-right status moves up into the pill. */
+.app-shell[data-input-mode="desktop"] .navigator-status { display: none; }

@@ -67,3 +67,14 @@ test('desktop sheet rules appended to styles.css are desktop-scoped', async () =
   // The @keyframes block holds only from/to steps, so it is skipped.
   assertScoped(styles.slice(start).replace(/@keyframes[^{]+\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, ''), 'styles.css sheet block')
 })
+
+test('desktop top bar: undo/redo live in TopLeftBar, tablet keeps HistoryBar, css is desktop-scoped', async () => {
+  const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  const bar = await readFile(new URL('../src/app/TopLeftBar.tsx', import.meta.url), 'utf8')
+  const css = await readFile(new URL('../src/app/desktop-topbar.css', import.meta.url), 'utf8')
+  assert.match(app, /history=\{inputMode === 'desktop' \? \{ canUndo, canRedo/)
+  assert.match(app, /\{\(inputMode !== 'desktop' \|\| zoomLockActive\) && <HistoryBar/)
+  assert.match(bar, /desktop && props\.history/)
+  assert.match(bar, /title="Undo \(Ctrl\+Z\)"/)
+  assertScoped(css, 'desktop-topbar.css')
+})
