@@ -2,16 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 import { HLD_SHAPE_LABELS } from '../hldShapes'
 import type { HldShape } from '../hldShapes'
 import { HLD_ENTRIES, MORE_HLD_ENTRIES } from './InsertTray'
+import { DockTip } from './DockTip'
 import { searchShapes } from '../shapeSearch'
 
 type MoreShapesTrayProps = {
   hldActive: HldShape | null
   onHldShape: (shape: HldShape) => void
   onSticky: () => void
+  /** Desktop dock: icon-only button with a hover/focus tooltip instead of a label and native title. */
+  desktopTip?: boolean
 }
 
 /** Desktop dock: one "More shapes" button that opens a small grid of the extra HLD shapes (same popover style as More). */
-export function MoreShapesTray({ hldActive, onHldShape, onSticky }:MoreShapesTrayProps) {
+export function MoreShapesTray({ hldActive, onHldShape, onSticky, desktopTip }:MoreShapesTrayProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
@@ -55,10 +58,10 @@ export function MoreShapesTray({ hldActive, onHldShape, onSticky }:MoreShapesTra
         aria-label="More shapes"
         aria-haspopup="true"
         aria-expanded={open}
-        title="More HLD shapes: User, Browser, Mobile, Cache, Load balancer, CDN, API gateway, Server, Object storage, Stream, Worker"
+        title={desktopTip ? undefined : "More HLD shapes: User, Browser, Mobile, Cache, Load balancer, CDN, API gateway, Server, Object storage, Stream, Worker"}
         onClick={() => setOpen((value) => !value)}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><path d="M17 13.5v7M13.5 17h7"/></svg><span>More shapes</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><path d="M17 13.5v7M13.5 17h7"/></svg>{desktopTip ? <DockTip name="More shapes" /> : <span>More shapes</span>}
       </button>
       {open && <div className="insert-tray more-shapes-tray" role="group" aria-label="More shapes tray">
         <input

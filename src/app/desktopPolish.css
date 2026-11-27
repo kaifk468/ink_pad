@@ -1,9 +1,9 @@
 /* Desktop-only polish (UI round 1, part B). Everything is scoped to desktop input mode; tablet styles are untouched.
    Tokens come from tokens.css when present; fallbacks keep this file working on its own. */
 
-/* Toast sits above the tool dock (dock: 16px bottom + 68px tall) and rises 8px while fading in. */
+/* Toast sits above the tool dock (dock: 16px bottom + 54px tall) and rises 8px while fading in. */
 .app-shell[data-input-mode="desktop"] .app-toast {
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 68px + 16px);
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 54px + 16px);
   background: rgba(31, 33, 38, .94);
   box-shadow: var(--ip-shadow-2, 0 8px 24px rgba(20, 22, 28, .10), 0 2px 6px rgba(20, 22, 28, .06));
   transform: translate(-50%, 8px);
