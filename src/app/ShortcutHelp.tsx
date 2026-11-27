@@ -21,6 +21,7 @@ export function ShortcutHelp({ onClose }: ShortcutHelpProps) {
           <strong>Keyboard shortcuts</strong>
           <button type="button" className="file-panel-close" aria-label="Close" title="Close (Esc)" onClick={onClose}>×</button>
         </header>
+        <div className="shortcut-help-body">
         <div className="shortcut-help-groups">
         {SHORTCUT_GROUPS.map((group) => (
           <div key={group} className="shortcut-help-group">
@@ -35,6 +36,7 @@ export function ShortcutHelp({ onClose }: ShortcutHelpProps) {
             </dl>
           </div>
         ))}
+        </div>
         </div>
       </section>
     </div>
