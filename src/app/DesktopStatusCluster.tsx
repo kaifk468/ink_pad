@@ -1,14 +1,14 @@
 import type { SaveStatus } from '../FilePanel'
 
-type Props = { status: SaveStatus; text: string; onExport: () => void; exportOpen: boolean; hideExport?: boolean }
+type Props = { status: SaveStatus; text: string; onExport: () => void; exportOpen: boolean; hideExport?: boolean; /** Bumped by Ctrl+S: replays the dot pulse and flashes the pill once. */ flashKey?: number }
 
 /** Desktop only: save-status pill and the Export button, shown left of the account button. */
-export function DesktopStatusCluster({ status, text, onExport, exportOpen, hideExport }: Props) {
+export function DesktopStatusCluster({ status, text, onExport, exportOpen, hideExport, flashKey = 0 }: Props) {
   const tone = status === 'saved' ? 'ok' : status === 'error' || status === 'locked' ? 'bad' : 'pending'
   return (
     <>
-      <div className={`top-status-pill tone-${tone}`} role="status">
-        <span key={status === 'saved' ? 'saved' : 'other'} className={`top-status-dot${status === 'saved' ? ' just-saved' : ''}`} aria-hidden="true" />
+      <div key={`pill-${flashKey}`} className={`top-status-pill tone-${tone}${flashKey > 0 ? ' flash' : ''}`} role="status">
+        <span key={`${status === 'saved' ? 'saved' : 'other'}-${flashKey}`} className={`top-status-dot${status === 'saved' ? ' just-saved' : ''}`} aria-hidden="true" />
         <span className="top-status-text">{text}</span>
       </div>
       {!hideExport && <button className={`top-export-button${exportOpen ? ' selected' : ''}`} type="button" aria-haspopup="dialog" aria-expanded={exportOpen} title="Export and import (PNG, SVG, .inkpad)" onClick={onExport}>

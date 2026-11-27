@@ -192,6 +192,7 @@ export type KeyCommand =
   | { kind: 'undo' }
   | { kind: 'redo' }
   | { kind: 'library' }
+  | { kind: 'saveNow' }
   | { kind: 'palette' }
   | { kind: 'find' }
   | { kind: 'findReplace' }
@@ -282,6 +283,8 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     // Ctrl/Cmd+' toggles snap to grid. The physical key (Quote) or the character decides.
     if ((event.code === 'Quote' || key === "'") && !event.shiftKey) return event.repeat ? null : { kind: 'gridSnap' }
     if (key === 'o' && !event.shiftKey && !event.repeat) return { kind: 'library' }
+    // Ctrl/Cmd+S saves now (Chrome would open its Save page dialog).
+    if (key === 's' && !event.shiftKey) return { kind: 'saveNow' }
     // Ctrl/Cmd+K opens the command palette (Chrome would focus its search bar).
     if (key === 'k' && !event.shiftKey && !event.repeat) return { kind: 'palette' }
     // Ctrl/Cmd+F opens the find bar (never Chrome's own).
@@ -783,7 +786,7 @@ export function clampMenuPosition(x: number, y: number, width: number, height: n
 }
 
 /** Commands whose browser default (Chrome's find bar for Ctrl+G, the open-file dialog, Ctrl+Alt shortcuts) is always cancelled in Desktop mode, even when the action does nothing. */
-export const ALWAYS_PREVENT_DEFAULT_COMMANDS: ReadonlySet<KeyCommand['kind']> = new Set(['group', 'ungroup', 'library', 'palette', 'find', 'findReplace', 'copyStyle', 'pasteStyle', 'walkLinked'])
+export const ALWAYS_PREVENT_DEFAULT_COMMANDS: ReadonlySet<KeyCommand['kind']> = new Set(['group', 'ungroup', 'library', 'saveNow', 'palette', 'find', 'findReplace', 'copyStyle', 'pasteStyle', 'walkLinked'])
 export function alwaysPreventsDefault(command: KeyCommand, mode: InputMode): boolean {
   return mode === 'desktop' && ALWAYS_PREVENT_DEFAULT_COMMANDS.has(command.kind)
 }
@@ -916,4 +919,13 @@ export function labelDoubleClickDecision(input: {
 /** Desktop toast after an export from the export dialog: the error text when the export failed, else "PNG downloaded" / "SVG downloaded". */
 export function exportToastText(kind: 'PNG' | 'SVG', error: string | null): string {
   return error ?? `${kind} downloaded`
+}
+
+/**
+ * The one-time Keep tool hint: on Desktop, after a drawing tool switched back to Select by itself (Keep tool off),
+ * show the tip once per page session. `alreadyShown` is session memory only (nothing is stored).
+ */
+export const KEEP_TOOL_TIP = 'Tip: press Q (Keep tool) to draw several in a row'
+export function shouldShowKeepToolTip(alreadyShown: boolean, toolLock: boolean, mode: InputMode): boolean {
+  return mode === 'desktop' && !toolLock && !alreadyShown
 }

@@ -118,7 +118,7 @@ import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, loadTapUndo, saveNavigationSettings, saveTapUndo } from './navigationSettings'
-import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, shouldShowKeepToolTip, KEEP_TOOL_TIP, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -372,6 +372,23 @@ function App() {
     setToast((current) => ({ id: (current?.id ?? 0) + 1, text }))
     toastTimerRef.current = window.setTimeout(() => { toastTimerRef.current = null; setToast(null) }, TOAST_MS)
   }
+  // One hint per page session (memory only, nothing stored): a drawing tool just handed over to Select on its own.
+  const keepToolTipShownRef = useRef(false)
+  const maybeShowKeepToolTip = () => {
+    if (!shouldShowKeepToolTip(keepToolTipShownRef.current, toolLockRef.current, inputModeRef.current)) return
+    keepToolTipShownRef.current = true
+    showToast(KEEP_TOOL_TIP)
+  }
+  // Ctrl+S: save now, say so in a toast, and flash the status pill once.
+  const [statusFlash, setStatusFlash] = useState(0)
+  const saveNowWithToast = () => {
+    setStatusFlash((n) => n + 1)
+    void saveNow().then((status) => {
+      if (status === 'error') showToast(statusLabel(status, storage.kind))
+      else if (status === 'locked') showToast(statusLabel(status, storage.kind))
+      else showToast('Saved')
+    }, () => showToast(statusLabel('error', storage.kind)))
+  }
   // A toast with one action button (shown in every mode; stays a little longer so it can be tapped).
   const showActionToast = (text: string, action?: { label: string; run: () => void }) => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
@@ -486,7 +503,7 @@ function App() {
     filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram, moveFolder,
-    loadForSearch, scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
+    loadForSearch, scheduleAutosave: scheduleAutosaveBase, saveNow, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   } = useDocuments({
     getItems: () => strokesRef.current,
@@ -3818,6 +3835,7 @@ function App() {
       } else if (arrowConnector) {
         strokesRef.current.push(arrowConnector)
         if (selectDesktopArrow && !toolLockRef.current) selectNewConnectorRef.current(canvasItemKey(arrowConnector))
+        if (selectDesktopArrow) maybeShowKeepToolTip()
       } else {
         strokesRef.current.push(stroke)
         if (stroke.kind === 'stroke' && stroke.erase) strokesRef.current = compactAfterErase(strokesRef.current, () => nextStrokeIdRef.current++)
@@ -4691,6 +4709,7 @@ function App() {
           setShapeTool(null)
           setSelectionMode(true)
           setSelectedRectangle(finished.rectangleId)
+          maybeShowKeepToolTip()
           updateSelectedItems([])
           renderAll()
           return
@@ -6031,6 +6050,7 @@ function App() {
       case 'undo': undo(); return true
       case 'redo': redo(); return true
       case 'library': toggleLibrary(); return true
+      case 'saveNow': saveNowWithToast(); return true
       case 'palette': openPalette(); return true
       case 'find': openFind(); return true
       case 'findReplace': openFind(true); return true
@@ -6371,7 +6391,7 @@ function App() {
         />
       )}
       {(inputMode !== 'desktop' || zoomLockActive) && <HistoryBar desktop={inputMode !== 'tablet'} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />}
-      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={inputMode === 'desktop' ? <DesktopStatusCluster status={saveStatus} text={statusLabel(saveStatus, storage.kind)} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} hideExport={zoomLockActive} /> : accountLeading(penModeActive, inputMode, <PenColors color={color} onColor={selectColor} />)} />
+      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={inputMode === 'desktop' ? <DesktopStatusCluster status={saveStatus} text={statusLabel(saveStatus, storage.kind)} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} hideExport={zoomLockActive} flashKey={statusFlash} /> : accountLeading(penModeActive, inputMode, <PenColors color={color} onColor={selectColor} />)} />
       <ContextPanel
         desktop={inputMode === 'desktop'}
         showDisplayMode={shapeTool === null}

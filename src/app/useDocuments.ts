@@ -100,7 +100,9 @@ export function useDocuments(host: DocumentHost) {
   const [filePanelOpen, setFilePanelOpen] = useState(false)
   const [storagePanelOpen, setStoragePanelOpen] = useState(false)
   const [docTitle, setDocTitle] = useState(DEFAULT_DOCUMENT_TITLE)
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const [saveStatus, setSaveStatusState] = useState<SaveStatus>('idle')
+  const saveStatusRef = useRef<SaveStatus>('idle')
+  const setSaveStatus = (next: SaveStatus) => { saveStatusRef.current = next; setSaveStatusState(next) }
   const [fileNotice, setFileNotice] = useState<string | null>(null)
   const [exportBusy, setExportBusy] = useState(false)
   const [library, setLibrary] = useState<DocumentSummary[]>([])
@@ -363,6 +365,12 @@ export function useDocuments(host: DocumentHost) {
     const run = saveChainRef.current.then(doPersist, doPersist)
     saveChainRef.current = run
     return run
+  }
+
+  /** Save right now (Desktop Ctrl+S). Resolves to the status the save ended in. */
+  const saveNow = async (): Promise<SaveStatus> => {
+    await persistNow()
+    return saveStatusRef.current
   }
 
   const scheduleAutosave = () => {
@@ -801,12 +809,19 @@ export function useDocuments(host: DocumentHost) {
     try { return getImageExport('current', { ...options, fontCss: await loadExcalifontCss() }) } catch { return probe }
   }
 
+  /** Library and overview pictures are drawn from an SVG inside an <img>, which cannot see the page's fonts: embed Excalifont, or its labels fall back to the browser's "cursive" (a serif on many systems). */
+  const getThumbnailExport = async (which: 'first' | number) => {
+    const probe = getImageExport(which)
+    if (!probe || !probe.usesFont) return probe
+    try { return getImageExport(which, { fontCss: await loadExcalifontCss() }) } catch { return probe }
+  }
+
   /**
    * A small picture (PNG data URL) of page `index` for the page overview, null for a blank page, or PAGE_PREVIEW_TOO_LARGE for one too large to draw cheaply.
    * Called one page at a time, only while the overview is open (never while writing).
    */
   const renderPageThumbnail = async (index: number): Promise<string | null> => {
-    const exported = getImageExport(index)
+    const exported = await getThumbnailExport(index)
     if (!exported) return null
     if (exported.svg.length > THUMBNAIL_MAX_SVG_CHARS) return PAGE_PREVIEW_TOO_LARGE
     const size = thumbnailSize(exported.bounds.width, exported.bounds.height)
@@ -830,7 +845,7 @@ export function useDocuments(host: DocumentHost) {
     const signature = currentSignature()
     const last = thumbnailOfRef.current
     if (last && last.id === id && sameSignature(signature, last.signature)) return
-    const exported = getImageExport('first')
+    const exported = await getThumbnailExport('first')
     try {
       if (!exported) {
         thumbnailOfRef.current = { id, signature }
@@ -1248,7 +1263,7 @@ export function useDocuments(host: DocumentHost) {
     loadForSearch, filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram, moveFolder,
-    scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
+    scheduleAutosave, saveNow, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   }
 }
