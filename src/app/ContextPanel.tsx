@@ -140,11 +140,11 @@ type ContextPanelProps = {
 }
 
 /** The five quick colours, a rainbow button that opens the full picker, and the picker itself. */
-function ColorChoices({ value, label, onChange }: { value: string; label: string; onChange: (hex: string, commit: boolean) => void }) {
+function ColorChoices({ value, label, onChange, square, idle }: { value: string; label: string; onChange: (hex: string, commit: boolean) => void; square?: boolean; idle?: boolean }) {
   const [open, setOpen] = useState(false)
-  const quick = COLORS.some((item) => item.value.toLowerCase() === value.toLowerCase())
+  const quick = idle || COLORS.some((item) => item.value.toLowerCase() === value.toLowerCase())
   return (
-    <div className="color-choices" role="group" aria-label={label}>
+    <div className={`color-choices${square ? ' is-fill' : ''}`} role="group" aria-label={label}>
       <div className="tool-group color-group">
         {COLORS.map((item) => (
           <button
@@ -190,7 +190,7 @@ export function ContextPanel(props: ContextPanelProps) {
   const selectionWidthEl = (
     <>
       {props.selectionWidth && <div className="selection-width" role="group" aria-label="Outline width of the selection">
-        <span className="panel-label">Width of this object</span>
+        <span className="panel-label">{props.desktop ? 'Width' : 'Width of this object'}</span>
         <div className="tool-group thickness-group">
           {WIDTHS.map((size) => (
             <button
@@ -205,7 +205,7 @@ export function ContextPanel(props: ContextPanelProps) {
           ))}
         </div>
         <div className="stroke-width-slider">
-          <label className="popover-label" htmlFor="selection-width-range">Width</label>
+          {!props.desktop && <label className="popover-label" htmlFor="selection-width-range">Width</label>}
           <input
             id="selection-width-range"
             className="stroke-width-range"
@@ -356,7 +356,7 @@ export function ContextPanel(props: ContextPanelProps) {
   const selColorEl = (
     <>
       {props.showSelectionColor && !props.code && props.onSelectionColor && <div className="selection-color">
-        <span className="panel-label">Colour of this object</span>
+        <span className="panel-label">{props.desktop ? 'Stroke' : 'Colour of this object'}</span>
         <ColorChoices value={props.selectionColor ?? '#202124'} label="Object colour" onChange={props.onSelectionColor} />
       </div>}
     </>
@@ -365,13 +365,13 @@ export function ContextPanel(props: ContextPanelProps) {
     <>
       {props.fill && <div className="selection-color fill-color" role="group" aria-label="Fill colour">
         <span className="panel-label">Fill</span>
-        <div className="tool-group color-group">
+        <div className={`tool-group color-group${props.desktop ? ' fill-presets' : ''}`}>
           <button className={`color-swatch fill-none${props.fill.color === 'none' ? ' selected' : ''}`} type="button" title="No fill" aria-label="No fill" aria-pressed={props.fill.color === 'none'} onClick={() => props.fill?.onFill(null, true)} />
           {FILL_PRESETS.map((preset) => (
             <button key={preset.fill} className={`color-swatch${props.fill?.color?.toLowerCase() === preset.fill ? ' selected' : ''}`} type="button" title={`${preset.name} fill`} aria-label={`${preset.name} fill`} aria-pressed={props.fill?.color?.toLowerCase() === preset.fill} style={{ '--swatch': preset.fill } as CSSProperties} onClick={() => props.fill?.onFill(preset.fill, true)} />
           ))}
         </div>
-        <ColorChoices value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" onChange={(hex, commit) => props.fill?.onFill(hex, commit)} />
+        <ColorChoices square={props.desktop} idle={props.desktop && props.fill.color === 'none'} value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" onChange={(hex, commit) => props.fill?.onFill(hex, commit)} />
         {props.fill.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null) && <button className="clear-selection-button" type="button" title="Use the darker outline that goes with this fill" onClick={() => { const hex = props.fill?.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null); if (hex) props.fill?.onMatchOutline(hex) }}>Matching outline</button>}
       </div>}
     </>
@@ -602,7 +602,7 @@ export function ContextPanel(props: ContextPanelProps) {
   )
   const colourEl = (
     <>
-        {props.desktop ? <ColorChoices value={props.color} label="Stroke colour" onChange={(hex) => props.onColor(hex)} /> : <div className="tool-group color-group" role="group" aria-label="Pen color">
+        {props.desktop ? <div className="selection-color"><span className="panel-label">Stroke</span><ColorChoices value={props.color} label="Stroke colour" onChange={(hex) => props.onColor(hex)} /></div> : <div className="tool-group color-group" role="group" aria-label="Pen color">
           {COLORS.map((item) => (
             <button
               className={`color-swatch${props.color === item.value ? ' selected' : ''}`}
@@ -618,7 +618,7 @@ export function ContextPanel(props: ContextPanelProps) {
         </div>}
     </>
   )
-  const widthEl = (
+  const widthControls = (
     <>
         <div className="tool-group thickness-group" role="group" aria-label="Stroke thickness">
           {WIDTHS.map((size) => (
@@ -634,10 +634,15 @@ export function ContextPanel(props: ContextPanelProps) {
           ))}
         </div>
         <div className="stroke-width-slider">
-          <label className="popover-label" htmlFor="stroke-width-range">Width</label>
+          {!props.desktop && <label className="popover-label" htmlFor="stroke-width-range">Width</label>}
           <input id="stroke-width-range" className="stroke-width-range" aria-label="Stroke width" type="range" min={MIN_STROKE_WIDTH} max={MAX_STROKE_WIDTH} step="1" value={props.width} onChange={(event) => props.onWidth(Number(event.target.value))} />
           <output htmlFor="stroke-width-range">{props.width} px</output>
         </div>
+    </>
+  )
+  const widthEl = (
+    <>
+        {props.desktop ? <div className="selection-width"><span className="panel-label">Width</span>{widthControls}</div> : widthControls}
         {props.showDisplayMode !== false && <div className="stroke-display-control" role="group" aria-label="Stroke display mode">
           <button className={`stroke-mode-button${props.strokeDisplayMode === 'smooth' ? ' selected' : ''}`} type="button" aria-label="Smooth stroke display" aria-pressed={props.strokeDisplayMode === 'smooth'} title="Display smoothed curved strokes" onClick={() => props.onStrokeDisplayMode('smooth')}>
             <svg viewBox="0 0 24 16" aria-hidden="true"><path d="M1 12c4 0 4-8 8-8s4 8 8 8 4-4 6-4"/></svg><span>Smooth</span>
