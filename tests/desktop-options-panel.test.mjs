@@ -125,3 +125,11 @@ test('new CSS is scoped to the desktop shell', () => {
     for (const piece of selector.split(',')) assert.match(piece.trim(), /^\.app-shell\[data-input-mode="desktop"\]/, piece)
   }
 })
+
+test('text size row: exactly one segment is active (Fit wins over a number; otherwise the label size)', () => {
+  const sizes = [10, 12, 14, 16, 18, 24, 32, 48]
+  assert.equal(model.activeTextSizeSegment(sizes, 24, true), 'fit')
+  assert.equal(model.activeTextSizeSegment(sizes, 24, false), 24)
+  assert.equal(model.activeTextSizeSegment(sizes, 23.6, null), 24)
+  assert.equal(model.activeTextSizeSegment(sizes, 21, false), null)
+})

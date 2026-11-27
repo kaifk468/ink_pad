@@ -46,3 +46,13 @@ export function optionsContextName(input: { count: number; selectedKind?: string
   if (input.tool) return TOOL_NAMES[input.tool] ?? 'Shape'
   return 'Pen'
 }
+
+/**
+ * Which single segment of the desktop "Text size" row is active: 'fit' while auto-fit is on (the size is then
+ * computed, so no number is also active), else the preset equal to the label's own size, else null.
+ * `size` is the size of the label being edited or selected, falling back to the tool's size when there is none.
+ */
+export function activeTextSizeSegment(choices: readonly number[], size: number, fitOn: boolean | null | undefined): number | 'fit' | null {
+  if (fitOn) return 'fit'
+  return choices.find((choice) => choice === Math.round(size)) ?? null
+}
