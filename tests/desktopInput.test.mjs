@@ -7,7 +7,13 @@ const input = await loadModule('desktopInput.ts')
 
 const memoryStorage = (initial = {}) => {
   const data = { ...initial }
-  return { getItem: (key) => (key in data ? data[key] : null), setItem: (key, value) => { data[key] = String(value) }, data }
+  return {
+    getItem: (key) => (key in data ? data[key] : null),
+    setItem: (key, value) => { data[key] = String(value) },
+    get length() { return Object.keys(data).length },
+    key: (i) => Object.keys(data)[i] ?? null,
+    data,
+  }
 }
 const brokenStorage = { getItem() { throw new Error('blocked') }, setItem() { throw new Error('blocked') } }
 
@@ -396,8 +402,18 @@ test('first visit on a mouse-only computer starts in Desktop mode; touch devices
   assert.equal(input.defaultInputModeFor(touchLaptop), 'tablet')
   assert.equal(input.defaultInputModeFor({ maxTouchPoints: 0, finePointer: false, canHover: false }), 'tablet')
   assert.equal(input.defaultInputModeFor(null), 'tablet')
-  assert.equal(input.loadInputMode(memoryStorage(), mouse), 'desktop')
-  assert.equal(input.loadInputMode(memoryStorage(), tablet), 'tablet')
+  const first = memoryStorage()
+  assert.equal(input.loadInputMode(first, mouse), 'desktop')
+  assert.equal(first.data['inkpad.inputMode'], 'desktop', 'a first-visit Desktop decision is saved so it stays stable')
+  assert.equal(input.loadInputMode(first, tablet), 'desktop')
+  const firstTablet = memoryStorage()
+  assert.equal(input.loadInputMode(firstTablet, tablet), 'tablet')
+  assert.equal(firstTablet.data['inkpad.inputMode'], undefined)
+  // an existing user (any other inkpad.* key) who never chose a mode stays on Tablet
+  assert.equal(input.loadInputMode(memoryStorage({ 'inkpad.currentDocument': 'abc' }), mouse), 'tablet')
+  assert.equal(input.loadInputMode(memoryStorage({ 'unrelated': '1' }), mouse), 'desktop', 'non-inkpad keys do not count')
+  // storage that cannot be enumerated is not a first visit
+  assert.equal(input.loadInputMode({ getItem: () => null }, mouse), 'tablet')
   assert.equal(input.loadInputMode(memoryStorage({ 'inkpad.inputMode': 'tablet' }), mouse), 'tablet')
   assert.equal(input.loadInputMode(memoryStorage({ 'inkpad.inputMode': 'desktop' }), tablet), 'desktop')
   assert.equal(input.loadInputMode(brokenStorage, mouse), 'tablet')
