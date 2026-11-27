@@ -125,3 +125,8 @@ export function describeEdited(updatedAt: string, now: number = Date.now()): str
   if (days < 7) return `${days} days ago`
   return new Date(stamp).toLocaleDateString()
 }
+
+/** True when the whole Library holds nothing (top level, no search, not the Starred view): desktop shows the welcoming empty state there. */
+export function showLibraryWelcome(input: { shown: number; inFolder: boolean; searching: boolean; starredView: boolean }): boolean {
+  return input.shown === 0 && !input.inFolder && !input.searching && !input.starredView
+}

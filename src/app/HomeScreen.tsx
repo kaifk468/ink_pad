@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DocumentSummary, FolderRecord } from '../documentStore'
 import { cleanFolderName, flattenFolders, folderMoveTargets, folderPath } from '../folderTree'
-import { NEW_DIAGRAM_PRESETS, RECENT_COUNT, RECENT_MIN_LIBRARY, countInFolder, describeEdited, folderLabel, LIBRARY_SORTS, parseLibrarySort, recentDiagrams, searchLibrary, sortLibrary, type LibraryLayout, type LibrarySort } from '../libraryView'
+import { NEW_DIAGRAM_PRESETS, RECENT_COUNT, RECENT_MIN_LIBRARY, countInFolder, describeEdited, folderLabel, LIBRARY_SORTS, parseLibrarySort, recentDiagrams, searchLibrary, showLibraryWelcome, sortLibrary, type LibraryLayout, type LibrarySort } from '../libraryView'
 import { copyTitle } from '../libraryCopy'
 import { canDragCards, decideDrop, decideFolderDrop, FOLDER_DRAG_TYPE, hasFinePointer } from '../libraryDrop'
 import { batchDelete, createPendingDeletes, hiddenForDiagram, hiddenForFolder, hidesInFolder, pendingLabel, type PendingDeletes } from '../pendingDelete'
@@ -352,7 +352,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const heading = view === 'starred' ? 'Starred' : hereFolder ? hereFolder.name : 'All diagrams'
 
   return (
-    <div className="home-screen" role="dialog" aria-modal="true" aria-label="Library">
+    <div className={`home-screen${props.desktop ? ' home-desktop' : ''}`} role="dialog" aria-modal="true" aria-label="Library">
       <aside className="home-side" aria-label="Folders">
         <div className="home-brand"><span className="brand-mark" aria-hidden="true"><span /></span><strong>Ink Pad</strong></div>
         <button type="button" className={`home-nav${view === 'all' && here === null ? ' selected' : ''}${dropOver === 'root' ? ' drop-over' : ''}`} {...dropTarget(null)} onClick={() => { setView('all'); setSelected(null); setRenaming(false); clearStatus() }}>
@@ -575,7 +575,12 @@ export function HomeScreen(props: HomeScreenProps) {
           <p>This folder is empty.</p>
           <button type="button" className="home-primary" onClick={() => props.onNewDiagram(here, NEW_DIAGRAM_PRESETS[0].template)}>New diagram here</button>
         </div>}
-        {shown.length === 0 && !(here && !query.trim() && view === 'all') && <p className="home-empty">{query.trim() ? 'No diagram matches your search.' : view === 'starred' ? `No starred diagrams yet. Tap the star on a diagram to keep it here${props.starsSync ? ' (stars sync through Google Drive)' : ' (stars stay on this device)'}.` : here ? 'This folder is empty.' : 'Nothing saved yet. Tap “New diagram”, pick a sheet and start writing; it saves by itself.'}</p>}
+        {props.desktop && showLibraryWelcome({ shown: shown.length, inFolder: Boolean(here), searching: Boolean(query.trim()), starredView: view !== 'all' }) && <div className="home-welcome">
+          <h2>Your library is empty</h2>
+          <p>Diagrams save by themselves as you draw.</p>
+          <button type="button" className="home-primary" onClick={() => props.onNewDiagram(null, 'blank')}>New blank diagram</button>
+        </div>}
+        {shown.length === 0 && !(here && !query.trim() && view === 'all') && !(props.desktop && showLibraryWelcome({ shown: shown.length, inFolder: Boolean(here), searching: Boolean(query.trim()), starredView: view !== 'all' })) && <p className="home-empty">{query.trim() ? 'No diagram matches your search.' : view === 'starred' ? `No starred diagrams yet. Tap the star on a diagram to keep it here${props.starsSync ? ' (stars sync through Google Drive)' : ' (stars stay on this device)'}.` : here ? 'This folder is empty.' : 'Nothing saved yet. Tap “New diagram”, pick a sheet and start writing; it saves by itself.'}</p>}
       </main>
     </div>
   )

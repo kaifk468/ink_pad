@@ -28,7 +28,7 @@ test('Alt+Z has a help row that maps to the command, and so a palette entry', ()
 })
 
 test('wiring: one class on the app root, nothing unmounted, plain state (not saved)', async () => {
-  assert.match(app, /<main className=\{`app-shell\$\{presentMode \? ' ui-hidden' : ''\}`\}>/)
+  assert.match(app, /<main className=\{`app-shell\$\{presentMode \? ' ui-hidden' : ''\}`\} data-input-mode=\{inputMode\}>/)
   assert.match(app, /const \[presentMode, setPresentMode\] = useState\(false\)/)
   const css = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
   const rule = css.slice(css.indexOf('.app-shell.ui-hidden .tool-dock'), css.indexOf('.show-toolbars-pill {'))
