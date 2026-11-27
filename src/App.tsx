@@ -481,7 +481,7 @@ function App() {
   const {
     filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
-    newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram,
+    newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram, moveFolder,
     loadForSearch, scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   } = useDocuments({
@@ -6515,6 +6515,8 @@ function App() {
         onDeleteFolder={(id, confirmed) => deleteFolder(id, confirmed)}
         onFolderDeleteScheduled={(id) => releaseFolderTarget(id)}
         onMoveDiagram={(docId, folderId) => moveDiagram(docId, folderId)}
+        canMoveFolders={storage.kind !== 'device'}
+        onMoveFolder={(id, parentId) => moveFolder(id, parentId)}
         onDeleteDiagram={(id) => deleteStoredDiagram(id)}
         onChangeStorage={() => { setLibraryOpen(false); setStoragePanelOpen(true) }}
         desktop={inputMode === 'desktop'}

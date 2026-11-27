@@ -1,4 +1,5 @@
 import type { DocumentSummary, FolderRecord } from './documentStore'
+import { canMoveFolder } from './folderTree'
 
 export type DropDecision = { ok: true; folderId: string | null } | { ok: false; reason: 'missing-diagram' | 'missing-folder' | 'same-folder' }
 
@@ -17,6 +18,15 @@ export function decideDrop(library: DocumentSummary[], folders: FolderRecord[], 
   if (targetFolderId !== null && !folders.some((folder) => folder.id === targetFolderId)) return { ok: false, reason: 'missing-folder' }
   if (effectiveFolder(entry, folders) === targetFolderId) return { ok: false, reason: 'same-folder' }
   return { ok: true, folderId: targetFolderId }
+}
+
+/** Drag data type of a dragged folder row (diagram cards only carry text/plain), so a folder is never mistaken for a diagram. */
+export const FOLDER_DRAG_TYPE = 'application/x-inkpad-folder'
+
+/** Whether dropping a dragged folder on another folder or the top-level entry should move it; an invalid target gets no highlight. */
+export function decideFolderDrop(folders: FolderRecord[], folderId: string | null, targetFolderId: string | null): { ok: boolean } {
+  if (folderId === null) return { ok: false }
+  return { ok: canMoveFolder(folders, folderId, targetFolderId).ok }
 }
 
 /** Cards can be dragged only with a mouse: desktop input mode, or a fine primary pointer. Touch and pen tablets keep the Move dialog. */

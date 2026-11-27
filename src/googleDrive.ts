@@ -1,7 +1,7 @@
 import { documentItemCount, documentPageCount, DOCUMENT_FILE_EXTENSION, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
 import type { DocumentSummary, FolderRecord } from './documentStore'
 import { fileBase, sanitizeName } from './deviceStore'
-import { cleanFolderName, folderAndDescendantIds } from './folderTree'
+import { canMoveFolder, cleanFolderName, folderAndDescendantIds, folderMoveRefusalText } from './folderTree'
 import type { StorageBackend } from './storageBackend'
 import type { DriveCache } from './driveCache'
 import type { DriveProfile } from './driveProfile'
@@ -344,6 +344,20 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
         body: JSON.stringify({ name: cleanFolderName(name) }),
       })
       return null
+    },
+    async moveFolder(id, parentId) {
+      const files = await listAll(env)
+      const { folders } = organise(files)
+      const decision = canMoveFolder(folders, id, parentId)
+      if (!decision.ok) {
+        if (decision.reason === 'same-parent') return
+        throw new Error(folderMoveRefusalText(decision.reason, folders.find((folder) => folder.id === id)?.name ?? ''))
+      }
+      const file = files.find((entry) => entry.id === id && entry.mimeType === FOLDER_MIME)
+      if (!file) throw new Error('That folder no longer exists.')
+      // Same call as moving a diagram: the folder (and everything in it) is re-parented, never copied. The cached listing is rebuilt by the next list().
+      const params = new URLSearchParams({ addParents: parentId ?? ROOT_ALIAS, removeParents: (file.parents ?? []).join(','), fields: 'id' })
+      await call(env, `${FILES_URL}/${encodeURIComponent(id)}?${params}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' })
     },
     async deleteFolder(id) {
       const { folders, documents } = organise(await listAll(env))

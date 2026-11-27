@@ -613,6 +613,22 @@ export function useDocuments(host: DocumentHost) {
     return ok
   }
 
+  /** Moves a folder (with everything in it, same ids) under another folder; false with a notice when refused or unsupported (device folders). */
+  const moveFolder = async (id: string, parentId: string | null): Promise<boolean> => {
+    setFileNotice(null)
+    let ok = true
+    const move = backendRef.current.moveFolder
+    try {
+      if (!move) throw new Error('Moving folders is not available for this storage.')
+      await move.call(backendRef.current, id, parentId)
+    } catch (error) {
+      setFileNotice(errorText(error, 'Could not move that folder.'))
+      ok = false
+    }
+    void refreshLibrary()
+    return ok
+  }
+
   /**
    * Renames a diagram from the Library. The open diagram uses the same path as the in-canvas title edit. Any other diagram is loaded
    * (fresh from the storage where it keeps a browser copy), given the new title and saved through the storage's own save (the same call
@@ -1227,7 +1243,7 @@ export function useDocuments(host: DocumentHost) {
   return {
     loadForSearch, filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
-    newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram,
+    newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram, moveFolder,
     scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
     exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   }

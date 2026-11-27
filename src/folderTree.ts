@@ -62,3 +62,59 @@ export function flattenFolders(folders: FolderRecord[]): Array<{ folder: FolderR
   visit(null, 0, new Set())
   return out
 }
+
+export type FolderMoveRefusal = 'missing' | 'missing-target' | 'self' | 'inside' | 'same-parent' | 'name-clash'
+export type FolderMoveDecision = { ok: true } | { ok: false; reason: FolderMoveRefusal }
+
+/** The folder a folder really sits in: a parent id that is not a known folder counts as the top level. */
+function effectiveParent(folders: FolderRecord[], folder: FolderRecord): string | null {
+  return folder.parentId && folders.some((entry) => entry.id === folder.parentId) ? folder.parentId : null
+}
+
+/**
+ * Whether a folder may be moved under parentId (null = top level). Refused: into itself or one of its own subfolders (a cycle),
+ * onto the folder it is already in (nothing to do), to a folder that does not exist, and where a sibling of the same name
+ * (ignoring case) already exists.
+ */
+export function canMoveFolder(folders: FolderRecord[], id: string, parentId: string | null): FolderMoveDecision {
+  const folder = folders.find((entry) => entry.id === id)
+  if (!folder) return { ok: false, reason: 'missing' }
+  if (parentId === id) return { ok: false, reason: 'self' }
+  if (parentId !== null) {
+    if (!folders.some((entry) => entry.id === parentId)) return { ok: false, reason: 'missing-target' }
+    if (folderAndDescendantIds(folders, id).includes(parentId)) return { ok: false, reason: 'inside' }
+  }
+  if (effectiveParent(folders, folder) === parentId) return { ok: false, reason: 'same-parent' }
+  const name = folder.name.toLowerCase()
+  if (folders.some((entry) => entry.id !== id && effectiveParent(folders, entry) === parentId && entry.name.toLowerCase() === name)) return { ok: false, reason: 'name-clash' }
+  return { ok: true }
+}
+
+/** Why a move was refused, as a sentence for a notice. */
+export function folderMoveRefusalText(reason: FolderMoveRefusal, name: string): string {
+  switch (reason) {
+    case 'missing': return 'That folder no longer exists.'
+    case 'missing-target': return 'The folder to move into no longer exists.'
+    case 'self': return 'A folder cannot be moved into itself.'
+    case 'inside': return `“${name}” cannot be moved into one of its own subfolders.`
+    case 'same-parent': return `“${name}” is already there.`
+    case 'name-clash': return `That place already has a folder named “${name}”.`
+  }
+}
+
+/**
+ * Where the "Move to…" picker offers a folder: the top level (folder null, depth 0) and every folder that is not the folder itself,
+ * not inside it, and not the one it already sits in. A target where the name would clash is still listed; the move then explains.
+ */
+export function folderMoveTargets(folders: FolderRecord[], id: string): Array<{ folder: FolderRecord | null; depth: number }> {
+  const moving = folders.find((entry) => entry.id === id)
+  if (!moving) return []
+  const excluded = new Set(folderAndDescendantIds(folders, id))
+  const current = effectiveParent(folders, moving)
+  const out: Array<{ folder: FolderRecord | null; depth: number }> = []
+  if (current !== null) out.push({ folder: null, depth: 0 })
+  for (const { folder, depth } of flattenFolders(folders)) {
+    if (!excluded.has(folder.id) && folder.id !== current) out.push({ folder, depth })
+  }
+  return out
+}

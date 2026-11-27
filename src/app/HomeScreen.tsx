@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DocumentSummary, FolderRecord } from '../documentStore'
-import { cleanFolderName, flattenFolders, folderPath } from '../folderTree'
+import { cleanFolderName, flattenFolders, folderMoveTargets, folderPath } from '../folderTree'
 import { NEW_DIAGRAM_PRESETS, RECENT_COUNT, RECENT_MIN_LIBRARY, countInFolder, describeEdited, folderLabel, LIBRARY_SORTS, parseLibrarySort, recentDiagrams, searchLibrary, sortLibrary, type LibraryLayout, type LibrarySort } from '../libraryView'
 import { copyTitle } from '../libraryCopy'
-import { canDragCards, decideDrop, hasFinePointer } from '../libraryDrop'
+import { canDragCards, decideDrop, decideFolderDrop, FOLDER_DRAG_TYPE, hasFinePointer } from '../libraryDrop'
 import { batchDelete, createPendingDeletes, hiddenForDiagram, hiddenForFolder, hidesInFolder, pendingLabel, type PendingDeletes } from '../pendingDelete'
 import { allSelected, deleteConfirmText, effectiveSelection, idsToMove, movedMessage, runMoves, selectAllIds, selectionLabel, toggleSelected } from '../librarySelect'
 import type { PageTemplate } from '../pageTemplates'
@@ -40,6 +40,10 @@ type HomeScreenProps = {
   /** Called when a folder delete is scheduled, so new saves stop landing in that folder. */
   onFolderDeleteScheduled?: (id: string) => void
   onMoveDiagram: (docId: string, folderId: string | null) => Promise<boolean> | void
+  /** False on device-folder storage: moving a directory is not reliable there, so "Move to…" is replaced by a hint. */
+  canMoveFolders?: boolean
+  /** Moves a folder with everything in it under another folder (null = top level); resolves false (with a notice) when refused. */
+  onMoveFolder?: (id: string, parentId: string | null) => Promise<boolean> | void
   onDeleteDiagram: (id: string) => Promise<boolean> | void
   onChangeStorage: () => void
   /** Desktop input mode: cards can be dragged onto folders with the mouse. */
@@ -47,6 +51,7 @@ type HomeScreenProps = {
 }
 
 const STATUS_MS = 3000
+const MOVE_UNDO_MS = 8000
 const CONTENT_SEARCH_DELAY_MS = 200
 const LAYOUT_KEY = 'inkpad.libraryLayout'
 const SORT_KEY = 'inkpad.librarySort'
@@ -121,9 +126,40 @@ export function HomeScreen(props: HomeScreenProps) {
   /** The diagram being dragged, and the drop target under the mouse ('root' = All diagrams). Mouse drag and drop only; touch uses the Move dialog. */
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropOver, setDropOver] = useState<string | null>(null)
+  /** The folder row being dragged (a different drag data type than diagram cards), only where folders can be moved. */
+  const [dragFolderId, setDragFolderId] = useState<string | null>(null)
+  const foldersMovable = props.canMoveFolders !== false && Boolean(props.onMoveFolder)
+  /** A moved folder: the message and what Undo does (moves it back). */
+  const [moveUndo, setMoveUndo] = useState<{ text: string; undo: () => void } | null>(null)
+  const moveUndoTimer = useRef<number | null>(null)
+  const clearMoveUndo = () => {
+    if (moveUndoTimer.current !== null) { window.clearTimeout(moveUndoTimer.current); moveUndoTimer.current = null }
+    setMoveUndo(null)
+  }
+  useEffect(() => () => { if (moveUndoTimer.current !== null) window.clearTimeout(moveUndoTimer.current) }, [])
+  const [movingFolderId, setMovingFolderId] = useState<string | null>(null)
+  const moveFolderTo = async (folder: FolderRecord, parentId: string | null) => {
+    setMovingFolderId(null)
+    if (!props.onMoveFolder) return
+    const before = folder.parentId && folders.some((entry) => entry.id === folder.parentId) ? folder.parentId : null
+    const result = await props.onMoveFolder(folder.id, parentId)
+    if (result === false) return
+    const target = parentId ? folders.find((entry) => entry.id === parentId)?.name ?? 'folder' : null
+    const name = folder.name
+    clearStatus()
+    clearMoveUndo()
+    setMoveUndo({
+      text: target ? `Moved “${name}” into “${target}”` : `Moved “${name}” to the top level`,
+      undo: () => { clearMoveUndo(); void (async () => { if ((await props.onMoveFolder?.(folder.id, before)) !== false) showStatus(`Moved “${name}” back`) })() },
+    })
+    moveUndoTimer.current = window.setTimeout(() => { moveUndoTimer.current = null; setMoveUndo(null) }, MOVE_UNDO_MS)
+  }
   const dropTarget = (folderId: string | null) => {
     const key = folderId ?? 'root'
-    const valid = dragEnabled && dragId !== null && decideDrop(library, folders, dragId, folderId).ok
+    const folderDrag = dragEnabled && foldersMovable && dragFolderId !== null
+    const valid = folderDrag
+      ? decideFolderDrop(folders, dragFolderId, folderId).ok
+      : dragEnabled && dragId !== null && decideDrop(library, folders, dragId, folderId).ok
     return {
       onDragOver: (event: React.DragEvent) => {
         if (!valid) return
@@ -138,6 +174,12 @@ export function HomeScreen(props: HomeScreenProps) {
         event.preventDefault()
         setDropOver(null)
         setDragId(null)
+        if (folderDrag) {
+          const dropped = folders.find((entry) => entry.id === dragFolderId)
+          setDragFolderId(null)
+          if (valid && dropped) void moveFolderTo(dropped, folderId)
+          return
+        }
         const decision = decideDrop(library, folders, dragId, folderId)
         const entry = library.find((item) => item.id === dragId)
         if (decision.ok && entry) moveTo(entry, decision.folderId)
@@ -227,6 +269,7 @@ export function HomeScreen(props: HomeScreenProps) {
     pending.schedule(batchDelete(ids.map((id) => ({ id, label: titleOf(id), run: async () => (await props.onDeleteDiagram(id)) !== false }))))
   }
   const confirmFolder = confirmFolderId ? folders.find((folder) => folder.id === confirmFolderId) : undefined
+  const movingFolder = movingFolderId ? folders.find((folder) => folder.id === movingFolderId) : undefined
   const moveTarget = movingId ? library.find((entry) => entry.id === movingId) : undefined
 
   const closeRef = useRef(props.onClose)
@@ -321,7 +364,7 @@ export function HomeScreen(props: HomeScreenProps) {
         <div className="home-side-title">Folders</div>
         <nav className="home-tree" aria-label="Folder tree">
           {tree.map(({ folder, depth }) => (
-            <button key={folder.id} type="button" className={`home-nav${here === folder.id ? ' selected' : ''}${dropOver === folder.id ? ' drop-over' : ''}`} style={{ paddingLeft: 12 + depth * 18 }} {...dropTarget(folder.id)} onClick={() => { setView('all'); setSelected(folder.id); setRenaming(false); clearStatus() }}>
+            <button key={folder.id} type="button" className={`home-nav${here === folder.id ? ' selected' : ''}${dropOver === folder.id ? ' drop-over' : ''}${dragFolderId === folder.id ? ' dragging' : ''}`} draggable={dragEnabled && foldersMovable} onDragStart={dragEnabled && foldersMovable ? (event) => { setDragFolderId(folder.id); setDragId(null); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData(FOLDER_DRAG_TYPE, folder.id); event.dataTransfer.setData('text/plain', folder.name) } : undefined} onDragEnd={dragEnabled && foldersMovable ? () => { setDragFolderId(null); setDropOver(null) } : undefined} style={{ paddingLeft: 12 + depth * 18 }} {...dropTarget(folder.id)} onClick={() => { setView('all'); setSelected(folder.id); setRenaming(false); clearStatus() }}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
               <span className="home-nav-name">{folder.name}</span><span className="home-count">{countInFolder(library, folders, folder.id)}</span>
             </button>
@@ -377,7 +420,21 @@ export function HomeScreen(props: HomeScreenProps) {
           {pendingRunning ? (pendingItem.count && pendingItem.count > 1 ? <span>Deleting {pendingLabel(pendingItem)}…</span> : <span>Deleting “{pendingItem.label}”…</span>) : (pendingItem.count && pendingItem.count > 1 ? <span>Deleted {pendingLabel(pendingItem)}</span> : <span>Deleted “{pendingItem.label}”</span>)}
           {!pendingRunning && <button type="button" onClick={() => { pending.cancel() }}>Undo</button>}
         </div>}
+        {moveUndo && !pendingItem && <div className="home-undo home-move-undo" role="status">
+          <span>{moveUndo.text}</span>
+          <button type="button" onClick={moveUndo.undo}>Undo</button>
+        </div>}
         {status && <p className="home-status" role="status">{status}</p>}
+
+        {movingFolder && <div className="home-confirm" role="dialog" aria-label={`Move folder ${movingFolder.name}`}>
+          <p>Move “{movingFolder.name}” (with everything inside it) to:</p>
+          <ul className="home-move-list">
+            {folderMoveTargets(folders, movingFolder.id).map(({ folder, depth }) => (
+              <li key={folder?.id ?? 'root'}><button type="button" style={{ paddingLeft: 12 + depth * 18 }} onClick={() => void moveFolderTo(movingFolder, folder?.id ?? null)}>{folder ? folder.name : 'All diagrams (top level)'}</button></li>
+            ))}
+          </ul>
+          <div className="home-confirm-actions"><button type="button" onClick={() => setMovingFolderId(null)}>Cancel</button></div>
+        </div>}
 
         {confirmFolder && <div className="home-confirm" role="alertdialog" aria-label="Delete folder">
           <p>Delete “{confirmFolder.name}” and everything inside it? This removes {countInFolder(library, folders, confirmFolder.id)} diagram{countInFolder(library, folders, confirmFolder.id) === 1 ? '' : 's'} and any subfolders. You can Undo for a few seconds after deleting.</p>
@@ -436,6 +493,9 @@ export function HomeScreen(props: HomeScreenProps) {
               : heading} <span className="home-heading-count">({shown.length})</span></h2>}
           {hereFolder && !renaming && <span className="home-folder-actions">
             <button type="button" onClick={() => { setRenaming(true); setDraftName(hereFolder.name) }}>Rename folder</button>
+            {foldersMovable
+              ? <button type="button" onClick={() => setMovingFolderId(hereFolder.id)}>Move to…</button>
+              : props.canMoveFolders === false && <span className="home-folder-hint" title="Moving a folder is not offered for a device folder">To move a folder, use your file manager.</span>}
             <button type="button" onClick={() => setConfirmFolderId(hereFolder.id)}>Delete folder</button>
           </span>}
           <button type="button" className={`home-select-toggle${selectMode ? ' selected' : ''}`} title="Select several diagrams" aria-pressed={selectMode} onClick={() => { if (selectMode) exitSelect(); else setSelectMode(true) }}>{selectMode ? 'Done' : 'Select'}</button>
