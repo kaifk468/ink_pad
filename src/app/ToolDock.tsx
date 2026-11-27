@@ -147,7 +147,7 @@ export function ToolDock(props: ToolDockProps) {
         {divider}
         {inkClass}
         {divider}
-        <MoreTray desktopTip hldActive={props.hldShapeActive} onHldShape={props.onHldShape} tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" onTemplates={props.onTemplates} onMermaid={props.onMermaid} onExcalidraw={props.onExcalidraw} onLaser={props.onLaser} laserActive={props.laserActive} laserKey="X" onPresent={props.onPresent} presentActive={props.presentActive} presentKey="Alt+Z" onDuplicatePage={props.onDuplicatePage} onPageOverview={props.onPageOverview} canDuplicatePage={props.canDuplicatePage} />
+        <MoreTray desktopTip hldActive={props.hldShapeActive} onHldShape={props.onHldShape} onSticky={props.onSticky} tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" onTemplates={props.onTemplates} onMermaid={props.onMermaid} onExcalidraw={props.onExcalidraw} onLaser={props.onLaser} laserActive={props.laserActive} laserKey="X" onPresent={props.onPresent} presentActive={props.presentActive} presentKey="Alt+Z" onDuplicatePage={props.onDuplicatePage} onPageOverview={props.onPageOverview} canDuplicatePage={props.canDuplicatePage} />
         {lock}
       </nav>
     )
