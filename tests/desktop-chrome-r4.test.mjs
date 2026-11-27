@@ -12,7 +12,9 @@ test('desktop status: empty never-saved page reads Autosave on with a neutral to
 })
 
 test('desktop status: content waiting for autosave reads Saving soon (never Saved)', () => {
-  assert.equal(chrome.desktopStatusText('idle', 'Not saved yet', true, true), 'Saving soon')
+  assert.equal(chrome.desktopStatusText('idle', 'Not saved yet', true, true, true), 'Saving soon')
+  assert.equal(chrome.desktopStatusText('idle', 'Not saved yet', true, true, false), 'Not saved yet', 'no timer pending: nothing is about to be saved')
+  assert.equal(chrome.desktopStatusText('idle', 'Not saved yet', false, true, true), 'Autosave on')
   assert.equal(chrome.desktopStatusTone('idle', true), 'pending')
 })
 

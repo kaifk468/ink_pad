@@ -4,13 +4,14 @@ import type { SaveStatus } from '../FilePanel'
 export type StatusTone = 'ok' | 'bad' | 'pending' | 'idle'
 
 /**
- * Save-status wording for the desktop pill. 'idle' means "never saved in this document": with content on the page the
- * autosave timer (1.2 s) is about to run, so it reads "Saving soon"; with an empty page it reads "Autosave on".
+ * Save-status wording for the desktop pill. 'idle' means "never saved in this document": with content on the page and the autosave
+ * timer actually pending it reads "Saving soon"; with content but no timer it keeps the shared "Not saved yet"; with an empty page it reads "Autosave on".
  * Every other status keeps the shared wording (`base`), and tablet always keeps it.
  */
-export function desktopStatusText(status: SaveStatus, base: string, hasContent: boolean, desktop: boolean): string {
+export function desktopStatusText(status: SaveStatus, base: string, hasContent: boolean, desktop: boolean, autosavePending = false): string {
   if (!desktop || status !== 'idle') return base
-  return hasContent ? 'Saving soon' : 'Autosave on'
+  if (!hasContent) return 'Autosave on'
+  return autosavePending ? 'Saving soon' : base
 }
 
 export function desktopStatusTone(status: SaveStatus, hasContent: boolean): StatusTone {

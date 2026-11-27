@@ -138,6 +138,8 @@ export function useDocuments(host: DocumentHost) {
   const readyRef = useRef(false)
   const filePanelOpenRef = useRef(false)
   const autosaveTimerRef = useRef<number | null>(null)
+  // True only while the autosave timer is scheduled (the Desktop pill says "Saving soon" only then). Flips on schedule/clear transitions, never per stroke point.
+  const [autosavePending, setAutosavePending] = useState(false)
   filePanelOpenRef.current = filePanelOpen
 
   const readCurrentId = () => {
@@ -310,12 +312,17 @@ export function useDocuments(host: DocumentHost) {
 
   const starredIds = new Set([...library.filter((entry) => entry.starred).map((entry) => entry.id), ...localStars])
 
-  const doPersist = async () => {
-    if (!readyRef.current) return
+  const clearAutosaveTimer = () => {
     if (autosaveTimerRef.current !== null) {
       window.clearTimeout(autosaveTimerRef.current)
       autosaveTimerRef.current = null
     }
+    setAutosavePending(false)
+  }
+
+  const doPersist = async () => {
+    if (!readyRef.current) return
+    clearAutosaveTimer()
     // Never create an empty entry for a diagram that was never drawn on.
     if (!docIdRef.current && !hasAnyItems() && !forceSaveRef.current) return
     const forced = forceSaveRef.current
@@ -379,8 +386,10 @@ export function useDocuments(host: DocumentHost) {
     keeper.noteChange() // the safety copy is kept even when the storage is locked
     if (!readyRef.current) return
     if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current)
+    setAutosavePending(true)
     autosaveTimerRef.current = window.setTimeout(() => {
       autosaveTimerRef.current = null
+      setAutosavePending(false)
       // Wait until the pen is up so a half-drawn stroke is never the saved state.
       if (hostRef.current.isInputActive()) {
         scheduleAutosave()
@@ -391,10 +400,7 @@ export function useDocuments(host: DocumentHost) {
   }
 
   const applyDocument = (id: string | null, loaded: InkPadDocument) => {
-    if (autosaveTimerRef.current !== null) {
-      window.clearTimeout(autosaveTimerRef.current)
-      autosaveTimerRef.current = null
-    }
+    clearAutosaveTimer()
     pendingFolderRef.current = null
     forceSaveRef.current = false
     hostRef.current.loadDocument(loaded, id ? readLastPage(id) : 0)
@@ -409,10 +415,7 @@ export function useDocuments(host: DocumentHost) {
 
   /** Shows a diagram from the safety copy. It counts as unsaved, so it is written to the storage as soon as that is ready. */
   const applyLocalCopy = ({ record, document: loaded }: RestoredCopy) => {
-    if (autosaveTimerRef.current !== null) {
-      window.clearTimeout(autosaveTimerRef.current)
-      autosaveTimerRef.current = null
-    }
+    clearAutosaveTimer()
     hostRef.current.loadDocument(loaded, record.docId ? readLastPage(record.docId) : 0)
     docIdRef.current = record.docId
     docMetaRef.current = { title: loaded.title, createdAt: loaded.createdAt }
@@ -1265,7 +1268,7 @@ export function useDocuments(host: DocumentHost) {
   const loadForSearch = useCallback((id: string) => loadLocalCopyForSearch(backendRef.current.kind, id, { browserDocument: loadStoredDocument, driveCached: (docId) => getDriveCache().get(docId) }), [])
 
   return {
-    loadForSearch, filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    loadForSearch, filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, autosavePending, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram, moveFolder,
     scheduleAutosave, saveNow, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
