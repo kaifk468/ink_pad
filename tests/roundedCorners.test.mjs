@@ -99,11 +99,11 @@ test('copy / paste style carries rounded between plain rectangles', () => {
   assert.equal(styles.captureStyle(rect({ ellipse: true })).rounded, undefined)
 })
 
-test('context menu: Round / Sharp chip in the Style group', () => {
+test('context menu: Round / Sharp chip in its own Corners group', () => {
   const state = { hasSelection: true, clipboardHasItems: false, pageHasItems: true, canEditText: false, lockedTarget: false, anyLocked: false }
   const round = input.contextMenuEntries({ ...state, corners: 'round' }).find((e) => e.action === 'cornersRound')
   assert.equal(round.chip, 'Round')
-  assert.equal(round.chipGroup, 'Style')
+  assert.equal(round.chipGroup, 'Corners')
   assert.equal(input.contextMenuEntries({ ...state, corners: 'sharp' }).find((e) => e.action === 'cornersSharp').chip, 'Sharp')
   assert.equal(input.contextMenuEntries(state).some((e) => e.action === 'cornersRound' || e.action === 'cornersSharp'), false)
 })

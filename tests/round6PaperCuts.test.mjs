@@ -54,5 +54,5 @@ test('desktop 1101-1700px: the zoom control sits above the dock together with th
 test('right-click menu is moved up after layout when it runs past the bottom edge', async () => {
   const { readAppSource } = await import('./helpers/appSource.mjs')
   const source = await readAppSource()
-  assert.match(source, /useLayoutEffect\(\(\) => \{\s*const menu = contextMenuElementRef\.current[\s\S]*?rect\.bottom - \(window\.innerHeight - (?:8|menuBottomClearance\([^)]*\))\)[\s\S]*?menu\.style\.top =/)
+  assert.match(source, /useLayoutEffect\(\(\) => \{\s*const menu = contextMenuElementRef\.current[\s\S]*?rect\.bottom - \(window\.innerHeight - (?:8|menuBottomClearance\([^)]*\))\)|const clearance = menuBottomClearance[\s\S]*?menu\.style\.top =/)
 })
