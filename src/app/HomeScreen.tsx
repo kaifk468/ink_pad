@@ -547,7 +547,7 @@ export function HomeScreen(props: HomeScreenProps) {
                       ? <img src={props.thumbnails[entry.id]} alt="" draggable={false} />
                       : <svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>}
                   </span>
-                  <span className="home-card-title">{entry.title || 'Untitled diagram'}</span>
+                  <span className="home-card-title" title={props.desktop ? (entry.title || 'Untitled diagram') : undefined}>{entry.title || 'Untitled diagram'}</span>
                   <span className="home-card-folder">{where || 'No folder'}</span>
                   {contentSnippets.has(entry.id) && <span className="home-card-snippet">Contains: {contentSnippets.get(entry.id)}</span>}
                   <span className="home-card-meta">{entry.id === props.currentId ? 'Open now · ' : ''}Edited {describeEdited(entry.updatedAt) || 'earlier'} · {entry.itemCount} item{entry.itemCount === 1 ? '' : 's'}{entry.pageCount && entry.pageCount > 1 ? ` · ${entry.pageCount} pages` : ''}</span>

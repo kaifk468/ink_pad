@@ -176,7 +176,7 @@
 .app-shell[data-input-mode="desktop"] .export-dialog .export-tile {
   display: grid; justify-items: start; gap: 4px; padding: 14px; box-sizing: border-box; text-align: left;
   background: var(--ip-surface); color: var(--ip-text); border: 1px solid var(--ip-line); border-radius: var(--ip-radius-control);
-  font: inherit; cursor: pointer; transition: background var(--ip-dur-fast) var(--ip-ease-out), border-color var(--ip-dur-fast) var(--ip-ease-out);
+  font: inherit; cursor: pointer;
 }
 .app-shell[data-input-mode="desktop"] .export-dialog .export-tile svg { color: var(--ip-accent); margin-bottom: 4px; }
 .app-shell[data-input-mode="desktop"] .export-dialog .export-tile:hover:not(:disabled) { background: var(--ip-accent-soft); border-color: var(--ip-accent); }
@@ -193,7 +193,6 @@
 .app-shell[data-input-mode="desktop"] .export-dialog .export-switch-row { cursor: pointer; }
 .app-shell[data-input-mode="desktop"] .export-dialog .export-switch {
   appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 40px; height: 24px; margin: 0; border-radius: 999px; background: var(--ip-line); cursor: pointer;
-  transition: background var(--ip-dur-fast) var(--ip-ease-out);
 }
 .app-shell[data-input-mode="desktop"] .export-dialog .export-switch::after {
   content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--ip-surface); box-shadow: var(--ip-shadow-1);

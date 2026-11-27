@@ -29,8 +29,8 @@ test('saveNow always cancels the browser Save page dialog, and has a shortcut ro
 
 test('App wires saveNow to the document save path, a toast and the status flash', async () => {
   const app = await readAppSource()
-  assert.match(app, /case 'saveNow': saveNowWithToast\(\)/)
-  assert.match(app, /showToast\('Saved'\)/)
+  assert.match(app, /command\.kind === 'saveNow'\) \{ saveNowWithToast\(\); return true \}/)
+  assert.match(app, /saveToastText\(status/)
   assert.match(app, /flashKey=\{statusFlash\}/)
   const docs = await read('../src/app/useDocuments.ts')
   assert.match(docs, /const saveNow = async[\s\S]*?await persistNow\(\)/)
@@ -60,8 +60,8 @@ test('the tip is session memory only: a ref in App, no new storage key', async (
 test('library cards: desktop-scoped polish with reduced-motion fallback', async () => {
   const css = await read('../src/app/desktopPolish.css')
   assert.match(css, /\.home-desktop \.home-card \{[^}]*border-radius: 14px/)
-  assert.match(css, /\.home-desktop \.home-card:hover[\s\S]*translateY\(-2px\)/)
-  assert.match(css, /\.home-desktop \.home-card-preview \{[^}]*#f7f6f2[^}]*border-bottom: 1px solid/)
+  assert.match(css, /\.home-desktop \.home-card:not\(\.dragging\):hover[\s\S]*translateY\(-2px\)/)
+  assert.match(css, /\.home-desktop \.home-card-preview \{[^}]*var\(--ip-bg, #f7f6f2\)[^}]*border-bottom: 1px solid/)
   assert.match(css, /\.home-desktop \.home-card-title \{[^}]*600 14px/)
   assert.match(css, /\.home-desktop \.home-recent h3 \{[^}]*11px[^}]*uppercase/)
   assert.match(css, /prefers-reduced-motion[\s\S]*\.home-desktop \.home-card:hover[^}]*transform: none/)
@@ -70,6 +70,8 @@ test('library cards: desktop-scoped polish with reduced-motion fallback', async 
 test('library pictures embed Excalifont so labels are not drawn in the browser serif fallback', async () => {
   const docs = await read('../src/app/useDocuments.ts')
   assert.match(docs, /const getThumbnailExport = async[\s\S]*loadExcalifontCss\(\)/)
+  assert.match(docs, /getInputMode\?\.\(\) !== 'desktop'\) return getImageExport\(which\)/)
+  assert.doesNotMatch(docs, /const probe = getImageExport\(which\)/)
   assert.match(docs, /await getThumbnailExport\('first'\)/)
   assert.match(docs, /await getThumbnailExport\(index\)/)
 })
@@ -82,4 +84,58 @@ test('round 3 walk fixes: desktop says Click to rename, chrome text unselectable
   assert.match(bar, /desktop \? 'Click to rename this diagram' : 'Tap to rename this diagram'/)
   assert.match(css, /\.tool-dock, \.context-panel[^}]*user-select: none/)
   assert.match(css, /\.ms-desc \{[^}]*-webkit-line-clamp: 2/)
+})
+
+test('a held Ctrl+S only cancels the browser dialog; the save runs on the first press', () => {
+  assert.deepEqual(input.keyCommand(key({ ctrlKey: true, repeat: true }), 'desktop'), { kind: 'saveNowRepeat' })
+  assert.equal(input.alwaysPreventsDefault({ kind: 'saveNowRepeat' }, 'desktop'), true)
+  assert.equal(input.alwaysPreventsDefault({ kind: 'saveNowRepeat' }, 'tablet'), false)
+  assert.equal(input.keyCommand(key({ ctrlKey: true, repeat: true }), 'tablet'), null)
+})
+
+test('the Ctrl+S toast is honest about the status', () => {
+  assert.equal(input.saveToastText('saved', 'Saved in your device folder'), 'Saved')
+  assert.equal(input.saveToastText('idle', 'x'), 'Nothing to save yet')
+  assert.equal(input.saveToastText('saving', 'Saving...'), 'Saving...')
+  assert.equal(input.saveToastText('error', 'Could not save'), 'Could not save')
+  assert.equal(input.saveToastText('locked', 'Locked'), 'Locked')
+})
+
+test('Ctrl+S works in text fields and under dialogs', async () => {
+  const app = await readAppSource()
+  assert.match(app, /isTypingTarget[\s\S]{0,200}command\.kind === 'saveNow'\) \{ event\.preventDefault\(\); keyActionsRef\.current\(command\); return \}/)
+  const guard = app.indexOf("command.kind === 'saveNow') { saveNowWithToast()")
+  assert.ok(guard > 0 && guard < app.indexOf('if (editingBlocksCanvas()) return false'))
+  assert.match(app, /command\.kind === 'saveNowRepeat'\) return true/)
+})
+
+test('thumbnails: one build, font embedded on desktop only', async () => {
+  const docs = await read('../src/app/useDocuments.ts')
+  const body = docs.slice(docs.indexOf('const getThumbnailExport'), docs.indexOf('const renderPageThumbnail'))
+  assert.equal((body.match(/getImageExport\(/g) ?? []).length, 3) // tablet, no-font, font: each path builds once
+  assert.match(body, /usesExcalifont\(/)
+  const app = await readAppSource()
+  assert.match(app, /getInputMode: \(\) => inputModeRef\.current/)
+})
+
+test('palette: labelled groups, Map index, scroll to top on wrap', async () => {
+  const src = await read('../src/app/CommandPalette.tsx')
+  assert.match(src, /role=\{groups \? 'group'/)
+  assert.match(src, /aria-labelledby=\{groups \? `command-palette-group-/)
+  assert.doesNotMatch(src, /results\.indexOf/)
+  assert.match(src, /new Map\(results\.map/)
+  assert.match(src, /current === 0 && listRef\.current\) listRef\.current\.scrollTop = 0/)
+})
+
+test('desktop css: no paint transitions, selectable notices and editors, card tokens', async () => {
+  const panels = await read('../src/app/desktop-panels.css')
+  assert.doesNotMatch(panels, /export-tile \{[^}]*transition/)
+  assert.doesNotMatch(panels, /export-switch \{[^}]*transition/)
+  const css = await read('../src/app/desktopPolish.css')
+  assert.doesNotMatch(css, /transition: [^;]*box-shadow/)
+  assert.match(css, /\[contenteditable\], \.file-panel-notice, \[role="alert"\]/)
+  assert.match(css, /\.home-card \{[^}]*var\(--ip-surface, #fff\)/)
+  const file = await read('../src/FilePanel.tsx')
+  assert.match(file, /aria-labelledby="export-dialog-title"/)
+  assert.match(file, /if \(props\.desktop\) firstTileRef\.current\?\.focus\(\)/)
 })

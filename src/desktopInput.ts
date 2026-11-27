@@ -193,6 +193,8 @@ export type KeyCommand =
   | { kind: 'redo' }
   | { kind: 'library' }
   | { kind: 'saveNow' }
+  /** Ctrl+S held down: only keeps the browser's Save page dialog away, never saves again. */
+  | { kind: 'saveNowRepeat' }
   | { kind: 'palette' }
   | { kind: 'find' }
   | { kind: 'findReplace' }
@@ -284,7 +286,7 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     if ((event.code === 'Quote' || key === "'") && !event.shiftKey) return event.repeat ? null : { kind: 'gridSnap' }
     if (key === 'o' && !event.shiftKey && !event.repeat) return { kind: 'library' }
     // Ctrl/Cmd+S saves now (Chrome would open its Save page dialog).
-    if (key === 's' && !event.shiftKey) return { kind: 'saveNow' }
+    if (key === 's' && !event.shiftKey) return { kind: event.repeat ? 'saveNowRepeat' : 'saveNow' }
     // Ctrl/Cmd+K opens the command palette (Chrome would focus its search bar).
     if (key === 'k' && !event.shiftKey && !event.repeat) return { kind: 'palette' }
     // Ctrl/Cmd+F opens the find bar (never Chrome's own).
@@ -786,7 +788,7 @@ export function clampMenuPosition(x: number, y: number, width: number, height: n
 }
 
 /** Commands whose browser default (Chrome's find bar for Ctrl+G, the open-file dialog, Ctrl+Alt shortcuts) is always cancelled in Desktop mode, even when the action does nothing. */
-export const ALWAYS_PREVENT_DEFAULT_COMMANDS: ReadonlySet<KeyCommand['kind']> = new Set(['group', 'ungroup', 'library', 'saveNow', 'palette', 'find', 'findReplace', 'copyStyle', 'pasteStyle', 'walkLinked'])
+export const ALWAYS_PREVENT_DEFAULT_COMMANDS: ReadonlySet<KeyCommand['kind']> = new Set(['group', 'ungroup', 'library', 'saveNow', 'saveNowRepeat', 'palette', 'find', 'findReplace', 'copyStyle', 'pasteStyle', 'walkLinked'])
 export function alwaysPreventsDefault(command: KeyCommand, mode: InputMode): boolean {
   return mode === 'desktop' && ALWAYS_PREVENT_DEFAULT_COMMANDS.has(command.kind)
 }
@@ -928,4 +930,11 @@ export function exportToastText(kind: 'PNG' | 'SVG', error: string | null): stri
 export const KEEP_TOOL_TIP = 'Tip: press Q (Keep tool) to draw several in a row'
 export function shouldShowKeepToolTip(alreadyShown: boolean, toolLock: boolean, mode: InputMode): boolean {
   return mode === 'desktop' && !toolLock && !alreadyShown
+}
+
+/** The toast after Ctrl+S: "Saved" only when the save really ended saved. */
+export function saveToastText(status: string, label: string): string {
+  if (status === 'saved') return 'Saved'
+  if (status === 'idle') return 'Nothing to save yet'
+  return label
 }

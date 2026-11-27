@@ -118,7 +118,7 @@ import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, loadTapUndo, saveNavigationSettings, saveTapUndo } from './navigationSettings'
-import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, shouldShowKeepToolTip, KEEP_TOOL_TIP, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, chipBlockLayout, clampMenuPosition, contextMenuHeight, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, saveToastText, shouldShowKeepToolTip, KEEP_TOOL_TIP, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -384,9 +384,7 @@ function App() {
   const saveNowWithToast = () => {
     setStatusFlash((n) => n + 1)
     void saveNow().then((status) => {
-      if (status === 'error') showToast(statusLabel(status, storage.kind))
-      else if (status === 'locked') showToast(statusLabel(status, storage.kind))
-      else showToast('Saved')
+      showToast(status === 'saved' ? 'Saved' : saveToastText(status, statusLabel(status, storage.kind)))
     }, () => showToast(statusLabel('error', storage.kind)))
   }
   // A toast with one action button (shown in every mode; stays a little longer so it can be tapped).
@@ -510,6 +508,7 @@ function App() {
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
     getPageNames: () => pagesRef.current.map((slot) => slot.name ?? ''),
     getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current }),
+    getInputMode: () => inputModeRef.current,
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null || liveCodeEditor(),
     loadDocument: (loaded, startPage) => {
       resetInteractionState()
@@ -6022,6 +6021,8 @@ function App() {
   const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
   keyActionsRef.current = (command) => {
     if (command.kind === 'library' && libraryOpen) return true // the Library is already open: only keep the browser's open dialog away
+    if (command.kind === 'saveNowRepeat') return true // a held Ctrl+S: swallowed, the first press already saved
+    if (command.kind === 'saveNow') { saveNowWithToast(); return true } // saving works under dialogs, the Library and the palette too
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (editingBlocksCanvas()) return false
     const gestureActive = canvasGestureActive()
@@ -6050,7 +6051,6 @@ function App() {
       case 'undo': undo(); return true
       case 'redo': redo(); return true
       case 'library': toggleLibrary(); return true
-      case 'saveNow': saveNowWithToast(); return true
       case 'palette': openPalette(); return true
       case 'find': openFind(); return true
       case 'findReplace': openFind(true); return true
@@ -6129,7 +6129,8 @@ function App() {
       if (!command) return
       const target = event.target as HTMLElement | null
       if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) {
-        if (command.kind === 'palette' || command.kind === 'find' || command.kind === 'findReplace') event.preventDefault() // Chrome's Ctrl+K (search bar) and Ctrl+F (find bar) never win, even inside a text field
+        if (command.kind === 'saveNow') { event.preventDefault(); keyActionsRef.current(command); return } // Ctrl+S saves inside a text field too, without committing or closing it
+        if (command.kind === 'palette' || command.kind === 'find' || command.kind === 'findReplace' || command.kind === 'saveNowRepeat') event.preventDefault() // Chrome's Ctrl+K (search bar) and Ctrl+F (find bar) never win, even inside a text field
         return
       }
       // Tab and Alt+Arrow walk the items only from the canvas: on a focused button, link or panel Tab keeps moving focus.

@@ -37,6 +37,8 @@ export type DocumentHost = {
   /** The name of every page in order ('' = unnamed), same length as getPageItems. */
   getPageNames: () => string[]
   getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean }
+  /** The input mode (Desktop pictures embed Excalifont; Tablet ones stay as they were). */
+  getInputMode?: () => 'tablet' | 'desktop'
   /** True while a pen/touch stroke or gesture is in progress; autosave waits for it to end. */
   isInputActive: () => boolean
   /** Replace the sheet contents and page settings, reset undo history, id counters and selection, and redraw. */
@@ -811,9 +813,12 @@ export function useDocuments(host: DocumentHost) {
 
   /** Library and overview pictures are drawn from an SVG inside an <img>, which cannot see the page's fonts: embed Excalifont, or its labels fall back to the browser's "cursive" (a serif on many systems). */
   const getThumbnailExport = async (which: 'first' | number) => {
-    const probe = getImageExport(which)
-    if (!probe || !probe.usesFont) return probe
-    try { return getImageExport(which, { fontCss: await loadExcalifontCss() }) } catch { return probe }
+    if (hostRef.current.getInputMode?.() !== 'desktop') return getImageExport(which)
+    const all = which === 'first' ? hostRef.current.getPageItems()[0] : hostRef.current.getPageItems()[which]
+    if (!usesExcalifont(itemsForExport(all ?? [], undefined))) return getImageExport(which)
+    let fontCss: string | undefined
+    try { fontCss = await loadExcalifontCss() } catch { fontCss = undefined }
+    return getImageExport(which, fontCss ? { fontCss } : {})
   }
 
   /**
