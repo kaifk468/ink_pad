@@ -222,7 +222,7 @@ for (const viewport of VIEWPORTS) {
       await page.locator('[aria-label="Menu"]').first().click()
       await page.waitForSelector('.ms-sheet', { timeout: TIMEOUT })
       await page.locator('.ms-sheet').getByText('Export and import', { exact: true }).first().click()
-      await page.waitForSelector('[role="dialog"][aria-label="Diagrams and export"]', { timeout: TIMEOUT })
+      await page.waitForSelector('[role="dialog"][aria-label="Diagrams and export"], .file-panel.export-dialog', { timeout: TIMEOUT })
       await wait(page, 300)
       await shot(page, w, 'export-panel')
       await page.keyboard.press('Escape')

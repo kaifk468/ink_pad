@@ -104,8 +104,18 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 - Options panel (round 2): 240px, 32px controls on surface-2 without borders, related choices as segmented controls with equal segments, layer as icons, one-row 28px swatches, max-height above the zoom controls with a scroll shadow.
 - Context menu (round 2): 32px rows at 14px, shortcuts 12px mono faint, 28px chips, accent focus ring; keeps 100px clear of the bottom only when it would cover the dock.
 
+### Export dialog (round 3)
+- Titled "Export". Order: Image (PNG / SVG tiles with one-line captions, Scale 1x/2x segmented, Transparent switch) · Diagram file (Export / Import .inkpad, New diagram as secondary chips) · "Text and other apps" disclosure (outline, Mermaid, Excalidraw, NotebookLM), closed by default. No title field on desktop (the top bar owns the title). Focus lands on the PNG tile.
+
+### Command palette and shortcut dialog (round 3)
+- Palette 600px, radius 20, shadow-3: search icon + "Search commands and diagrams" + Esc chip; empty query shows overline groups, a query shows flat ranked rows with a muted group chip. Labels with a parenthetical split into a title and a muted second line (`splitCommandLabel`). Selected row: accent-soft fill + 3px accent bar.
+- Shortcut dialog: same surface, overline groups, two columns at >= 1100px.
+
+### Library cards (round 3)
+- Radius 14, hairline border, token surface, paper-colour thumbnail well, 14px/600 title with ellipsis + tooltip, 12px muted meta, hover lift 2px (transform only; none while dragging or with reduced motion). Desktop thumbnails embed Excalifont so labels match the canvas.
+
 ### Interaction rules (round 2)
-- Desktop starts on the Select tool. Enter on one selected shape opens its label; Esc in the label editor commits (restores if an existing label was blanked). Export success shows a toast.
+- Desktop starts on the Select tool. Enter on one selected shape opens its label; Esc in the label editor commits (restores if an existing label was blanked). Export success shows a toast. Ctrl+S saves now (also in text fields and under dialogs, never mid-stroke) with a toast ("Saved" / "Nothing to save yet" / the error) and a one-shot pill flash. The first auto-return to Select per session shows "Tip: press Q (Keep tool)". Chrome text is not selectable (inputs, editors and notices are).
 
 ## 9. Round log
 
@@ -113,6 +123,7 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 |---|---|---|---|
 | 1 | 2026-11-27 | tokens, navigation sheet with search, empty canvas, toast placement, library empty state | brief created; dark theme held back (only new surfaces went dark); sheet sits top 72 / bottom 90 to clear the dock |
 | 2 | 2026-11-27 | top bar, icon-only dock + tooltips, options panel, context menu, canvas chrome, first-time label flow | dock changed from labelled to icon-only; status pill moved to top bar (removed from sheet header); Esc commits labels; Select is the desktop start tool |
+| 3 | 2026-11-27 | export dialog, command palette + shortcut dialog, Ctrl+S feedback, keep-tool tip, library cards, walk fixes | export dialog order fixed (image first, no title field); palette groups as overlines; transitions on new surfaces limited to transform/opacity (state colour changes are instant) |
 
 ## 10. Unfinished / next rounds
-Next: Library redesign (cards, recent/pinned, open affordance), Ctrl+S / save feedback, export dialog order, tool-reset hint, contextual mini toolbar, command palette + shortcut dialog restyle, bundle DM Sans, dark theme. See the newest `docs/progress/inkpad-ui-round-*.md` "Held back" section.
+Next: options panel opens over the canvas when a drawing tool is picked (first-time user's first drag landed on it): rethink as a contextual mini toolbar near the selection or a collapsible panel. Then: Library layout beyond cards (recent/pinned rows, open affordance, uneven 3+1 action buttons), dark theme, bundle DM Sans, status pill wording ("Not saved yet" while autosave waits), page counter "1 over 1", dock compact mode under ~900px. See the newest `docs/progress/inkpad-ui-round-*.md`.
