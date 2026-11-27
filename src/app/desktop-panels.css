@@ -220,7 +220,10 @@
 .app-shell[data-input-mode="desktop"] .shortcut-help-group { padding-top: 16px; }
 .app-shell[data-input-mode="desktop"] .shortcut-help h3 { margin: 0 0 6px; color: var(--ip-muted); font: 700 11px/16px 'DM Sans', system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
 .app-shell[data-input-mode="desktop"] .shortcut-row { border-bottom: 1px solid var(--ip-line); }
-.app-shell[data-input-mode="desktop"] .shortcut-row dt { color: var(--ip-text); }
+.app-shell[data-input-mode="desktop"] .shortcut-row dt { flex: 1 1 0; min-width: 0; color: var(--ip-text); }
+/* Key chips never wrap: the description column gives way instead. */
+.app-shell[data-input-mode="desktop"] .shortcut-row dd { flex: 0 0 auto; min-width: 9.5em; }
+.app-shell[data-input-mode="desktop"] .shortcut-row kbd { white-space: nowrap; }
 @media (min-width: 1100px) {
   .app-shell[data-input-mode="desktop"] .shortcut-help { width: min(960px, 100%); }
   .app-shell[data-input-mode="desktop"] .shortcut-help-groups { column-count: 2; column-gap: 40px; }

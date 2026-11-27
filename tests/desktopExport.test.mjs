@@ -67,3 +67,8 @@ test('exportFileName mirrors the download names (@2x only on PNG at 2x)', async 
   assert.equal(exportFileName('Untitled diagram', 'png', 1), 'Untitled-diagram.png')
   assert.equal(exportFileName('Untitled diagram', 'svg'), 'Untitled-diagram.svg')
 })
+
+test('desktop shortcut dialog: key chips are single-line, the description column wraps', () => {
+  assert.match(css, /\.shortcut-row dd \{[^}]*flex: 0 0 auto;[^}]*min-width: 9\.5em/)
+  assert.match(css, /\.shortcut-row kbd \{ white-space: nowrap; \}/)
+})
