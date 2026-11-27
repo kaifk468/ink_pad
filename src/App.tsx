@@ -501,7 +501,7 @@ function App() {
   const [, setPageNamesTick] = useState(0)
 
   const {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, autosavePending, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
     newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram, moveFolder,
     loadForSearch, scheduleAutosave: scheduleAutosaveBase, saveNow, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
@@ -6396,7 +6396,7 @@ function App() {
         />
       )}
       {(inputMode !== 'desktop' || zoomLockActive) && <HistoryBar desktop={inputMode !== 'tablet'} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />}
-      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={inputMode === 'desktop' ? <DesktopStatusCluster status={saveStatus} hasContent={hasInk} text={desktopStatusText(saveStatus, statusLabel(saveStatus, storage.kind), hasInk, true)} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} hideExport={zoomLockActive} flashKey={statusFlash} /> : accountLeading(penModeActive, inputMode, <PenColors color={color} onColor={selectColor} />)} />
+      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={inputMode === 'desktop' ? <DesktopStatusCluster status={saveStatus} hasContent={hasInk} text={desktopStatusText(saveStatus, statusLabel(saveStatus, storage.kind), hasInk, true, autosavePending)} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} hideExport={zoomLockActive} flashKey={statusFlash} /> : accountLeading(penModeActive, inputMode, <PenColors color={color} onColor={selectColor} />)} />
       <ContextPanel
         desktop={inputMode === 'desktop'}
         contextName={inputMode === 'desktop' ? optionsContextName({ count: selectedItemCount + (hasSelectedRectangle && selectedItemCount === 0 ? 1 : 0), selectedKind: hasSelectedRectangle && selectedItemCount === 0 ? 'rectangle' : (selectedItemCount === 1 ? (strokesRef.current.find((item) => currentSelectionKeys().has(canvasItemKey(item)))?.kind ?? null) : null), tool: shapeTool, eraser, text: textMode }) : undefined}
