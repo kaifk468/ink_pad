@@ -134,17 +134,20 @@ export function ToolDock(props: ToolDockProps) {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7V4.5h14V7M12 4.5V19.5M8.5 19.5h7"/></svg><DockTip name="Text" keys={['T', '8']} />
         </button>
         {connector}
-        {divider}
-        {HLD_ENTRIES.map(({ shape, icon }) => (
-          <button className={`tool-button hld-tool-button${props.hldShapeActive === shape ? ' selected' : ''}`} type="button" key={shape} aria-label={HLD_SHAPE_LABELS[shape]} aria-pressed={props.hldShapeActive === shape} onClick={() => props.onHldShape(shape)}>
-            {icon}<DockTip name={HLD_SHAPE_LABELS[shape]} />
-          </button>
-        ))}
-        <MoreShapesTray desktopTip hldActive={props.hldShapeActive} onHldShape={props.onHldShape} onSticky={props.onSticky} />
+        {/* System shapes: display: contents normally; hidden in narrow windows (< 740px), where the More tray lists the same shapes. */}
+        <div className="dock-system-group">
+          {divider}
+          {HLD_ENTRIES.map(({ shape, icon }) => (
+            <button className={`tool-button hld-tool-button${props.hldShapeActive === shape ? ' selected' : ''}`} type="button" key={shape} aria-label={HLD_SHAPE_LABELS[shape]} aria-pressed={props.hldShapeActive === shape} onClick={() => props.onHldShape(shape)}>
+              {icon}<DockTip name={HLD_SHAPE_LABELS[shape]} />
+            </button>
+          ))}
+          <MoreShapesTray desktopTip hldActive={props.hldShapeActive} onHldShape={props.onHldShape} onSticky={props.onSticky} />
+        </div>
         {divider}
         {inkClass}
         {divider}
-        <MoreTray desktopTip tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" onTemplates={props.onTemplates} onMermaid={props.onMermaid} onExcalidraw={props.onExcalidraw} onLaser={props.onLaser} laserActive={props.laserActive} laserKey="X" onPresent={props.onPresent} presentActive={props.presentActive} presentKey="Alt+Z" onDuplicatePage={props.onDuplicatePage} onPageOverview={props.onPageOverview} canDuplicatePage={props.canDuplicatePage} />
+        <MoreTray desktopTip hldActive={props.hldShapeActive} onHldShape={props.onHldShape} tidyLabel={props.tidyLabel} onTidy={props.onTidy} onTypedClass={props.onClass} typedClassActive={props.classActive} onCode={props.onCode} onFind={props.onFind} findTitle="Find text on the canvas (Ctrl+F)" onTemplates={props.onTemplates} onMermaid={props.onMermaid} onExcalidraw={props.onExcalidraw} onLaser={props.onLaser} laserActive={props.laserActive} laserKey="X" onPresent={props.onPresent} presentActive={props.presentActive} presentKey="Alt+Z" onDuplicatePage={props.onDuplicatePage} onPageOverview={props.onPageOverview} canDuplicatePage={props.canDuplicatePage} />
         {lock}
       </nav>
     )

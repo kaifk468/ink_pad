@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { DockTip } from './DockTip'
+import { HLD_ENTRIES, MORE_HLD_ENTRIES } from './InsertTray'
+import { HLD_SHAPE_LABELS } from '../hldShapes'
+import type { HldShape } from '../hldShapes'
 
 type MoreTrayProps = {
   /** Desktop dock: icon-only button with a hover/focus tooltip instead of a label and native title. */
   desktopTip?: boolean
+  /** Desktop only: with onHldShape, the tray also lists the system shapes; CSS shows that section only when the dock is too narrow to hold them (< 740px). */
+  hldActive?: HldShape | null
+  onHldShape?: (shape: HldShape) => void
   /** "Tidy selected" when two or more class boxes are selected, otherwise "Tidy all". */
   tidyLabel: string
   onTidy: () => void
@@ -37,7 +43,7 @@ type MoreTrayProps = {
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, desktopTip, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onMermaid, onExcalidraw, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, onPageOverview, canDuplicatePage = true }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, desktopTip, hldActive, onHldShape, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onMermaid, onExcalidraw, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, onPageOverview, canDuplicatePage = true }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -69,6 +75,16 @@ export function MoreTray({ tidyLabel, onTidy, desktopTip, onTypedClass, typedCla
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg>{desktopTip ? <DockTip name="More" /> : <span>More</span>}
       </button>
       {open && <div className="insert-tray more-tray" role="group" aria-label="More tray">
+        {desktopTip && onHldShape && <div className="more-tray-system">
+          <div className="insert-tray-heading">System shapes</div>
+          <div className="insert-shape-grid">
+            {[...HLD_ENTRIES, ...MORE_HLD_ENTRIES].map(({ shape, icon, hint }) => (
+              <button className={`insert-entry${hldActive === shape ? ' selected' : ''}`} type="button" key={shape} aria-label={HLD_SHAPE_LABELS[shape]} aria-pressed={hldActive === shape} title={`Click or drag to add ${hint} you write in`} onClick={() => { onHldShape(shape); setOpen(false) }}>
+                {icon}<span>{HLD_SHAPE_LABELS[shape]}</span>
+              </button>
+            ))}
+          </div>
+        </div>}
         {onTypedClass && <>
           <div className="insert-tray-heading">LLD</div>
           <button className={`insert-entry${typedClassActive ? ' selected' : ''}`} type="button" aria-label="Typed class box" aria-pressed={typedClassActive} title="Click the sheet to add a typed UML class box; click a box to edit it" onClick={() => { onTypedClass(); setOpen(false) }}>

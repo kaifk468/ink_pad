@@ -58,3 +58,25 @@
   .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button:active { transform: none; }
   .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-tip { transform: translate(-50%, 0); }
 }
+
+/* System shapes group: layout-neutral wrapper (the buttons stay direct flex items of the dock). */
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-system-group { display: contents; }
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .more-tray-system { display: none; }
+
+/* Compact dock (windows narrower than 900px): 36px buttons, tighter gaps. The dock is 50px tall here, so zoom controls lift 58px and never overlap it. */
+@media (max-width: 899px) {
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock { gap: 1px; padding: 6px 5px; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-divider { margin: 0 2px; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button { width: 36px; min-width: 36px; height: 36px; border-radius: 9px; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button svg { width: 18px; height: 18px; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .insert-tray,
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-tip { bottom: calc(100% + 12px); }
+  .app-shell[data-input-mode="desktop"] .zoom-controls { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 58px); }
+}
+
+/* Still too wide for the dock (below 740px): the System shapes group leaves the dock and lives in the More tray. */
+@media (max-width: 739px) {
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-system-group { display: none; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .more-tray { max-height: calc(100vh - 140px); overflow-y: auto; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .more-tray-system { display: block; }
+}
