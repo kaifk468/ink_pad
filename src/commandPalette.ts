@@ -55,6 +55,36 @@ export function shortcutPaletteEntries(rows: readonly ShortcutEntry[] = DESKTOP_
   return rows.filter((row) => row.input).map((row) => ({ id: shortcutEntryId(row), label: row.label, group: row.group, keys: row.keys }))
 }
 
+/**
+ * Splits a long label at its first " (" so the parenthetical becomes a second line: "Laser pointer (a red trail)" -> title "Laser pointer", detail "a red trail".
+ * Text after the matching ")" stays in the title; an unbalanced "(" keeps everything after it as the detail. No " (" means no detail.
+ */
+export function splitCommandLabel(label: string): { title: string; detail: string } {
+  const at = label.indexOf(' (')
+  if (at < 0) return { title: label, detail: '' }
+  const open = at + 1
+  let depth = 0
+  let close = -1
+  for (let i = open; i < label.length; i++) {
+    if (label[i] === '(') depth++
+    else if (label[i] === ')' && --depth === 0) { close = i; break }
+  }
+  if (close < 0) return { title: label.slice(0, at).trim(), detail: label.slice(open + 1).trim() }
+  const title = `${label.slice(0, at)}${label.slice(close + 1)}`.replace(/\s+/g, ' ').trim()
+  return { title, detail: label.slice(open + 1, close).trim() }
+}
+
+/** Entries bucketed by group (groups in order of first appearance, rows keep their order), for the grouped empty-query view. */
+export function groupPaletteEntries<T extends PaletteEntry>(entries: readonly T[]): Array<{ group: string; entries: T[] }> {
+  const groups: Array<{ group: string; entries: T[] }> = []
+  for (const entry of entries) {
+    let bucket = groups.find((candidate) => candidate.group === entry.group)
+    if (!bucket) { bucket = { group: entry.group, entries: [] }; groups.push(bucket) }
+    bucket.entries.push(entry)
+  }
+  return groups
+}
+
 const WORD_START = /[\s\-_/+(),.:]/
 
 /** How well one word matches an entry: lower is better, null = no match. */
