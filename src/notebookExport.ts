@@ -24,6 +24,7 @@ export async function renderDiagramPdf(pageItems: CanvasItem[][], sheetHeight: n
   for (const items of pageItems) {
     const bounds = getContentBounds(items, { width: SHEET_WIDTH, height: sheetHeight })
     if (!bounds) continue
+    // No `board` on purpose: this PDF is made for NotebookLM / Drive readers, which want dark ink on plain white whatever board the diagram uses.
     const svg = cropSvg(buildSheetSvg(items, { width: SHEET_WIDTH, height: sheetHeight, template: 'blank', backgroundColor: '#ffffff', ...(sketchy ? { sketchy: true } : {}) }), bounds)
     const ratio = exportPixelRatio(bounds.width, bounds.height)
     const blob = await svgToImageBlob(svg, bounds.width, bounds.height, ratio, 'image/jpeg', EXPORT_JPEG_QUALITY)

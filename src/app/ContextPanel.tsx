@@ -10,6 +10,8 @@ import { TEXT_FONTS, TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP } from '../textLay
 import { FILL_PRESETS } from '../shapeFill'
 import { CODE_LANGUAGES } from '../codeBlock'
 import { COLORS, MAX_STROKE_WIDTH, MIN_STROKE_WIDTH, WIDTHS } from './appConfig'
+import { penColorsForBoard } from '../boardColors'
+import type { BoardTheme } from '../boardStyle'
 
 type RelationshipProps = {
   type: ConnectorRelationshipType
@@ -122,6 +124,8 @@ type ContextPanelProps = {
   /** Desktop: the shapes the selected boxes can change to (Change shape). */
   changeShape?: { choices: Array<{ id: string; label: string }>; onChange: (id: string) => void } | null
   /** Tablet: the commands the desktop right-click menu has (Select similar, Copy / Paste style, Number steps). Each button shows only when its handler is given. */
+  /** Board theme of the diagram: dark / chalk boards show board-friendly colour swatches (the first still stores #202124). */
+  boardTheme?: BoardTheme
   selectionTools?: { onSelectSimilar?: (() => void) | null; onCopyStyle?: (() => void) | null; onPasteStyle?: (() => void) | null; canPasteStyle?: boolean; onNumberSteps?: (() => void) | null } | null
   /** Tablet: Move to page chips (the other pages, then a new page); `onMove` gets the chip's `movePage:` action. */
   movePages?: { chips: Array<{ action: string; chip: string; label: string }>; onMove: (action: string) => void } | null
@@ -140,14 +144,15 @@ type ContextPanelProps = {
 }
 
 /** The five quick colours, a rainbow button that opens the full picker, and the picker itself. */
-function ColorChoices({ value, label, onChange, square, idle, heading }: { value: string; label: string; onChange: (hex: string, commit: boolean) => void; square?: boolean; idle?: boolean; heading?: string }) {
+function ColorChoices({ value, label, onChange, square, idle, heading, theme = 'light' }: { value: string; label: string; onChange: (hex: string, commit: boolean) => void; square?: boolean; idle?: boolean; heading?: string; theme?: BoardTheme }) {
   const [open, setOpen] = useState(false)
-  const quick = idle || COLORS.some((item) => item.value.toLowerCase() === value.toLowerCase())
+  const swatches = penColorsForBoard(theme, COLORS)
+  const quick = idle || swatches.some((item) => item.value.toLowerCase() === value.toLowerCase())
   return (
     <div className={`color-choices${square ? ' is-fill' : ''}${heading ? ' has-heading' : ''}`} role="group" aria-label={label}>
       {heading && <span className="panel-label">{heading}</span>}
       <div className="tool-group color-group">
-        {COLORS.map((item) => (
+        {swatches.map((item) => (
           <button
             className={`color-swatch${value.toLowerCase() === item.value.toLowerCase() ? ' selected' : ''}`}
             key={item.value}
@@ -155,7 +160,7 @@ function ColorChoices({ value, label, onChange, square, idle, heading }: { value
             title={item.name}
             aria-label={item.name}
             aria-pressed={value.toLowerCase() === item.value.toLowerCase()}
-            style={{ '--swatch': item.value } as CSSProperties}
+            style={{ '--swatch': item.display, '--swatch-ring': theme === 'light' ? undefined : 'rgba(36, 42, 52, .35)' } as CSSProperties}
             onClick={() => onChange(item.value, true)}
           />
         ))}
@@ -361,7 +366,7 @@ export function ContextPanel(props: ContextPanelProps) {
     <>
       {props.showSelectionColor && !props.code && props.onSelectionColor && <div className="selection-color">
         <span className="panel-label">{props.desktop ? 'Stroke' : 'Colour of this object'}</span>
-        <ColorChoices value={props.selectionColor ?? '#202124'} label="Object colour" onChange={props.onSelectionColor} />
+        <ColorChoices value={props.selectionColor ?? '#202124'} label="Object colour" onChange={props.onSelectionColor} theme={props.boardTheme} />
       </div>}
     </>
   )
@@ -375,7 +380,7 @@ export function ContextPanel(props: ContextPanelProps) {
             <button key={preset.fill} className={`color-swatch${props.fill?.color?.toLowerCase() === preset.fill ? ' selected' : ''}`} type="button" title={`${preset.name} fill`} aria-label={`${preset.name} fill`} aria-pressed={props.fill?.color?.toLowerCase() === preset.fill} style={{ '--swatch': preset.fill } as CSSProperties} onClick={() => props.fill?.onFill(preset.fill, true)} />
           ))}
         </div>
-        <ColorChoices square={props.desktop} idle={props.desktop && fillMoreColoursIdle(props.fill.color)} value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" onChange={(hex, commit) => props.fill?.onFill(hex, commit)} />
+        <ColorChoices square={props.desktop} idle={props.desktop && fillMoreColoursIdle(props.fill.color)} value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" onChange={(hex, commit) => props.fill?.onFill(hex, commit)} theme={props.boardTheme} />
         {props.fill.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null) && <button className="clear-selection-button" type="button" title="Use the darker outline that goes with this fill" onClick={() => { const hex = props.fill?.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null); if (hex) props.fill?.onMatchOutline(hex) }}>Matching outline</button>}
       </div>}
     </>
@@ -676,8 +681,8 @@ export function ContextPanel(props: ContextPanelProps) {
   )
   const colourEl = (
     <>
-        {props.desktop ? <ColorChoices value={props.color} label="Stroke colour" onChange={(hex) => props.onColor(hex)} heading="Stroke" /> : <div className="tool-group color-group" role="group" aria-label="Pen color">
-          {COLORS.map((item) => (
+        {props.desktop ? <ColorChoices value={props.color} label="Stroke colour" onChange={(hex) => props.onColor(hex)} heading="Stroke" theme={props.boardTheme} /> : <div className="tool-group color-group" role="group" aria-label="Pen color">
+          {penColorsForBoard(props.boardTheme ?? 'light', COLORS).map((item) => (
             <button
               className={`color-swatch${props.color === item.value ? ' selected' : ''}`}
               key={item.value}
@@ -685,7 +690,7 @@ export function ContextPanel(props: ContextPanelProps) {
               title={item.name}
               aria-label={item.name}
               aria-pressed={props.color === item.value}
-              style={{ '--swatch': item.value } as CSSProperties}
+              style={{ '--swatch': item.display, '--swatch-ring': (props.boardTheme ?? 'light') === 'light' ? undefined : 'rgba(36, 42, 52, .35)' } as CSSProperties}
               onClick={() => props.onColor(item.value)}
             />
           ))}

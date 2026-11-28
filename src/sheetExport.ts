@@ -12,6 +12,8 @@ import { getTextBaselines, labelLines, textLineX, TEXT_FONT_FAMILY, textFontFami
 import { connectorLabelFontSize, connectorLabelLayout } from './connectorLabel'
 import { isPlainRectangle, roundedCornerRadius } from './roundedCorners'
 import { connectorEndLabelFontSize, connectorEndLabelLayouts } from './connectorEndLabels'
+import { boardPalette } from './boardStyle'
+import { resolveItemForBoard } from './boardColors'
 
 /** What the sheet is ruled with: blank, lined, dotted (the template) or grid, isometric, cornell (the canvas types). */
 export type ExportTemplate = CanvasType
@@ -26,6 +28,12 @@ export type SheetExportOptions = {
   transparent?: boolean
   /** Hand-drawn style (the diagram's own setting). */
   sketchy?: boolean
+  /**
+   * The diagram's saved board ('dark' | 'chalk'; missing or unknown = light). Dark boards draw the default ink and the default white fill
+   * as the board does, on the board's sheet colour (backgroundColor is ignored). Ignored when `transparent` is set: transparent exports
+   * keep the STORED colours because they are pasted onto light documents.
+   */
+  board?: string
   /** CSS (an @font-face with the font as a data URL) put into the SVG so labels look the same outside the app. Omitted: output is unchanged. */
   embeddedFontCss?: string
 }
@@ -33,6 +41,8 @@ export type SheetExportOptions = {
 /** Set by buildSheetSvg for the duration of one build. */
 let sketchyExport = false
 let labelBackground = '#ffffff'
+/** Fill of hollow shapes (class box body, hollow arrowheads) for the board being exported. */
+let hollowFill = '#ffffff'
 
 const SPACING = 32
 const LINE_COLOR = '#aebfd8'
@@ -93,7 +103,7 @@ function classBoxElement(rectangle: RectangleObject): string {
     .map((y) => `M${n(rectangle.x)} ${n(y)}H${n(rectangle.x + rectangle.width)}`)
     .join('')
   const box = `${n(rectangle.x)} ${n(rectangle.y)} ${n(rectangle.width)} ${n(rectangle.height)}`
-  return `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}" fill="#ffffff"/>`
+  return `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}" fill="${hollowFill}"/>`
     + `<svg x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}" viewBox="${box}" overflow="hidden">${texts(geometry.name)}${texts(geometry.attributes)}${texts(geometry.methods)}</svg>`
     + (dividers ? `<path d="${dividers}" fill="none" stroke="${color}" stroke-width="${n(Math.max(1, rectangle.strokeWidth / 2))}"/>` : '')
 }
@@ -164,7 +174,7 @@ function sketchyConnectorElement(connector: ConnectorObject): string {
   const color = esc(connector.strokeColor)
   const dash = dashAttr(connectorDashPattern(connector))
   const base = `stroke="${color}" stroke-width="${n(connector.strokeWidth)}" stroke-linecap="round" stroke-linejoin="round"`
-  const head = shape.head ? `<path d="${shape.head}" fill="${shape.headClosed && shape.headFill ? (shape.headFill === 'color' ? color : '#ffffff') : 'none'}" ${base}/>` : ''
+  const head = shape.head ? `<path d="${shape.head}" fill="${shape.headClosed && shape.headFill ? (shape.headFill === 'color' ? color : hollowFill) : 'none'}" ${base}/>` : ''
   return `<path d="${shape.line}" fill="none" ${base}${dash}/>${head}`
 }
 
@@ -204,7 +214,7 @@ function connectorLineElement(connector: ConnectorObject): string {
   const atStart = spec.endpoint === 'start'
   if (spec.symbol === 'hollow-triangle' && geometry && tip) {
     parts.push(`<path d="${connectorPathData(connector, atStart, geometry.base)}" fill="none" ${base}${dash}/>`)
-    parts.push(`<path d="M${pt(tip)}L${pt(geometry.sideA)}L${pt(geometry.sideB)}Z" fill="#ffffff" ${base}/>`)
+    parts.push(`<path d="M${pt(tip)}L${pt(geometry.sideA)}L${pt(geometry.sideB)}Z" fill="${hollowFill}" ${base}/>`)
   } else if (spec.symbol === 'open-arrow' && geometry && tip) {
     parts.push(`<path d="${connectorPathData(connector, atStart)}" fill="none" ${base}${dash}/>`)
     parts.push(`<path d="M${pt(geometry.sideA)}L${pt(tip)}L${pt(geometry.sideB)}" fill="none" ${base}/>`)
@@ -212,7 +222,7 @@ function connectorLineElement(connector: ConnectorObject): string {
     if (second) parts.push(`<path d="M${pt(second.sideA)}L${pt(second.tip)}L${pt(second.sideB)}" fill="none" ${base}/>`)
   } else if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip) {
     parts.push(`<path d="${connectorPathData(connector, atStart, geometry.far)}" fill="none" ${base}${dash}/>`)
-    parts.push(`<path d="M${pt(tip)}L${pt(geometry.sideA)}L${pt(geometry.far)}L${pt(geometry.sideB)}Z" fill="${spec.symbol === 'filled-diamond' ? color : '#ffffff'}" ${base}/>`)
+    parts.push(`<path d="M${pt(tip)}L${pt(geometry.sideA)}L${pt(geometry.far)}L${pt(geometry.sideB)}Z" fill="${spec.symbol === 'filled-diamond' ? color : hollowFill}" ${base}/>`)
   } else {
     parts.push(`<path d="${connectorPathData(connector, false)}" fill="none" ${base}${dash}/>`)
   }
@@ -289,11 +299,16 @@ function itemElement(item: CanvasItem): string {
  */
 export function buildSheetSvg(rawItems: CanvasItem[], options: SheetExportOptions): string {
   sketchyExport = options.sketchy === true
-  labelBackground = options.transparent ? '#ffffff' : options.backgroundColor
+  const palette = options.transparent ? boardPalette(undefined) : boardPalette(options.board)
+  // Dark boards: the sheet is the board's colour (the saved tint stays in the file, unused) and the default ink / white fill resolve to the board's.
+  const exportOptions = palette.theme === 'light' ? options : { ...options, backgroundColor: palette.sheet }
+  labelBackground = options.transparent ? '#ffffff' : exportOptions.backgroundColor
+  hollowFill = palette.fill
   try {
-    return buildSheetSvgInner(rawItems, options)
+    return buildSheetSvgInner(palette.theme === 'light' ? rawItems : rawItems.map((item) => resolveItemForBoard(item, palette)), exportOptions)
   } finally {
     sketchyExport = false
+    hollowFill = '#ffffff'
   }
 }
 

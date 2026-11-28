@@ -2,6 +2,7 @@ import { connectorPoints, strokeArrowheads } from '../canvasModel'
 import type { ConnectorObject, RectangleObject, Stroke } from '../canvasModel'
 import { plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokeParts, type SketchyConnector, type SketchyShape } from '../sketchy'
 import { isPlainRectangle } from '../roundedCorners'
+import { getBoardFill } from '../boardColors'
 
 /**
  * Canvas side of the hand-drawn style. Outlines are generated once per item and kept (items are immutable, so a WeakMap
@@ -99,7 +100,7 @@ export function drawSketchyConnector(ctx: CanvasRenderingContext2D, connector: C
   if (!paths.head) return
   ctx.setLineDash([])
   if (paths.spec.headClosed && paths.spec.headFill) {
-    ctx.fillStyle = paths.spec.headFill === 'color' ? color : '#ffffff'
+    ctx.fillStyle = paths.spec.headFill === 'color' ? color : getBoardFill()
     ctx.fill(paths.head)
   }
   ctx.stroke(paths.head)

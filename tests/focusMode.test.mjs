@@ -77,7 +77,7 @@ test('renderer: the fade is only applied behind a null check, so the normal path
 test('wiring: the page picture is keyed on the focus set and the live stroke is never faded', () => {
   assert.match(app, /cache\.focus === focusRef\.current/)
   assert.match(app, /focus: focusRef\.current \}/)
-  assert.match(app, /drawItemToCanvas\(ctx, item, strokeDisplayMode, sketchy, faded\)/)
+  assert.match(app, /drawItemToCanvas\(ctx, resolveItemForBoard\(item, palette\), strokeDisplayMode, sketchy, faded\)/)
   assert.match(app, /if \(focusRef\.current !== null\) focusDrawnRef\.current\.clear\(\)/)
   assert.match(app, /fadedKeysOf\(strokesRef\.current, kept\)/)
   assert.match(app, /focusKeptRef\.current !== null && liveStroke === null && focusCheckedItemsRef\.current !== items/)

@@ -14,6 +14,8 @@ import { isSketchyRectangle } from '../sketchy'
 import { drawSketchyConnector, fillRectangle, strokeSketchyRectangle, strokeSketchyStroke } from './sketchyRender'
 import { drawCode, drawOpaque } from './codeRenderer'
 import { FOCUS_FADE_ALPHA } from '../focusMode'
+import { getBoardFill, resolveItemForBoard } from '../boardColors'
+import type { BoardPalette } from '../boardStyle'
 
 /** Canvas drawing for every item kind. Pure functions of (context, item, settings): no React state. */
 
@@ -206,7 +208,7 @@ function drawClassBox(ctx: CanvasRenderingContext2D, rectangle: RectangleObject)
   if (!content) return
   const geometry = getClassBoxGeometry(rectangle, content)
   ctx.save()
-  ctx.fillStyle = '#ffffff'
+  ctx.fillStyle = getBoardFill()
   ctx.fillRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height)
   ctx.save()
   ctx.beginPath()
@@ -374,7 +376,7 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
     ctx.lineTo(geometry.sideA.x, geometry.sideA.y)
     ctx.lineTo(geometry.sideB.x, geometry.sideB.y)
     ctx.closePath()
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = getBoardFill()
     ctx.fill()
     ctx.stroke()
   } else if (spec.symbol === 'open-arrow' && geometry && tip) {
@@ -404,7 +406,7 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
     ctx.lineTo(geometry.far.x, geometry.far.y)
     ctx.lineTo(geometry.sideB.x, geometry.sideB.y)
     ctx.closePath()
-    ctx.fillStyle = spec.symbol === 'filled-diamond' ? color : '#ffffff'
+    ctx.fillStyle = spec.symbol === 'filled-diamond' ? color : getBoardFill()
     ctx.fill()
     ctx.stroke()
   } else {
@@ -495,11 +497,13 @@ export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, stroke
 }
 
 /** `focusFaded` (focus mode, null = off and nothing extra happens) lists the keys drawn faded, as the canvas does. */
-export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasItem[], geometry: MinimapGeometry, focusFaded: ReadonlySet<string> | null = null): void {
+export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasItem[], geometry: MinimapGeometry, focusFaded: ReadonlySet<string> | null = null, palette?: BoardPalette): void {
   const toMiniX = (x: number) => x * geometry.scale + geometry.offsetX
   const toMiniY = (y: number) => y * geometry.scale + geometry.offsetY
   ctx.save()
-  for (const item of items) {
+  for (const original of items) {
+    // Dark boards: the default ink draws as the board's ink (cached copy; the light board returns the item itself).
+    const item = palette ? resolveItemForBoard(original, palette) : original
     const fade = focusFaded !== null && focusFaded.has(canvasItemKey(item))
     if (fade) ctx.globalAlpha = FOCUS_FADE_ALPHA
     if (item.kind === 'text') {

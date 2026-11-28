@@ -803,6 +803,8 @@ export function useDocuments(host: DocumentHost) {
       spacing: page.spacing,
       backgroundColor: PAGE_BACKGROUND_COLORS[page.background],
       ...(page.sketchy ? { sketchy: true } : {}),
+      // The board follows the page in PNG / SVG / copy / Library pictures (thumbnails use this too); buildSheetSvg ignores it for a transparent export.
+      ...(page.board ? { board: page.board } : {}),
       ...(options.transparent ? { transparent: true } : {}),
       ...(options.fontCss ? { embeddedFontCss: options.fontCss } : {}),
     }), bounds)

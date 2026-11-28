@@ -41,6 +41,9 @@ button { font: inherit; }
   inset: 0;
   background: #dde0e7;
 }
+/* Board styles: the desk around the sheet (palette `desk` in src/boardStyle.ts). */
+.canvas-stage[data-board='dark'] { background: #121418; }
+.canvas-stage[data-board='chalk'] { background: #17241f; }
 
 .sheet-layer {
   position: absolute;
@@ -404,8 +407,8 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 /* Pen colours: a row left of the profile button; hit areas stay 40 px, the dot is 22 px. */
 .pen-colors { display: flex; align-items: center; gap: 0; height: 40px; padding: 0 3px; border: 1px solid rgba(36, 42, 52, .1); border-radius: 20px; background: rgba(255, 255, 255, .96); box-shadow: 0 3px 12px rgba(31, 39, 52, .12); }
 .pen-color { display: grid; place-items: center; width: 34px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; touch-action: manipulation; }
-.pen-color::before { content: ''; width: 20px; height: 20px; border-radius: 50%; background: var(--swatch); }
-.pen-color.selected::before { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--swatch); }
+.pen-color::before { content: ''; width: 20px; height: 20px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px var(--swatch-ring, transparent); }
+.pen-color.selected::before { box-shadow: inset 0 0 0 1px var(--swatch-ring, transparent), 0 0 0 2px #fff, 0 0 0 4px var(--swatch-ring, var(--swatch)); }
 @media (max-width: 760px) { .pen-color { width: 32px; } }
 .zoom-controls .zoom-lock { display: grid; place-items: center; margin-left: 2px; border-left: 1px solid #e7eaf0; border-radius: 0 12px 12px 0; }
 .zoom-controls .zoom-lock.selected { background: #e9edff; color: #354fc2; }
@@ -420,7 +423,7 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 .tool-label { color: #777c85; font-size: 12px; font-weight: 600; }
 .tool-group { display: flex; align-items: center; gap: 4px; padding: 0 8px; border-left: 1px solid #e7eaf0; }
 .color-swatch { display: grid; place-items: center; width: 27px; height: 27px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
-.color-swatch::before { content: ''; width: 15px; height: 15px; border-radius: 50%; background: var(--swatch); transition: transform .15s ease; }
+.color-swatch::before { content: ''; width: 15px; height: 15px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px var(--swatch-ring, transparent); transition: transform .15s ease; }
 .color-swatch:hover::before { transform: scale(1.13); }
 .color-swatch.selected { outline: 1.5px solid #a7aab1; outline-offset: 1px; }
 .thickness-group { gap: 2px; }

@@ -195,7 +195,7 @@ test('pen colours sit beside the profile button and show only while the pen is t
   const { readFile } = await import('node:fs/promises')
   const account = await readFile(new URL('../src/app/AccountButton.tsx', import.meta.url), 'utf8')
   assert.match(account, /\{props\.leading\}/)
-  assert.match(appSource, /leading=\{inputMode === 'desktop' \? <DesktopStatusCluster [^]*?: accountLeading\(penModeActive, inputMode, <PenColors color=\{color\} onColor=\{selectColor\} \/>\)\}/)
+  assert.match(appSource, /leading=\{inputMode === 'desktop' \? <DesktopStatusCluster [^]*?: accountLeading\(penModeActive, inputMode, <PenColors color=\{color\} onColor=\{selectColor\} theme=\{theme\} \/>\)\}/)
 })
 
 test('page counts reach the Library for multi-page diagrams only', async () => {

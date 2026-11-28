@@ -37,7 +37,8 @@ import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserSta
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
 import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
-import { boardFieldsFor, type BoardStyleId } from './boardStyle'
+import { boardFieldsFor, boardPalette, type BoardStyleId, type BoardTheme } from './boardStyle'
+import { resolveInk, resolveItemForBoard, setBoardFill, sheetBorderColor, sheetColorForBoard } from './boardColors'
 import { canvasFieldsFor, effectiveCanvasType, type CanvasType } from './canvasTypes'
 import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
 import { FilePanel } from './FilePanel'
@@ -247,7 +248,7 @@ function App() {
   // Where the browser predicts the pen will be in the next few milliseconds (drawn ahead of the ink, never saved).
   const predictedPointsRef = useRef<Point[]>([])
   const drawModeRef = useRef<DrawMode>(DIRECT_MAX_VISIBLE_POINTS <= 0 ? 'cached' : 'direct')
-  const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number; focus: ReadonlySet<string> | null } | null>(null)
+  const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; theme: BoardTheme; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number; focus: ReadonlySet<string> | null } | null>(null)
   const minimapRenderedAtRef = useRef(0)
   // What the saved minimap ink picture was drawn for (canvas size and map geometry); the ink is redrawn when this changes.
   const minimapInkKeyRef = useRef('')
@@ -1479,7 +1480,11 @@ function App() {
 
   const drawStroke = useCallback((ctx: CanvasRenderingContext2D, stroke: Stroke) => drawStrokeToCanvas(ctx, stroke, strokeDisplayMode), [strokeDisplayMode])
 
-  setConnectorLabelBackground(PAGE_BACKGROUND_COLORS[pageBackground])
+  // Board (round 11): the palette the default ink / white fill resolve to at draw time (light = identity, nothing changes).
+  const palette = boardPalette(board)
+  const theme = palette.theme
+  setConnectorLabelBackground(sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]))
+  setBoardFill(palette.fill)
   const drawItem = useCallback((ctx: CanvasRenderingContext2D, item: CanvasItem) => {
     const faded = focusRef.current
     // Focus on: a faded box that several connectors redraw is drawn once (a second faded pass would darken it). Off: nothing extra.
@@ -1488,12 +1493,12 @@ function App() {
       if (item.kind === 'stroke' && item.erase) focusDrawnRef.current.clear()
       else if (faded.has(canvasItemKey(item))) { if (focusDrawnRef.current.has(item)) return; focusDrawnRef.current.add(item) }
     }
-    drawItemToCanvas(ctx, item, strokeDisplayMode, sketchy, faded)
-  }, [strokeDisplayMode, sketchy])
+    drawItemToCanvas(ctx, resolveItemForBoard(item, palette), strokeDisplayMode, sketchy, faded)
+  }, [strokeDisplayMode, sketchy, palette])
 
   const drawMinimapItems = useCallback((ctx: CanvasRenderingContext2D, geometry: MinimapGeometry) => {
-    drawMinimapItemsToCanvas(ctx, canvasItemsForRendering(routeConnectors(strokesRef.current)), geometry, focusRef.current)
-  }, [])
+    drawMinimapItemsToCanvas(ctx, canvasItemsForRendering(routeConnectors(strokesRef.current)), geometry, focusRef.current, palette)
+  }, [palette])
 
 
 
@@ -1531,12 +1536,12 @@ function App() {
     const pageY = sheetBoundsRef.current.y * geometry.scale + geometry.offsetY
     const pageWidth = SHEET_WIDTH * geometry.scale
     const pageHeight = sheetHeightRef.current * geometry.scale
-    ctx.fillStyle = '#e9ebf0'
+    ctx.fillStyle = theme === 'light' ? '#e9ebf0' : palette.desk
     ctx.fillRect(workspaceX, workspaceY, workspaceWidth, workspaceHeight)
     ctx.strokeStyle = '#c5cad4'
     ctx.lineWidth = 1
     ctx.strokeRect(workspaceX + 0.5, workspaceY + 0.5, workspaceWidth - 1, workspaceHeight - 1)
-    ctx.fillStyle = PAGE_BACKGROUND_COLORS[pageBackground]
+    ctx.fillStyle = sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground])
     ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
     drawPageTemplateOverview(ctx, canvasType, { x: pageX, y: pageY, width: pageWidth, height: pageHeight })
     ctx.strokeStyle = '#cfd4df'
@@ -1575,7 +1580,7 @@ function App() {
     ctx.fillRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.strokeRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.restore()
-  }, [drawMinimapItems, getCurrentMinimapBounds, canvasType, pageBackground])
+  }, [board, drawMinimapItems, getCurrentMinimapBounds, canvasType, pageBackground, palette, theme])
 
   // The single selected box (select tool) is kept in a ref for the gesture code; the state copy only lets the toolbar show Delete for it.
   const [hasSelectedRectangle, setHasSelectedRectangle] = useState(false)
@@ -2412,6 +2417,8 @@ function App() {
   const chooseBoardStyle = (style: BoardStyleId, dark: boolean) => {
     const next = boardFieldsFor(style, dark)
     if (next.sketchy !== sketchyRef.current) toggleSketchy()
+    // Sketch and Chalkboard write new text in the hand-drawn font (Excalifont) unless it already is.
+    if (style !== 'clean' && textFontId !== 'excalifont') setTextFontId('excalifont')
     boardRef.current = next.board
     setBoard(next.board)
   }
@@ -2659,7 +2666,7 @@ function App() {
     const cache = historyCacheRef.current
     const historyLayerNow = historyLayerRef.current
     const cacheBase = cacheAllowed && cache !== null && historyLayerNow !== null
-      && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height && cache.mode === strokeDisplayMode && cache.focus === focusRef.current
+      && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height && cache.mode === strokeDisplayMode && cache.theme === theme && cache.focus === focusRef.current
     const viewportSame = cacheBase && cache!.scale === viewport.scale && cache!.offsetX === viewport.offsetX && cache!.offsetY === viewport.offsetY
     let itemsMatch = cacheBase && sameItems(cache!.snapshot, items, items.length)
     // One item added on top since the picture was made (a stroke, or a recognized rectangle or line, a connector, a text
@@ -2698,7 +2705,8 @@ function App() {
       const live = liveLayerRef.current
       if (!base || !live || !liveStateRef.current || !liveStroke || liveStroke.kind !== 'stroke') return
       const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
-      drawLiveStrokeFrame({ page: ctx, base, live, stroke: liveStroke, predicted: PEN_PREDICTION_ENABLED ? predictedPointsRef.current : [], state: liveStateRef.current, transform: liveTransform, clip: workspaceBoundsRef.current })
+      // The live stroke draws in the colour it will have once saved: default ink on a dark board is the board's ink from the first dab (a string compare, no allocation).
+      drawLiveStrokeFrame({ page: ctx, base, live, stroke: liveStroke, color: resolveInk(liveStroke.color, palette), predicted: PEN_PREDICTION_ENABLED ? predictedPointsRef.current : [], state: liveStateRef.current, transform: liveTransform, clip: workspaceBoundsRef.current })
       if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
     }
     if (incrementalLive && liveState && liveState.strokeId === liveStroke!.id
@@ -2732,7 +2740,7 @@ function App() {
     if (sheetLayer) {
       applySheetLayer(sheetLayer, sheetLayerAppliedRef.current, getSheetLayerState(
         benchmarkBackground?.template ?? canvasType,
-        PAGE_BACKGROUND_COLORS[benchmarkBackground ? 'white' : pageBackground],
+        benchmarkBackground ? PAGE_BACKGROUND_COLORS.white : sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]),
         viewport,
         pageSpacing,
       ))
@@ -2740,7 +2748,7 @@ function App() {
     if (benchmarkBackground) benchmarkBackground.onBackgroundRendered(performance.now() - backgroundStartedAt)
     const drawSheetBorders = () => {
       ctx.save()
-      ctx.strokeStyle = '#d9dce2'
+      ctx.strokeStyle = sheetBorderColor(theme)
       ctx.lineWidth = 1
       ctx.strokeRect(sheetBoundsRef.current.x + 0.5, sheetBoundsRef.current.y + 0.5, SHEET_WIDTH - 1, sheetHeightRef.current - 1)
       ctx.restore()
@@ -2824,7 +2832,7 @@ function App() {
           historyContext.setTransform(1, 0, 0, 1, 0, 0)
           historyContext.clearRect(0, 0, historyLayer.width, historyLayer.height)
           historyContext.drawImage(inkLayer, 0, 0)
-          historyCacheRef.current = { snapshot: items.slice(), mode: strokeDisplayMode, scale: viewport.scale, offsetX: viewport.offsetX, offsetY: viewport.offsetY, dpr, width: canvas.width, height: canvas.height, focus: focusRef.current }
+          historyCacheRef.current = { snapshot: items.slice(), mode: strokeDisplayMode, theme, scale: viewport.scale, offsetX: viewport.offsetX, offsetY: viewport.offsetY, dpr, width: canvas.width, height: canvas.height, focus: focusRef.current }
         }
       } else {
         historyCacheRef.current = null
@@ -3227,7 +3235,7 @@ function App() {
     }
     if (measureFrame) diagnostics?.recordMinimapRender(performance.now() - minimapStartedAt)
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
-  }, [color, drawConnector, drawItem, drawStroke, canvasType, pageBackground, pageSpacing, renderNavigator, selectionMode, lassoMode, strokeDisplayMode, width])
+  }, [board, color, drawConnector, drawItem, drawStroke, canvasType, pageBackground, pageSpacing, renderNavigator, theme, palette, selectionMode, lassoMode, strokeDisplayMode, width])
   const renderAllRef = useRef(renderAll)
   renderAllRef.current = renderAll
   // Excalifont is a web font: load it at start and repaint (dropping the cached ink layer, which may hold fallback letters) when fonts finish loading.
@@ -5841,7 +5849,11 @@ function App() {
   // Excalidraw export: the selection when something is selected, else the current page.
   const downloadExcalidraw = () => {
     const keys = selectionKeysWithBox()
-    const built = buildExcalidrawFile(strokesRef.current, keys, PAGE_BACKGROUND_COLORS[pageBackgroundRef.current])
+    // The saved file has its own background, so on a dark board it gets the board's sheet colour and the resolved ink (default ink would vanish on it).
+    // The clipboard variant (copy as Excalidraw) keeps the stored colours: it is pasted into whatever scene the user has open.
+    const exportPalette = boardPalette(boardRef.current)
+    const exportItems = exportPalette.theme === 'light' ? strokesRef.current : strokesRef.current.map((item) => resolveItemForBoard(item, exportPalette))
+    const built = buildExcalidrawFile(exportItems, keys, sheetColorForBoard(boardRef.current, PAGE_BACKGROUND_COLORS[pageBackgroundRef.current]))
     if (built.count === 0) { showToast(excalidrawExportMessage(built, 'Saved', false)); return }
     downloadBlob(new Blob([built.text], { type: 'application/json' }), excalidrawFileName(docTitle))
     showToast(excalidrawExportMessage(built, 'Saved', keys.size > 0))
@@ -6225,7 +6237,7 @@ function App() {
 
   return (
     <main className={`app-shell${presentMode ? ' ui-hidden' : ''}`} data-input-mode={inputMode}>
-      <section className="canvas-stage" aria-label="Drawing canvas">
+      <section className="canvas-stage" aria-label="Drawing canvas" data-board={theme === 'light' ? undefined : theme}>
         <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: sheetHeight }} />
         <div ref={eraserCursorRef} className="eraser-cursor" aria-hidden="true" />
         {laserMode && <canvas ref={laserCanvasRef} className="laser-overlay" aria-hidden="true" />}
@@ -6478,8 +6490,8 @@ function App() {
         />
       )}
       {(inputMode !== 'desktop' || zoomLockActive) && <HistoryBar desktop={inputMode !== 'tablet'} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />}
-      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={inputMode === 'desktop' ? <DesktopStatusCluster status={saveStatus} hasContent={hasInk} text={desktopStatusText(saveStatus, statusLabel(saveStatus, storage.kind), hasInk, true, autosavePending)} onSave={saveNowWithToast} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} hideExport={zoomLockActive} flashKey={statusFlash} /> : accountLeading(penModeActive, inputMode, <PenColors color={color} onColor={selectColor} />)} />
-      <ContextPanel
+      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={inputMode === 'desktop' ? <DesktopStatusCluster status={saveStatus} hasContent={hasInk} text={desktopStatusText(saveStatus, statusLabel(saveStatus, storage.kind), hasInk, true, autosavePending)} onSave={saveNowWithToast} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} hideExport={zoomLockActive} flashKey={statusFlash} /> : accountLeading(penModeActive, inputMode, <PenColors color={color} onColor={selectColor} theme={theme} />)} />
+      <ContextPanel boardTheme={theme}
         desktop={inputMode === 'desktop'}
         contextName={inputMode === 'desktop' ? optionsContextName({ count: selectedItemCount + (hasSelectedRectangle && selectedItemCount === 0 ? 1 : 0), selectedKind: hasSelectedRectangle && selectedItemCount === 0 ? 'rectangle' : (selectedItemCount === 1 ? (strokesRef.current.find((item) => currentSelectionKeys().has(canvasItemKey(item)))?.kind ?? null) : null), tool: shapeTool, eraser, text: textMode, editing: textEditor ? (textEditor.connectorId !== undefined || textEditor.centerOn ? 'label' : 'text') : null }) : undefined}
         showDisplayMode={shapeTool === null}
