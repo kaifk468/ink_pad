@@ -3,8 +3,10 @@ import type { StorageInfo } from './useDocuments'
 import { PAGE_BACKGROUND_COLORS, type PageBackground } from '../pageBackground'
 import { titleToCommit } from '../documentFormat'
 import type { PageSpacing, PageTemplate } from '../pageTemplates'
-import type { BoardStyleId } from '../boardStyle'
-import type { CanvasType } from '../canvasTypes'
+import { BOARD_STYLES, type BoardStyleId } from '../boardStyle'
+import { CANVAS_TYPES, type CanvasType } from '../canvasTypes'
+import { boardPickerState } from '../boardPicker'
+import { BoardStylePreview, CanvasPreview, PickerTile } from './BoardPreviews'
 import type { InputMode } from '../desktopInput'
 import { DesktopMenuSheet } from './DesktopMenuSheet'
 
@@ -26,6 +28,8 @@ export type TopLeftBarProps = {
   /** Board style theme (src/boardStyle.ts); undefined = light. With `sketchy` it gives the picked board style. */
   board?: string
   onBoardStyle?: (style: BoardStyleId, dark: boolean) => void
+  /** Counter: each increase opens the menu (sheet on Desktop, panel on Tablet) scrolled to its Board section. App bumps it from the empty-page "Choose board" button. */
+  menuRequest?: number
   pageSpacing: PageSpacing
   onPageSpacing: (value: PageSpacing) => void
   /** Hand-drawn style of this diagram (the menu row shows in Desktop mode only). */
@@ -59,11 +63,6 @@ export type TopLeftBarProps = {
   diagnostics: { enabled: boolean; open: boolean; onToggle: () => void; onFillTestInk: (targetPoints: number) => void; onRemoveTestInk: () => void }
 }
 
-const PAGE_TEMPLATE_CHOICES: Array<{ value: PageTemplate; label: string }> = [
-  { value: 'blank', label: 'Blank' },
-  { value: 'lined', label: 'Lined' },
-  { value: 'dotted', label: 'Dotted' },
-]
 const PAGE_SPACING_CHOICES: Array<{ value: PageSpacing; label: string }> = [
   { value: 'narrow', label: 'Narrow' },
   { value: 'standard', label: 'Standard' },
@@ -84,6 +83,7 @@ export function TopLeftBar(props: TopLeftBarProps) {
   const desktop = props.inputMode === 'desktop'
   const menuOpen = menuRequested && !desktop
   const menuRef = useRef<HTMLDivElement>(null)
+  const picker = boardPickerState(props.board, props.sketchy, props.pageTemplate, props.pageCanvas)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   // Switching mode never carries an open menu over to the other layout.
   useEffect(() => { setMenuOpen(false) }, [props.inputMode])
@@ -100,6 +100,22 @@ export function TopLeftBar(props: TopLeftBarProps) {
     window.addEventListener('pointerdown', onPointerDown)
     return () => window.removeEventListener('pointerdown', onPointerDown)
   }, [menuRequested, desktop])
+  // menuRequest (a counter from App) opens the menu at the Board section; the scroll happens once the menu is on screen.
+  const [scrollToBoard, setScrollToBoard] = useState(false)
+  const lastRequestRef = useRef(props.menuRequest ?? 0)
+  useEffect(() => {
+    const request = props.menuRequest ?? 0
+    if (request === lastRequestRef.current) return
+    lastRequestRef.current = request
+    setMenuOpen(true)
+    setScrollToBoard(true)
+  }, [props.menuRequest])
+  useEffect(() => {
+    if (!menuRequested) { setScrollToBoard(false); return }
+    if (!scrollToBoard) return
+    const frame = requestAnimationFrame(() => menuRef.current?.querySelector('[data-section="board"]')?.scrollIntoView({ block: 'start' }))
+    return () => cancelAnimationFrame(frame)
+  }, [menuRequested, scrollToBoard])
   const [editingTitle, setEditingTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
   const editingTitleRef = useRef(false)
@@ -162,16 +178,38 @@ export function TopLeftBar(props: TopLeftBarProps) {
           </button>
 
           <div className="menu-divider" role="separator" />
-          <div className="menu-section-title">Page</div>
+          <div className="menu-section-title" data-section="board">Board</div>
           <div className="menu-setting">
-            <span className="menu-setting-label" id="menu-page-style">Style</span>
-            <div className="menu-segments" role="group" aria-label="Page template">
-              {PAGE_TEMPLATE_CHOICES.map(({ value, label }) => (
-                <button key={value} className={`menu-segment${props.pageTemplate === value ? ' selected' : ''}`} type="button" aria-pressed={props.pageTemplate === value} onClick={() => props.onPageTemplate(value)}>{label}</button>
+            <span className="menu-setting-label">Style</span>
+            <div className="bp-tiles" role="group" aria-label="Board style">
+              {BOARD_STYLES.map(({ id, label, description }) => (
+                <PickerTile key={id} label={label} title={`${label}: ${description}`} selected={picker.style === id} onClick={() => props.onBoardStyle?.(id, picker.dark)}>
+                  <BoardStylePreview style={id} dark={picker.dark} />
+                </PickerTile>
               ))}
             </div>
           </div>
-          {props.pageTemplate !== 'blank' && <div className="menu-setting" role="group" aria-label="Line and dot spacing">
+          <div className="menu-setting">
+            <span className="menu-setting-label">Theme</span>
+            {picker.chalk
+              ? <p className="menu-note">Chalkboard is always dark</p>
+              : <div className="menu-segments two" role="group" aria-label="Board theme">
+                {[{ dark: false, label: 'Light' }, { dark: true, label: 'Dark' }].map(({ dark, label }) => (
+                  <button key={label} className={`menu-segment${picker.dark === dark ? ' selected' : ''}`} type="button" aria-pressed={picker.dark === dark} onClick={() => props.onBoardStyle?.(picker.style, dark)}>{label}</button>
+                ))}
+              </div>}
+          </div>
+          <div className="menu-setting">
+            <span className="menu-setting-label">Canvas type</span>
+            <div className="bp-tiles" role="group" aria-label="Page template">
+              {CANVAS_TYPES.map(({ id, label, description }) => (
+                <PickerTile key={id} label={label} title={`${label}: ${description}`} selected={picker.canvas === id} onClick={() => props.onCanvasType?.(id)}>
+                  <CanvasPreview type={id} board={props.board} />
+                </PickerTile>
+              ))}
+            </div>
+          </div>
+          {picker.showSpacing && <div className="menu-setting" role="group" aria-label="Line and dot spacing">
             <span className="menu-setting-label">Line and dot spacing</span>
             <div className="menu-segments">
               {PAGE_SPACING_CHOICES.map(({ value, label }) => (
@@ -181,11 +219,13 @@ export function TopLeftBar(props: TopLeftBarProps) {
           </div>}
           <div className="menu-setting">
             <span className="menu-setting-label">Sheet colour</span>
-            <div className="menu-swatches" role="group" aria-label="Sheet background color">
-              {PAGE_COLOR_CHOICES.map(({ value, label }) => (
-                <button key={value} className={`menu-color${props.pageBackground === value ? ' selected' : ''}`} type="button" title={label} aria-label={`${label} sheet`} aria-pressed={props.pageBackground === value} style={{ backgroundColor: PAGE_BACKGROUND_COLORS[value] }} onClick={() => props.onPageBackground(value)} />
-              ))}
-            </div>
+            {picker.sheetFromBoard
+              ? <p className="menu-note">Set by the board style</p>
+              : <div className="menu-swatches" role="group" aria-label="Sheet background color">
+                {PAGE_COLOR_CHOICES.map(({ value, label }) => (
+                  <button key={value} className={`menu-color${props.pageBackground === value ? ' selected' : ''}`} type="button" title={label} aria-label={`${label} sheet`} aria-pressed={props.pageBackground === value} style={{ backgroundColor: PAGE_BACKGROUND_COLORS[value] }} onClick={() => props.onPageBackground(value)} />
+                ))}
+              </div>}
           </div>
 
           <div className="menu-divider" role="separator" />

@@ -1,13 +1,13 @@
-type EmptyCanvasHintProps = { desktop: boolean; onTemplates: () => void }
+type EmptyCanvasHintProps = { desktop: boolean; onTemplates: () => void; /** Opens the menu at its Board section (style and canvas type). */ onBoard?: () => void }
 
 const DESKTOP_CHIPS = [{ key: 'R', label: 'Rectangle' }, { key: 'A', label: 'Arrow' }, { key: 'T', label: 'Text' }]
 const TABLET_LINES = ['Write or draw with the pen', 'Two fingers to zoom · three fingers to pan', 'Insert has shapes, text and HLD parts']
 
 /**
  * Faint centred hint on an empty page. App renders it only while the page has no items and nothing modal or editing is open.
- * The text never takes pointer events; the one "Start from a template" button does (and goes away with the hint).
+ * The text and the button row never take pointer events (the pen draws through the hint); only the two buttons do (and go away with the hint).
  */
-export function EmptyCanvasHint({ desktop, onTemplates }: EmptyCanvasHintProps) {
+export function EmptyCanvasHint({ desktop, onTemplates, onBoard }: EmptyCanvasHintProps) {
   return (
     <div className="empty-canvas-hint">
       {desktop ? (
@@ -28,7 +28,10 @@ export function EmptyCanvasHint({ desktop, onTemplates }: EmptyCanvasHintProps) 
           {TABLET_LINES.map((line) => <p key={line} className="empty-canvas-line">{line}</p>)}
         </div>
       )}
-      {desktop && <button type="button" className="empty-canvas-template" onClick={onTemplates}>Start from a template</button>}
+      {(desktop || onBoard) && <div className="empty-canvas-actions">
+        {desktop && <button type="button" className="empty-canvas-template" onClick={onTemplates}>Start from a template</button>}
+        {onBoard && <button type="button" className="empty-canvas-board" onClick={onBoard}>Choose board</button>}
+      </div>}
     </div>
   )
 }

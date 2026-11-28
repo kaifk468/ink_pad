@@ -167,9 +167,9 @@ test('SVG export uses the chosen spacing', async () => {
   assert.match(svg(undefined), /<pattern id="template" width="32" height="32"/)
 })
 
-test('menu: a Spacing row (Narrow, Standard, Wide) shows under Page for lined and dotted, and is wired through the app and saved files', async () => {
+test('menu: a Spacing row (Narrow, Standard, Wide) shows in the Board section for lined and dotted, and is wired through the app and saved files', async () => {
   const bar = await readFile(new URL('../src/app/TopLeftBar.tsx', import.meta.url), 'utf8')
-  assert.match(bar, /pageTemplate !== 'blank' && <div[^>]*aria-label="Line and dot spacing"/)
+  assert.match(bar, /picker\.showSpacing && <div[^>]*aria-label="Line and dot spacing"/)
   for (const label of ['Narrow', 'Standard', 'Wide']) assert.match(bar, new RegExp(`label: '${label}'`))
   assert.match(appSource, /pageSpacing=\{pageSpacing\}/)
   assert.match(appSource, /savePageSpacing\(pageSpacing\)/)

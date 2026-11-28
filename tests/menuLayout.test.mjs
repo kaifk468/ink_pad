@@ -8,10 +8,10 @@ const css = await read('styles.css')
 const app = await read('App.tsx')
 const panel = bar.slice(bar.indexOf('{menuOpen && <div className="menu-panel"'), bar.indexOf('{props.diagnostics.enabled && <>'))
 
-test('the menu has three labelled groups in order: File, Page, Canvas, then Clear canvas apart', () => {
+test('the menu has labelled groups in order: File, Board, Canvas, then Clear canvas apart', () => {
   const at = (text) => panel.indexOf(text)
-  for (const text of ['>File<', '>Page<', '>Canvas<', 'Clear canvas']) assert.ok(at(text) > 0, text)
-  assert.ok(at('>File<') < at('>Page<') && at('>Page<') < at('>Canvas<') && at('>Canvas<') < at('Clear canvas'))
+  for (const text of ['>File<', '>Board<', '>Canvas<', 'Clear canvas']) assert.ok(at(text) > 0, text)
+  assert.ok(at('>File<') < at('>Board<') && at('>Board<') < at('>Canvas<') && at('>Canvas<') < at('Clear canvas'))
   assert.match(panel, /className="menu-row library-row"[^>]*onClick=\{\(\) => \{ props\.onOpenLibrary\(\); setMenuOpen\(false\) \}\}/)
   assert.match(panel, /Export and import/)
   assert.match(panel, /Undo brings it back/)
@@ -23,7 +23,8 @@ test('each page setting is its own full-width line of equal segments, so nothing
   assert.match(css, /\.menu-segment \{ min-width: 0;/)
   assert.match(css, /\.menu-swatches \{ display: flex; justify-content: space-between;/)
   assert.match(css, /\.menu-color \{ width: 44px; height: 44px;/)
-  assert.equal((panel.match(/className="menu-segments"/g) ?? []).length, 2)
+  assert.equal((panel.match(/className="menu-segments"/g) ?? []).length, 1)
+  assert.match(panel, /className="menu-segments two" role="group" aria-label="Board theme"/)
   assert.doesNotMatch(bar + css, /menu-choice/)
 })
 

@@ -79,7 +79,7 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 - Opens as a left **sheet** (width 320, top 72 / bottom 90 to clear the top bar and dock, radius 20), slides in 240ms. Transparent click-catcher (no dim over canvas).
 - Header: brand mark + save status pill.
 - **Search field** at top ("Search menu"): filters rows by label and keywords; Enter runs the first safe match (never Clear canvas).
-- Sections: **Diagram** (Library, Export and import, Storage) · **Page** (Style, Spacing, Sheet colour) · **Preferences** (Desktop mode, Hand-drawn style, Snap and guides) · **Help** (Keyboard shortcuts, Command palette). Clear canvas sits alone at the bottom in danger colour.
+- Sections: **Diagram** (Library, Export and import, Storage) · **Board** (Style tiles Clean/Sketch/Chalkboard, Light/Dark, Canvas tiles, Spacing, Sheet colour; round 11) · **Preferences** (Desktop mode, Hand-drawn style, Snap and guides) · **Help** (Keyboard shortcuts, Command palette). Clear canvas sits alone at the bottom in danger colour.
 - Each row: icon | label (+ one-line description that truncates with ellipsis, full text in title) | trailing control or shortcut `kbd`. Grid layout guarantees no overlap.
 - Tablet-only rows (One-finger pan, Two-finger tap) do not appear in Desktop mode.
 

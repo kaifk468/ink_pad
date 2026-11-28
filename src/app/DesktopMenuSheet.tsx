@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { PAGE_BACKGROUND_COLORS, type PageBackground } from '../pageBackground'
-import type { PageSpacing, PageTemplate } from '../pageTemplates'
+import type { PageSpacing } from '../pageTemplates'
+import { BOARD_STYLES } from '../boardStyle'
+import { CANVAS_TYPES } from '../canvasTypes'
+import { BOARD_CANVAS_KEYWORDS, BOARD_STYLE_KEYWORDS, BOARD_THEME_KEYWORDS, boardPickerState } from '../boardPicker'
+import { BoardStylePreview, CanvasPreview, PickerTile } from './BoardPreviews'
 import { filterMenuEntries, firstActionableEntry, type MenuSearchEntry } from './menuSearch'
 import type { TopLeftBarProps } from './TopLeftBar'
 
-const TEMPLATES: Array<{ value: PageTemplate; label: string }> = [{ value: 'blank', label: 'Blank' }, { value: 'lined', label: 'Lined' }, { value: 'dotted', label: 'Dotted' }]
 const SPACINGS: Array<{ value: PageSpacing; label: string }> = [{ value: 'narrow', label: 'Narrow' }, { value: 'standard', label: 'Standard' }, { value: 'wide', label: 'Wide' }]
 const COLOURS: Array<{ value: PageBackground; label: string }> = [{ value: 'white', label: 'White' }, { value: 'warm', label: 'Warm' }, { value: 'blue', label: 'Blue' }, { value: 'yellow', label: 'Yellow' }, { value: 'green', label: 'Green' }]
 
-type SectionName = 'Diagram' | 'Page' | 'Preferences' | 'Help' | 'Developer' | 'Footer'
+type SectionName = 'Diagram' | 'Board' | 'Preferences' | 'Help' | 'Developer' | 'Footer'
 type Row = MenuSearchEntry & {
   section: SectionName
   desc?: string
@@ -20,7 +23,7 @@ type Row = MenuSearchEntry & {
   danger?: boolean
   run?: () => void
 }
-const SECTIONS: SectionName[] = ['Diagram', 'Page', 'Preferences', 'Help', 'Developer']
+const SECTIONS: SectionName[] = ['Diagram', 'Board', 'Preferences', 'Help', 'Developer']
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const PALETTE_KEY = isMac ? '⌘ K' : 'Ctrl K'
@@ -51,13 +54,16 @@ export function DesktopMenuSheet(props: TopLeftBarProps & { onClose: (restoreFoc
   const done = (action: () => void) => () => { action(); onClose(false) }
   const storageHint = props.storage.locked ? 'Sign in needed' : props.storage.kind === 'drive' ? 'Google Drive' : props.storage.kind === 'device' ? 'Device folder' : 'This browser'
 
+  const picker = boardPickerState(props.board, props.sketchy, props.pageTemplate, props.pageCanvas)
   const rows: Row[] = [
     { id: 'library', section: 'Diagram', label: 'Library', desc: 'All diagrams', keywords: 'folder open diagrams files', actionable: true, icon: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />, run: done(props.onOpenLibrary) },
     { id: 'export', section: 'Diagram', label: 'Export and import', desc: 'PNG, SVG, .inkpad', keywords: 'download save png svg pdf share file', actionable: true, dialog: true, icon: <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />, run: done(props.onToggleFilePanel) },
     { id: 'storage', section: 'Diagram', label: 'Storage', desc: storageHint, keywords: 'drive device folder cloud sync browser', actionable: true, dialog: true, icon: <path d="M7 18a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17 8.5a4.75 4.75 0 0 1 .5 9.5z" />, run: done(props.onOpenStorage) },
-    { id: 'page-style', section: 'Page', label: 'Style', keywords: 'page template blank lined dotted grid', actionable: false, icon: null },
-    ...(props.pageTemplate !== 'blank' ? [{ id: 'page-spacing', section: 'Page' as const, label: 'Line and dot spacing', keywords: 'narrow standard wide gap', actionable: false, icon: null }] : []),
-    { id: 'page-colour', section: 'Page', label: 'Sheet colour', keywords: 'background color paper white warm blue yellow green', actionable: false, icon: null },
+    { id: 'board-style', section: 'Board', label: 'Style', keywords: BOARD_STYLE_KEYWORDS, actionable: false, icon: null },
+    { id: 'board-theme', section: 'Board', label: 'Theme', keywords: BOARD_THEME_KEYWORDS, actionable: false, icon: null },
+    { id: 'board-canvas', section: 'Board', label: 'Canvas', keywords: BOARD_CANVAS_KEYWORDS, actionable: false, icon: null },
+    ...(picker.showSpacing ? [{ id: 'page-spacing', section: 'Board' as const, label: 'Line and dot spacing', keywords: 'narrow standard wide gap board grid lines dots', actionable: false, icon: null }] : []),
+    { id: 'page-colour', section: 'Board', label: 'Sheet colour', keywords: 'background color paper white warm blue yellow green board', actionable: false, icon: null },
     { id: 'desktop', section: 'Preferences', label: 'Desktop mode', desc: 'A mouse draws and edits. The pen and touch stay as they are', keywords: 'mouse tablet input pen touch', actionable: true, checked: true, icon: <><rect x="3" y="4" width="18" height="12" rx="1.5" /><path d="M8 20h8M12 16v4" /></>, run: () => { props.onInputMode('tablet'); onClose(false) } },
     { id: 'sketchy', section: 'Preferences', label: 'Hand-drawn style', desc: 'Shapes, lines and arrows look sketched. Saved with this diagram', keywords: 'sketch rough excalidraw', actionable: true, checked: props.sketchy, icon: <path d="M4 18c3-1 4-9 8-12 3 3 5 8 8 11M5 20c5 1 9 1 14 0" />, run: props.onSketchy },
     { id: 'snap', section: 'Preferences', label: 'Snap and guides', desc: 'Boxes snap to the edges and centres of nearby boxes while you drag', keywords: 'align magnet guide', actionable: true, checked: props.snapping, icon: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /><path d="M12 3v18M3 12h18" strokeDasharray="2 2" /></>, run: () => props.onSnapping(!props.snapping) },
@@ -114,13 +120,37 @@ export function DesktopMenuSheet(props: TopLeftBarProps & { onClose: (restoreFoc
           const list = visible.filter((row) => row.section === name)
           if (list.length === 0) return null
           return (
-            <section key={name} className="ms-section" aria-label={name}>
+            <section key={name} className="ms-section" aria-label={name} data-section={name.toLowerCase()}>
               <h2 className="ms-title">{name}</h2>
               {list.map((row) => {
-                if (row.id === 'page-style') return (
+                if (row.id === 'board-style') return (
                   <div key={row.id} className="ms-setting"><span className="ms-setting-label">Style</span>
-                    <div className="ms-segments" role="group" aria-label="Page template">
-                      {TEMPLATES.map(({ value, label }) => <button key={value} className={`ms-segment${props.pageTemplate === value ? ' selected' : ''}`} type="button" aria-pressed={props.pageTemplate === value} onClick={() => props.onPageTemplate(value)}>{label}</button>)}
+                    <div className="bp-tiles" role="group" aria-label="Board style">
+                      {BOARD_STYLES.map(({ id, label, description }) => (
+                        <PickerTile key={id} label={label} title={`${label}: ${description}`} selected={picker.style === id} onClick={() => props.onBoardStyle?.(id, picker.dark)}>
+                          <BoardStylePreview style={id} dark={picker.dark} />
+                        </PickerTile>
+                      ))}
+                    </div></div>
+                )
+                if (row.id === 'board-theme') return (
+                  <div key={row.id} className="ms-setting"><span className="ms-setting-label">Theme</span>
+                    {picker.chalk
+                      ? <p className="ms-note">Chalkboard is always dark</p>
+                      : <div className="ms-segments two" role="group" aria-label="Board theme">
+                        {[{ dark: false, label: 'Light' }, { dark: true, label: 'Dark' }].map(({ dark, label }) => (
+                          <button key={label} className={`ms-segment${picker.dark === dark ? ' selected' : ''}`} type="button" aria-pressed={picker.dark === dark} onClick={() => props.onBoardStyle?.(picker.style, dark)}>{label}</button>
+                        ))}
+                      </div>}</div>
+                )
+                if (row.id === 'board-canvas') return (
+                  <div key={row.id} className="ms-setting"><span className="ms-setting-label">Canvas</span>
+                    <div className="bp-tiles" role="group" aria-label="Page template">
+                      {CANVAS_TYPES.map(({ id, label, description }) => (
+                        <PickerTile key={id} label={label} title={`${label}: ${description}`} selected={picker.canvas === id} onClick={() => props.onCanvasType?.(id)}>
+                          <CanvasPreview type={id} board={props.board} />
+                        </PickerTile>
+                      ))}
                     </div></div>
                 )
                 if (row.id === 'page-spacing') return (
@@ -131,9 +161,9 @@ export function DesktopMenuSheet(props: TopLeftBarProps & { onClose: (restoreFoc
                 )
                 if (row.id === 'page-colour') return (
                   <div key={row.id} className="ms-setting"><span className="ms-setting-label">Sheet colour</span>
-                    <div className="ms-swatches" role="group" aria-label="Sheet background color">
+                    {picker.sheetFromBoard ? <p className="ms-note">Set by the board style</p> : <div className="ms-swatches" role="group" aria-label="Sheet background color">
                       {COLOURS.map(({ value, label }) => <button key={value} className={`ms-color${props.pageBackground === value ? ' selected' : ''}`} type="button" title={label} aria-label={`${label} sheet`} aria-pressed={props.pageBackground === value} style={{ backgroundColor: PAGE_BACKGROUND_COLORS[value] }} onClick={() => props.onPageBackground(value)} />)}
-                    </div></div>
+                    </div>}</div>
                 )
                 return renderRow(row)
               })}

@@ -37,7 +37,8 @@ import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserSta
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
 import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
-import { boardFieldsFor, boardPalette, type BoardStyleId, type BoardTheme } from './boardStyle'
+import { boardFieldsFor, boardPalette, boardStyleOf, isDarkBoard, type BoardStyleId, type BoardTheme } from './boardStyle'
+import { boardCommands } from './boardPicker'
 import { resolveInk, resolveItemForBoard, setBoardFill, sheetBorderColor, sheetColorForBoard } from './boardColors'
 import { canvasFieldsFor, effectiveCanvasType, type CanvasType } from './canvasTypes'
 import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
@@ -5772,6 +5773,8 @@ function App() {
 
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
   const [templateChooserOpen, setTemplateChooserOpen] = useState(false)
+  /** Counter: the empty-page "Choose board" button bumps it and TopLeftBar opens the menu at the Board section. */
+  const [menuRequest, setMenuRequest] = useState(0)
   const [mermaidOpen, setMermaidOpen] = useState(false)
   // "My templates": saved on this device only (localStorage). Re-read each time the chooser opens; `templateSaveMode` opens it with the name field showing.
   const [userTemplates, setUserTemplates] = useState<UserTemplate[]>(() => loadUserTemplates())
@@ -5950,6 +5953,10 @@ function App() {
     ] : []),
     { id: 'setting:snapping', label: 'Toggle snapping', group: 'Settings', keywords: 'snap guides align', run: () => updateSnapping(!snappingRef.current) },
     { id: 'setting:sketchy', label: 'Toggle hand-drawn style', group: 'Settings', keywords: 'sketchy rough', run: toggleSketchy },
+    ...boardCommands(boardStyleOf(board, sketchy), isDarkBoard(board)).map((command) => ({
+      id: `setting:${command.id}`, label: command.label, group: 'Settings', keywords: command.keywords,
+      run: command.kind === 'style' ? () => chooseBoardStyle(command.style, command.dark) : () => chooseCanvasType(command.canvas),
+    })),
     // Always last: equal search scores keep list order, so commands stay above diagrams. Opening goes through the Library's own open function (the open diagram is saved first).
     ...diagramPaletteEntries(library, folders, currentDocId).map((entry) => ({ ...entry, run: () => { const id = diagramIdFromEntry(entry.id); if (id) void openStoredDiagram(id) } })),
   ]
@@ -6333,7 +6340,7 @@ function App() {
           const block = strokesRef.current.find((candidate) => candidate.kind === 'code' && candidate.id === codeEditor.id)
           return block?.kind === 'code' ? <CodeEditorOverlay key={codeEditor.id} item={block} viewport={viewportRef.current} onChange={(value) => { codeEditorValueRef.current = value }} onCommit={commitCodeEditor} /> : null
         })()}
-        {!hasInk && !textEditor && !codeEditor && !classBoxEditor && !libraryOpen && !filePanelOpen && !storagePanelOpen && !shortcutHelpOpen && !templateChooserOpen && !mermaidOpen && <EmptyCanvasHint desktop={inputMode === 'desktop'} onTemplates={() => setTemplateChooserOpen(true)} />}
+        {!hasInk && !textEditor && !codeEditor && !classBoxEditor && !libraryOpen && !filePanelOpen && !storagePanelOpen && !shortcutHelpOpen && !templateChooserOpen && !mermaidOpen && <EmptyCanvasHint desktop={inputMode === 'desktop'} onTemplates={() => setTemplateChooserOpen(true)} onBoard={() => setMenuRequest((count) => count + 1)} />}
         <aside
           ref={umlToolboxRef}
           className={`uml-toolbox${umlToolboxMinimized ? ' minimized' : ''}${inputMode === 'desktop' ? ' desktop' : ''}`}
@@ -6457,6 +6464,7 @@ function App() {
           onCanvasType={chooseCanvasType}
           board={board}
           onBoardStyle={chooseBoardStyle}
+          menuRequest={menuRequest}
           pageSpacing={pageSpacing}
           onPageSpacing={setPageSpacing}
           sketchy={sketchy}

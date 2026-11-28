@@ -36,6 +36,14 @@
 }
 .app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-template:hover { background: var(--ip-accent, #2f54d6); filter: brightness(1.08); }
 .app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-template:active { transform: scale(.97); }
+.app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-actions { margin-top: 24px; gap: 10px; }
+.app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-actions .empty-canvas-template { margin-top: 0; }
+.app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-board {
+  margin-top: 0; min-height: 40px; padding: 0 20px; border: 1px solid var(--ip-line, #e4e2dc); border-radius: 10px; background: var(--ip-surface, #fff); color: var(--ip-text, #1f2126); font: 600 14px 'DM Sans', system-ui, sans-serif;
+  transition: transform 120ms cubic-bezier(.2, .8, .2, 1), background-color 120ms;
+}
+.app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-board:hover { background: var(--ip-surface-2, #f1f0ec); }
+.app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-board:active { transform: scale(.97); }
 
 /* Library empty state (HomeScreen sits outside the app shell, so it is scoped by the home-desktop class). */
 .home-desktop .home-welcome { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 72px 16px 32px; text-align: center; }
@@ -74,6 +82,8 @@
   .app-shell[data-input-mode="desktop"] .app-toast.app-toast-visible { transform: translate(-50%, 0); transition: opacity .01ms; }
   .app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-template { transition: none; }
   .app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-template:active { transform: none; }
+  .app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-board { transition: none; }
+  .app-shell[data-input-mode="desktop"] .empty-canvas-hint .empty-canvas-board:active { transform: none; }
   .home-desktop .home-card,
   .home-desktop .home-card:hover,
   .home-desktop .home-card:focus-within { transform: none; transition: none; }
