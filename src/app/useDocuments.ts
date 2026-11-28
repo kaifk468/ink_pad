@@ -21,6 +21,7 @@ import { ensureTechLogosFor } from '../techLogos'
 import { copyAllBetweenBackends, createBrowserBackend, type StorageBackend } from '../storageBackend'
 import type { SaveStatus } from '../FilePanel'
 import { PAGE_BACKGROUND_COLORS } from '../pageBackground'
+import { boundsWithLaneHeaders, laneSetupOnly } from '../canvasLanes'
 import { buildSheetSvg, cropSvg, getContentBounds, svgToPngBlob } from '../sheetExport'
 import { SHEET_HEIGHT, SHEET_WIDTH } from '../viewport'
 import { COPY_IMAGE_FAILED, exportBaseName, isSelectionExport, itemsForExport, readTransparentExport, usesExcalifont, writeTransparentExport } from '../exportOptions'
@@ -447,7 +448,7 @@ export function useDocuments(host: DocumentHost) {
   const blankDocument = (template?: DocumentPageTemplate, options?: NewDiagramOptions) => {
     const page = hostRef.current.getPage()
     if (options) return createDocument({ template: options.template, background: page.background, spacing: page.spacing, canvas: options.canvas, board: options.board, sketchy: options.sketchy, items: [] })
-    return createDocument({ template: template ?? page.template, background: page.background, spacing: page.spacing, ...(template === undefined ? { canvas: page.canvas, lanes: page.lanes } : {}), items: [] })
+    return createDocument({ template: template ?? page.template, background: page.background, spacing: page.spacing, ...(template === undefined ? { canvas: page.canvas, ...(effectiveCanvasType(page.template, page.canvas) === 'lanes' ? { lanes: laneSetupOnly(page.lanes) } : {}) } : {}), items: [] })
   }
 
   const newDiagram = async (template?: DocumentPageTemplate, options?: NewDiagramOptions) => {
@@ -799,12 +800,15 @@ export function useDocuments(host: DocumentHost) {
     const items = itemsForExport(all, options.keys)
     const page = hostRef.current.getPage()
     const sheetHeight = page.sheetHeight ?? SHEET_HEIGHT
-    const bounds = getContentBounds(items, { width: SHEET_WIDTH, height: sheetHeight })
-    if (!bounds) return null
+    const canvasType = effectiveCanvasType(page.template, page.canvas)
+    const contentBounds = getContentBounds(items, { width: SHEET_WIDTH, height: sheetHeight })
+    if (!contentBounds) return null
+    // On a Lanes canvas the crop reaches the sheet edge on the header side, so lane names are not cut off.
+    const bounds = canvasType === 'lanes' ? boundsWithLaneHeaders(contentBounds, page.lanes, SHEET_WIDTH, sheetHeight) : contentBounds
     const svg = cropSvg(buildSheetSvg(items, {
       width: SHEET_WIDTH,
       height: sheetHeight,
-      template: effectiveCanvasType(page.template, page.canvas),
+      template: canvasType,
       spacing: page.spacing,
       backgroundColor: PAGE_BACKGROUND_COLORS[page.background],
       ...(page.sketchy ? { sketchy: true } : {}),

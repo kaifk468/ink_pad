@@ -400,7 +400,7 @@ test('board picker: lanes show the lane settings and hide spacing; previews exis
 
 test('wiring: the page fields flow through the open diagram, saves, exports and the sheet layer', async () => {
   const documents = await read('app/useDocuments.ts')
-  assert.match(app, /marks: pageMarksRef\.current, lanes: pageLanesRef\.current/)
+  assert.match(app, /marks: pageMarksRef\.current, lanes: lanesForSave\(pageTemplateRef\.current, pageCanvasRef\.current, pageLanesRef\.current\)/)
   assert.match(app, /pageMarksRef\.current = loaded\.page\.marks[\s\S]{0,80}setPageMarks\(loaded\.page\.marks\)/)
   assert.match(app, /pageLanesRef\.current = loaded\.page\.lanes[\s\S]{0,80}setPageLanes\(loaded\.page\.lanes\)/)
   assert.match(documents, /marks: page\.marks,\s*lanes: page\.lanes,/)
@@ -408,7 +408,7 @@ test('wiring: the page fields flow through the open diagram, saves, exports and 
   assert.match(documents, /\.\.\.\(page\.marks \? \{ marks: page\.marks \} : \{\}\)/)
   assert.match(documents, /\.\.\.\(page\.lanes \? \{ lanes: page\.lanes \} : \{\}\)/)
   // A new diagram inherits the lanes only together with the canvas.
-  assert.match(documents, /template === undefined \? \{ canvas: page\.canvas, lanes: page\.lanes \} : \{\}/)
+  assert.match(documents, /template === undefined \? \{ canvas: page\.canvas, \.\.\.\(effectiveCanvasType\(page\.template, page\.canvas\) === 'lanes' \? \{ lanes: laneSetupOnly\(page\.lanes\) \} : \{\}\) \} : \{\}/)
   // The benchmark keeps its plain background.
   assert.match(app, /benchmarkBackground \? undefined : pageLanesRef\.current/)
   // Settings changes are not history steps and do autosave.
@@ -445,4 +445,73 @@ test('wiring: both menus show Marks, and the lane settings on the Lanes canvas, 
   assert.match(css, /\.lane-stepper button \{ height: 44px;/)
   assert.match(css, /\.lane-name-input \{[^}]*height: 44px;/)
   assert.match(app, /Marks: \$\{strength\[0\]\.toUpperCase\(\)\}/)
+})
+
+// ---------------------------------------------------------------- review fixes (round 12)
+
+test('boundsWithLaneHeaders: rows reach x = 0 keeping the right edge, columns reach y = 0 keeping the bottom, clamped to the sheet', () => {
+  const b = { x: 300, y: 200, width: 400, height: 250 }
+  assert.deepEqual(lanes.boundsWithLaneHeaders(b, { dir: 'rows' }, 2500, 1500), { x: 0, y: 200, width: 700, height: 250 })
+  assert.deepEqual(lanes.boundsWithLaneHeaders(b, undefined, 2500, 1500), { x: 0, y: 200, width: 700, height: 250 })
+  assert.deepEqual(lanes.boundsWithLaneHeaders(b, { dir: 'columns' }, 2500, 1500), { x: 300, y: 0, width: 400, height: 450 })
+  assert.deepEqual(lanes.boundsWithLaneHeaders({ x: 2000, y: 0, width: 900, height: 10 }, {}, 2500, 1500), { x: 0, y: 0, width: 2500, height: 10 })
+})
+
+test('an exported lanes SVG with content only at x >= 300 keeps the lane name inside the viewBox; wiring uses the helper on a lanes canvas only', async () => {
+  const settings = { count: 2, names: ['Client', 'API'] }
+  const item = { kind: 'rectangle', id: 1, x: 400, y: 100, width: 200, height: 100, strokeColor: '#111', strokeWidth: 3 }
+  const content = exp.getContentBounds([item], { width: 2500, height: 1500 })
+  assert.ok(content.x >= 300)
+  const bounds = lanes.boundsWithLaneHeaders(content, settings, 2500, 1500)
+  const svg = exp.cropSvg(exp.buildSheetSvg([item], { width: 2500, height: 1500, template: 'lanes', backgroundColor: '#fff', lanes: settings }), bounds)
+  const box = svg.match(/viewBox="([^"]*)"/)[1].split(' ').map(Number)
+  assert.equal(box[0], 0)
+  const label = svg.match(/<text[^>]*>Client<\/text>/)
+  assert.ok(label, 'lane name text is drawn')
+  const at = label[0].match(/translate\(([-\d.]+)[ ,]+([-\d.]+)\)/) ?? label[0].match(/x="([-\d.]+)"[^>]*y="([-\d.]+)"/)
+  assert.ok(at && Number(at[1]) >= box[0] && Number(at[1]) <= box[0] + box[2], 'inside the viewBox')
+  const documents = await read('app/useDocuments.ts')
+  assert.match(documents, /canvasType === 'lanes' \? boundsWithLaneHeaders\(contentBounds, page\.lanes, SHEET_WIDTH, sheetHeight\)/)
+})
+
+test('a new diagram from the file panel inherits lane direction, count and fit but never names, and only on a lanes canvas', async () => {
+  assert.deepEqual(lanes.laneSetupOnly({ dir: 'columns', count: 5, names: ['a'], fit: false, future: 1 }), { dir: 'columns', count: 5, fit: false })
+  assert.equal(lanes.laneSetupOnly({ names: ['a'] }), undefined)
+  assert.equal(lanes.laneSetupOnly(undefined), undefined)
+  const documents = await read('app/useDocuments.ts')
+  assert.match(documents, /effectiveCanvasType\(page\.template, page\.canvas\) === 'lanes' \? \{ lanes: laneSetupOnly\(page\.lanes\) \}/)
+})
+
+test('a lane name that cleaning changes counts as dropped (lossy) but is kept cleaned', () => {
+  for (const name of ['  A   B  ', 'x'.repeat(60), 'tab\there']) {
+    const parsed = doc.parseDocument(fileWith({ canvas: 'lanes', lanes: { names: [name] } }))
+    assert.equal(parsed.ok, true)
+    assert.equal(doc.isLossyParse(parsed.document), true, JSON.stringify(name))
+    assert.ok(parsed.document.page.lanes.names[0].length > 0)
+  }
+  assert.equal(doc.isLossyParse(doc.parseDocument(fileWith({ canvas: 'lanes', lanes: { names: ['Client', 'API'] } })).document), false)
+})
+
+test('lanesForSave: saved only on a lanes canvas or an unknown canvas word; the app keeps them in memory', async () => {
+  const l = { count: 3, names: ['a'] }
+  assert.equal(lanes.lanesForSave('blank', 'lanes', l), l)
+  assert.equal(lanes.lanesForSave('blank', undefined, l), undefined)
+  assert.equal(lanes.lanesForSave('lined', 'cornell', l), undefined)
+  assert.equal(lanes.lanesForSave('dotted', 'grid', l), undefined)
+  assert.equal(lanes.lanesForSave('blank', 'swim-2030', l), l, 'an unknown word keeps everything')
+  assert.equal(lanes.lanesForSave('blank', 'lanes', undefined), undefined)
+  assert.match(app, /lanes: lanesForSave\(pageTemplateRef\.current, pageCanvasRef\.current, pageLanesRef\.current\)/)
+})
+
+test('sheet layer: marks are memoised by input and the template CSS is reused for the same arguments', () => {
+  const memo = t.createMarksMemo()
+  const base = { dot: '#111111', line: '#222222', lineStrong: '#333333' }
+  assert.equal(memo(base, 'faint', '#ffffff', '#000000'), memo(base, 'faint', '#ffffff', '#000000'))
+  assert.notEqual(memo(base, 'faint', '#ffffff', '#000000'), memo(base, 'bold', '#ffffff', '#000000'))
+  assert.equal(memo(base, undefined, '#ffffff', '#000000'), base)
+  const marks = t.PAGE_MARKS_LIGHT
+  const l = { count: 3, names: ['a'] }
+  assert.equal(t.getPageTemplateCss('lanes', 'standard', marks, l), t.getPageTemplateCss('lanes', 'standard', marks, l))
+  assert.notEqual(t.getPageTemplateCss('lanes', 'standard', marks, l), t.getPageTemplateCss('lanes', 'standard', marks, { count: 4 }))
+  assert.match(app, /sheetMarksMemoRef\.current\(theme === 'light' \? undefined : palette/)
 })

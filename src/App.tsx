@@ -36,14 +36,14 @@ import { MAX_PREDICTION_DISTANCE_SCREEN_PX, getPointerSamples, getPredictedPoint
 import { shouldAppendStrokeSample } from './strokeSampling'
 import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserStallSummary, type StrokeDiagnosticRow } from './performanceDiagnostics'
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
-import { applySheetLayer, drawPageTemplateOverview, effectiveMarks, getSheetLayerState, type MarkStrength, loadPageSpacing, loadPageTemplate, pageSpacingUnits, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
+import { applySheetLayer, drawPageTemplateOverview, createMarksMemo, effectiveMarks, getSheetLayerState, type MarkStrength, loadPageSpacing, loadPageTemplate, pageSpacingUnits, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
 import { chalkGrainCssUrl, chalkTextureApplies } from './chalkTexture'
 import { boardFieldsFor, boardPalette, boardStyleOf, isDarkBoard, type BoardStyleId, type BoardTheme } from './boardStyle'
 import { boardCommands } from './boardPicker'
 import { resolveInk, resolveItemForBoard, setBoardFill, setBoardInk, sheetBorderColor, sheetColorForBoard } from './boardColors'
 import { canvasFieldsFor, effectiveCanvasType, type CanvasType } from './canvasTypes'
-import { laneDir, laneFit, laneLabel, laneRects, type LaneSettings } from './canvasLanes'
+import { laneDir, laneFit, laneLabel, lanesForSave, laneRects, type LaneSettings } from './canvasLanes'
 import { laneFitDelta } from './laneFit'
 import { ruledBaselineY } from './ruledText'
 import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
@@ -247,6 +247,7 @@ function App() {
   const inkLayerRef = useRef<HTMLCanvasElement | null>(null)
   const sheetLayerRef = useRef<HTMLDivElement | null>(null)
   const sheetLayerAppliedRef = useRef<Partial<SheetLayerState>>({})
+  const sheetMarksMemoRef = useRef(createMarksMemo())
   const minimapInkLayerRef = useRef<HTMLCanvasElement | null>(null)
   // While one pen stroke is being drawn, everything already on the page is painted once into this layer and
   // reused each frame, so a frame costs the same however much is written. Dropped as soon as the stroke ends.
@@ -544,7 +545,7 @@ function App() {
     getItems: () => strokesRef.current,
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
     getPageNames: () => pagesRef.current.map((slot) => slot.name ?? ''),
-    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current, board: boardRef.current, canvas: pageCanvasRef.current, marks: pageMarksRef.current, lanes: pageLanesRef.current }),
+    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current, board: boardRef.current, canvas: pageCanvasRef.current, marks: pageMarksRef.current, lanes: lanesForSave(pageTemplateRef.current, pageCanvasRef.current, pageLanesRef.current) }),
     getInputMode: () => inputModeRef.current,
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null || liveCodeEditor(),
     loadDocument: (loaded, startPage) => {
@@ -2875,7 +2876,7 @@ function App() {
         benchmarkBackground ? PAGE_BACKGROUND_COLORS.white : sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]),
         viewport,
         pageSpacing,
-        benchmarkBackground ? undefined : effectiveMarks(theme === 'light' ? undefined : palette, pageMarksRef.current, sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]), palette.ink),
+        benchmarkBackground ? undefined : sheetMarksMemoRef.current(theme === 'light' ? undefined : palette, pageMarksRef.current, sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]), palette.ink),
         benchmarkBackground ? undefined : pageLanesRef.current,
       ))
     }
@@ -5767,7 +5768,8 @@ function App() {
       scheduleAutosave()
       renderAll()
     }
-    openNewTextEditorAt(point)
+    // Mouse only (guarded above): snaps to the ruled line like the Text tool, and Alt skips the snap.
+    openNewTextEditorAt(point, { pointerType: 'mouse', altKey: event.altKey })
   }
   const closeContextMenu = () => setContextMenu(null)
   // Right-click (Desktop mouse): selects the item under the pointer when it is not already selected, then opens the menu there.
@@ -6390,11 +6392,13 @@ function App() {
     const target = event.target as HTMLElement | null
     const tag = (target?.tagName ?? 'BODY').toUpperCase()
     const slideTarget = slideKeyTarget(event, pageIndexRef.current, pagesRef.current.length)
-    // Not while a field, editor, dialog, menu or canvas gesture has the keyboard; Space on a focused button presses that button.
-    if (slideTarget === null || isTypingTarget(tag, Boolean(target?.isContentEditable)) || (event.key === ' ' && ['BUTTON', 'A', 'SELECT'].includes(tag))) return
+    // Not while a field, editor, dialog, menu or canvas gesture has the keyboard. Space is not a slide key (it pans on the desktop).
+    if (slideTarget === null || isTypingTarget(tag, Boolean(target?.isContentEditable))) return
     if (canvasCommandBlocked()) return
     event.preventDefault()
     event.stopImmediatePropagation()
+    // Same page (a held key, or the first / last page): swallow the key but do not redraw or refit.
+    if (slideTarget === pageIndexRef.current) return
     showSlide(slideTarget)
   }
   useEffect(() => {

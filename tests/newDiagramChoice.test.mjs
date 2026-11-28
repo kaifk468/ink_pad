@@ -78,8 +78,9 @@ test('the Library chooser lists every canvas type and board style, creates on a 
   assert.match(home, /aria-label="Board theme"/)
   assert.match(home, /newButtonRef\.current\?\.focus\(\)/)
   // The other entries keep working unchanged.
-  assert.match(home, /props\.onNewDiagram\(here, NEW_DIAGRAM_PRESETS\[0\]\.template\)/)
-  assert.match(home, /props\.onNewDiagram\(null, 'blank'\)/)
+  // "New diagram here" uses the remembered choice; the welcome button stays blank but keeps the remembered board.
+  assert.match(home, /newDiagramOptionsFor\(newChoice\); props\.onNewDiagram\(here, options\.template, options\) \}\}>New diagram here/)
+  assert.match(home, /newDiagramOptionsFor\(\{ \.\.\.newChoice, canvas: 'blank' \}\); props\.onNewDiagram\(null, options\.template, options\) \}\}>New blank diagram/)
   assert.match(css, /\.home-new-theme button \{[^}]*min-height: 44px/)
 })
 

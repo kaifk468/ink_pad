@@ -12,9 +12,10 @@ export const SLIDE_PADDING = 48
 
 /**
  * The page a key shows in present mode, or null when the key is not a slide key.
- * Right arrow, PageDown and Space go forward; Left arrow and PageUp go back; Home and End jump to the first and last page.
+ * Right arrow and PageDown go forward (Space is not a slide key: on the desktop it starts a pan); Left arrow and PageUp go back; Home and End jump to the first and last page.
  * Stops at the ends (no wrap): the result is then the current index, and the caller still swallows the key.
  * Any modifier (Ctrl, Cmd, Alt, Shift) means another shortcut, so the key is not a slide key. Held-down keys repeat only for the arrows.
+ * The caller swallows a key whose target is the current page but does not redraw or refit it.
  */
 export function slideKeyTarget(event: SlideKeyEvent, index: number, count: number): number | null {
   if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return null
@@ -22,7 +23,7 @@ export function slideKeyTarget(event: SlideKeyEvent, index: number, count: numbe
   const here = Math.min(Math.max(0, index), last)
   switch (event.key) {
     case 'ArrowRight': return Math.min(last, here + 1)
-    case ' ': case 'PageDown': return event.repeat ? here : Math.min(last, here + 1)
+    case 'PageDown': return event.repeat ? here : Math.min(last, here + 1)
     case 'ArrowLeft': return Math.max(0, here - 1)
     case 'PageUp': return event.repeat ? here : Math.max(0, here - 1)
     case 'Home': return 0

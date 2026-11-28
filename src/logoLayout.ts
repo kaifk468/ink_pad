@@ -76,16 +76,16 @@ export function logoNameLabel(box: Pick<RectangleObject, 'x' | 'y' | 'width' | '
 const sameName = (text: string, logo: Pick<TechLogo, 'title'>): boolean => text.trim().toLowerCase() === logo.title.trim().toLowerCase()
 
 /**
- * The text items that are the name label of `box`: the text equals the brand name and either its centre lies inside the box
- * (where insert puts it, in the bottom band) or it shares the box's group. Robust to a box moved, resized or regrouped since insert.
+ * The text items that are the name label of `box`: the text equals the brand name and its centre lies inside the box
+ * (where insert puts it, in the bottom band). Sharing a group is not enough: two grouped boxes of the same brand each own only the label under them.
  */
-export function findLogoNameLabels(items: readonly CanvasItem[], box: Pick<RectangleObject, 'x' | 'y' | 'width' | 'height' | 'group'>, logo: Pick<TechLogo, 'title'>): TextObject[] {
+export function findLogoNameLabels(items: readonly CanvasItem[], box: Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>, logo: Pick<TechLogo, 'title'>): TextObject[] {
   return items.filter((item): item is TextObject => {
     if (item.kind !== 'text' || !sameName(item.text, logo)) return false
     const cx = item.x + item.width / 2
     const cy = item.y + item.height / 2
     const inside = cx >= box.x && cx <= box.x + box.width && cy >= box.y && cy <= box.y + box.height
-    return inside || (box.group !== undefined && item.group === box.group)
+    return inside
   })
 }
 

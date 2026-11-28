@@ -145,7 +145,7 @@ export function cleanLanes(value: unknown, track = false): DocumentLanes | undef
   if (value.names !== undefined) {
     if (Array.isArray(value.names)) {
       const names = value.names.slice(0, MAX_LANE_NAMES).map((name) => {
-        if (typeof name !== 'string') drop()
+        if (typeof name !== 'string' || cleanPageName(name) !== name) drop()
         return cleanPageName(name)
       })
       if (value.names.length > MAX_LANE_NAMES) drop()

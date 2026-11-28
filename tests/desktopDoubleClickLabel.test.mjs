@@ -148,7 +148,7 @@ test('history capture and restore put back both stacks, so the two clicks leave 
 test('wiring: the label double-click is Desktop-mouse only, shares the Text tool creation path and resets on other input', () => {
   const handler = app.slice(app.indexOf('const onCanvasDoubleClick'), app.indexOf('const closeContextMenu'))
   assert.match(handler, /inputModeRef\.current !== 'desktop' \|\| lastPointerTypeRef\.current !== 'mouse'/)
-  assert.match(handler, /openNewTextEditorAt\(point\)/)
+  assert.match(handler, /openNewTextEditorAt\(point, \{ pointerType: 'mouse', altKey: event\.altKey \}\)/)
   assert.match(handler, /historyRef\.current\.restore\(before\.history\)/)
   assert.ok(handler.indexOf('openEditTarget(target)') < handler.indexOf('labelDoubleClickDecision'), 'an existing label or class box is edited first')
   assert.match(app, /else openNewTextEditorAt\(tap\.point, event\)/)

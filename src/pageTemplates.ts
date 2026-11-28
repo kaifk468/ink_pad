@@ -72,6 +72,17 @@ export function effectiveMarks(base: PageMarks | undefined, strength: string | u
   return markStrength(strength) === 'normal' ? base : adjustMarks(base ?? PAGE_MARKS_LIGHT, strength, sheetColor, inkColor)
 }
 
+/** effectiveMarks that returns the same object while its inputs are unchanged (the sheet layer compares marks by identity on every frame). */
+export function createMarksMemo(): (base: PageMarks | undefined, strength: string | undefined, sheetColor: string, inkColor: string) => PageMarks | undefined {
+  let last: { base: PageMarks | undefined; strength: string | undefined; sheetColor: string; inkColor: string; value: PageMarks | undefined } | null = null
+  return (base, strength, sheetColor, inkColor) => {
+    if (last && last.base === base && last.strength === strength && last.sheetColor === sheetColor && last.inkColor === inkColor) return last.value
+    const value = effectiveMarks(base, strength, sheetColor, inkColor)
+    last = { base, strength, sheetColor, inkColor, value }
+    return value
+  }
+}
+
 /** Grid canvas: every 5th line is the stronger one. */
 export const GRID_MAJOR_EVERY = 5
 /**
@@ -227,7 +238,18 @@ export type SheetLayerElement = { style: { transform: string; backgroundColor: s
  * notebook 3 (rules, margin line, header line), lanes 2 (header strip, borders; both tile or stretch, so they need no sheet height).
  * Pixels in the CSS are sheet units because the layer is scaled by its transform.
  */
-export function getPageTemplateCss(template: CanvasType, spacing: PageSpacing = DEFAULT_PAGE_SPACING, marks: PageMarks = PAGE_MARKS_LIGHT, lanes?: LaneSettings | null): Pick<SheetLayerState, 'backgroundImage' | 'backgroundSize' | 'backgroundPosition'> {
+type TemplateCss = Pick<SheetLayerState, 'backgroundImage' | 'backgroundSize' | 'backgroundPosition'>
+let lastTemplateCss: { template: CanvasType; spacing: PageSpacing; marks: PageMarks; lanes: LaneSettings | null | undefined; css: TemplateCss } | null = null
+/** The CSS of a template. The last result is reused while the arguments are the same objects, so a repaint frame builds no strings. */
+export function getPageTemplateCss(template: CanvasType, spacing: PageSpacing = DEFAULT_PAGE_SPACING, marks: PageMarks = PAGE_MARKS_LIGHT, lanes?: LaneSettings | null): TemplateCss {
+  const last = lastTemplateCss
+  if (last && last.template === template && last.spacing === spacing && last.marks === marks && last.lanes === lanes) return last.css
+  const css = buildPageTemplateCss(template, spacing, marks, lanes)
+  lastTemplateCss = { template, spacing, marks, lanes, css }
+  return css
+}
+
+function buildPageTemplateCss(template: CanvasType, spacing: PageSpacing, marks: PageMarks, lanes?: LaneSettings | null): TemplateCss {
   const units = pageSpacingUnits(spacing)
   const tile = `${units}px ${units}px`
   if (template === 'lined') {

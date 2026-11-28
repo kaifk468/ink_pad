@@ -14,9 +14,9 @@ test('wiring: slide keys have their own listener, ahead of the shortcut one, onl
   assert.match(block, /if \(!presentModeRef\.current\) return/)
   assert.match(block, /slideKeyTarget\(event, pageIndexRef\.current, pagesRef\.current\.length\)/)
   assert.match(block, /isTypingTarget\(tag, Boolean\(target\?\.isContentEditable\)\)/)
-  assert.match(block, /event\.key === ' ' && \['BUTTON', 'A', 'SELECT'\]\.includes\(tag\)/)
+  assert.doesNotMatch(block, /event\.key === ' '/, 'Space is not a slide key')
   assert.match(block, /if \(canvasCommandBlocked\(\)\) return/)
-  assert.match(block, /event\.preventDefault\(\)\n\s+event\.stopImmediatePropagation\(\)\n\s+showSlide\(slideTarget\)/)
+  assert.match(block, /event\.preventDefault\(\)\n\s+event\.stopImmediatePropagation\(\)\n(?:\s+\/\/[^\n]*\n)?\s+if \(slideTarget === pageIndexRef\.current\) return\n\s+showSlide\(slideTarget\)/)
   assert.ok(app.indexOf("window.addEventListener('keydown', onSlideKey)") < app.indexOf("const handled = keyActionsRef.current(command)"), 'registered first')
 })
 
@@ -64,6 +64,7 @@ test('css: the control is bottom centre, semi-transparent, with 44px touch targe
 test('help: the present-mode page keys are documented', () => {
   const rows = shortcuts.DESKTOP_SHORTCUTS.filter((row) => /toolbars are hidden/.test(row.label))
   const keys = rows.map((row) => row.keys).join(' | ')
-  for (const part of ['Right arrow', 'PageDown', 'Space', 'Left arrow', 'PageUp', 'Home', 'End']) assert.ok(keys.includes(part), part)
+  for (const part of ['Right arrow', 'PageDown', 'Left arrow', 'PageUp', 'Home', 'End']) assert.ok(keys.includes(part), part)
+  assert.ok(!keys.includes('Space'), 'Space is not a slide key')
   assert.ok(rows.some((row) => /do not nudge/.test(row.label)))
 })

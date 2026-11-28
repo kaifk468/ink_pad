@@ -69,16 +69,25 @@ test('logoNameLabel matches the label built at insert, moved to the box', () => 
   assert.equal(layout.logoNameLabel({ ...box, group: 3 }, kafka, 9).group, 3)
 })
 
-test('findLogoNameLabels: by text under the box or shared group; ignores other texts', () => {
+test('findLogoNameLabels: by text under the box (a shared group alone does not count); ignores other texts', () => {
   const label = layout.logoNameLabel(box, kafka, 1)
   const far = { ...label, id: 2, x: 900, y: 900 }
   const other = { ...label, id: 3, text: 'Something else' }
   assert.deepEqual(layout.findLogoNameLabels([box, label, far, other], box, kafka).map((l) => l.id), [1])
   const grouped = { ...box, group: 4 }
-  assert.deepEqual(layout.findLogoNameLabels([grouped, { ...far, group: 4 }], grouped, kafka).map((l) => l.id), [2])
+  assert.deepEqual(layout.findLogoNameLabels([grouped, { ...far, group: 4 }], grouped, kafka).map((l) => l.id), [])
   assert.deepEqual(layout.findLogoNameLabels([box], box, kafka), [])
   const moved = { ...box, x: 500 }
   assert.deepEqual(layout.findLogoNameLabels([moved, { ...label, x: label.x + 400 }], moved, kafka).map((l) => l.id), [1])
+})
+
+test('two grouped Kafka boxes: hiding one box name keeps the other', () => {
+  const a = { ...box, id: 7, group: 4 }
+  const b = { ...box, id: 8, x: 600, group: 4 }
+  const la = { ...layout.logoNameLabel(a, kafka, 1), group: 4 }
+  const lb = { ...layout.logoNameLabel(b, kafka, 2), group: 4 }
+  const after = layout.setLogoNameShown([a, b, la, lb], a, kafka, false, 5)
+  assert.deepEqual(after.map((i) => i.id), [7, 8, 2])
 })
 
 test('setLogoNameShown: Hide removes the label, Show adds one fresh label, no-ops return the same array', () => {

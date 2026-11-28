@@ -37,7 +37,7 @@ test('Library wiring: recent row, rename, breadcrumb, status, empty folder, keys
   assert.match(home, /props\.onRenameDiagram\(id, title\)/)
   assert.match(home, /if \(!title \|\| title === titleOf\(id\)\) return/)
   assert.match(home, /New diagram here/)
-  assert.match(home, /props\.onNewDiagram\(here, NEW_DIAGRAM_PRESETS\[0\]\.template\)/)
+  assert.match(home, /newDiagramOptionsFor\(newChoice\); props\.onNewDiagram\(here, options\.template, options\) \}\}>New diagram here/)
   assert.match(home, /event\.key === '\/' && !typing/)
   assert.match(home, /target === searchRef\.current && searchRef\.current\?\.value/)
   const app = read('../src/App.tsx')

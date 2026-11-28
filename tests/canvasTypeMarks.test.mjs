@@ -167,5 +167,5 @@ test('App uses the effective canvas type for sheet, minimap, export and snapping
   assert.match(app, /drawPageTemplateOverview\(ctx, canvasType,/)
   assert.match(app, /benchmarkBackground\?\.template \?\? canvasType/)
   assert.match(app, /gridSpacingFor\(effectiveCanvasType\(pageTemplateRef\.current, pageCanvasRef\.current\)/)
-  assert.match(documents, /template: effectiveCanvasType\(page\.template, page\.canvas\)/)
+  assert.match(documents, /const canvasType = effectiveCanvasType\(page\.template, page\.canvas\)[\s\S]*template: canvasType,/)
 })

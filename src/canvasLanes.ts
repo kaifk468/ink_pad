@@ -12,6 +12,9 @@
  * LANE_COLUMNS_HEADER_HEIGHT header band at the top.
  */
 
+import { effectiveCanvasType, isExtraCanvasType } from './canvasTypes'
+import type { PageTemplate } from './pageTemplates'
+
 export type LaneSettings = { dir?: string; count?: number; names?: string[]; fit?: false }
 export type LaneDir = 'rows' | 'columns'
 export type Rect = { x: number; y: number; width: number; height: number }
@@ -150,4 +153,36 @@ export function laneLabel(rect: LaneRect, dir: LaneDir): LaneLabel | null {
   const fit = Math.max(1, Math.floor(available / (fontSize * LABEL_CHAR_WIDTH)))
   const text = rect.name.length > fit ? `${rect.name.slice(0, Math.max(1, fit - 1)).trimEnd()}…` : rect.name
   return { text, fontSize, x: rect.header.x + rect.header.width / 2, y: rect.header.y + rect.header.height / 2, rotate: rows ? -90 : 0 }
+}
+
+/**
+ * Widens export crop bounds so the lane header (rows: the left column; columns: the top band) is included: rows reach
+ * x = 0 and keep their right edge, columns reach y = 0 and keep their bottom edge. Clamped to the sheet.
+ */
+export function boundsWithLaneHeaders(bounds: Rect, lanes: LaneSettings | undefined | null, sheetWidth = LANE_COLUMNS_WIDTH, sheetHeight = LANE_ROWS_BASE_HEIGHT): Rect {
+  if (laneDir(lanes) === 'columns') {
+    const bottom = Math.min(sheetHeight, bounds.y + bounds.height)
+    return { x: bounds.x, y: 0, width: bounds.width, height: Math.max(0, bottom) }
+  }
+  const right = Math.min(sheetWidth, bounds.x + bounds.width)
+  return { x: 0, y: bounds.y, width: Math.max(0, right), height: bounds.height }
+}
+
+/** The lane setup a new diagram inherits: direction, count and fit only, never the lane names. Undefined when none is set. */
+export function laneSetupOnly<T extends { dir?: string; count?: number; fit?: false }>(lanes: T | undefined | null): { dir?: string; count?: number; fit?: false } | undefined {
+  if (!lanes) return undefined
+  const out: { dir?: string; count?: number; fit?: false } = {}
+  if (lanes.dir !== undefined) out.dir = lanes.dir
+  if (lanes.count !== undefined) out.count = lanes.count
+  if (lanes.fit === false) out.fit = false
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
+ * The lanes a saved file carries: only on a Lanes canvas, or when the canvas word is unknown to this build (a newer InkPad's
+ * canvas may use them, so everything is kept). The app keeps the lanes in memory for the session so switching back restores names.
+ */
+export function lanesForSave<T>(template: PageTemplate, canvas: string | undefined, lanes: T | undefined): T | undefined {
+  if (canvas !== undefined && !isExtraCanvasType(canvas)) return lanes
+  return effectiveCanvasType(template, canvas) === 'lanes' ? lanes : undefined
 }

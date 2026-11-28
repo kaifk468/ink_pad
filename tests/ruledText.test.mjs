@@ -54,9 +54,9 @@ test('a label near the sheet top never starts above the sheet', () => {
   assert.ok(ruledBaselineY(-10, 40, UNITS, 'lined') >= 0)
 })
 
-test('wiring: only the Text tool tap passes the event (so Alt can skip); editing and double-click do not', () => {
+test('wiring: only the Text tool tap passes the event (so Alt can skip); editing does not, and the mouse double-click does (Alt skips)', () => {
   assert.match(app, /ruledBaselineY\(point\.y - textSize \* 0\.65, textSize, pageSpacingUnits\(pageSpacingRef\.current\), effectiveCanvasType\(pageTemplateRef\.current, pageCanvasRef\.current\)\)/)
   assert.match(app, /event && !snappingSuspended\(event, inputModeRef\.current\)/)
   assert.match(app, /else openNewTextEditorAt\(tap\.point, event\)/)
-  assert.match(app, /openNewTextEditorAt\(point\)\n/)
+  assert.match(app, /openNewTextEditorAt\(point, \{ pointerType: 'mouse', altKey: event\.altKey \}\)\n/)
 })

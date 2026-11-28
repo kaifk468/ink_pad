@@ -93,7 +93,7 @@ test('canvas marks follow the board in the sheet layer, minimap and SVG export',
   assert.doesNotMatch(transparent, /pattern/)
   const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
   // Round 12: the marks pass through effectiveMarks (mark strength), still the board's own palette for non-light boards and none for the benchmark.
-  assert.match(app, /pageSpacing,\s*benchmarkBackground \? undefined : effectiveMarks\(theme === 'light' \? undefined : palette,/)
+  assert.match(app, /pageSpacing,\s*benchmarkBackground \? undefined : sheetMarksMemoRef\.current\(theme === 'light' \? undefined : palette,/)
   assert.match(app, /drawPageTemplateOverview\(ctx, canvasType, \{[^}]*\}, effectiveMarks\(theme === 'light' \? undefined : palette,/)
 })
 

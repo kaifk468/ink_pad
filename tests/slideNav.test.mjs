@@ -5,8 +5,8 @@ import { loadModule } from './helpers/loadModule.mjs'
 const nav = await loadModule('slideNav.ts')
 const k = (key, extra = {}) => ({ key, ...extra })
 
-test('forward keys: right arrow, PageDown and Space; stop at the last page', () => {
-  for (const key of ['ArrowRight', 'PageDown', ' ']) {
+test('forward keys: right arrow and PageDown; stop at the last page', () => {
+  for (const key of ['ArrowRight', 'PageDown']) {
     assert.equal(nav.slideKeyTarget(k(key), 1, 5), 2, key)
     assert.equal(nav.slideKeyTarget(k(key), 4, 5), 4, `${key} stops at the end`)
   }
@@ -26,7 +26,7 @@ test('Home and End jump to the first and last page', () => {
 })
 
 test('one page: every slide key stays on page 0', () => {
-  for (const key of ['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', ' ', 'Home', 'End']) assert.equal(nav.slideKeyTarget(k(key), 0, 1), 0, key)
+  for (const key of ['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', 'Home', 'End']) assert.equal(nav.slideKeyTarget(k(key), 0, 1), 0, key)
 })
 
 test('other keys and modified keys are not slide keys', () => {
@@ -36,9 +36,12 @@ test('other keys and modified keys are not slide keys', () => {
 
 test('a held PageDown, PageUp or Space does not run through the pages; a held arrow does', () => {
   assert.equal(nav.slideKeyTarget(k('PageDown', { repeat: true }), 1, 5), 1)
-  assert.equal(nav.slideKeyTarget(k(' ', { repeat: true }), 1, 5), 1)
   assert.equal(nav.slideKeyTarget(k('PageUp', { repeat: true }), 1, 5), 1)
   assert.equal(nav.slideKeyTarget(k('ArrowRight', { repeat: true }), 1, 5), 2)
+})
+
+test('Space is not a slide key (it pans on the desktop)', () => {
+  assert.equal(nav.slideKeyTarget(k(' '), 1, 5), null)
 })
 
 test('an out-of-range index is clamped', () => {
