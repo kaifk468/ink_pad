@@ -237,3 +237,13 @@ test('trays, panel, palette and credits are wired', async () => {
   assert.match(await read('src/techLogos.ts'), /import\('\.\/techLogoData'\)/)
   for (const file of ['src/App.tsx', 'src/techLogos.ts', 'src/sheetExport.ts', 'src/app/canvasRenderer.ts', 'src/app/LogoPicker.tsx', 'src/app/logoRender.ts']) assert.doesNotMatch(await read(file), /from 'simple-icons/, file)
 })
+
+test('desktop Insert logo dialog uses the labelled picker; tablet tray stays unlabelled', async () => {
+  const dialog = await read('src/app/LogoDialog.tsx')
+  const insertTray = await read('src/app/InsertTray.tsx')
+  const picker = await read('src/app/LogoPicker.tsx')
+  assert.match(dialog, /<LogoPicker autoFocus labelled /)
+  assert.doesNotMatch(insertTray, /labelled/)
+  assert.match(picker, /logo-button-name/)
+  assert.match(picker, /Enter<\/kbd> inserts the first/)
+})

@@ -12,6 +12,8 @@ type LogoPickerProps = {
   autoFocus?: boolean
   /** Tablet: 48px buttons (touch targets of at least 44px). */
   touch?: boolean
+  /** Desktop dialog: named tiles, a result count beside the "Show name" switch, the first match marked as the Enter target. */
+  labelled?: boolean
 }
 
 const EXTERNAL_LIMIT = 12
@@ -20,7 +22,7 @@ const EXTERNAL_LIMIT = 12
 export const LOGO_CREDIT = 'Logos: Simple Icons (CC0; a few keep their own Apache-2.0, MIT or BSD licence). Brand names and logos belong to their owners.'
 
 /** Tech logos (Simple Icons, built into the app): a search field, a "Show name" switch and a grid of brand buttons. Shared by the desktop More shapes tray and the tablet Insert tray. */
-export function LogoPicker({ onInsert, externalQuery, autoFocus, touch }: LogoPickerProps) {
+export function LogoPicker({ onInsert, externalQuery, autoFocus, touch, labelled }: LogoPickerProps) {
   const [logos, setLogos] = useState<readonly TechLogo[] | null>(loadedTechLogos)
   const [failed, setFailed] = useState(false)
   const [ownQuery, setOwnQuery] = useState('')
@@ -52,15 +54,20 @@ export function LogoPicker({ onInsert, externalQuery, autoFocus, touch }: LogoPi
           if (event.key === 'Enter' && shown[0]) { event.preventDefault(); onInsert(shown[0], showName) }
         }}
       />}
-      {!external && <label className="logo-name-toggle"><input type="checkbox" checked={showName} onChange={(event) => setShowName(event.target.checked)} /><span>Show name</span></label>}
+      {labelled && !external && logos && <div className="logo-meta-row">
+        <span className="logo-count" role="status">{shown.length === 0 ? '' : query.trim() ? `${shown.length} ${shown.length === 1 ? 'match' : 'matches'}` : `${shown.length} logos`}{shown.length > 0 && query.trim() ? <> · <kbd>Enter</kbd> inserts the first</> : null}</span>
+        <label className="logo-name-toggle"><input type="checkbox" checked={showName} onChange={(event) => setShowName(event.target.checked)} /><span>Show name</span></label>
+      </div>}
+      {!labelled && !external && <label className="logo-name-toggle"><input type="checkbox" checked={showName} onChange={(event) => setShowName(event.target.checked)} /><span>Show name</span></label>}
       {!external && failed && <div className="shape-search-empty" role="status">Logos could not load</div>}
       {!external && !failed && !logos && <div className="shape-search-empty" role="status">Loading logos…</div>}
-      {!external && logos && shown.length === 0 && <div className="shape-search-empty" role="status">No logo matches</div>}
+      {!external && logos && shown.length === 0 && <div className="shape-search-empty" role="status">{labelled ? <>No logo for “{query.trim()}”. Try a product name, like postgres or redis.</> : 'No logo matches'}</div>}
       {external && shown.length > 0 && <div className="insert-tray-heading">Tech logos</div>}
-      <div className="logo-grid">
-        {shown.map((logo) => (
-          <button className="logo-button" type="button" key={logo.slug} aria-label={logo.title} title={logo.title} onClick={() => onInsert(logo, showName)}>
+      <div className={`logo-grid${labelled ? ' logo-grid-labelled' : ''}`}>
+        {shown.map((logo, index) => (
+          <button className={`logo-button${labelled && index === 0 && query.trim() ? ' logo-button-first' : ''}`} type="button" key={logo.slug} aria-label={logo.title} title={logo.title} onClick={() => onInsert(logo, showName)}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d={logo.path} /></svg>
+            {labelled && <span className="logo-button-name" aria-hidden="true">{logo.title.replace(/^Apache /, "")}</span>}
           </button>
         ))}
       </div>

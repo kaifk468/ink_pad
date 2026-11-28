@@ -311,10 +311,23 @@ button { font: inherit; }
 .logo-button:focus-visible { outline: 2px solid #354fc2; outline-offset: -2px; }
 .logo-credit { margin: 8px 4px 0; color: #6a707c; font-size: 11px; line-height: 1.35; }
 .shortcut-help .logo-credit { margin: 10px 18px 14px; }
-.logo-dialog { width: min(420px, calc(100vw - 32px)); padding-bottom: 12px; }
+.logo-dialog { padding-bottom: 12px; }
 .logo-dialog .logo-picker { padding: 0 14px; }
 .logo-dialog .logo-grid { grid-template-columns: repeat(6, 1fr); max-height: 300px; }
 .logo-picker-touch .logo-button { min-height: 48px; }
+/* Desktop "Insert logo" dialog: named tiles, count row, Enter target */
+.file-panel.logo-dialog { width: min(540px, calc(100vw - 32px)); max-width: none; }
+.logo-dialog .logo-search-field { margin-bottom: 8px; }
+.logo-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 2px 8px; min-height: 20px; }
+.logo-meta-row .logo-name-toggle { margin: 0; }
+.logo-count { color: #6a707c; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.logo-count kbd { padding: 0 5px; border: 1px solid #d9dce3; border-radius: 4px; background: #f6f7f9; font-size: 11px; font-weight: 600; line-height: 16px; }
+.logo-dialog .logo-grid-labelled { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; max-height: min(336px, 48vh); padding: 2px; }
+.logo-grid-labelled .logo-button { flex-direction: column; gap: 6px; min-height: 76px; padding: 10px 4px 8px; border-color: #eceef2; transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease; }
+.logo-grid-labelled .logo-button:hover { border-color: #d5d9e2; transform: translateY(-1px); }
+.logo-grid-labelled .logo-button-first { border-color: #354fc2; background: #f3f5fd; }
+.logo-button-name { max-width: 100%; overflow: hidden; color: #4a4f5c; font-size: 11px; font-weight: 600; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .logo-grid-labelled .logo-button { transition: none; } .logo-grid-labelled .logo-button:hover { transform: none; } }
 .shape-search-empty { padding: 12px 10px; color: #6a707c; font-size: 13px; }
 .insert-shape-results { display: flex; flex-direction: column; }
 .insert-entry span { display: flex; flex-direction: column; min-width: 0; }

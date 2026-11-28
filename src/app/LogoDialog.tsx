@@ -22,7 +22,7 @@ export function LogoDialog({ onInsert, onClose }: LogoDialogProps) {
           <strong>Insert logo</strong>
           <button type="button" className="file-panel-close" aria-label="Close" title="Close (Esc)" onClick={onClose}>×</button>
         </header>
-        <LogoPicker autoFocus onInsert={(logo, showName) => { onInsert(logo, showName); onClose() }} />
+        <LogoPicker autoFocus labelled onInsert={(logo, showName) => { onInsert(logo, showName); onClose() }} />
       </section>
     </div>
   )
