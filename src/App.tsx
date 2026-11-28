@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
-import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, type ConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, rotatedItemBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, type ConnectorRouting } from './canvasModel'
 import { QUICK_CONNECT_DOUBLE_CLICK_MS, TABLET_QUICK_CONNECT_TAP_SLOP_PX, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHeadEnds, quickConnectHint, type QuickConnectDirection } from './quickConnect'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConnectorHandle, hitConnectorLabel, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
@@ -43,7 +43,8 @@ import { boardFieldsFor, boardPalette, boardStyleOf, isDarkBoard, type BoardStyl
 import { boardCommands } from './boardPicker'
 import { resolveInk, resolveItemForBoard, setBoardFill, setBoardInk, sheetBorderColor, sheetColorForBoard } from './boardColors'
 import { canvasFieldsFor, effectiveCanvasType, type CanvasType } from './canvasTypes'
-import { laneDir, laneLabel, laneRects, type LaneSettings } from './canvasLanes'
+import { laneDir, laneFit, laneLabel, laneRects, type LaneSettings } from './canvasLanes'
+import { laneFitDelta } from './laneFit'
 import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
@@ -1009,6 +1010,38 @@ function App() {
     renderAll()
   }
 
+  /**
+   * Keep boxes inside lanes (#297): when a move or a new box ends on a Lanes canvas, the boxes among `keys` (the group by its
+   * union bounds) slide into the lane body holding their centre if they fit. Runs once at the end of the gesture, before the
+   * connector side switch, and rides in the same history step (the gesture already saved its snapshot). Desktop Alt, the
+   * "Keep boxes inside lanes" switch and other canvases skip it. Labels and connectors follow like in a normal move.
+   */
+  const fitIntoLanes = (event: { pointerType: string; altKey?: boolean } | null, keys: ReadonlySet<string>): boolean => {
+    if (effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current) !== 'lanes' || !laneFit(pageLanesRef.current)) return false
+    if (event && snappingSuspended(event, inputModeRef.current)) return false
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    const boxKeys = new Set<string>()
+    for (const item of strokesRef.current) {
+      if (item.kind !== 'rectangle' || !keys.has(canvasItemKey(item))) continue
+      const box = rotatedItemBounds(item)
+      minX = Math.min(minX, box.x)
+      minY = Math.min(minY, box.y)
+      maxX = Math.max(maxX, box.x + box.width)
+      maxY = Math.max(maxY, box.y + box.height)
+      boxKeys.add(canvasItemKey(item))
+    }
+    if (boxKeys.size === 0) return false
+    const { dx, dy } = laneFitDelta({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, pageLanesRef.current, sheetHeightRef.current)
+    if (dx === 0 && dy === 0) return false
+    strokesRef.current = translateWithinWorkspace(strokesRef.current, new Set(keys), dx, dy)
+    scheduleAutosave()
+    renderAll()
+    return true
+  }
+
   /** After a drag: connectors attached to the boxes that moved may switch to facing sides when that makes them clearly shorter (same undo step as the drag). */
   const switchConnectorSides = (keys: ReadonlySet<string>) => {
     const movedIds = new Set<number>()
@@ -1469,7 +1502,9 @@ function App() {
     if (editor.rectangleId === null) {
       if (isEmptyClassBox(clean)) return
       saveHistory()
-      strokesRef.current.push(createClassBox(nextRectangleIdRef.current++, editor.x, editor.y, clean, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, measure))
+      const classBoxId = nextRectangleIdRef.current++
+      strokesRef.current.push(createClassBox(classBoxId, editor.x, editor.y, clean, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, measure))
+      fitIntoLanes(null, new Set([`rectangle:${classBoxId}`]))
       setHasInk(true)
       renderAll()
       return
@@ -2514,6 +2549,7 @@ function App() {
   const updateLanes = (patch: LaneSettings) => {
     const merged: LaneSettings & Record<string, unknown> = { ...(pageLanesRef.current ?? {}), ...patch }
     if (merged.dir === 'rows') delete merged.dir
+    if (merged.fit !== false) delete merged.fit // on is the default and is not written
     if (patch.names !== undefined) {
       const names = patch.names.slice(0, 8).map((name) => cleanPageName(name))
       while (names.length > 0 && names[names.length - 1] === '') names.pop()
@@ -4867,6 +4903,7 @@ function App() {
             const y = Math.min(finished.originalBounds.y, workspaceBoundsRef.current.y + workspaceBoundsRef.current.height - size.height)
             strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: size.width, height: size.height })
           }
+          fitIntoLanes(event, new Set([`rectangle:${finished.rectangleId}`]))
           if (toolLockRef.current) {
             // Tool lock: the shape tool stays active for the next one and the new shape is not left selected.
             setSelectedRectangle(null)
@@ -4890,6 +4927,7 @@ function App() {
           const y = Math.min(finished.originalBounds.y, workspaceBoundsRef.current.y + workspaceBoundsRef.current.height - size.height)
           strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: size.width, height: size.height })
         }
+        fitIntoLanes(event, new Set([`rectangle:${finished.rectangleId}`]))
         // A new box is empty, so its sections start at the standard 15 / 70 / 15 split of its final size.
         strokesRef.current = strokesRef.current.map((item) => (item.kind === 'rectangle' && item.id === finished.rectangleId && item.inkBox ? { ...item, inkBox: newInkBoxContent(item.y, item.height) } : item))
         // The new box is ready to write in: back to the pen, with the box selected.
@@ -4916,12 +4954,14 @@ function App() {
     if (lassoDragRef.current?.pointerId === event.pointerId) {
       const lassoDrag = lassoDragRef.current
       lassoDragRef.current = null
+      if (lassoDrag.moved) fitIntoLanes(event, lassoDrag.dup ? lassoDrag.dup.copyKeys : withCarriedLabels(event, lassoDrag.originalItems, lassoDrag.keys))
       if (lassoDrag.moved) switchConnectorSides(lassoDrag.dup ? lassoDrag.dup.copyKeys : lassoDrag.keys)
       return
     }
     if (activeDragRef.current?.pointerId === event.pointerId) {
       const drag = activeDragRef.current
       activeDragRef.current = null
+      if (drag.moved) fitIntoLanes(event, drag.dup ? drag.dup.copyKeys : withCarriedLabels(event, drag.originalItems, new Set([drag.itemKey])))
       if (drag.moved) switchConnectorSides(drag.dup ? drag.dup.copyKeys : new Set([drag.itemKey]))
       const dropConnectorId = dropConnectorRef.current
       dropConnectorRef.current = null

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { LANE_MAX_COUNT, LANE_MIN_COUNT, LANE_NAME_MAX_LENGTH, laneCount, laneDir, laneNames, type LaneSettings } from '../canvasLanes'
+import { LANE_MAX_COUNT, LANE_MIN_COUNT, LANE_NAME_MAX_LENGTH, laneCount, laneDir, laneFit, laneNames, type LaneSettings } from '../canvasLanes'
 import { MARK_STRENGTHS, markStrength, type MarkStrength } from '../pageTemplates'
 
 /** `menu` = the tablet menu panel (touch sized, >= 44px), `ms` = the Desktop menu sheet (compact). Class names: <prefix>-setting, -setting-label, -segments, -segment. */
@@ -42,6 +42,7 @@ export function LaneControls(props: { variant: ControlsVariant; lanes: LaneSetti
   const dir = laneDir(props.lanes)
   const count = laneCount(props.lanes)
   const names = laneNames(props.lanes)
+  const keepInside = laneFit(props.lanes)
   const setNames = (index: number, value: string) => {
     const stored: unknown = props.lanes?.names
     const next: string[] = Array.isArray(stored) ? stored.map((name) => (typeof name === 'string' ? name : '')) : []
@@ -65,6 +66,14 @@ export function LaneControls(props: { variant: ControlsVariant; lanes: LaneSetti
           <button type="button" aria-label="Fewer lanes" disabled={count <= LANE_MIN_COUNT} onClick={() => props.onLanes?.({ count: count - 1 })}>−</button>
           <output aria-live="polite">{count}</output>
           <button type="button" aria-label="More lanes" disabled={count >= LANE_MAX_COUNT} onClick={() => props.onLanes?.({ count: count + 1 })}>+</button>
+        </div>
+      </div>
+      <div className={`${p}-setting`} role="group" aria-label="Keep boxes inside lanes">
+        <span className={`${p}-setting-label`}>Keep boxes inside lanes</span>
+        <div className={`${p}-segments two lane-touch`}>
+          {([[true, 'On'], [false, 'Off']] as const).map(([on, label]) => (
+            <button key={label} className={`${p}-segment${keepInside === on ? ' selected' : ''}`} type="button" aria-pressed={keepInside === on} onClick={() => props.onLanes?.({ fit: on ? undefined : false })}>{label}</button>
+          ))}
         </div>
       </div>
       <div className={`${p}-setting`} role="group" aria-label="Lane names">
