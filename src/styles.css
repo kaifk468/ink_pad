@@ -605,6 +605,7 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 
 /* Text labels */
 .text-editor { position: absolute; z-index: 6; box-sizing: border-box; margin: 0; border: 0; border-radius: 4px; outline: 1.5px dashed #5574ed; background: rgba(255, 255, 255, .6); resize: none; overflow: hidden; white-space: pre; }
+.text-editor.text-editor-dark { background: rgba(30, 33, 38, .78); caret-color: currentColor; }
 .text-size-group { gap: 2px; }
 .text-size-button { min-width: 34px; height: 36px; padding: 0 6px; border: 0; border-radius: 9px; background: transparent; color: #5d626b; font-size: 11px; font-weight: 700; cursor: pointer; }
 .text-size-button.selected { background: #f0f1f5; color: #292b30; }

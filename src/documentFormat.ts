@@ -100,8 +100,11 @@ export const MAX_PAGE_NAME_LENGTH = 40
 export function cleanPageWord(value: unknown): string | undefined {
   return typeof value === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(value) ? value : undefined
 }
-function pageWord<K extends 'board' | 'canvas'>(key: K, value: unknown): { [P in K]?: string } {
+/** Count of present fields the current parse dropped without dropping their item or page (a bad page word, a logo on a shape that cannot carry one). */
+let droppedFieldCount = 0
+function pageWord<K extends 'board' | 'canvas'>(key: K, value: unknown, track = false): { [P in K]?: string } {
   const word = cleanPageWord(value)
+  if (track && value !== undefined && word === undefined) droppedFieldCount += 1
   return (word ? { [key]: word } : {}) as { [P in K]?: string }
 }
 
@@ -258,6 +261,7 @@ export function parseDocument(text: string): ParseResult {
   if (!Array.isArray(current.items)) return { ok: false, error: 'The document has no items list.' }
 
   const page = isRecord(current.page) ? current.page : {}
+  droppedFieldCount = 0
   const first = cleanItems(current.items)
   const finalItems = first.items
   let droppedItems = first.dropped
@@ -287,14 +291,14 @@ export function parseDocument(text: string): ParseResult {
         ...(page.spacing === 'narrow' || page.spacing === 'wide' ? { spacing: page.spacing } : {}),
         ...grownSheetHeight(page.sheetHeight),
         ...(page.sketchy === true ? { sketchy: true as const } : {}),
-        ...pageWord('board', page.board),
-        ...pageWord('canvas', page.canvas),
+        ...pageWord('board', page.board, true),
+        ...pageWord('canvas', page.canvas, true),
       },
       ...(names ? { pageNames: names } : {}),
       items: finalItems,
       ...(extraPages.length > 0 ? { pages: extraPages } : {}),
   }
-  if (droppedItems > 0 || unknownFields) lossyParses.add(parsed)
+  if (droppedItems > 0 || unknownFields || droppedFieldCount > 0) lossyParses.add(parsed)
   return { ok: true, droppedItems, migratedFrom: version < DOCUMENT_VERSION ? version : null, document: parsed }
 }
 
@@ -409,6 +413,8 @@ function sanitizeItemFields(value: unknown): CanvasItem | null {
       rectangle.logo = value.logo
       if (value.logoColor === 'brand') rectangle.logoColor = 'brand'
     }
+    // A present logo / logoColor that was not kept (wrong shape, bad slug, unknown colour mode) makes the parse lossy.
+    if ((value.logo !== undefined && rectangle.logo === undefined) || (value.logoColor !== undefined && rectangle.logoColor === undefined)) droppedFieldCount += 1
     const rectAngle = !classBox && !inkBox && !hldShapeKept(value) ? sanitizeAngle(value.angle) : undefined
     if (rectAngle !== undefined) rectangle.angle = rectAngle
     // Hand-drawn style seed and fill colour: only on shapes that can carry them (not service, class boxes or ink class boxes).

@@ -45,6 +45,7 @@ let sketchyExport = false
 let labelBackground = '#ffffff'
 /** Fill of hollow shapes (class box body, hollow arrowheads) for the board being exported. */
 let hollowFill = '#ffffff'
+let exportBoardInk: string | null = null
 
 const SPACING = 32
 const LINE_COLOR = '#aebfd8'
@@ -153,7 +154,7 @@ function logoElement(rectangle: RectangleObject): string {
   const placement = logoPlacement(rectangle)
   if (placement.size <= 0) return ''
   const logo = findTechLogo(rectangle.logo)
-  if (logo) return `<path d="${logo.path}" transform="${logoSvgTransform(placement)}" fill="${esc(logoFillColor(rectangle, logo))}"/>`
+  if (logo) return `<path d="${logo.path}" transform="${logoSvgTransform(placement)}" fill="${esc(logoFillColor(rectangle, logo, exportBoardInk))}"/>`
   const stand = logoPlaceholderGeometry(placement)
   const color = esc(rectangle.strokeColor)
   return `<rect x="${n(stand.x)}" y="${n(stand.y)}" width="${n(stand.size)}" height="${n(stand.size)}" rx="${n(stand.radius)}" fill="none" stroke="${color}" stroke-width="${n(Math.max(1.5, stand.size * 0.04))}" opacity="0.55"/>`
@@ -321,12 +322,14 @@ export function buildSheetSvg(rawItems: CanvasItem[], options: SheetExportOption
   const exportOptions = palette.theme === 'light' ? options : { ...options, backgroundColor: palette.sheet }
   labelBackground = options.transparent ? '#ffffff' : exportOptions.backgroundColor
   hollowFill = palette.fill
+  exportBoardInk = palette.theme === 'light' ? null : palette.ink
   if (palette.theme !== 'light') marks = { dot: palette.dot, line: palette.line, lineStrong: palette.lineStrong }
   try {
-    return buildSheetSvgInner(palette.theme === 'light' ? rawItems : rawItems.map((item) => resolveItemForBoard(item, palette)), exportOptions)
+    return buildSheetSvgInner(palette.theme === 'light' ? rawItems : rawItems.map((item) => resolveItemForBoard(item, palette, rawItems)), exportOptions)
   } finally {
     sketchyExport = false
     hollowFill = '#ffffff'
+    exportBoardInk = null
     marks = { dot: DOT_COLOR, line: LINE_COLOR, lineStrong: LINE_STRONG_COLOR }
   }
 }

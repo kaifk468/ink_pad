@@ -10,7 +10,7 @@ import { TEXT_FONTS, TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP } from '../textLay
 import { FILL_PRESETS } from '../shapeFill'
 import { CODE_LANGUAGES } from '../codeBlock'
 import { COLORS, MAX_STROKE_WIDTH, MIN_STROKE_WIDTH, WIDTHS } from './appConfig'
-import { penColorsForBoard } from '../boardColors'
+import { fillColorsForBoard, penColorsForBoard } from '../boardColors'
 import type { BoardTheme } from '../boardStyle'
 
 type RelationshipProps = {
@@ -146,9 +146,9 @@ type ContextPanelProps = {
 }
 
 /** The five quick colours, a rainbow button that opens the full picker, and the picker itself. */
-function ColorChoices({ value, label, onChange, square, idle, heading, theme = 'light' }: { value: string; label: string; onChange: (hex: string, commit: boolean) => void; square?: boolean; idle?: boolean; heading?: string; theme?: BoardTheme }) {
+function ColorChoices({ value, label, onChange, square, idle, heading, theme = 'light', fill }: { fill?: boolean; value: string; label: string; onChange: (hex: string, commit: boolean) => void; square?: boolean; idle?: boolean; heading?: string; theme?: BoardTheme }) {
   const [open, setOpen] = useState(false)
-  const swatches = penColorsForBoard(theme, COLORS)
+  const swatches = fill ? fillColorsForBoard(theme, COLORS) : penColorsForBoard(theme, COLORS)
   const quick = idle || swatches.some((item) => item.value.toLowerCase() === value.toLowerCase())
   return (
     <div className={`color-choices${square ? ' is-fill' : ''}${heading ? ' has-heading' : ''}`} role="group" aria-label={label}>
@@ -382,7 +382,7 @@ export function ContextPanel(props: ContextPanelProps) {
             <button key={preset.fill} className={`color-swatch${props.fill?.color?.toLowerCase() === preset.fill ? ' selected' : ''}`} type="button" title={`${preset.name} fill`} aria-label={`${preset.name} fill`} aria-pressed={props.fill?.color?.toLowerCase() === preset.fill} style={{ '--swatch': preset.fill } as CSSProperties} onClick={() => props.fill?.onFill(preset.fill, true)} />
           ))}
         </div>
-        <ColorChoices square={props.desktop} idle={props.desktop && fillMoreColoursIdle(props.fill.color)} value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" onChange={(hex, commit) => props.fill?.onFill(hex, commit)} theme={props.boardTheme} />
+        <ColorChoices square={props.desktop} idle={props.desktop && fillMoreColoursIdle(props.fill.color)} value={props.fill.color && props.fill.color !== 'none' ? props.fill.color : '#ffffff'} label="Fill colour picker" fill onChange={(hex, commit) => props.fill?.onFill(hex, commit)} theme={props.boardTheme} />
         {props.fill.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null) && <button className="clear-selection-button" type="button" title="Use the darker outline that goes with this fill" onClick={() => { const hex = props.fill?.outlineFor(props.fill.color && props.fill.color !== 'none' ? props.fill.color : null); if (hex) props.fill?.onMatchOutline(hex) }}>Matching outline</button>}
       </div>}
     </>

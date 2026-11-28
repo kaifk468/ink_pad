@@ -1,6 +1,7 @@
 import type { RectangleObject } from '../canvasModel'
 import { createPathCache, logoFillColor, logoPlaceholderGeometry, logoPlacement } from '../logoLayout'
 import { TEXT_FONT_FAMILY } from '../textLayout'
+import { getBoardInk } from '../boardColors'
 import { findTechLogo } from '../techLogos'
 
 /** One Path2D per slug, built the first time the logo is drawn (never per frame). */
@@ -20,7 +21,7 @@ export function drawLogo(ctx: CanvasRenderingContext2D, rectangle: RectangleObje
   ctx.save()
   ctx.setLineDash([])
   if (logo) {
-    ctx.fillStyle = logoFillColor(rectangle, logo)
+    ctx.fillStyle = logoFillColor(rectangle, logo, getBoardInk())
     ctx.translate(placement.x, placement.y)
     ctx.scale(placement.size / 24, placement.size / 24)
     ctx.fill(logoPaths.get(slug, logo.path))

@@ -505,7 +505,7 @@ export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasIte
   ctx.save()
   for (const original of items) {
     // Dark boards: the default ink draws as the board's ink (cached copy; the light board returns the item itself).
-    const item = palette ? resolveItemForBoard(original, palette) : original
+    const item = palette ? resolveItemForBoard(original, palette, items) : original
     const fade = focusFaded !== null && focusFaded.has(canvasItemKey(item))
     if (fade) ctx.globalAlpha = FOCUS_FADE_ALPHA
     if (item.kind === 'text') {

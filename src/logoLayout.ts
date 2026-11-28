@@ -1,6 +1,7 @@
 import { canvasItemKey, isItemLocked } from './canvasModel'
 import type { CanvasItem, RectangleObject, TextObject } from './canvasModel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH } from './classBoxLayout'
+import { colorLuma } from './boardColors'
 import { createTextObject } from './textLayout'
 import type { TechLogo } from './techLogoSearch'
 
@@ -25,9 +26,17 @@ export function logoPlacement(rectangle: { x: number; y: number; width: number; 
   return { x: rectangle.x + pad + (areaWidth - size) / 2, y: rectangle.y + pad + (areaHeight - size) / 2, size }
 }
 
-/** Fill colour of a logo: its brand colour for `logoColor: 'brand'` (and a known logo), else the box's own line colour. */
-export function logoFillColor(rectangle: Pick<RectangleObject, 'strokeColor' | 'logoColor'>, logo: Pick<TechLogo, 'hex'> | undefined): string {
-  return rectangle.logoColor === 'brand' && logo ? logo.hex : rectangle.strokeColor
+/** A brand colour darker than this (perceived brightness 0..1) would vanish on a dark board. */
+const DARK_BRAND_LUMA = 0.2
+
+/**
+ * Fill colour of a logo: its brand colour for `logoColor: 'brand'` (and a known logo), else the box's own line colour.
+ * `boardInk` (draw time, dark boards only; null / missing on the light board): a very dark brand colour (GitHub #181717) draws in the board ink instead.
+ * The box's own line colour is resolved by the caller, as for every other item.
+ */
+export function logoFillColor(rectangle: Pick<RectangleObject, 'strokeColor' | 'logoColor'>, logo: Pick<TechLogo, 'hex'> | undefined, boardInk?: string | null): string {
+  if (rectangle.logoColor === 'brand' && logo) return boardInk && colorLuma(logo.hex) < DARK_BRAND_LUMA ? boardInk : logo.hex
+  return rectangle.strokeColor
 }
 
 /** SVG `transform` that maps the 24 x 24 logo path onto its placement. */

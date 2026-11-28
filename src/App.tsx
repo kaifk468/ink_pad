@@ -39,7 +39,7 @@ import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPage
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
 import { boardFieldsFor, boardPalette, boardStyleOf, isDarkBoard, type BoardStyleId, type BoardTheme } from './boardStyle'
 import { boardCommands } from './boardPicker'
-import { resolveInk, resolveItemForBoard, setBoardFill, sheetBorderColor, sheetColorForBoard } from './boardColors'
+import { resolveInk, resolveItemForBoard, setBoardFill, setBoardInk, sheetBorderColor, sheetColorForBoard } from './boardColors'
 import { canvasFieldsFor, effectiveCanvasType, type CanvasType } from './canvasTypes'
 import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
 import { FilePanel } from './FilePanel'
@@ -1501,6 +1501,7 @@ function App() {
   const theme = palette.theme
   setConnectorLabelBackground(sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]))
   setBoardFill(palette.fill)
+  setBoardInk(theme === 'light' ? null : palette.ink)
   const drawItem = useCallback((ctx: CanvasRenderingContext2D, item: CanvasItem) => {
     const faded = focusRef.current
     // Focus on: a faded box that several connectors redraw is drawn once (a second faded pass would darken it). Off: nothing extra.
@@ -1509,7 +1510,7 @@ function App() {
       if (item.kind === 'stroke' && item.erase) focusDrawnRef.current.clear()
       else if (faded.has(canvasItemKey(item))) { if (focusDrawnRef.current.has(item)) return; focusDrawnRef.current.add(item) }
     }
-    drawItemToCanvas(ctx, resolveItemForBoard(item, palette), strokeDisplayMode, sketchy, faded)
+    drawItemToCanvas(ctx, resolveItemForBoard(item, palette, strokesRef.current), strokeDisplayMode, sketchy, faded)
   }, [strokeDisplayMode, sketchy, palette])
 
   const drawMinimapItems = useCallback((ctx: CanvasRenderingContext2D, geometry: MinimapGeometry) => {
@@ -5881,7 +5882,7 @@ function App() {
     // The saved file has its own background, so on a dark board it gets the board's sheet colour and the resolved ink (default ink would vanish on it).
     // The clipboard variant (copy as Excalidraw) keeps the stored colours: it is pasted into whatever scene the user has open.
     const exportPalette = boardPalette(boardRef.current)
-    const exportItems = exportPalette.theme === 'light' ? strokesRef.current : strokesRef.current.map((item) => resolveItemForBoard(item, exportPalette))
+    const exportItems = exportPalette.theme === 'light' ? strokesRef.current : strokesRef.current.map((item) => resolveItemForBoard(item, exportPalette, strokesRef.current))
     const built = buildExcalidrawFile(exportItems, keys, sheetColorForBoard(boardRef.current, PAGE_BACKGROUND_COLORS[pageBackgroundRef.current]))
     if (built.count === 0) { showToast(excalidrawExportMessage(built, 'Saved', false)); return }
     downloadBlob(new Blob([built.text], { type: 'application/json' }), excalidrawFileName(docTitle))
@@ -6356,6 +6357,8 @@ function App() {
         {textEditor && <TextEditorOverlay
           key={`${textEditor.itemId ?? 'new'}:${textEditor.x}:${textEditor.y}`}
           editor={textEditor}
+          displayColor={resolveInk(textEditor.color, palette)}
+          dark={theme !== 'light'}
           viewport={viewportRef.current}
           measure={createTextMeasure}
           onChange={(value) => { textEditorValueRef.current = value }}

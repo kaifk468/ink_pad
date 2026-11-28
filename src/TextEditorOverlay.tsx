@@ -43,10 +43,14 @@ type TextEditorOverlayProps = {
   onCancel: () => void
   /** Desktop: Ctrl/Cmd+Shift+. and , change the size of the text being edited; returns true when it took the key. */
   onSizeKey?: (direction: 1 | -1) => boolean
+  /** The colour to type in as it draws on the board (default ink follows dark boards); missing = the stored colour. */
+  displayColor?: string
+  /** True on dark boards: the editor veil is dark so the light text stays readable. */
+  dark?: boolean
 }
 
 /** A plain textarea positioned over the canvas, so the system keyboard and handwriting input work. */
-export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommit, onCancel, onSizeKey }: TextEditorOverlayProps) {
+export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommit, onCancel, onSizeKey, displayColor, dark }: TextEditorOverlayProps) {
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const [value, setValue] = useState(editor.initialText)
   const scale = viewport.scale
@@ -110,7 +114,7 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
   return (
     <textarea
       ref={fieldRef}
-      className="text-editor"
+      className={dark ? 'text-editor text-editor-dark' : 'text-editor'}
       aria-label="Text label"
       value={value}
       spellCheck={false}
@@ -127,7 +131,7 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
         fontFamily: textFontFamily(editor.fontFamily),
         fontSize: fontSize * scale,
         lineHeight: TEXT_LINE_HEIGHT,
-        color: editor.color,
+        color: displayColor ?? editor.color,
         ...(fit?.wrap ? { overflow: 'hidden' } : {}),
       }}
       onChange={(event) => { setValue(event.target.value); onChange(event.target.value) }}

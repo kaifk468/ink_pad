@@ -156,7 +156,7 @@ test('a chalk-board document saved via createDocument keeps #202124 on its items
 test('wiring: live stroke, item drawing, minimap, cache and exports resolve for the board', async () => {
   const app = await readAppSource()
   assert.match(app, /drawLiveStrokeFrame\(\{[^}]*color: resolveInk\(liveStroke\.color, palette\)/)
-  assert.match(app, /drawItemToCanvas\(ctx, resolveItemForBoard\(item, palette\)/)
+  assert.match(app, /drawItemToCanvas\(ctx, resolveItemForBoard\(item, palette, strokesRef\.current\)/)
   assert.match(app, /drawMinimapItemsToCanvas\(.*geometry, focusRef\.current, palette\)/)
   assert.match(app, /cache\.theme === theme/)
   assert.match(app, /setBoardFill\(palette\.fill\)/)
