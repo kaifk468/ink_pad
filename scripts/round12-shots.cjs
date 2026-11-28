@@ -1,0 +1,82 @@
+const { chromium } = require('playwright')
+const out = process.argv[2]
+const fs = require('fs'); fs.mkdirSync(out, { recursive: true })
+const errors = []
+async function palette(page, text) {
+  await page.keyboard.press('Control+k'); await page.waitForTimeout(250)
+  await page.keyboard.type(text, { delay: 8 }); await page.waitForTimeout(350)
+  await page.keyboard.press('Enter'); await page.waitForTimeout(500)
+}
+;(async () => {
+  const browser = await chromium.launch()
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const page = await ctx.newPage()
+  page.on('pageerror', (e) => errors.push('pageerror ' + e.message))
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console ' + m.text()) })
+  await page.addInitScript(() => { if (!localStorage.getItem('inkpad.inputMode')) localStorage.setItem('inkpad.inputMode', 'desktop') })
+  await page.goto('http://localhost:4173/'); await page.waitForTimeout(1500)
+  await palette(page, 'Insert template'); await page.waitForTimeout(400)
+  const t = page.locator('[role="dialog"] button').filter({ hasText: /Client/ }).first()
+  if (await t.count()) await t.click(); else await page.keyboard.press('Enter')
+  await page.waitForTimeout(600); await page.keyboard.press('Escape')
+  // logo via palette search (#304)
+  await page.keyboard.press('Control+k'); await page.waitForTimeout(250); await page.keyboard.type('kafka', { delay: 8 }); await page.waitForTimeout(800)
+  await page.screenshot({ path: `${out}/desktop-palette-logo.png` })
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Control+k'); await page.waitForTimeout(250); await page.keyboard.type('Logo: Apache Kafka', { delay: 8 }); await page.waitForTimeout(600); await page.keyboard.press('Enter'); await page.waitForTimeout(600)
+  await page.screenshot({ path: `${out}/desktop-logo-selected-panel.png` })
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('p'); await page.waitForTimeout(200)
+  await page.mouse.move(300, 740); await page.mouse.down(); for (let i = 0; i < 30; i++) await page.mouse.move(300 + i * 8, 740 + Math.sin(i / 3) * 20); await page.mouse.up()
+  await page.keyboard.press('v'); await page.keyboard.press('Escape')
+  for (const c of ['Lanes', 'Notebook']) { await palette(page, `Canvas: ${c}`); await page.keyboard.press('Escape'); await page.screenshot({ path: `${out}/desktop-canvas-${c.toLowerCase()}.png` }) }
+  await palette(page, 'Canvas: Dots'); await page.keyboard.press('Escape')
+  for (const m of ['Faint', 'Bold']) { await palette(page, `Marks: ${m}`); await page.keyboard.press('Escape'); await page.screenshot({ path: `${out}/desktop-marks-${m.toLowerCase()}.png` }) }
+  await palette(page, 'Marks: Normal'); await palette(page, 'Canvas: Lanes'); await page.keyboard.press('Escape')
+  // menu: lane names
+  await page.locator('button[aria-label="Menu"]').click(); await page.waitForTimeout(500)
+  const names = ['Client', 'API', 'Services', 'Data']
+  for (let i = 0; i < 4; i++) { const inp = page.locator(`input[aria-label="Lane ${i + 1} name"]`).first(); if (await inp.count()) { await inp.scrollIntoViewIfNeeded(); await inp.fill(names[i]); await inp.press('Enter') } }
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: `${out}/desktop-menu-lanes.png` })
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await page.waitForTimeout(300)
+  await page.screenshot({ path: `${out}/desktop-lanes-named.png` })
+  await palette(page, 'Board: Chalkboard'); await page.keyboard.press('Escape')
+  await page.screenshot({ path: `${out}/desktop-chalk-lanes.png` })
+  await page.locator('button[aria-label="Menu"]').click(); await page.waitForTimeout(400)
+  const colBtn = page.locator('[aria-label="Lane direction"] button', { hasText: 'Columns' }).first(); if (await colBtn.count()) await colBtn.click()
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await page.waitForTimeout(300)
+  await page.screenshot({ path: `${out}/desktop-chalk-lanes-columns.png` })
+  await palette(page, 'Canvas: Notebook'); await page.keyboard.press('Escape')
+  await page.screenshot({ path: `${out}/desktop-chalk-notebook.png` })
+  // present slides: add page then present
+  await palette(page, 'Duplicate page').catch(() => {})
+  await palette(page, 'Present pages'); await page.waitForTimeout(500)
+  await page.screenshot({ path: `${out}/desktop-present-slides.png` })
+  await page.keyboard.press('ArrowLeft'); await page.waitForTimeout(500)
+  await page.screenshot({ path: `${out}/desktop-present-slide1.png` })
+  await page.keyboard.press('Escape'); await page.waitForTimeout(300)
+  // library new-diagram chooser
+  await palette(page, 'Library').catch(() => {}); await page.waitForTimeout(600)
+  const nb = page.locator('button', { hasText: 'New diagram' }).first(); if (await nb.count()) { await nb.click(); await page.waitForTimeout(400); await page.screenshot({ path: `${out}/desktop-new-diagram-chooser.png` }) }
+  await page.keyboard.press('Escape')
+  // tablet
+  await page.evaluate(() => localStorage.setItem('inkpad.inputMode', 'tablet'))
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.reload(); await page.waitForTimeout(1500)
+  await page.screenshot({ path: `${out}/tablet-start.png` })
+  await page.locator('button[aria-label="Menu"]').click(); await page.waitForTimeout(400)
+  const lanesTile = page.locator('.menu-panel button', { hasText: 'Lanes' }).first(); if (await lanesTile.count()) { await lanesTile.click(); await page.waitForTimeout(300) }
+  await page.screenshot({ path: `${out}/tablet-menu-lanes.png` })
+  const lc = page.locator('.menu-panel'); await lc.evaluate((el) => el.scrollTo(0, el.scrollHeight)).catch(() => {}); await page.waitForTimeout(200)
+  await page.screenshot({ path: `${out}/tablet-menu-lanes-bottom.png` })
+  await page.mouse.click(900, 700); await page.waitForTimeout(300)
+  await page.screenshot({ path: `${out}/tablet-chalk-lanes.png` })
+  await page.locator('button[aria-label="Menu"]').click(); await page.waitForTimeout(400)
+  const nbt = page.locator('.menu-panel button', { hasText: 'Notebook' }).first(); if (await nbt.count()) await nbt.click()
+  const cl = page.locator('.menu-panel button', { hasText: 'Clean' }).first(); if (await cl.count()) await cl.click()
+  await page.mouse.click(900, 700); await page.waitForTimeout(300)
+  await page.screenshot({ path: `${out}/tablet-clean-notebook.png` })
+  console.log(JSON.stringify(errors, null, 1))
+  await browser.close()
+})()

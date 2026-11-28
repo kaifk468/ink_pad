@@ -142,7 +142,8 @@ export function logoSlugFromEntry(entryId: string): string | null {
  * They are appended after the command matches, so a command never drops below a logo.
  */
 export function logoPaletteEntries(query: string, logos: readonly TechLogo[] | null): PaletteEntry[] {
-  const text = query.trim()
+  // "logo kafka" and the row's own label "Logo: Apache Kafka" search for the brand, not for the word "logo".
+  const text = query.trim().replace(/^logos?\b:?\s*/i, '')
   if (!logos || text.length < MIN_LOGO_QUERY) return []
   return searchTechLogos(text, logos, MAX_LOGO_ENTRIES).map((logo) => ({ id: `${LOGO_ENTRY_PREFIX}${logo.slug}`, label: `Logo: ${logo.title}`, group: 'Logos' }))
 }

@@ -129,3 +129,15 @@ test('wiring: the panel has Name Show / Hide, App saves one history step and tak
   assert.match(app, /const setSelectedLogoName = \(show: boolean\) => \{[\s\S]*?setLogoNameShown\(strokesRef\.current, target\.box, target\.logo, show, nextTextIdRef\.current\)[\s\S]*?saveHistory\(\)\s*if \(show\) nextTextIdRef\.current \+= 1/)
   assert.match(app, /logoName=\{\(\(\) => \{ const target = selectedLogoBox\(/)
 })
+
+test('palette logo entries: a leading "logo" / "Logo:" word (the row label itself) still finds the brand', () => {
+  const label = palette.logoPaletteEntries('kafka', TECH_LOGOS)[0].label
+  assert.equal(palette.logoPaletteEntries(label, TECH_LOGOS)[0]?.label, label)
+  assert.equal(palette.logoPaletteEntries('logo kafka', TECH_LOGOS)[0]?.label, label)
+  assert.deepEqual(palette.logoPaletteEntries('logo', TECH_LOGOS), [])
+})
+
+test('new-diagram chooser previews are not shrunk by the library icon size rule', async () => {
+  const css = await read('src/styles.css')
+  assert.match(css, /\.home-new-chooser \.bp-preview \{ flex: none; width: 100%; height: auto;/)
+})
