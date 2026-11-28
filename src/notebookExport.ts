@@ -1,5 +1,6 @@
 import type { CanvasItem } from './canvasModel'
 import { buildPdf, type PdfPageImage } from './pdfExport'
+import { ensureTechLogosFor } from './techLogos'
 import { buildSheetSvg, cropSvg, getContentBounds, svgToImageBlob } from './sheetExport'
 import { SHEET_WIDTH } from './viewport'
 
@@ -20,6 +21,7 @@ export function exportPixelRatio(width: number, height: number): number {
  * Browser only (it draws on a canvas).
  */
 export async function renderDiagramPdf(pageItems: CanvasItem[][], sheetHeight: number, sketchy = false): Promise<{ pdf: Uint8Array; pageCount: number } | null> {
+  await ensureTechLogosFor(pageItems.flat())
   const pages: PdfPageImage[] = []
   for (const items of pageItems) {
     const bounds = getContentBounds(items, { width: SHEET_WIDTH, height: sheetHeight })

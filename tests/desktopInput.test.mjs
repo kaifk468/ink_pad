@@ -337,7 +337,7 @@ test('shortcuts are not taken from text fields, dropdowns or editable text; butt
 
 test('App runs a key only outside panels, dialogs, text editing and gestures, and only after the typing check', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /overlayOpen = \(\): boolean => paletteOpenRef\.current \|\| shortcutHelpOpen \|\| templateChooserOpen \|\| mermaidOpen \|\| pageOverviewOpen \|\| filePanelOpen \|\| storagePanelOpen \|\| libraryOpen \|\| performanceDiagnosticsOpen \|\| Boolean\(textEditor\) \|\| textEditorRef\.current !== null \|\| Boolean\(classBoxEditor\)/)
+  assert.match(app, /overlayOpen = \(\): boolean => paletteOpenRef\.current \|\| shortcutHelpOpen \|\| templateChooserOpen \|\| logoDialogOpen \|\| mermaidOpen \|\| pageOverviewOpen \|\| filePanelOpen \|\| storagePanelOpen \|\| libraryOpen \|\| performanceDiagnosticsOpen \|\| Boolean\(textEditor\) \|\| textEditorRef\.current !== null \|\| Boolean\(classBoxEditor\)/)
   assert.match(app, /if \(editingBlocksCanvas\(\)\) return false/)
   assert.match(app, /const gestureActive = canvasGestureActive\(\)/)
   const gesture = app.match(/const canvasGestureActive = \(\): boolean => ([^\n]+)\n/)[1]

@@ -16,6 +16,7 @@ import { REFRESH_WINDOW_MS, driveAuth, driveExportAuth } from '../googleAuth'
 import { uploadDiagramPdf } from '../driveExport'
 import { effectiveCanvasType } from '../canvasTypes'
 import { renderDiagramPdf } from '../notebookExport'
+import { ensureTechLogosFor } from '../techLogos'
 import { copyAllBetweenBackends, createBrowserBackend, type StorageBackend } from '../storageBackend'
 import type { SaveStatus } from '../FilePanel'
 import { PAGE_BACKGROUND_COLORS } from '../pageBackground'
@@ -813,6 +814,7 @@ export function useDocuments(host: DocumentHost) {
   }
   /** Export for people: honours the transparent choice, and embeds Excalifont when an exported label uses it (never fails because of the font). */
   const getUserImageExport = async (keys?: ReadonlySet<string> | null) => {
+    await ensureTechLogosFor(hostRef.current.getItems())
     const options: ImageExportOptions = { keys, transparent: transparentExportRef.current }
     const probe = getImageExport('current', options)
     if (!probe || !probe.usesFont) return probe
@@ -821,6 +823,7 @@ export function useDocuments(host: DocumentHost) {
 
   /** Library and overview pictures are drawn from an SVG inside an <img>, which cannot see the page's fonts: embed Excalifont, or its labels fall back to the browser's "cursive" (a serif on many systems). */
   const getThumbnailExport = async (which: 'first' | number) => {
+    await ensureTechLogosFor(hostRef.current.getPageItems().flat())
     if (hostRef.current.getInputMode?.() !== 'desktop') return getImageExport(which)
     const all = which === 'first' ? hostRef.current.getPageItems()[0] : hostRef.current.getPageItems()[which]
     if (!usesExcalifont(itemsForExport(all ?? [], undefined))) return getImageExport(which)

@@ -3,6 +3,7 @@ import type { HldShape } from '../hldShapes'
 import { HLD_SHAPE_LABELS } from '../hldShapes'
 import { HLD_ENTRIES, InsertTray } from './InsertTray'
 import { MoreShapesTray } from './MoreShapesTray'
+import type { TechLogo } from '../techLogoSearch'
 import { MoreTray } from './MoreTray'
 import { DockTip } from './DockTip'
 
@@ -34,6 +35,8 @@ type ToolDockProps = {
   onInkClass: () => void
   onHldShape: (shape: HldShape) => void
   onShapes: () => void
+  /** Inserts a tech logo box at the view centre (More shapes tray on desktop, Insert tray on the tablet). */
+  onLogo: (logo: TechLogo, showName: boolean) => void
   /** Desktop mode: Select first, and Text, Shapes, Typed class and the HLD shapes are one click away instead of inside Insert. */
   desktop?: boolean
   tidyLabel: string
@@ -142,7 +145,7 @@ export function ToolDock(props: ToolDockProps) {
               {icon}<DockTip name={HLD_SHAPE_LABELS[shape]} />
             </button>
           ))}
-          <MoreShapesTray desktopTip hldActive={props.hldShapeActive} onHldShape={props.onHldShape} onSticky={props.onSticky} />
+          <MoreShapesTray desktopTip hldActive={props.hldShapeActive} onHldShape={props.onHldShape} onSticky={props.onSticky} onLogo={props.onLogo} />
         </div>
         {divider}
         {inkClass}
@@ -166,6 +169,7 @@ export function ToolDock(props: ToolDockProps) {
         shapeActive={props.shapeActive}
         hldActive={props.hldShapeActive}
         onHldShape={props.onHldShape}
+        onLogo={props.onLogo}
         onText={props.onText}
         onTextOptions={props.onTextOptions}
         onClass={props.onClass}

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { SHORTCUT_GROUPS, shortcutsInGroup } from '../desktopShortcuts'
+import { LOGO_CREDIT } from './LogoPicker'
 
 type ShortcutHelpProps = { onClose: () => void }
 
@@ -38,6 +39,7 @@ export function ShortcutHelp({ onClose }: ShortcutHelpProps) {
         ))}
         </div>
         </div>
+        <p className="logo-credit">{LOGO_CREDIT}</p>
       </section>
     </div>
   )

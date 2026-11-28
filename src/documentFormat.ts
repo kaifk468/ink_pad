@@ -2,6 +2,7 @@ import { clampCodeFontSize, cleanCodeLanguage, DEFAULT_CODE_FONT_SIZE, MAX_CODE_
 import { cleanConnectorLabel, cleanConnectorLabelFontSize, cleanConnectorLabelPosition } from './connectorLabel'
 import { cleanConnectorEndLabel } from './connectorEndLabels'
 import { MAX_CONNECTOR_BEND } from './canvasModel'
+import { isLogoSlug } from './techLogoSearch'
 import type { CodeObject, OpaqueObject, TextFontId, HldShape, CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 
 /**
@@ -403,6 +404,11 @@ function sanitizeItemFields(value: unknown): CanvasItem | null {
     const inkBox = sanitizeInkBox(value.inkBox, value.y, value.height)
     const rectangle: RectangleObject = { kind: 'rectangle', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth, ...(classBox ? { classBox } : {}), ...(inkBox ? { inkBox } : {}), ...(inkBox && HLD_SHAPE_KINDS.includes(value.hldShape as string) ? { hldShape: value.hldShape as HldShape } : {}), ...(value.ellipse === true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { ellipse: true as const } : {}), ...(value.diamond === true && value.ellipse !== true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { diamond: true as const } : {}) }
     if (value.rounded === true && !classBox && !inkBox && !rectangle.ellipse && !rectangle.diamond) rectangle.rounded = true
+    // Tech logo box: a plain rectangle with a Simple Icons slug. An unknown slug is kept (drawn as a placeholder), so a newer file survives an older build.
+    if (isLogoSlug(value.logo) && !classBox && !inkBox && !rectangle.ellipse && !rectangle.diamond) {
+      rectangle.logo = value.logo
+      if (value.logoColor === 'brand') rectangle.logoColor = 'brand'
+    }
     const rectAngle = !classBox && !inkBox && !hldShapeKept(value) ? sanitizeAngle(value.angle) : undefined
     if (rectAngle !== undefined) rectangle.angle = rectAngle
     // Hand-drawn style seed and fill colour: only on shapes that can carry them (not service, class boxes or ink class boxes).

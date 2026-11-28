@@ -119,6 +119,8 @@ type ContextPanelProps = {
   /** Desktop: align (2+ items) and distribute (3+ items). */
   /** Selected plain rectangles: Sharp / Round corners (`rounded` true when all selected are round). */
   corners?: { rounded: boolean; onChange: (rounded: boolean) => void } | null
+  /** Selected tech logo boxes: Flat (the line colour) / Brand (the logo's own colour). `brand` is true when all selected are brand-coloured. */
+  logoColor?: { brand: boolean; onChange: (brand: boolean) => void } | null
   /** "Use as default for new shapes" (one shape selected, `canSet`) and "Reset default shape style" (when a default exists). */
   newShapeDefault?: { canSet: boolean; isSet: boolean; onSet: () => void; onReset: () => void } | null
   /** Desktop: the shapes the selected boxes can change to (Change shape). */
@@ -195,7 +197,7 @@ export function ContextPanel(props: ContextPanelProps) {
   const umlOpen = relationship ? (umlChoice?.id === relationship.connectorId ? umlChoice.open : isUmlRelationship(relationship.type)) : false
   const toggleCollapsed = () => { const next = !collapsed; setCollapsed(next); writeOptionsCollapsed(browserStorage(), next) }
   const headerColor = props.showStyle ? props.color : (props.selectionColor ?? 'var(--ip-muted)')
-  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !(props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet)) && !props.flip && !props.sameSize && !props.boundaryTools) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !props.logoColor && !(props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet)) && !props.flip && !props.sameSize && !props.boundaryTools) return null
   const selectionWidthEl = (
     <>
       {props.selectionWidth && <div className="selection-width" role="group" aria-label="Outline width of the selection">
@@ -400,6 +402,17 @@ export function ContextPanel(props: ContextPanelProps) {
         <div className="routing-toggle" role="group" aria-label="Rectangle corners" title="Sharp or rounded corners for plain rectangles">
           <button type="button" className={props.corners.rounded ? '' : 'active'} aria-pressed={!props.corners.rounded} onClick={() => props.corners?.onChange(false)}>Sharp</button>
           <button type="button" className={props.corners.rounded ? 'active' : ''} aria-pressed={props.corners.rounded} onClick={() => props.corners?.onChange(true)}>Round</button>
+        </div>
+      </div>}
+    </>
+  )
+  const logoColorEl = (
+    <>
+      {props.logoColor && <div className="corners-controls logo-color-controls" role="group" aria-label="Logo colour">
+        <span className="panel-label">Logo colour</span>
+        <div className="routing-toggle" role="group" aria-label="Logo colour" title="Flat uses the line colour; Brand uses the logo's own colour">
+          <button type="button" className={props.logoColor.brand ? '' : 'active'} aria-pressed={!props.logoColor.brand} onClick={() => props.logoColor?.onChange(false)}>Flat</button>
+          <button type="button" className={props.logoColor.brand ? 'active' : ''} aria-pressed={props.logoColor.brand} onClick={() => props.logoColor?.onChange(true)}>Brand</button>
         </div>
       </div>}
     </>
@@ -736,7 +749,7 @@ export function ContextPanel(props: ContextPanelProps) {
     <>
       {props.showStyle && <>{colourEl}{widthEl}</>}
       {selectionWidthEl}{lineStyleEl}{arrowheadsEl}{layerEl}{groupEl}{changeShapeEl}{selectionToolsEl}{movePagesEl}{arrangeEl}{flipEl}{sameSizeEl}{boundaryToolsEl}
-      {selColorEl}{fillEl}{newShapeDefaultEl}{cornersEl}{rotationEl}{codeEl}{eraserEl}{fontsEl}{alignEl}{connSizeEl}{textSizeEl}{clearEl}{copyEl}{deleteEl}{relationshipEl}
+      {selColorEl}{fillEl}{newShapeDefaultEl}{cornersEl}{logoColorEl}{rotationEl}{codeEl}{eraserEl}{fontsEl}{alignEl}{connSizeEl}{textSizeEl}{clearEl}{copyEl}{deleteEl}{relationshipEl}
     </>
   )
   if (!props.desktop) return <aside className="context-panel" aria-label="Tool options">{tabletBody}</aside>
@@ -744,7 +757,7 @@ export function ContextPanel(props: ContextPanelProps) {
     colour: <>{props.showStyle && colourEl}{selColorEl}</>,
     text: <>{fontsEl}{alignEl}{connSizeEl}{textSizeEl}{eraserEl}</>,
     width: <>{props.showStyle && widthEl}{selectionWidthEl}</>,
-    style: <>{lineStyleEl}{arrowheadsEl}{fillEl}{cornersEl}{codeEl}{relationshipEl}</>,
+    style: <>{lineStyleEl}{arrowheadsEl}{fillEl}{cornersEl}{logoColorEl}{codeEl}{relationshipEl}</>,
     layer: <>{layerEl}{groupEl}</>,
     arrange: <>{arrangeEl}{flipEl}{sameSizeEl}</>,
     actions: <>{clearEl}{copyEl}{deleteEl}</>,

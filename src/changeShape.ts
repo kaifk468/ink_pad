@@ -21,7 +21,7 @@ export function isHldChoice(choice: string): choice is HldShape {
 
 /** The shape of a changeable box, or null for anything that cannot change (class boxes, ink boxes that are not HLD shapes, other items). */
 export function boxShape(item: CanvasItem): { family: ShapeFamily; shape: ShapeChoice } | null {
-  if (item.kind !== 'rectangle' || item.classBox) return null
+  if (item.kind !== 'rectangle' || item.classBox || item.logo !== undefined) return null // a logo box keeps its logo: it has no other shape
   if (item.hldShape) return item.inkBox ? { family: 'hld', shape: item.hldShape } : null
   if (item.inkBox) return null
   return { family: 'plain', shape: item.diamond ? 'diamond' : item.ellipse ? 'ellipse' : 'rectangle' }

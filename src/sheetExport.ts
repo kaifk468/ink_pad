@@ -1,6 +1,8 @@
 import { lockedRedrawsAfterEraserRun, connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, strokeHeadGeometry, itemAngle, itemCenter, rotatedItemBounds } from './canvasModel'
 import { routeConnectors } from './connectorRoute'
 import { hldOutlinePath } from './hldShapes'
+import { logoFillColor, logoPlaceholderGeometry, logoPlacement, logoSvgTransform } from './logoLayout'
+import { findTechLogo } from './techLogos'
 import { isSketchyRectangle, plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokeParts } from './sketchy'
 import type { CanvasType } from './canvasTypes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
@@ -138,9 +140,22 @@ function rectangleElement(rectangle: RectangleObject): string {
   const fill = color ? `<path d="${sketchy ? sketchyRectangleShape(rectangle).fill : plainFillPath(rectangle)}" fill="${esc(color)}" stroke="none"/>` : ''
   if (sketchy) {
     const outline = `<path d="${sketchyRectangleShape(rectangle).outline}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
-    return fill + (rectangle.inkBox ? inkBoxInkElement(rectangle) : '') + outline
+    return fill + (rectangle.inkBox ? inkBoxInkElement(rectangle) : '') + outline + logoElement(rectangle)
   }
-  return fill + plainRectangleElement(rectangle)
+  return fill + plainRectangleElement(rectangle) + logoElement(rectangle)
+}
+
+/** A logo box's logo as one filled path (the same placement and colour as the canvas); a stand-in rounded square with "?" for an unknown slug. Empty for other boxes. */
+function logoElement(rectangle: RectangleObject): string {
+  if (rectangle.logo === undefined) return ''
+  const placement = logoPlacement(rectangle)
+  if (placement.size <= 0) return ''
+  const logo = findTechLogo(rectangle.logo)
+  if (logo) return `<path d="${logo.path}" transform="${logoSvgTransform(placement)}" fill="${esc(logoFillColor(rectangle, logo))}"/>`
+  const stand = logoPlaceholderGeometry(placement)
+  const color = esc(rectangle.strokeColor)
+  return `<rect x="${n(stand.x)}" y="${n(stand.y)}" width="${n(stand.size)}" height="${n(stand.size)}" rx="${n(stand.radius)}" fill="none" stroke="${color}" stroke-width="${n(Math.max(1.5, stand.size * 0.04))}" opacity="0.55"/>`
+    + `<text x="${n(stand.x + stand.size / 2)}" y="${n(stand.y + stand.size / 2 + stand.fontSize * 0.04)}" font-family="sans-serif" font-size="${n(stand.fontSize)}" font-weight="600" text-anchor="middle" dominant-baseline="central" fill="${color}" opacity="0.55">?</text>`
 }
 
 function plainRectangleElement(rectangle: RectangleObject): string {

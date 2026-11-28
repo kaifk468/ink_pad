@@ -119,7 +119,7 @@ test('tablet is unchanged: plain aside, original block order and the original ta
   const body = panel.slice(panel.indexOf('const tabletBody'), panel.indexOf("if (!props.desktop) return"))
   const order = [...body.matchAll(/\{(\w+El)\}/g)].map((m) => m[1])
   assert.deepEqual(order, ['colourEl', 'widthEl', 'selectionWidthEl', 'lineStyleEl', 'arrowheadsEl', 'layerEl', 'groupEl', 'changeShapeEl', 'selectionToolsEl', 'movePagesEl', 'arrangeEl', 'flipEl', 'sameSizeEl', 'boundaryToolsEl',
-    'selColorEl', 'fillEl', 'newShapeDefaultEl', 'cornersEl', 'rotationEl', 'codeEl', 'eraserEl', 'fontsEl', 'alignEl', 'connSizeEl', 'textSizeEl', 'clearEl', 'copyEl', 'deleteEl', 'relationshipEl'])
+    'selColorEl', 'fillEl', 'newShapeDefaultEl', 'cornersEl', 'logoColorEl', 'rotationEl', 'codeEl', 'eraserEl', 'fontsEl', 'alignEl', 'connSizeEl', 'textSizeEl', 'clearEl', 'copyEl', 'deleteEl', 'relationshipEl'])
   // The desktop header and collapse state never reach the tablet branch.
   assert.ok(panel.indexOf("if (!props.desktop) return") < panel.indexOf('className="options-header"'))
   assert.match(panel, /useState\(\(\) => \(props\.desktop \? readOptionsCollapsed\(browserStorage\(\)\) : false\)\)/)

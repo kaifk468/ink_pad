@@ -4,17 +4,21 @@ import type { HldShape } from '../hldShapes'
 import { HLD_ENTRIES, MORE_HLD_ENTRIES } from './InsertTray'
 import { DockTip } from './DockTip'
 import { searchShapes } from '../shapeSearch'
+import { LogoPicker } from './LogoPicker'
+import type { TechLogo } from '../techLogoSearch'
 
 type MoreShapesTrayProps = {
   hldActive: HldShape | null
   onHldShape: (shape: HldShape) => void
   onSticky: () => void
+  /** Inserts a tech logo box (with its name label when the second argument is true). */
+  onLogo: (logo: TechLogo, showName: boolean) => void
   /** Desktop dock: icon-only button with a hover/focus tooltip instead of a label and native title. */
   desktopTip?: boolean
 }
 
 /** Desktop dock: one "More shapes" button that opens a small grid of the extra HLD shapes (same popover style as More). */
-export function MoreShapesTray({ hldActive, onHldShape, onSticky, desktopTip }:MoreShapesTrayProps) {
+export function MoreShapesTray({ hldActive, onHldShape, onSticky, onLogo, desktopTip }:MoreShapesTrayProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
@@ -88,6 +92,8 @@ export function MoreShapesTray({ hldActive, onHldShape, onSticky, desktopTip }:M
         {matches.some((match) => match.id === 'sticky') && <button className="insert-entry" type="button" aria-label="Sticky note" title="Add a yellow sticky note at the pointer and type in it (N)" onClick={() => { onSticky(); setOpen(false) }}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v10l-5 5H5z"/><path d="M14 19.5v-5h5"/></svg><span>Sticky note{stickyAlias && <small className="shape-search-alias">{stickyAlias}</small>}</span>
         </button>}
+        {!searching && <div className="insert-tray-heading">Tech logos</div>}
+        <LogoPicker autoFocus={false} externalQuery={searching ? query : undefined} onInsert={(logo, showName) => { onLogo(logo, showName); setOpen(false) }} />
       </div>}
     </div>
   )

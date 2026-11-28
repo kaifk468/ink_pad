@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { HLD_SHAPE_LABELS } from '../hldShapes'
 import type { HldShape } from '../hldShapes'
 import { searchShapes } from '../shapeSearch'
+import { LogoPicker } from './LogoPicker'
+import type { TechLogo } from '../techLogoSearch'
 
 type InsertTrayProps = {
   textActive: boolean
@@ -14,6 +16,8 @@ type InsertTrayProps = {
   onClass: () => void
   onShapes: () => void
   onSticky: () => void
+  /** Inserts a tech logo box in the middle of the view (with its name label when the second argument is true). */
+  onLogo: (logo: TechLogo, showName: boolean) => void
 }
 
 export const HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint: string }> = [
@@ -44,7 +48,7 @@ export const MORE_HLD_ENTRIES: Array<{ shape: HldShape; icon: JSX.Element; hint:
 ]
 
 /** The Insert button and the tray that opens upward from the bottom dock. Entries reuse the existing tool handlers. */
-export function InsertTray({ textActive, classActive, shapeActive, hldActive, onHldShape, onText, onTextOptions, onClass, onShapes, onSticky }: InsertTrayProps) {
+export function InsertTray({ textActive, classActive, shapeActive, hldActive, onHldShape, onText, onTextOptions, onClass, onShapes, onSticky, onLogo }: InsertTrayProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
@@ -135,6 +139,7 @@ export function InsertTray({ textActive, classActive, shapeActive, hldActive, on
             )
           })}
         </div>}
+        {searching && <LogoPicker touch externalQuery={query} onInsert={(logo, showName) => { onLogo(logo, showName); setOpen(false) }} />}
         {!searching && <>
         <div className="insert-tray-heading">Basic</div>
         <button className={`insert-entry${textActive ? ' selected' : ''}`} type="button" aria-label="Text" aria-pressed={textActive} title="Tap the sheet with the S Pen to type a label; tap a label to edit it" onClick={choose(onText)}>
@@ -163,6 +168,8 @@ export function InsertTray({ textActive, classActive, shapeActive, hldActive, on
             </button>
           ))}
         </div>
+        <div className="insert-tray-heading">Tech logos</div>
+        <LogoPicker touch onInsert={(logo, showName) => { onLogo(logo, showName); setOpen(false) }} />
         </>}
       </div>}
     </div>

@@ -65,7 +65,7 @@ function isOwnLabel(box: RectangleBounds, text: TextObject): boolean {
  * (only its edge band and its label are), so a boundary around a group never blocks the marquee, deselect or the items beneath.
  */
 export function isContainerBox(items: readonly CanvasItem[], box: RectangleObject): boolean {
-  if (box.classBox || box.inkBox || box.hldShape || box.ellipse || box.diamond || box.angle) return false
+  if (box.classBox || box.inkBox || box.hldShape || box.ellipse || box.diamond || box.angle || box.logo !== undefined) return false // a logo box holds its own name label, never other items
   if (box.fillColor && !/^(none|transparent)$/i.test(box.fillColor) && !/^#[0-9a-f]{6}00$/i.test(box.fillColor)) return false
   for (const item of items) {
     if (item === box || item.kind === 'opaque' || item.kind === 'stroke' || item.kind === 'connector' || item.locked) continue

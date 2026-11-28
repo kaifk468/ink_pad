@@ -301,6 +301,20 @@ button { font: inherit; }
 .more-shapes-tray { width: 288px; }
 .shape-search-field { box-sizing: border-box; width: 100%; min-height: 40px; margin-bottom: 6px; padding: 0 12px; border: 1px solid #d6dae2; border-radius: 10px; background: #fff; color: #343944; font-size: 14px; }
 .shape-search-field:focus { outline: 2px solid #354fc2; outline-offset: 0; }
+.logo-picker { display: flex; flex-direction: column; }
+.logo-name-toggle { display: flex; align-items: center; gap: 8px; margin: 0 2px 6px; color: #5b6070; font-size: 12px; font-weight: 600; cursor: pointer; }
+.logo-name-toggle input { width: 16px; height: 16px; margin: 0; accent-color: var(--ip-accent, #354fc2); }
+.logo-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; max-height: 232px; overflow-y: auto; overscroll-behavior: contain; }
+.logo-button { display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0; border: 1px solid transparent; border-radius: 10px; background: transparent; color: #343944; cursor: pointer; }
+.logo-button svg { width: 26px; height: 26px; fill: currentColor; stroke: none; }
+.logo-button:hover { background: #f1f2f5; }
+.logo-button:focus-visible { outline: 2px solid #354fc2; outline-offset: -2px; }
+.logo-credit { margin: 8px 4px 0; color: #6a707c; font-size: 11px; line-height: 1.35; }
+.shortcut-help .logo-credit { margin: 10px 18px 14px; }
+.logo-dialog { width: min(420px, calc(100vw - 32px)); padding-bottom: 12px; }
+.logo-dialog .logo-picker { padding: 0 14px; }
+.logo-dialog .logo-grid { grid-template-columns: repeat(6, 1fr); max-height: 300px; }
+.logo-picker-touch .logo-button { min-height: 48px; }
 .shape-search-empty { padding: 12px 10px; color: #6a707c; font-size: 13px; }
 .insert-shape-results { display: flex; flex-direction: column; }
 .insert-entry span { display: flex; flex-direction: column; min-width: 0; }

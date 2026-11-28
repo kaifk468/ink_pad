@@ -13,6 +13,7 @@ import type { MinimapGeometry } from '../viewport'
 import { isSketchyRectangle } from '../sketchy'
 import { drawSketchyConnector, fillRectangle, strokeSketchyRectangle, strokeSketchyStroke } from './sketchyRender'
 import { drawCode, drawOpaque } from './codeRenderer'
+import { drawLogo } from './logoRender'
 import { FOCUS_FADE_ALPHA } from '../focusMode'
 import { getBoardFill, resolveItemForBoard } from '../boardColors'
 import type { BoardPalette } from '../boardStyle'
@@ -326,6 +327,7 @@ export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
     ctx.roundRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, roundedCornerRadius(rectangle.width, rectangle.height))
     ctx.stroke()
   } else ctx.strokeRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height)
+  if (rectangle.logo !== undefined) drawLogo(ctx, rectangle)
   ctx.restore()
 }
 

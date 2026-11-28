@@ -94,6 +94,10 @@ import { diagramIdFromEntry, diagramPaletteEntries, shortcutEntryId, shortcutPal
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
 import { MermaidDialog } from './app/MermaidDialog'
+import { LogoDialog } from './app/LogoDialog'
+import { buildLogoItems, logoColorChoice, setLogoColor } from './logoLayout'
+import { subscribeTechLogos } from './techLogos'
+import type { TechLogo } from './techLogoSearch'
 import { buildExcalidrawItems, excalidrawInsertMessage, isExcalidrawText } from './excalidrawImport'
 import type { ExcalidrawResult } from './excalidrawImport'
 import { isOwnClipboardText } from './systemPaste'
@@ -1024,6 +1028,17 @@ function App() {
   /** Corners: rounds or squares every selected unlocked plain rectangle. One undo step; nothing happens when none would change. */
   const setSelectedCorners = (rounded: boolean) => {
     const next = setRoundedCorners(strokesRef.current, currentSelectionKeys(), rounded)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    scheduleAutosave()
+  }
+
+  const setSelectedLogoColor = (brand: boolean) => {
+    const next = setLogoColor(strokesRef.current, currentSelectionKeys(), brand)
     if (next === strokesRef.current) return
     saveHistory()
     strokesRef.current = next
@@ -3247,6 +3262,8 @@ function App() {
     fonts?.addEventListener?.('loadingdone', refresh)
     return () => fonts?.removeEventListener?.('loadingdone', refresh)
   }, [])
+  // The tech logo table is a lazily loaded chunk: logos draw as placeholders until it arrives, then the page repaints (dropping the cached ink layer).
+  useEffect(() => subscribeTechLogos(() => { historyCacheRef.current = null; renderAllRef.current() }), [])
 
   /** Sets the page height (ref first, so the very next draw uses it) and keeps the view inside the new page. */
   const applySheetHeight = (next: number) => {
@@ -5309,6 +5326,13 @@ function App() {
   const insertTemplate = (id: string): boolean => insertTemplateItems(buildTemplate(id))
   // "My templates" use the same path: the saved items are plain canvas items with local ids, so pasteItems gives them fresh ones.
   const insertUserTemplate = (id: string): boolean => insertTemplateItems(userTemplates.find((template) => template.id === id)?.items ?? null)
+  // Insert logo: a logo box (and its name label) goes through the template path, centred in the view at its own size, one undo step; only the box is selected afterwards.
+  const insertLogo = (logo: TechLogo, showName: boolean): boolean => {
+    const boxId = nextRectangleIdRef.current
+    if (!insertTemplateItems(buildLogoItems(logo, color, showName), null, false)) return false
+    applySelectionState(normalizeSelection([`rectangle:${boxId}`]))
+    return true
+  }
   const insertTemplateItems = (items: CanvasItem[] | null, at: Point | null = null, fitToView = true, avoidOverlap = false): boolean => {
     const canvas = canvasRef.current
     setTemplateChooserOpen(false)
@@ -5775,6 +5799,7 @@ function App() {
   const [templateChooserOpen, setTemplateChooserOpen] = useState(false)
   /** Counter: the empty-page "Choose board" button bumps it and TopLeftBar opens the menu at the Board section. */
   const [menuRequest, setMenuRequest] = useState(0)
+  const [logoDialogOpen, setLogoDialogOpen] = useState(false)
   const [mermaidOpen, setMermaidOpen] = useState(false)
   // "My templates": saved on this device only (localStorage). Re-read each time the chooser opens; `templateSaveMode` opens it with the name field showing.
   const [userTemplates, setUserTemplates] = useState<UserTemplate[]>(() => loadUserTemplates())
@@ -5885,6 +5910,7 @@ function App() {
     ...DIAGRAM_TEMPLATES.map((template) => ({ id: `template:${template.id}`, label: `Template: ${template.name}`, group: 'Templates', keywords: `insert starter layout ${template.description}`, run: () => { insertTemplate(template.id) } })),
     ...(alignTargetKeys().size > 0 ? (['left', 'center', 'right'] as const).map((align) => ({ id: `align:${align}`, label: `Align text ${align === 'center' ? 'centre' : align}`, group: 'Edit', keywords: 'text label alignment justify', run: () => pickTextAlign(align) })) : []),
     { id: 'excalidraw:import', label: 'Import Excalidraw file…', group: 'Templates', keywords: 'excalidraw open diagram json import paste', run: () => excalidrawFileRef.current?.click() },
+    { id: 'logo:insert', label: 'Insert logo…', group: 'Shapes', keywords: 'tech brand icon logos simple icons kafka postgres redis docker kubernetes', run: () => setLogoDialogOpen(true) },
     { id: 'mermaid:insert', label: 'Insert from Mermaid…', group: 'Templates', keywords: 'import flowchart graph diagram text paste plantuml uml class sequence', run: () => setMermaidOpen(true) },
     { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout my templates saved', run: () => setTemplateChooserOpen(true) },
     ...(selectionKeysWithBox().size > 0 ? [{ id: 'template:save', label: 'Save selection as template…', group: 'Templates', keywords: 'my templates store reuse', run: openSaveTemplate }] : []),
@@ -6086,7 +6112,7 @@ function App() {
     goToFindMatch(matches[next])
   }
   // A panel, dialog or text editor is open: shortcuts and Desktop paste leave the canvas alone.
-  const overlayOpen = (): boolean => paletteOpenRef.current || shortcutHelpOpen || templateChooserOpen || mermaidOpen || pageOverviewOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || Boolean(textEditor) || textEditorRef.current !== null || Boolean(classBoxEditor)
+  const overlayOpen = (): boolean => paletteOpenRef.current || shortcutHelpOpen || templateChooserOpen || logoDialogOpen || mermaidOpen || pageOverviewOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || Boolean(textEditor) || textEditorRef.current !== null || Boolean(classBoxEditor)
   const editingBlocksCanvas = (): boolean => overlayOpen() || Boolean(codeEditor && liveCodeEditor())
   const canvasGestureActive = (): boolean => activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeQuickRef.current !== null
   // Shared by the keyboard commands and the Desktop paste event: an overlay or editor, an open context menu, any canvas gesture or marquee, or fingers down.
@@ -6522,6 +6548,7 @@ function App() {
           ? { value: selectionArrowheads(strokesRef.current, currentSelectionKeys()), onChange: changeArrowheads }
           : null}
         newShapeDefault={currentSelectionKeys().size > 0 || newShapeStyle ? { canSet: defaultStyleSource() !== null, isSet: newShapeStyle !== null, onSet: () => { useAsDefaultShapeStyle() }, onReset: () => { resetDefaultShapeStyle() } } : null}
+        logoColor={(() => { const choice = logoColorChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { brand: choice === 'brand', onChange: setSelectedLogoColor } })()}
         corners={(() => { const choice = cornersChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { rounded: choice === 'sharp', onChange: setSelectedCorners } })()}
         changeShape={(() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })()}
         flip={canFlipSelection(strokesRef.current, flipKeysWithLabels()) ? { onFlip: (axis) => { flipSelection(axis) } } : null}
@@ -6592,6 +6619,7 @@ function App() {
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
       {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
       <input ref={excalidrawFileRef} type="file" accept=".excalidraw,application/json" hidden onChange={(event) => { openExcalidrawFile(event.target.files?.[0]); event.target.value = '' }} />
+      {logoDialogOpen && <LogoDialog onInsert={insertLogo} onClose={() => setLogoDialogOpen(false)} />}
       {mermaidOpen && <MermaidDialog onInsert={importMermaid} onClose={() => setMermaidOpen(false)} />}
       {templateChooserOpen && <TemplateChooser onChoose={insertTemplate} onClose={() => setTemplateChooserOpen(false)} onMermaid={() => { setTemplateChooserOpen(false); setMermaidOpen(true) }} userTemplates={userTemplates} onChooseUser={insertUserTemplate} onDeleteUser={deleteUserTemplate} canSave={selectedItemCount > 0 || hasSelectedRectangle} startSaving={templateSaveMode} onSave={saveSelectionAsTemplate} />}
       <ZoomControls desktop={inputMode === 'desktop'} hasSelection={currentSelectionKeys().size > 0} onZoomChoice={applyZoomChoice} zoomPercent={zoomPercent} locked={zoomLockActive} onToggleLock={() => updateNavigationSettings({ zoomLocked: !zoomLockActive })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
@@ -6610,6 +6638,7 @@ function App() {
         inkClassActive={classMode && inkClassTool && hldShapeTool === null}
         hldShapeActive={classMode && inkClassTool ? hldShapeTool : null}
         onHldShape={toggleHldShapeTool}
+        onLogo={insertLogo}
         shapeActive={shapeMode}
         shapeTool={shapeTool}
         onShapeTool={toggleShapeDrawTool}
