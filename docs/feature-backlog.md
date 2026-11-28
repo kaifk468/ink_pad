@@ -775,16 +775,16 @@ Canvas work is still **in progress** (round 11 built board styles, Grid / Isomet
 ### Candidates (problem · who/how often · benefit · risk · size · decision)
 | # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
 |---|---|---|---|---|---|---|---|
-| 296 | Swimlane canvas (rows or columns, 2-8 lanes, header strip, optional lane names) (was #280) | Lanes drawn by hand for flows / sequences | LLD and flow users, often | high | medium (new page field, every renderer) | L | **picked** |
-| 297 | Boxes stay inside lanes (drop nudge, toggle in lane settings) | Boxes drift across lane borders | lanes users, every move | medium-high | low-medium (move end only) | M | **picked** |
-| 298 | Notebook canvas: ruled lines with a margin line and a top margin | Lined paper without the notebook margin | tablet note takers, often | medium | low (CSS layer) | S | **picked** |
-| 299 | Ruled-line text helper: new labels sit on the ruled line on Lined / Notebook / Cornell (was #282) | Typed notes float between lines | lined users, every label | medium | medium (text placement) | M | **picked** |
-| 300 | Mark strength Faint / Normal / Bold for dots and lines (per diagram) | Marks vanish on projectors or feel loud on a tablet | screen sharers, sometimes | medium | low | S | **picked** |
-| 301 | Chalk texture (grain) on the chalkboard (was #284) | The chalkboard looks flat | dark-board users | low-medium | low (cached CSS tile) | S | **picked** |
-| 302 | New-diagram menu with canvas and board choice | Canvas and board only after the diagram is open | everyone, every new diagram | high | low | M | **picked** |
-| 303 | Present pages as slides (arrow keys / buttons step pages, each page fitted) (was #285) | Presenting pages needs the page strip and manual zoom | interviews and talks | medium-high | low-medium (keys in present mode) | M | **picked** |
-| 304 | Logo search in the command palette (was #289) + one "Bigger text" entry | Inserting a logo always opens the dialog | desktop HLD users | medium | low | S | **picked** |
-| 305 | Logo box name Show / Hide after insert (round 11 follow-up) | Name label can only be deleted or retyped | logo users | medium | low | S | **picked** |
+| 296 | Swimlane canvas (rows or columns, 2-8 lanes, header strip, optional lane names) (was #280) | Lanes drawn by hand for flows / sequences | LLD and flow users, often | high | medium (new page field, every renderer) | L | **done** b1be080, 3a40a3d |
+| 297 | Boxes stay inside lanes (drop nudge, toggle in lane settings) | Boxes drift across lane borders | lanes users, every move | medium-high | low-medium (move end only) | M | **done** cd21f77 |
+| 298 | Notebook canvas: ruled lines with a margin line and a top margin | Lined paper without the notebook margin | tablet note takers, often | medium | low (CSS layer) | S | **done** b1be080 |
+| 299 | Ruled-line text helper: new labels sit on the ruled line on Lined / Notebook / Cornell (was #282) | Typed notes float between lines | lined users, every label | medium | medium (text placement) | M | **done** c7ed50b, 3a40a3d |
+| 300 | Mark strength Faint / Normal / Bold for dots and lines (per diagram) | Marks vanish on projectors or feel loud on a tablet | screen sharers, sometimes | medium | low | S | **done** b1be080, 3a40a3d |
+| 301 | Chalk texture (grain) on the chalkboard (was #284) | The chalkboard looks flat | dark-board users | low-medium | low (cached CSS tile) | S | **done** 9498ca4 |
+| 302 | New-diagram menu with canvas and board choice | Canvas and board only after the diagram is open | everyone, every new diagram | high | low | M | **done** d6f39e9, 3a40a3d, f2559c0 |
+| 303 | Present pages as slides (arrow keys / buttons step pages, each page fitted) (was #285) | Presenting pages needs the page strip and manual zoom | interviews and talks | medium-high | low-medium (keys in present mode) | M | **done** a6f65bb, 3a40a3d |
+| 304 | Logo search in the command palette (was #289) + one "Bigger text" entry | Inserting a logo always opens the dialog | desktop HLD users | medium | low | S | **done** 27896bb, f2559c0 |
+| 305 | Logo box name Show / Hide after insert (round 11 follow-up) | Name label can only be deleted or retyped | logo users | medium | low | S | **done** 27896bb, 3a40a3d |
 | 306 | Fixed page sizes A4 / 16:9 (was #278) | Printable notes, slides | sometimes | medium | high (sheet size is global: bounds, minimap, export, growth) | L | idea (needs its own round) |
 | 307 | Slide frame guides (16:9 outlines on the sheet) | Fit content to a slide | presenters | medium | low | S | idea (after present mode is used) |
 | 308 | Per-lane colour tints | Distinguish lanes | lanes users | low-medium | low | S | idea |
@@ -826,3 +826,17 @@ Canvas work is still **in progress** (round 11 built board styles, Grid / Isomet
 303. **Slides**: in present mode (Alt+Z, or palette "Present pages") → / PageDown / Space go to the next page and ← / PageUp to the previous one, each page zoomed to fit its content; ‹ › buttons and "2 / 5" show on screen for the tablet; Esc leaves present mode.
 304. **Logo in palette**: typing "kafka" in Ctrl+K lists "Logo: Apache Kafka"; Enter inserts it with its name; the palette has a single "Bigger text" entry.
 305. **Logo name toggle**: with a logo box selected the options panel shows "Name: Show / Hide"; Hide removes its name label, Show adds it back under the box; one undo step each.
+
+### Round 12 result (2026-11-28)
+All 10 picked items built (#296-#305). Sonnet agents in parallel worktrees: lanes + notebook + mark strength (foundation), new-diagram chooser, slides, logo palette + name toggle, chalk texture; then lane fitting + ruled text on top. Commits b1be080..f2559c0 (cherry-picked; one conflict in useDocuments blankDocument and one in the sheet-layer JSX, resolved by union). The UI job's round 7 (logo dialog polish) was merged in (f47996f).
+
+Independent Opus review: 0 high, 2 medium (exports / thumbnails cropped the lane headers and names; File panel "New" copied lane names), 7 low (lane names shortened without a lossy flag; `lanes` saved after switching away; Space conflicted with Space-pan in present mode and held keys re-fitted; per-frame marks blending in renderAll; logo name labels matched by group; double-click Text did not snap to the ruled line; "New diagram here" ignored the remembered choice). All fixed in 3a40a3d; Space is no longer a slide key. Not fixed: fractional lane tile sizes (1500/7) may drift a few units on screen on a 3000-unit sheet (device check). Walk (headless Chromium, desktop 1440x900 and tablet 1280x800): palette did not find a logo when typing its own row label; the chooser previews were 20 px (a library icon rule); both fixed in f2559c0. Screenshots: docs/ui-shots/2026-11-28-r12/ (script scripts/round12-shots.cjs).
+
+Decisions added: `lanes` is written only while the canvas is Lanes (or the canvas word is unknown); names stay in memory for the session, so switching back restores them until reload. Notebook keeps ruled lines above its header line (y 96) instead of a blank top margin. Slides respect a locked zoom (no fit). Logo name label = text equal to the brand name whose centre is inside the box.
+
+Canvas work status: **in progress**. Built so far: board styles, Grid / Isometric / Cornell / Lanes / Notebook, mark strength, chalk texture, logo library, new-diagram chooser, lane fitting, ruled text. Next canvas candidates: fixed page sizes #306 (own round), slide frame guides #307, per-lane tints #308, lane header editing on the canvas #309, dark UI chrome #311 (UI job), export one PNG per page #325.
+
+Follow-ups:
+- Lane fitting is not applied to quick-create boxes, palette / template inserts, paste or resize.
+- Tablet: lane name fields, stepper and the slide ‹ › control need the device; chalk grain at tablet DPR and zoom.
+- Ctrl+N / File panel "New" still copy the current page style (not the chooser's remembered choice).
