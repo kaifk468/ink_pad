@@ -37,6 +37,8 @@ import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserSta
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
 import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
+import { boardFieldsFor, type BoardStyleId } from './boardStyle'
+import { canvasFieldsFor, type CanvasType } from './canvasTypes'
 import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
@@ -479,6 +481,14 @@ function App() {
   const pageSpacingRef = useRef(pageSpacing)
   /** Hand-drawn style of the open diagram (saved in the file; off by default). */
   const [sketchy, setSketchy] = useState(false)
+  /** Board style theme of this diagram ('dark' | 'chalk' | unknown from a newer InkPad; undefined = light). Saved per diagram. */
+  const [board, setBoard] = useState<string | undefined>(undefined)
+  const boardRef = useRef<string | undefined>(undefined)
+  boardRef.current = board
+  /** Canvas type beyond the template ('grid' | 'isometric' | 'cornell' | unknown; undefined = the template). Saved per diagram. */
+  const [pageCanvas, setPageCanvas] = useState<string | undefined>(undefined)
+  const pageCanvasRef = useRef<string | undefined>(undefined)
+  pageCanvasRef.current = pageCanvas
   const sketchyRef = useRef(false)
   sketchyRef.current = sketchy
   pageSpacingRef.current = pageSpacing
@@ -510,7 +520,7 @@ function App() {
     getItems: () => strokesRef.current,
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
     getPageNames: () => pagesRef.current.map((slot) => slot.name ?? ''),
-    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current }),
+    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current, board: boardRef.current, canvas: pageCanvasRef.current }),
     getInputMode: () => inputModeRef.current,
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null || liveCodeEditor(),
     loadDocument: (loaded, startPage) => {
@@ -540,6 +550,10 @@ function App() {
       setPageSpacing(loaded.page.spacing ?? 'standard')
       sketchyRef.current = loaded.page.sketchy === true
       setSketchy(loaded.page.sketchy === true)
+      boardRef.current = loaded.page.board
+      setBoard(loaded.page.board)
+      pageCanvasRef.current = loaded.page.canvas
+      setPageCanvas(loaded.page.canvas)
       setPageTemplate(loaded.page.template)
       setPageBackground(loaded.page.background)
       // A saved height, grown if the content reaches past it (never shrunk).
@@ -2389,6 +2403,23 @@ function App() {
     setSketchy(turningOn)
   }
 
+  /** Board style picker: sets the board theme and the hand-drawn style together. Never rewrites any item colour. */
+  const chooseBoardStyle = (style: BoardStyleId, dark: boolean) => {
+    const next = boardFieldsFor(style, dark)
+    if (next.sketchy !== sketchyRef.current) toggleSketchy()
+    boardRef.current = next.board
+    setBoard(next.board)
+  }
+
+  /** Canvas type picker: sets the template and the additive canvas field together. Drawings never move. */
+  const chooseCanvasType = (type: CanvasType) => {
+    const next = canvasFieldsFor(type)
+    pageCanvasRef.current = next.canvas
+    setPageCanvas(next.canvas)
+    pageTemplateRef.current = next.template
+    setPageTemplate(next.template)
+  }
+
   const rotatableForPanel = soleRotatable()
   const rotationPanel = rotatableForPanel
     ? { degrees: Math.round((itemAngle(rotatableForPanel) * 180) / Math.PI), onAlign: alignSelectionToLine, onReset: () => setSelectedItemAngle(0) }
@@ -3430,6 +3461,12 @@ function App() {
     renderAll()
     scheduleAutosave()
   }, [pageBackground, renderAll])
+
+  useEffect(() => {
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+  }, [board, pageCanvas, renderAll])
 
 
   useEffect(() => {
@@ -6382,7 +6419,11 @@ function App() {
           title={docTitle}
           onRenameTitle={renameDiagram}
           pageTemplate={pageTemplate}
-          onPageTemplate={setPageTemplate}
+          onPageTemplate={(value) => chooseCanvasType(value)}
+          pageCanvas={pageCanvas}
+          onCanvasType={chooseCanvasType}
+          board={board}
+          onBoardStyle={chooseBoardStyle}
           pageSpacing={pageSpacing}
           onPageSpacing={setPageSpacing}
           sketchy={sketchy}

@@ -29,7 +29,12 @@ export type InkPadDocument = {
   createdAt: string
   updatedAt: string
   /** `spacing` is written only when it is not the standard one; `sheetHeight` only when the page has grown past its first height. */
-  page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: true }
+  /**
+   * `board` (board style theme: 'dark' or 'chalk'; missing = light) and `canvas` (canvas type beyond the template:
+   * 'grid', 'isometric', 'cornell'; missing = the template) are written only when set. Unknown values from a newer
+   * InkPad are kept as they are (short identifiers) so a re-save never drops them; this build draws them as the default.
+   */
+  page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: true; board?: string; canvas?: string }
   /** Optional page names, one per page ('' = unnamed). Written only when at least one page has a name. */
   pageNames?: string[]
   /** `items` is page 1. Pages 2 and on, only when the diagram has more than one page. */
@@ -48,6 +53,10 @@ export type DocumentInput = {
   sheetHeight?: number
   /** Hand-drawn style for the whole diagram; written only when true. */
   sketchy?: boolean
+  /** Board style theme ('dark', 'chalk', or an unknown identifier from a newer InkPad); written only when set. */
+  board?: string
+  /** Canvas type beyond the template ('grid', 'isometric', 'cornell', or an unknown identifier); written only when set. */
+  canvas?: string
   /** Page 1. */
   items: CanvasItem[]
   /** Pages 2 and on. */
@@ -83,6 +92,18 @@ const MAX_FONT_SIZE = 400
 export const DEFAULT_DOCUMENT_TITLE = 'Untitled diagram'
 export const MAX_PAGE_NAME_LENGTH = 40
 
+/**
+ * A page setting word (`board`, `canvas`) as stored: a short lower-case identifier, or undefined. Values this build does
+ * not know are kept (a newer InkPad may have written them); only non-identifiers are dropped.
+ */
+export function cleanPageWord(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(value) ? value : undefined
+}
+function pageWord<K extends 'board' | 'canvas'>(key: K, value: unknown): { [P in K]?: string } {
+  const word = cleanPageWord(value)
+  return (word ? { [key]: word } : {}) as { [P in K]?: string }
+}
+
 /** A page name as stored: control characters removed, spaces collapsed, trimmed, at most 40 characters. Anything that is not text is no name. */
 export function cleanPageName(value: unknown): string {
   return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_PAGE_NAME_LENGTH).trim() : ''
@@ -110,7 +131,7 @@ export function createDocument(input: DocumentInput, now = new Date().toISOStrin
     title: cleanTitle(input.title),
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
-    page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}), ...grownSheetHeight(input.sheetHeight), ...(input.sketchy === true ? { sketchy: true as const } : {}) },
+    page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}), ...grownSheetHeight(input.sheetHeight), ...(input.sketchy === true ? { sketchy: true as const } : {}), ...pageWord('board', input.board), ...pageWord('canvas', input.canvas) },
     ...(names ? { pageNames: names } : {}),
     items: input.items.map(copy),
     ...(extraPages.length > 0 ? { pages: extraPages.map((items) => ({ items: items.map(copy) })) } : {}),
@@ -152,11 +173,11 @@ export function documentPageCount(document: InkPadDocument): number {
 }
 
 /** An open diagram's content for "did anything change since the last save" checks. */
-export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; items: CanvasItem[]; extraPages?: CanvasItem[][]; pageNames?: string[] }
+export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; board?: string; canvas?: string; items: CanvasItem[]; extraPages?: CanvasItem[][]; pageNames?: string[] }
 
 export function sameSignature(a: DocumentSignature | null, b: DocumentSignature | null): boolean {
   if (!a || !b) return false
-  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || (a.sheetHeight ?? 1500) !== (b.sheetHeight ?? 1500) || (a.sketchy === true) !== (b.sketchy === true) || a.items.length !== b.items.length) return false
+  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || (a.sheetHeight ?? 1500) !== (b.sheetHeight ?? 1500) || (a.sketchy === true) !== (b.sketchy === true) || cleanPageWord(a.board) !== cleanPageWord(b.board) || cleanPageWord(a.canvas) !== cleanPageWord(b.canvas) || a.items.length !== b.items.length) return false
   for (let index = 0; index < a.items.length; index += 1) if (a.items[index] !== b.items[index]) return false
   const aPages = a.extraPages ?? []
   const bPages = b.extraPages ?? []
@@ -207,7 +228,7 @@ export function documentFileName(title: string): string {
 const migrations: Record<number, (raw: Record<string, unknown>) => Record<string, unknown>> = {}
 
 const KNOWN_DOCUMENT_KEYS = new Set(['format', 'version', 'title', 'createdAt', 'updatedAt', 'page', 'items', 'pages', 'pageNames'])
-const KNOWN_PAGE_KEYS = new Set(['template', 'background', 'spacing', 'sheetHeight', 'sketchy'])
+const KNOWN_PAGE_KEYS = new Set(['template', 'background', 'spacing', 'sheetHeight', 'sketchy', 'board', 'canvas'])
 const lossyParses = new WeakSet<object>()
 
 /** True when the document came from parseDocument and the parse dropped damaged items or fields this version does not know, so saving it again would lose data. */
@@ -265,6 +286,8 @@ export function parseDocument(text: string): ParseResult {
         ...(page.spacing === 'narrow' || page.spacing === 'wide' ? { spacing: page.spacing } : {}),
         ...grownSheetHeight(page.sheetHeight),
         ...(page.sketchy === true ? { sketchy: true as const } : {}),
+        ...pageWord('board', page.board),
+        ...pageWord('canvas', page.canvas),
       },
       ...(names ? { pageNames: names } : {}),
       items: finalItems,

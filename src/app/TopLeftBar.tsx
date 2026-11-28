@@ -3,6 +3,8 @@ import type { StorageInfo } from './useDocuments'
 import { PAGE_BACKGROUND_COLORS, type PageBackground } from '../pageBackground'
 import { titleToCommit } from '../documentFormat'
 import type { PageSpacing, PageTemplate } from '../pageTemplates'
+import type { BoardStyleId } from '../boardStyle'
+import type { CanvasType } from '../canvasTypes'
 import type { InputMode } from '../desktopInput'
 import { DesktopMenuSheet } from './DesktopMenuSheet'
 
@@ -18,6 +20,12 @@ export type TopLeftBarProps = {
   onRenameTitle: (title: string) => void
   pageTemplate: PageTemplate
   onPageTemplate: (value: PageTemplate) => void
+  /** Canvas type beyond the template (src/canvasTypes.ts); undefined = the template. */
+  pageCanvas?: string
+  onCanvasType?: (type: CanvasType) => void
+  /** Board style theme (src/boardStyle.ts); undefined = light. With `sketchy` it gives the picked board style. */
+  board?: string
+  onBoardStyle?: (style: BoardStyleId, dark: boolean) => void
   pageSpacing: PageSpacing
   onPageSpacing: (value: PageSpacing) => void
   /** Hand-drawn style of this diagram (the menu row shows in Desktop mode only). */

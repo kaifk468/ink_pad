@@ -36,7 +36,7 @@ export type DocumentHost = {
   getPageItems: () => CanvasItem[][]
   /** The name of every page in order ('' = unnamed), same length as getPageItems. */
   getPageNames: () => string[]
-  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean }
+  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; board?: string; canvas?: string }
   /** The input mode (Desktop pictures embed Excalifont; Tablet ones stay as they were). */
   getInputMode?: () => 'tablet' | 'desktop'
   /** True while a pen/touch stroke or gesture is in progress; autosave waits for it to end. */
@@ -169,6 +169,8 @@ export function useDocuments(host: DocumentHost) {
       spacing: page.spacing,
       sheetHeight: page.sheetHeight,
       sketchy: page.sketchy,
+      board: page.board,
+      canvas: page.canvas,
       items: hostRef.current.getPageItems()[0] ?? [],
       extraPages: hostRef.current.getPageItems().slice(1),
       pageNames: hostRef.current.getPageNames(),
@@ -184,7 +186,7 @@ export function useDocuments(host: DocumentHost) {
    */
   const currentSignature = (): DocumentSignature => {
     const page = hostRef.current.getPage()
-    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, sketchy: page.sketchy, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()), pageNames: hostRef.current.getPageNames() }
+    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, sketchy: page.sketchy, board: page.board, canvas: page.canvas, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()), pageNames: hostRef.current.getPageNames() }
   }
 
   /**
@@ -439,7 +441,7 @@ export function useDocuments(host: DocumentHost) {
 
   const blankDocument = (template?: DocumentPageTemplate) => {
     const page = hostRef.current.getPage()
-    return createDocument({ template: template ?? page.template, background: page.background, spacing: page.spacing, items: [] })
+    return createDocument({ template: template ?? page.template, background: page.background, spacing: page.spacing, ...(template === undefined ? { canvas: page.canvas } : {}), items: [] })
   }
 
   const newDiagram = async (template?: DocumentPageTemplate) => {

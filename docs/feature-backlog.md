@@ -671,3 +671,76 @@ Follow-ups (ideas for the next round):
 - Curved connectors: the bend is a single sideways offset (no second control point); Excalidraw export uses 9 points with roundness.
 - Size readout does not show while moving (position) or for rotation.
 
+
+## Round 11 — 2026-11-28 (branch desktop-20x) — canvas focus starts
+
+Kaif's new focus (2026-11-28): the canvas itself. Board styles first (JojoPen-like behaviour and look, no code or assets copied), then the tech logo library, then canvas types. At least half of each round goes to canvas work until this section says it is done.
+
+### The current canvas (recorded before changing it)
+- One sheet per page, 2500 units wide, starting 1500 tall and growing downward in 500-unit steps to 3000 (`page.sheetHeight`, viewport.ts). A 5 % workspace margin around it; the grey desk (#dde0e7) shows outside. Not infinite.
+- The sheet colour, template marks and shadow are a CSS layer (`.sheet-layer`, `getSheetLayerState` in pageTemplates.ts) behind a transparent canvas, moved with the viewport transform; it is never repainted per stroke.
+- Templates: Blank / Lined / Dotted (CSS gradients, 32 units × Narrow 0.8 / Standard 1 / Wide 1.2) and five sheet tints. All saved per diagram in `page` (template, background, spacing); the last choice is also the device default for new diagrams (`inkpad.pageTemplate`, `inkpad.pageBackground`, `inkpad.pageSpacing`).
+- Pages: up to 50 per diagram; every page shares the diagram's page settings and height.
+- Hand-drawn style: `page.sketchy` per diagram, items carry `seed`.
+- Minimap: sheet colour + an overview pattern (`drawPageTemplateOverview`).
+- Export: `buildSheetSvg` draws the sheet colour and the template pattern unless Transparent is on; PNG renders that SVG; NotebookLM export uses a blank white sheet; PDF has its own renderer.
+- Grid snap (desktop): the page spacing on Dotted / Lined, 20 units on Blank.
+
+### Decisions (Kaif can reverse any of these)
+- **Board style is per diagram**, saved as the existing `sketchy` flag plus one new optional page field `board` ('dark' | 'chalk'; missing = light). Clean = plain, Sketch = sketchy, Chalkboard = `board: 'chalk'` (turns sketchy on when picked; it can still be switched off). Clean and Sketch have Light / Dark.
+- **Colour rule**: colours the user picked explicitly stay exactly as stored. Only the default ink (#202124, "Ink black") and the default white fill follow the board style, resolved at draw time; nothing in the file is rewritten when the style changes. Exports with the board background use the board colours; Transparent and NotebookLM exports (white paper) use the stored colours.
+- **Canvas type is per diagram** (like the template, spacing and sketchy style, and the one-page-size-per-diagram rule): HLD/LLD diagrams are one subject across pages, and per-page types would need per-page settings in the file and in every export. New optional page field `canvas` ('grid' | 'isometric' | 'cornell'), written together with the closest existing template (grid / isometric → dotted, Cornell → lined) so older builds show something similar. Unknown `board` / `canvas` words from a newer InkPad are kept in the file and drawn as the default.
+- Changing board style or canvas type is not an undo step (like the template and the hand-drawn switch today): picking the old one again restores it exactly, and no item changes.
+- Fixed page sizes (A4 / slide) and an infinite canvas are not in this round: the sheet size is tied to workspace bounds, the minimap, page growth and every export (hard rule: keep workspace bounds).
+
+### User journeys walked (friction found)
+1. Starting a diagram for interview practice: every board looks the same white paper; there is no dark or chalkboard look for screen sharing or late-night study, and the hand-drawn switch is a desktop-only menu row.
+2. Study notes on the tablet: lined paper exists, but no graph paper for LLD tables / class layouts, no Cornell layout for notes, no isometric dots.
+3. HLD diagrams: databases, Kafka, Redis, Kubernetes, NGINX are drawn as labelled boxes; there is no brand logo library (JojoPen and Excalidraw libraries have them).
+4. Grid snap only knows one spacing; graph paper and isometric dots would need their own snapping.
+5. Export: the board look must survive PNG/SVG; a chalkboard export with white ink on a white NotebookLM page would be unreadable.
+6. Desktop placement: holding Alt to place freely does not skip snapping; text size needs the panel.
+
+### Candidates (problem · who/how often · benefit · risk · size · decision)
+| # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
+|---|---|---|---|---|---|---|---|
+| 268 | Board styles Clean / Sketch / Chalkboard (+ Light / Dark) | One look for every board; no dark or chalk board | everyone, every diagram | high | medium (draw-time colour resolution in every renderer and export) | L | picked |
+| 269 | Board-aware pen colours (chalk swatches on dark boards) | Dark inks unreadable on chalkboard | dark-board users, every stroke | high | low | S | picked |
+| 270 | Canvas types Grid, Isometric, Cornell | Only blank / lined / dotted paper | study notes, LLD tables | high | low-medium (CSS layer, export pattern) | M | picked |
+| 271 | Canvas-aware grid snap (graph lines, isometric lattice) | Snapping ignores the paper | desktop, with snap on | medium | low | S | picked |
+| 272 | Board & canvas picker with preview tiles (desktop menu sheet, tablet menu, palette, empty-page hint) | Paper settings hidden as text segments | everyone | high | low | M | picked |
+| 273 | Board background in exports, thumbnails and minimap; Transparent uses stored colours | Exports must look like the board | everyone exporting | high | medium | M | picked |
+| 274 | Tech logo library (~100 Simple Icons, CC0) with search | HLD parts drawn as text boxes | HLD users, every design | high | medium (new optional field, bundle size) | L | picked |
+| 275 | Logo colour: flat (follows board ink) or brand | Dark logos vanish on chalk | logo users | medium | low | S | picked (with 274) |
+| 276 | Alt held while dragging skips guides, equal gaps and grid snap (#266) | Snapping fights fine placement | desktop, sometimes | medium | low | S | picked |
+| 277 | Ctrl+Shift+> / < text size keys (#51) | Text size needs the panel | desktop, often | medium | low | S | picked |
+| 278 | Fixed page sizes (A4 / A5 / 16:9) | Printable notes | sometimes | medium | high (sheet size is global) | L | idea |
+| 279 | Infinite canvas | Huge boards | sometimes | medium | high (workspace bounds rule) | L | skipped (hard rule) |
+| 280 | Swimlane canvas with lane headers boxes snap into | Sequence / flow lanes | LLD, sometimes | medium-high | medium | M | idea (next canvas round) |
+| 281 | Per-page canvas type | Mixed notebooks | rare | low | medium (format) | M | skipped (per diagram decided) |
+| 282 | Ruled-line handwriting helper (labels sit on lines) | Typed notes drift between lines | lined users | medium | medium | M | idea |
+| 283 | Custom sheet and line colours | Personal paper | rare | low | low | S | idea |
+| 284 | Chalk texture (grain) on the board | Realism | dark boards | low | low-medium (CSS image) | S | idea |
+| 285 | Present mode (pages as slides) | Interviews and talks | sometimes | medium | medium | M | idea |
+| 286 | Board templates (requirements / HLD / deep dive boards) | Interview warm-up | sometimes | medium | low | M | idea (templates exist) |
+| 287 | Dot grid toggle with snap-to-dots on the tablet pen | Neat pen boxes | tablet | medium | high (pen path) | M | skipped (pen path) |
+| 288 | Dark UI chrome to match a dark board | Bright chrome on dark board | dark-board users | medium | medium (all CSS, UI job's area) | L | idea (UI job) |
+| 289 | Logo search in the command palette | Fast logo insert | desktop | medium | low | S | idea (picker search first) |
+| 290 | Brand colour fill chips for HLD icons | Colour by vendor | rare | low | low | S | idea |
+| 291 | Size readout while moving (position) | Placement by eye | desktop | low | low | S | idea |
+| 292 | Drop-insert for multi-selection / tablet pen | Growing HLDs | sometimes | medium | medium | M | idea |
+| 293 | Obstacle-avoiding connector routing | Busy diagrams | often | high | high | L | idea |
+| 294 | Tidy my diagram button (JojoPen) | Messy boards | sometimes | medium | medium (Tidy exists for some) | M | idea |
+| 295 | Lasso expands to groups on the tablet | Group selection | tablet | low-medium | low | S | idea |
+
+### Acceptance criteria (picked items)
+268. **Board styles**: the user opens the menu, picks Clean, Sketch or Chalkboard (and Light / Dark for Clean and Sketch) and sees the sheet colour, dots / lines, default ink and default box fills change together; a box or stroke drawn with the default "Ink black" comes out chalk-white on the chalkboard without choosing a colour; items with an explicitly picked colour keep it. Reloading shows the same style. Old diagrams open as Clean. Raw stroke mode and writing feel are unchanged (the background stays a CSS layer).
+269. **Board pen colours**: on Dark / Chalkboard the pen colour swatches show board-friendly colours (chalk white, chalk yellow, pink, blue, green); the first swatch still stores the default ink so it follows the board.
+270. **Canvas types**: the user picks Grid, Isometric or Cornell and sees graph paper (minor lines with a stronger line every fifth), triangle dots, or a Cornell layout (cue column line, header line, summary line, ruled lines) on every page; spacing (Narrow / Standard / Wide) applies; nothing on the page moves.
+271. **Canvas snap**: with Snap to grid on (desktop) boxes land on graph lines on Grid and on the triangle dots on Isometric; Blank / Dots / Lined unchanged.
+272. **Picker**: the desktop menu sheet has a "Board" section with three style preview tiles, Light / Dark, and canvas preview tiles; the tablet menu has the same with touch-sized tiles; the command palette has "Board: …" and "Canvas: …" entries; the empty-page hint offers "Choose board".
+273. **Exports**: PNG / SVG / PDF include the board background and canvas marks by default; Transparent leaves the background out and draws the stored colours; NotebookLM export stays on white with stored colours; library thumbnails and the minimap show the board colour.
+274. **Logo library**: in desktop More shapes and the tablet Insert tray the user searches "kafka", "postgres", "redis" and clicks a result; an icon box with that logo and its name as a label lands on the canvas, can be moved, resized, connected, exported and saved; unknown logo ids from newer files draw as a neutral placeholder and are kept. Credits (Simple Icons, CC0, brands belong to their owners) in the help dialog.
+275. **Logo colour**: a selected logo can be switched between Flat (default; follows the board ink or the chosen colour) and Brand colour.
+276. **Alt skips snapping**: on the desktop, holding Alt while dragging or resizing turns off smart guides, equal-gap guides and grid snap for that drag.
+277. **Text size keys**: on the desktop Ctrl+Shift+> / Ctrl+Shift+< make the selected labels (or the text being edited) one step bigger / smaller; one undo step per press; listed in ? help and the palette.
