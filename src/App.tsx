@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
@@ -38,6 +38,7 @@ import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserSta
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
 import { applySheetLayer, drawPageTemplateOverview, effectiveMarks, getSheetLayerState, type MarkStrength, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
+import { chalkGrainCssUrl, chalkTextureApplies } from './chalkTexture'
 import { boardFieldsFor, boardPalette, boardStyleOf, isDarkBoard, type BoardStyleId, type BoardTheme } from './boardStyle'
 import { boardCommands } from './boardPicker'
 import { resolveInk, resolveItemForBoard, setBoardFill, setBoardInk, sheetBorderColor, sheetColorForBoard } from './boardColors'
@@ -1548,6 +1549,7 @@ function App() {
   // Board (round 11): the palette the default ink / white fill resolve to at draw time (light = identity, nothing changes).
   const palette = boardPalette(board)
   const theme = palette.theme
+  const chalkGrain = chalkTextureApplies(board) ? chalkGrainCssUrl() : null
   setConnectorLabelBackground(sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]))
   setBoardFill(palette.fill)
   setBoardInk(theme === 'light' ? null : palette.ink)
@@ -6397,7 +6399,13 @@ function App() {
   return (
     <main className={`app-shell${presentMode ? ' ui-hidden' : ''}`} data-input-mode={inputMode}>
       <section className="canvas-stage" aria-label="Drawing canvas" data-board={theme === 'light' ? undefined : theme}>
-        <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: sheetHeight }}>
+        <div
+          ref={sheetLayerRef}
+          className="sheet-layer"
+          aria-hidden="true"
+          data-board={chalkTextureApplies(board) ? 'chalk' : undefined}
+          style={{ width: SHEET_WIDTH, height: sheetHeight, ...(chalkGrain ? ({ '--chalk-grain': chalkGrain } as CSSProperties) : null) }}
+        >
           {canvasType === 'lanes' && laneHeaderLabels}
         </div>
         <div ref={eraserCursorRef} className="eraser-cursor" aria-hidden="true" />

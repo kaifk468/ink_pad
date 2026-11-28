@@ -57,6 +57,17 @@ button { font: inherit; }
 
 /* Lane names (round 12): children of the sheet layer, so their pixels are sheet units. */
 .sheet-layer .lane-label { position: absolute; white-space: nowrap; font-weight: 600; line-height: 1; opacity: .75; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; user-select: none; pointer-events: none; transform-origin: center; }
+/* Chalk texture (round 12): a tiling grain on the Chalkboard sheet only. Screen only (exports stay flat); it is a
+   pseudo-element of the sheet layer, so it never takes pointer input and the drawing canvas is untouched. */
+.sheet-layer[data-board='chalk']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: var(--chalk-grain);
+  background-size: 128px 128px;
+  opacity: .3;
+}
 
 .drawing-canvas {
   position: absolute;

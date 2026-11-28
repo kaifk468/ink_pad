@@ -104,7 +104,7 @@ test('sheet layer sits behind a transparent canvas and never receives pointer in
   const sheetIndex = appSource.indexOf('className="sheet-layer"')
   const canvasIndex = appSource.indexOf('className={`drawing-canvas')
   assert.ok(sheetIndex > 0 && sheetIndex < canvasIndex)
-  assert.match(appSource, /className="sheet-layer" aria-hidden="true" style=\{\{ width: SHEET_WIDTH, height: sheetHeight \}\}/)
+  assert.match(appSource, /className="sheet-layer"\s+aria-hidden="true"\s+data-board=\{[^}]*\}\s+style=\{\{ width: SHEET_WIDTH, height: sheetHeight,/)
   const sheetRule = stylesSource.match(/\.sheet-layer \{([^}]*)\}/)?.[1] ?? ''
   assert.match(sheetRule, /pointer-events: none;/)
   assert.match(sheetRule, /transform-origin: 0 0;/)
