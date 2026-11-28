@@ -36,7 +36,7 @@ import { MAX_PREDICTION_DISTANCE_SCREEN_PX, getPointerSamples, getPredictedPoint
 import { shouldAppendStrokeSample } from './strokeSampling'
 import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserStallSummary, type StrokeDiagnosticRow } from './performanceDiagnostics'
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
-import { applySheetLayer, drawPageTemplateOverview, effectiveMarks, getSheetLayerState, type MarkStrength, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
+import { applySheetLayer, drawPageTemplateOverview, effectiveMarks, getSheetLayerState, type MarkStrength, loadPageSpacing, loadPageTemplate, pageSpacingUnits, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
 import { chalkGrainCssUrl, chalkTextureApplies } from './chalkTexture'
 import { boardFieldsFor, boardPalette, boardStyleOf, isDarkBoard, type BoardStyleId, type BoardTheme } from './boardStyle'
@@ -45,6 +45,7 @@ import { resolveInk, resolveItemForBoard, setBoardFill, setBoardInk, sheetBorder
 import { canvasFieldsFor, effectiveCanvasType, type CanvasType } from './canvasTypes'
 import { laneDir, laneFit, laneLabel, laneRects, type LaneSettings } from './canvasLanes'
 import { laneFitDelta } from './laneFit'
+import { ruledBaselineY } from './ruledText'
 import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
@@ -1475,7 +1476,8 @@ function App() {
   }
 
   // A new empty label at the point (the Text tool's tap and the Desktop double-click on empty canvas): nothing is made until text is typed.
-  const openNewTextEditorAt = (point: Point) => openTextEditor({ itemId: null, x: point.x, y: point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
+  // With event (the Text tool's tap) on Lined / Notebook / Cornell the first baseline snaps to the nearest ruled line (#299); Alt on a desktop mouse skips it.
+  const openNewTextEditorAt = (point: Point, event?: { pointerType: string; altKey?: boolean }) => openTextEditor({ itemId: null, x: point.x, y: event && !snappingSuspended(event, inputModeRef.current) ? ruledBaselineY(point.y - textSize * 0.65, textSize, pageSpacingUnits(pageSpacingRef.current), effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current)) : point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
 
   const editTextItem = (item: TextObject, selectAll = false) => openTextEditor({ ...(selectAll ? { selectAll: true } : {}), itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text, ...(item.align ? { align: item.align } : {}), ...(item.align === 'center' ? { centerOn: { x: item.x + item.width / 2, y: item.y + item.height / 2 } } : {}), ...(item.align === 'right' ? { anchorRight: item.x + item.width } : {}) })
 
@@ -4830,7 +4832,7 @@ function App() {
       textTapRef.current = null
       const existing = hitTestText(tap.point)
       if (existing) editTextItem(existing)
-      else openNewTextEditorAt(tap.point)
+      else openNewTextEditorAt(tap.point, event)
       return
     }
     if (classTapRef.current?.pointerId === event.pointerId) {
