@@ -7,6 +7,9 @@ import { BOARD_STYLES, type BoardStyleId } from '../boardStyle'
 import { CANVAS_TYPES, type CanvasType } from '../canvasTypes'
 import { boardPickerState } from '../boardPicker'
 import { BoardStylePreview, CanvasPreview, PickerTile } from './BoardPreviews'
+import { LaneControls, MarksControl } from './LaneControls'
+import type { LaneSettings } from '../canvasLanes'
+import type { MarkStrength } from '../pageTemplates'
 import type { InputMode } from '../desktopInput'
 import { DesktopMenuSheet } from './DesktopMenuSheet'
 
@@ -28,6 +31,11 @@ export type TopLeftBarProps = {
   /** Board style theme (src/boardStyle.ts); undefined = light. With `sketchy` it gives the picked board style. */
   board?: string
   onBoardStyle?: (style: BoardStyleId, dark: boolean) => void
+  /** Mark strength of dots and lines ('faint' | 'bold'; undefined = normal) and the Lanes canvas settings. Both are saved per diagram. */
+  marks?: string
+  onMarks?: (strength: MarkStrength) => void
+  lanes?: LaneSettings
+  onLanes?: (patch: LaneSettings) => void
   /** Counter: each increase opens the menu (sheet on Desktop, panel on Tablet) scrolled to its Board section. App bumps it from the empty-page "Choose board" button. */
   menuRequest?: number
   pageSpacing: PageSpacing
@@ -209,6 +217,8 @@ export function TopLeftBar(props: TopLeftBarProps) {
               ))}
             </div>
           </div>
+          {picker.showLanes && <LaneControls variant="menu" lanes={props.lanes} onLanes={props.onLanes} />}
+          {picker.canvas !== 'blank' && <MarksControl variant="menu" marks={props.marks} onMarks={props.onMarks} />}
           {picker.showSpacing && <div className="menu-setting" role="group" aria-label="Line and dot spacing">
             <span className="menu-setting-label">Line and dot spacing</span>
             <div className="menu-segments">

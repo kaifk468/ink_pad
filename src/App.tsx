@@ -35,12 +35,13 @@ import { MAX_PREDICTION_DISTANCE_SCREEN_PX, getPointerSamples, getPredictedPoint
 import { shouldAppendStrokeSample } from './strokeSampling'
 import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserStallSummary, type StrokeDiagnosticRow } from './performanceDiagnostics'
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
-import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
+import { applySheetLayer, drawPageTemplateOverview, effectiveMarks, getSheetLayerState, type MarkStrength, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
 import { boardFieldsFor, boardPalette, boardStyleOf, isDarkBoard, type BoardStyleId, type BoardTheme } from './boardStyle'
 import { boardCommands } from './boardPicker'
 import { resolveInk, resolveItemForBoard, setBoardFill, setBoardInk, sheetBorderColor, sheetColorForBoard } from './boardColors'
 import { canvasFieldsFor, effectiveCanvasType, type CanvasType } from './canvasTypes'
+import { laneDir, laneLabel, laneRects, type LaneSettings } from './canvasLanes'
 import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
@@ -498,6 +499,13 @@ function App() {
   const [pageCanvas, setPageCanvas] = useState<string | undefined>(undefined)
   const pageCanvasRef = useRef<string | undefined>(undefined)
   pageCanvasRef.current = pageCanvas
+  /** Mark strength ('faint' | 'bold' | unknown from a newer InkPad; undefined = normal) and swimlane settings (round 12). Saved per diagram; not undo steps. */
+  const [pageMarks, setPageMarks] = useState<string | undefined>(undefined)
+  const pageMarksRef = useRef<string | undefined>(undefined)
+  pageMarksRef.current = pageMarks
+  const [pageLanes, setPageLanes] = useState<LaneSettings | undefined>(undefined)
+  const pageLanesRef = useRef<LaneSettings | undefined>(undefined)
+  pageLanesRef.current = pageLanes
   /** What the sheet layer, minimap and export draw: a known `canvas` field wins, otherwise the template. */
   const canvasType = effectiveCanvasType(pageTemplate, pageCanvas)
   const sketchyRef = useRef(false)
@@ -531,7 +539,7 @@ function App() {
     getItems: () => strokesRef.current,
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
     getPageNames: () => pagesRef.current.map((slot) => slot.name ?? ''),
-    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current, board: boardRef.current, canvas: pageCanvasRef.current }),
+    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current, board: boardRef.current, canvas: pageCanvasRef.current, marks: pageMarksRef.current, lanes: pageLanesRef.current }),
     getInputMode: () => inputModeRef.current,
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null || liveCodeEditor(),
     loadDocument: (loaded, startPage) => {
@@ -565,6 +573,10 @@ function App() {
       setBoard(loaded.page.board)
       pageCanvasRef.current = loaded.page.canvas
       setPageCanvas(loaded.page.canvas)
+      pageMarksRef.current = loaded.page.marks
+      setPageMarks(loaded.page.marks)
+      pageLanesRef.current = loaded.page.lanes
+      setPageLanes(loaded.page.lanes)
       setPageTemplate(loaded.page.template)
       setPageBackground(loaded.page.background)
       // A saved height, grown if the content reaches past it (never shrunk).
@@ -1560,7 +1572,7 @@ function App() {
     ctx.strokeRect(workspaceX + 0.5, workspaceY + 0.5, workspaceWidth - 1, workspaceHeight - 1)
     ctx.fillStyle = sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground])
     ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
-    drawPageTemplateOverview(ctx, canvasType, { x: pageX, y: pageY, width: pageWidth, height: pageHeight }, theme === 'light' ? undefined : palette)
+    drawPageTemplateOverview(ctx, canvasType, { x: pageX, y: pageY, width: pageWidth, height: pageHeight }, effectiveMarks(theme === 'light' ? undefined : palette, pageMarks, sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]), palette.ink), pageLanes)
     ctx.strokeStyle = '#cfd4df'
     ctx.lineWidth = 1
     ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
@@ -1597,7 +1609,7 @@ function App() {
     ctx.fillRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.strokeRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.restore()
-  }, [board, drawMinimapItems, getCurrentMinimapBounds, canvasType, pageBackground, palette, theme])
+  }, [board, drawMinimapItems, getCurrentMinimapBounds, canvasType, pageBackground, pageLanes, pageMarks, palette, theme])
 
   // The single selected box (select tool) is kept in a ref for the gesture code; the state copy only lets the toolbar show Delete for it.
   const [hasSelectedRectangle, setHasSelectedRectangle] = useState(false)
@@ -2449,6 +2461,32 @@ function App() {
     setPageTemplate(next.template)
   }
 
+  /** Mark strength picker (Faint / Normal / Bold). Only the colour of dots, lines and lane borders changes; not an undo step. */
+  const chooseMarkStrength = (strength: MarkStrength) => {
+    const next = strength === 'normal' ? undefined : strength
+    pageMarksRef.current = next
+    setPageMarks(next)
+  }
+
+  /**
+   * Lane settings: merges a change into the saved `lanes` (unknown keys from a newer InkPad stay). Rows is the default direction,
+   * so it is stored as no `dir`; all-empty names are not stored; nothing left means no `lanes` field. Not an undo step.
+   */
+  const updateLanes = (patch: LaneSettings) => {
+    const merged: LaneSettings & Record<string, unknown> = { ...(pageLanesRef.current ?? {}), ...patch }
+    if (merged.dir === 'rows') delete merged.dir
+    if (patch.names !== undefined) {
+      const names = patch.names.slice(0, 8).map((name) => cleanPageName(name))
+      while (names.length > 0 && names[names.length - 1] === '') names.pop()
+      if (names.length > 0) merged.names = names
+      else delete merged.names
+    }
+    const next = Object.keys(merged).length > 0 ? merged : undefined
+    if (JSON.stringify(next ?? null) === JSON.stringify(pageLanesRef.current ?? null)) return
+    pageLanesRef.current = next
+    setPageLanes(next)
+  }
+
   const rotatableForPanel = soleRotatable()
   const rotationPanel = rotatableForPanel
     ? { degrees: Math.round((itemAngle(rotatableForPanel) * 180) / Math.PI), onAlign: alignSelectionToLine, onReset: () => setSelectedItemAngle(0) }
@@ -2760,7 +2798,8 @@ function App() {
         benchmarkBackground ? PAGE_BACKGROUND_COLORS.white : sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]),
         viewport,
         pageSpacing,
-        benchmarkBackground || theme === 'light' ? undefined : palette,
+        benchmarkBackground ? undefined : effectiveMarks(theme === 'light' ? undefined : palette, pageMarksRef.current, sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]), palette.ink),
+        benchmarkBackground ? undefined : pageLanesRef.current,
       ))
     }
     if (benchmarkBackground) benchmarkBackground.onBackgroundRendered(performance.now() - backgroundStartedAt)
@@ -3508,6 +3547,12 @@ function App() {
     renderAll()
     scheduleAutosave()
   }, [board, pageCanvas, renderAll])
+
+  // Mark strength and lane settings only change the sheet layer, the minimap and exports: no ink is redrawn and nothing is an undo step.
+  useEffect(() => {
+    renderAll()
+    scheduleAutosave()
+  }, [pageMarks, pageLanes, renderAll])
 
 
   useEffect(() => {
@@ -5985,6 +6030,7 @@ function App() {
       id: `setting:${command.id}`, label: command.label, group: 'Settings', keywords: command.keywords,
       run: command.kind === 'style' ? () => chooseBoardStyle(command.style, command.dark) : () => chooseCanvasType(command.canvas),
     })),
+    ...(['faint', 'normal', 'bold'] as const).map((strength) => ({ id: `setting:marks:${strength}`, label: `Marks: ${strength[0].toUpperCase()}${strength.slice(1)}`, group: 'Settings', keywords: 'marks dots lines strength projector contrast board', run: () => chooseMarkStrength(strength) })),
     // Always last: equal search scores keep list order, so commands stay above diagrams. Opening goes through the Library's own open function (the open diagram is saved first).
     ...diagramPaletteEntries(library, folders, currentDocId).map((entry) => ({ ...entry, run: () => { const id = diagramIdFromEntry(entry.id); if (id) void openStoredDiagram(id) } })),
   ]
@@ -6270,10 +6316,25 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // Lane names (round 12): plain text children of the sheet layer, sized in sheet units because the layer is scaled by its transform.
+  // They render only when the lane settings, the board or the sheet height change, never per stroke or frame.
+  const laneHeaderLabels = canvasType === 'lanes' ? (() => {
+    const dir = laneDir(pageLanes)
+    return laneRects(pageLanes, SHEET_WIDTH, sheetHeight).map((rect) => {
+      const label = laneLabel(rect, dir)
+      if (!label) return null
+      return (
+        <span key={rect.slot} className="lane-label" style={{ left: label.x, top: label.y, fontSize: label.fontSize, color: palette.ink, transform: `translate(-50%, -50%)${label.rotate ? ` rotate(${label.rotate}deg)` : ''}` }}>{label.text}</span>
+      )
+    })
+  })() : null
+
   return (
     <main className={`app-shell${presentMode ? ' ui-hidden' : ''}`} data-input-mode={inputMode}>
       <section className="canvas-stage" aria-label="Drawing canvas" data-board={theme === 'light' ? undefined : theme}>
-        <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: sheetHeight }} />
+        <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: sheetHeight }}>
+          {canvasType === 'lanes' && laneHeaderLabels}
+        </div>
         <div ref={eraserCursorRef} className="eraser-cursor" aria-hidden="true" />
         {laserMode && <canvas ref={laserCanvasRef} className="laser-overlay" aria-hidden="true" />}
         {PEN_BUTTON_DEBUG && <div ref={penButtonReadoutRef} className="pen-button-readout" role="status">pen button: waiting for the pen</div>}
@@ -6494,6 +6555,10 @@ function App() {
           onCanvasType={chooseCanvasType}
           board={board}
           onBoardStyle={chooseBoardStyle}
+          marks={pageMarks}
+          onMarks={chooseMarkStrength}
+          lanes={pageLanes}
+          onLanes={updateLanes}
           menuRequest={menuRequest}
           pageSpacing={pageSpacing}
           onPageSpacing={setPageSpacing}

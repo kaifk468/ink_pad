@@ -3,12 +3,12 @@
  *
  * Stored per diagram (like the template, spacing and sketchy style). The first three types are the existing `template`
  * field; the newer ones are the additive page field `canvas`, written together with the closest template so an older
- * InkPad still shows something similar (grid and isometric as dots, Cornell as lined). Unknown `canvas` values from a
+ * InkPad still shows something similar (grid and isometric as dots, Cornell and Notebook as lined, Lanes as blank). Unknown `canvas` values from a
  * newer InkPad are kept and drawn as the template.
  */
 import type { PageTemplate } from './pageTemplates'
 
-export type CanvasType = 'blank' | 'dotted' | 'lined' | 'grid' | 'isometric' | 'cornell'
+export type CanvasType = 'blank' | 'dotted' | 'lined' | 'grid' | 'isometric' | 'cornell' | 'lanes' | 'notebook'
 export type ExtraCanvasType = Exclude<CanvasType, PageTemplate>
 
 export const CANVAS_TYPES: ReadonlyArray<{ id: CanvasType; label: string; description: string }> = [
@@ -18,10 +18,12 @@ export const CANVAS_TYPES: ReadonlyArray<{ id: CanvasType; label: string; descri
   { id: 'grid', label: 'Grid', description: 'Graph paper for LLD and tables' },
   { id: 'isometric', label: 'Isometric', description: 'Triangle dots for 3D sketches' },
   { id: 'cornell', label: 'Cornell', description: 'Cue column, notes and summary' },
+  { id: 'lanes', label: 'Lanes', description: 'Swimlanes for flows and sequences' },
+  { id: 'notebook', label: 'Notebook', description: 'Ruled lines with a margin' },
 ]
 
-const EXTRA: readonly ExtraCanvasType[] = ['grid', 'isometric', 'cornell']
-const FALLBACK_TEMPLATE: Record<ExtraCanvasType, PageTemplate> = { grid: 'dotted', isometric: 'dotted', cornell: 'lined' }
+const EXTRA: readonly ExtraCanvasType[] = ['grid', 'isometric', 'cornell', 'lanes', 'notebook']
+const FALLBACK_TEMPLATE: Record<ExtraCanvasType, PageTemplate> = { grid: 'dotted', isometric: 'dotted', cornell: 'lined', lanes: 'blank', notebook: 'lined' }
 
 export function isExtraCanvasType(value: unknown): value is ExtraCanvasType {
   return typeof value === 'string' && (EXTRA as readonly string[]).includes(value)

@@ -1,4 +1,6 @@
 import type { CanvasType } from './canvasTypes'
+import { LANE_BORDER_WIDTH, LANE_COLUMNS_HEADER_HEIGHT, LANE_COLUMNS_WIDTH, LANE_ROWS_HEADER_WIDTH, laneDir, laneRects, laneSize, type LaneSettings } from './canvasLanes'
+import { parseHex } from './colorUtils'
 
 export type PageTemplate = 'blank' | 'lined' | 'dotted'
 
@@ -8,9 +10,68 @@ export const PAGE_TEMPLATE_LINE_COLOR = '#aebfd8'
 /** Dots are a little fainter than before (#566477 faded about 20% towards white). */
 export const PAGE_TEMPLATE_DOT_COLOR = '#788392'
 /** Light-sheet mark colours; the board styles pass their own (dot, thin line, stronger line). */
-export type PageMarks = { dot: string; line: string; lineStrong: string }
+export type PageMarks = { dot: string; line: string; lineStrong: string; /** Notebook margin line (light default when missing). */ margin?: string }
 export const PAGE_TEMPLATE_LINE_STRONG_COLOR = '#8197bb'
 export const PAGE_MARKS_LIGHT: PageMarks = { dot: PAGE_TEMPLATE_DOT_COLOR, line: PAGE_TEMPLATE_LINE_COLOR, lineStrong: PAGE_TEMPLATE_LINE_STRONG_COLOR }
+/** Notebook margin line on a light sheet (the dark and chalk boards bring their own muted red). */
+export const PAGE_MARGIN_COLOR = '#e8a0a0'
+/** Notebook layout in sheet units: the red margin line at x 160 and the stronger header line at y 96 (ruled lines continue above it). */
+export const NOTEBOOK_MARGIN_X = 160
+export const NOTEBOOK_HEADER_Y = 96
+const NOTEBOOK_LINE_WIDTH = 2
+/** Lane header strip tint: the line colour at this opacity. */
+const LANE_HEADER_ALPHA = 0.22
+
+/**
+ * Mark strength (round 12, saved as the page field `marks`; missing or unknown = normal). Faint blends the mark colours
+ * halfway to the sheet, Bold 40% toward the board's ink; Normal leaves them as they are.
+ */
+export type MarkStrength = 'faint' | 'normal' | 'bold'
+export const MARK_STRENGTHS: ReadonlyArray<{ id: MarkStrength; label: string }> = [{ id: 'faint', label: 'Faint' }, { id: 'normal', label: 'Normal' }, { id: 'bold', label: 'Bold' }]
+const FAINT_BLEND = 0.5
+const BOLD_BLEND = 0.4
+
+export function markStrength(value: string | undefined | null): MarkStrength {
+  return value === 'faint' || value === 'bold' ? value : 'normal'
+}
+
+function blendHex(from: string, to: string, amount: number): string {
+  const a = parseHex(from)
+  const b = parseHex(to)
+  if (!a || !b) return from
+  const channel = (offset: number) => {
+    const x = parseInt(a.slice(offset, offset + 2), 16)
+    const y = parseInt(b.slice(offset, offset + 2), 16)
+    return Math.round(x + (y - x) * amount).toString(16).padStart(2, '0')
+  }
+  return `#${channel(1)}${channel(3)}${channel(5)}`
+}
+
+/** `#rrggbb` as an rgba() string (the colour unchanged when it is not a hex colour). */
+export function colorWithAlpha(color: string, alpha: number): string {
+  const hex = parseHex(color)
+  if (!hex) return color
+  return `rgba(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}, ${alpha})`
+}
+
+/**
+ * The mark colours for a strength: dots, lines, stronger lines (and the notebook margin) blended toward the sheet
+ * (faint) or the ink (bold). Normal returns the marks as they are. Colours that are not hex stay as they are.
+ */
+export function adjustMarks(marks: PageMarks, strength: MarkStrength | string | undefined, sheetColor: string, inkColor = '#202124'): PageMarks {
+  const s = markStrength(strength)
+  if (s === 'normal') return marks
+  const toward = s === 'faint' ? sheetColor : inkColor
+  const amount = s === 'faint' ? FAINT_BLEND : BOLD_BLEND
+  const blend = (color: string) => blendHex(color, toward, amount)
+  return { dot: blend(marks.dot), line: blend(marks.line), lineStrong: blend(marks.lineStrong), ...(marks.margin !== undefined ? { margin: blend(marks.margin) } : { margin: blend(PAGE_MARGIN_COLOR) }) }
+}
+
+/** The marks a sheet draws with: the board's own (undefined = the light defaults) adjusted for the diagram's strength; Normal changes nothing. */
+export function effectiveMarks(base: PageMarks | undefined, strength: string | undefined, sheetColor: string, inkColor: string): PageMarks | undefined {
+  return markStrength(strength) === 'normal' ? base : adjustMarks(base ?? PAGE_MARKS_LIGHT, strength, sheetColor, inkColor)
+}
+
 /** Grid canvas: every 5th line is the stronger one. */
 export const GRID_MAJOR_EVERY = 5
 /**
@@ -86,7 +147,7 @@ export function isometricRowHeight(units: number): number {
   return Math.round(units * Math.sqrt(3) / 2 * 1000) / 1000
 }
 
-type OverviewKind = Exclude<CanvasType, 'blank'>
+type OverviewKind = Exclude<CanvasType, 'blank' | 'lanes'>
 
 function overviewKey(kind: OverviewKind, marks: PageMarks): string {
   return `${kind}|${marks.dot}|${marks.line}|${marks.lineStrong}`
@@ -112,7 +173,7 @@ function getTile(kind: OverviewKind, marks: PageMarks): HTMLCanvasElement {
       c.fill()
     }
     c.lineWidth = 1
-    if (kind === 'lined' || kind === 'cornell') {
+    if (kind === 'lined' || kind === 'cornell' || kind === 'notebook') {
       c.strokeStyle = marks.line
       c.beginPath()
       c.moveTo(0, spacing - 0.5)
@@ -162,10 +223,11 @@ export type SheetLayerElement = { style: { transform: string; backgroundColor: s
 /**
  * CSS equivalent of the template marks. The main canvas stays transparent so the browser composites this static layer
  * instead of the canvas repainting a patterned sheet. Layer counts stay small (at most 4) for zoom performance:
- * lined 1, dotted 1, grid 4 (thin and strong, each direction), isometric 2, Cornell 3 (rules, cue column, header and summary).
+ * lined 1, dotted 1, grid 4 (thin and strong, each direction), isometric 2, Cornell 3 (rules, cue column, header and summary),
+ * notebook 3 (rules, margin line, header line), lanes 2 (header strip, borders; both tile or stretch, so they need no sheet height).
  * Pixels in the CSS are sheet units because the layer is scaled by its transform.
  */
-export function getPageTemplateCss(template: CanvasType, spacing: PageSpacing = DEFAULT_PAGE_SPACING, marks: PageMarks = PAGE_MARKS_LIGHT): Pick<SheetLayerState, 'backgroundImage' | 'backgroundSize' | 'backgroundPosition'> {
+export function getPageTemplateCss(template: CanvasType, spacing: PageSpacing = DEFAULT_PAGE_SPACING, marks: PageMarks = PAGE_MARKS_LIGHT, lanes?: LaneSettings | null): Pick<SheetLayerState, 'backgroundImage' | 'backgroundSize' | 'backgroundPosition'> {
   const units = pageSpacingUnits(spacing)
   const tile = `${units}px ${units}px`
   if (template === 'lined') {
@@ -208,6 +270,40 @@ export function getPageTemplateCss(template: CanvasType, spacing: PageSpacing = 
       backgroundSize: ['100% 100%', '100% 100%', tile].join(', '),
     }
   }
+  if (template === 'notebook') {
+    const lineTop = units - 1.125
+    const margin = marks.margin ?? PAGE_MARGIN_COLOR
+    const band = (color: string, from: number) => `${color} ${from}px, ${color} ${from + NOTEBOOK_LINE_WIDTH}px, transparent ${from + NOTEBOOK_LINE_WIDTH}px`
+    return {
+      backgroundImage: [
+        `linear-gradient(to right, transparent ${NOTEBOOK_MARGIN_X}px, ${band(margin, NOTEBOOK_MARGIN_X)})`,
+        `linear-gradient(to bottom, transparent ${NOTEBOOK_HEADER_Y}px, ${band(marks.lineStrong, NOTEBOOK_HEADER_Y)})`,
+        `linear-gradient(to bottom, transparent ${lineTop}px, ${marks.line} ${lineTop}px)`,
+      ].join(', '),
+      backgroundSize: ['100% 100%', '100% 100%', tile].join(', '),
+    }
+  }
+  if (template === 'lanes') {
+    const size = laneSize(lanes)
+    const tint = colorWithAlpha(marks.line, LANE_HEADER_ALPHA)
+    const edge = (from: number) => `${marks.lineStrong} ${from}px, ${marks.lineStrong} ${from + LANE_BORDER_WIDTH}px, transparent ${from + LANE_BORDER_WIDTH}px`
+    if (laneDir(lanes) === 'columns') {
+      return {
+        backgroundImage: [
+          `linear-gradient(to bottom, ${tint} ${LANE_COLUMNS_HEADER_HEIGHT}px, ${edge(LANE_COLUMNS_HEADER_HEIGHT)})`,
+          `linear-gradient(to right, transparent ${size - LANE_BORDER_WIDTH}px, ${marks.lineStrong} ${size - LANE_BORDER_WIDTH}px)`,
+        ].join(', '),
+        backgroundSize: ['100% 100%', `${size}px 100%`].join(', '),
+      }
+    }
+    return {
+      backgroundImage: [
+        `linear-gradient(to right, ${tint} ${LANE_ROWS_HEADER_WIDTH}px, ${edge(LANE_ROWS_HEADER_WIDTH)})`,
+        `linear-gradient(to bottom, transparent ${size - LANE_BORDER_WIDTH}px, ${marks.lineStrong} ${size - LANE_BORDER_WIDTH}px)`,
+      ].join(', '),
+      backgroundSize: ['100% 100%', `100% ${size}px`].join(', '),
+    }
+  }
   return { backgroundImage: 'none', backgroundSize: 'auto' }
 }
 
@@ -216,8 +312,8 @@ export function getSheetLayerTransform(viewport: SheetLayerViewport): string {
   return `translate3d(${viewport.offsetX}px, ${viewport.offsetY}px, 0) scale(${viewport.scale})`
 }
 
-export function getSheetLayerState(template: CanvasType, backgroundColor: string, viewport: SheetLayerViewport, spacing: PageSpacing = DEFAULT_PAGE_SPACING, marks: PageMarks = PAGE_MARKS_LIGHT): SheetLayerState {
-  const css = getPageTemplateCss(template, spacing, marks)
+export function getSheetLayerState(template: CanvasType, backgroundColor: string, viewport: SheetLayerViewport, spacing: PageSpacing = DEFAULT_PAGE_SPACING, marks: PageMarks = PAGE_MARKS_LIGHT, lanes?: LaneSettings | null): SheetLayerState {
+  const css = getPageTemplateCss(template, spacing, marks, lanes)
   return { transform: getSheetLayerTransform(viewport), backgroundColor, backgroundImage: css.backgroundImage, backgroundSize: css.backgroundSize, ...(css.backgroundPosition !== undefined ? { backgroundPosition: css.backgroundPosition } : {}) }
 }
 
@@ -236,8 +332,34 @@ export function drawPageTemplateOverview(
   template: CanvasType,
   pageRect: { x: number; y: number; width: number; height: number },
   marks: PageMarks = PAGE_MARKS_LIGHT,
+  lanes?: LaneSettings | null,
 ): void {
   if (template === 'blank') return
+  if (template === 'lanes') {
+    // Bands and borders only, in the same sheet units as the CSS layer scaled to the minimap (sheet height = page height / scale).
+    const k = pageRect.width / LANE_COLUMNS_WIDTH
+    const w = Math.max(1, LANE_BORDER_WIDTH * k)
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(pageRect.x, pageRect.y, pageRect.width, pageRect.height)
+    ctx.clip()
+    const vertical = laneDir(lanes) === 'columns'
+    const rects = laneRects(lanes, LANE_COLUMNS_WIDTH, pageRect.height / k)
+    ctx.fillStyle = colorWithAlpha(marks.line, LANE_HEADER_ALPHA)
+    for (const { header } of rects) ctx.fillRect(pageRect.x + header.x * k, pageRect.y + header.y * k, header.width * k, header.height * k)
+    ctx.fillStyle = marks.lineStrong
+    for (const { lane, header } of rects) {
+      if (vertical) {
+        ctx.fillRect(pageRect.x + (lane.x + lane.width) * k - w, pageRect.y, w, pageRect.height)
+        ctx.fillRect(pageRect.x + lane.x * k, pageRect.y + header.height * k, lane.width * k, w)
+      } else {
+        ctx.fillRect(pageRect.x, pageRect.y + (lane.y + lane.height) * k - w, pageRect.width, w)
+        ctx.fillRect(pageRect.x + header.width * k, pageRect.y + lane.y * k, w, lane.height * k)
+      }
+    }
+    ctx.restore()
+    return
+  }
   const pattern = getPattern(ctx, template, marks)
   if (!pattern) return
   ctx.save()
@@ -256,6 +378,14 @@ export function drawPageTemplateOverview(
     ctx.fillRect(pageRect.x + CORNELL_CUE_X * k, pageRect.y, w, pageRect.height)
     ctx.fillRect(pageRect.x, pageRect.y + CORNELL_HEADER_Y * k, pageRect.width, w)
     ctx.fillRect(pageRect.x, pageRect.y + CORNELL_SUMMARY_Y * k, pageRect.width, w)
+  }
+  if (template === 'notebook') {
+    const k = pageRect.width / CORNELL_SHEET_WIDTH
+    const w = Math.max(1, NOTEBOOK_LINE_WIDTH * k)
+    ctx.fillStyle = marks.margin ?? PAGE_MARGIN_COLOR
+    ctx.fillRect(pageRect.x + NOTEBOOK_MARGIN_X * k, pageRect.y, w, pageRect.height)
+    ctx.fillStyle = marks.lineStrong
+    ctx.fillRect(pageRect.x, pageRect.y + NOTEBOOK_HEADER_Y * k, pageRect.width, w)
   }
   ctx.restore()
 }

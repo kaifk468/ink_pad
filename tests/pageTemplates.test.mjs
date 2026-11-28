@@ -1,17 +1,14 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import ts from 'typescript'
 import { readAppSource } from './helpers/appSource.mjs'
 import { loadModule } from './helpers/loadModule.mjs'
 
 const pageTemplateSource = await readFile(new URL('../src/pageTemplates.ts', import.meta.url), 'utf8')
 const appSource = await readAppSource()
 const stylesSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
-const output = ts.transpileModule(pageTemplateSource, {
-  compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
-}).outputText
-const templates = await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`)
+// pageTemplates.ts imports canvasLanes and colorUtils (round 12), so it loads through the module helper.
+const templates = await loadModule('pageTemplates.ts')
 const mockStorage = () => {
   const values = new Map()
   return {

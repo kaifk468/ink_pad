@@ -15,6 +15,8 @@ import { connectorLabelFontSize, connectorLabelLayout } from './connectorLabel'
 import { isPlainRectangle, roundedCornerRadius } from './roundedCorners'
 import { connectorEndLabelFontSize, connectorEndLabelLayouts } from './connectorEndLabels'
 import { boardPalette } from './boardStyle'
+import { LANE_BORDER_WIDTH, laneDir, laneLabel, laneRects, type LaneSettings } from './canvasLanes'
+import { NOTEBOOK_HEADER_Y, NOTEBOOK_MARGIN_X, PAGE_MARGIN_COLOR, adjustMarks, colorWithAlpha, markStrength } from './pageTemplates'
 import { resolveItemForBoard } from './boardColors'
 
 /** What the sheet is ruled with: blank, lined, dotted (the template) or grid, isometric, cornell (the canvas types). */
@@ -36,6 +38,10 @@ export type SheetExportOptions = {
    * keep the STORED colours because they are pasted onto light documents.
    */
   board?: string
+  /** Mark strength ('faint' | 'bold'; missing or unknown = normal): dots, lines and lane borders blended toward the sheet or the ink. */
+  marks?: string
+  /** Lane settings of the Lanes canvas (bands, borders and header names are drawn only when `template` is 'lanes'). */
+  lanes?: LaneSettings
   /** CSS (an @font-face with the font as a data URL) put into the SVG so labels look the same outside the app. Omitted: output is unchanged. */
   embeddedFontCss?: string
 }
@@ -52,7 +58,7 @@ const LINE_COLOR = '#aebfd8'
 const DOT_COLOR = '#788392'
 const LINE_STRONG_COLOR = '#8197bb'
 /** Template mark colours of the board being exported (light defaults outside buildSheetSvg). */
-let marks = { dot: DOT_COLOR, line: LINE_COLOR, lineStrong: LINE_STRONG_COLOR }
+let marks: { dot: string; line: string; lineStrong: string; margin: string } = { dot: DOT_COLOR, line: LINE_COLOR, lineStrong: LINE_STRONG_COLOR, margin: PAGE_MARGIN_COLOR }
 const SPACING_FACTOR = { narrow: 0.8, standard: 1, wide: 1.2 }
 
 const n = (value: number) => String(Math.round(value * 100) / 100)
@@ -323,15 +329,41 @@ export function buildSheetSvg(rawItems: CanvasItem[], options: SheetExportOption
   labelBackground = options.transparent ? '#ffffff' : exportOptions.backgroundColor
   hollowFill = palette.fill
   exportBoardInk = palette.theme === 'light' ? null : palette.ink
-  if (palette.theme !== 'light') marks = { dot: palette.dot, line: palette.line, lineStrong: palette.lineStrong }
+  if (palette.theme !== 'light') marks = { dot: palette.dot, line: palette.line, lineStrong: palette.lineStrong, margin: palette.margin }
+  if (markStrength(options.marks) !== 'normal') {
+    const adjusted = adjustMarks(marks, options.marks, exportOptions.backgroundColor, palette.ink)
+    marks = { dot: adjusted.dot, line: adjusted.line, lineStrong: adjusted.lineStrong, margin: adjusted.margin ?? marks.margin }
+  }
   try {
     return buildSheetSvgInner(palette.theme === 'light' ? rawItems : rawItems.map((item) => resolveItemForBoard(item, palette, rawItems)), exportOptions)
   } finally {
     sketchyExport = false
     hollowFill = '#ffffff'
     exportBoardInk = null
-    marks = { dot: DOT_COLOR, line: LINE_COLOR, lineStrong: LINE_STRONG_COLOR }
+    marks = { dot: DOT_COLOR, line: LINE_COLOR, lineStrong: LINE_STRONG_COLOR, margin: PAGE_MARGIN_COLOR }
   }
+}
+
+/** Lane header tints, borders and names as SVG, in sheet units (the same geometry as the sheet layer and canvasLanes). */
+function laneMarkup(lanes: LaneSettings | undefined, width: number, height: number): string {
+  const dir = laneDir(lanes)
+  const rects = laneRects(lanes, width, height)
+  const tint = colorWithAlpha(marks.line, 0.22)
+  const b = LANE_BORDER_WIDTH
+  let out = ''
+  for (const { header } of rects) out += `<rect x="${n(header.x)}" y="${n(header.y)}" width="${n(header.width)}" height="${n(header.height)}" fill="${tint}"/>`
+  for (const { lane, header } of rects) {
+    if (dir === 'columns') out += `<rect x="${n(lane.x + lane.width - b)}" y="0" width="${b}" height="${n(height)}" fill="${marks.lineStrong}"/><rect x="${n(lane.x)}" y="${n(header.height)}" width="${n(lane.width)}" height="${b}" fill="${marks.lineStrong}"/>`
+    else out += `<rect x="0" y="${n(lane.y + lane.height - b)}" width="${n(width)}" height="${b}" fill="${marks.lineStrong}"/><rect x="${n(header.width)}" y="${n(lane.y)}" width="${b}" height="${n(lane.height)}" fill="${marks.lineStrong}"/>`
+  }
+  const ink = exportBoardInk ?? '#202124'
+  for (const rect of rects) {
+    const label = laneLabel(rect, dir)
+    if (!label) continue
+    const rotate = label.rotate === 0 ? '' : ` transform="rotate(${label.rotate} ${n(label.x)} ${n(label.y)})"`
+    out += `<text x="${n(label.x)}" y="${n(label.y)}" text-anchor="middle" dominant-baseline="central" font-family="${esc(TEXT_FONT_FAMILY)}" font-size="${label.fontSize}" font-weight="600" fill="${ink}" fill-opacity="0.75"${rotate}>${esc(label.text)}</text>`
+  }
+  return out
 }
 
 function buildSheetSvgInner(rawItems: CanvasItem[], options: SheetExportOptions): string {
@@ -374,7 +406,8 @@ function buildSheetSvgInner(rawItems: CanvasItem[], options: SheetExportOptions)
 
   const template = options.transparent ? 'blank' : options.template
   let templateMarks = ''
-  if (template !== 'blank') {
+  if (template === 'lanes') templateMarks = laneMarkup(options.lanes, width, height)
+  if (template !== 'blank' && template !== 'lanes') {
     const spacing = Math.round(SPACING * SPACING_FACTOR[options.spacing ?? 'standard'] * 100) / 100
     const lined = `<path d="M0 ${spacing - 0.5}H${spacing}" stroke="${marks.line}" stroke-width="1.25" fill="none"/>`
     if (template === 'grid') {
@@ -395,13 +428,17 @@ function buildSheetSvgInner(rawItems: CanvasItem[], options: SheetExportOptions)
       const mark = template === 'dotted' ? `<circle cx="2" cy="2" r="1.65" fill="${marks.dot}"/>` : lined
       defs.unshift(`<pattern id="template" width="${spacing}" height="${spacing}" patternUnits="userSpaceOnUse">${mark}</pattern>`)
     }
+    if (template === 'notebook') {
+      // Margin line and header line in sheet units from the top-left (they do not move when the sheet grows); the ruled lines are the pattern.
+      templateMarks = `<rect x="${NOTEBOOK_MARGIN_X}" y="0" width="2" height="${height}" fill="${marks.margin}"/><rect x="0" y="${NOTEBOOK_HEADER_Y}" width="${width}" height="2" fill="${marks.lineStrong}"/>`
+    }
     if (template === 'cornell') {
       // Cue column, header band and summary line in sheet units from the top-left (they do not move when the sheet grows).
       templateMarks = `<rect x="700" y="0" width="2" height="${height}" fill="${marks.lineStrong}"/><rect x="0" y="160" width="${width}" height="2" fill="${marks.lineStrong}"/><rect x="0" y="1200" width="${width}" height="2" fill="${marks.lineStrong}"/>`
     }
   }
   const sheet = options.transparent ? '' : `<rect width="${width}" height="${height}" fill="${esc(options.backgroundColor)}"/>`
-  const templateRect = template !== 'blank' ? `<rect width="${width}" height="${height}" fill="url(#template)"/>${templateMarks}` : ''
+  const templateRect = template === 'lanes' ? templateMarks : template !== 'blank' ? `<rect width="${width}" height="${height}" fill="url(#template)"/>${templateMarks}` : ''
   if (options.embeddedFontCss) defs.unshift(`<style>${options.embeddedFontCss}</style>`)
   const defsBlock = defs.length ? `<defs>${defs.join('')}</defs>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${defsBlock}${sheet}${templateRect}${body}</svg>`

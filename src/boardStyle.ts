@@ -35,6 +35,8 @@ export type BoardPalette = {
   line: string
   /** Stronger grid line (every fifth line on graph paper, the Cornell margin). */
   lineStrong: string
+  /** Notebook margin line. */
+  margin: string
   /** Desk colour around the sheet. */
   desk: string
 }
@@ -45,9 +47,9 @@ export const DEFAULT_INK = '#202124'
 export const DEFAULT_FILL = '#ffffff'
 
 export const BOARD_PALETTES: Record<BoardTheme, BoardPalette> = {
-  light: { theme: 'light', sheet: '#ffffff', ink: DEFAULT_INK, fill: DEFAULT_FILL, dot: '#788392', line: '#aebfd8', lineStrong: '#8fa6c8', desk: '#dde0e7' },
-  dark: { theme: 'dark', sheet: '#1e2126', ink: '#e6e8eb', fill: '#2a2e35', dot: '#5b636e', line: '#3a414b', lineStrong: '#4d5663', desk: '#121418' },
-  chalk: { theme: 'chalk', sheet: '#243b33', ink: '#f2f1e8', fill: '#2d473e', dot: '#5f7a6f', line: '#3f5b50', lineStrong: '#5b786c', desk: '#17241f' },
+  light: { theme: 'light', sheet: '#ffffff', ink: DEFAULT_INK, fill: DEFAULT_FILL, dot: '#788392', line: '#aebfd8', lineStrong: '#8fa6c8', margin: '#e8a0a0', desk: '#dde0e7' },
+  dark: { theme: 'dark', sheet: '#1e2126', ink: '#e6e8eb', fill: '#2a2e35', dot: '#5b636e', line: '#3a414b', lineStrong: '#4d5663', margin: '#6e4a52', desk: '#121418' },
+  chalk: { theme: 'chalk', sheet: '#243b33', ink: '#f2f1e8', fill: '#2d473e', dot: '#5f7a6f', line: '#3f5b50', lineStrong: '#5b786c', margin: '#7b5a58', desk: '#17241f' },
 }
 
 /** The theme a stored `board` value draws as (unknown or missing = light). */

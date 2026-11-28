@@ -50,6 +50,7 @@ export function CanvasPreview({ type, board }: { type: CanvasType; board: string
       {marks.dots && <path d={marks.dots} stroke={p.dot} strokeWidth="2" strokeLinecap="round" />}
       {marks.lines && <path d={marks.lines} stroke={p.line} strokeWidth="1" fill="none" />}
       {marks.strong && <path d={marks.strong} stroke={p.lineStrong} strokeWidth="1.2" fill="none" />}
+      {marks.margin && <path d={marks.margin} stroke={p.margin} strokeWidth="1.2" fill="none" />}
     </svg>
   )
 }
