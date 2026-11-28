@@ -113,3 +113,10 @@
 .home-desktop .home-grid .home-star { top: calc(75cqw + 4px); right: 8px; width: 28px; height: 28px; }
 .home-desktop .home-grid .home-star svg { width: 16px; height: 16px; }
 .home-desktop .home-grid .home-card-title { padding-right: 44px; }
+
+/* Dark and Chalkboard boards: the empty-state hint sits straight on the board, so its text turns light (it was dark-on-dark). Chips keep their white key caps. */
+.app-shell[data-input-mode="desktop"] .canvas-stage[data-board] .empty-canvas-hint,
+.app-shell[data-input-mode="desktop"] .canvas-stage[data-board] .empty-canvas-hint .empty-canvas-title { color: #eef1ec; }
+.app-shell[data-input-mode="desktop"] .canvas-stage[data-board] .empty-canvas-hint .empty-chips,
+.app-shell[data-input-mode="desktop"] .canvas-stage[data-board] .empty-canvas-hint .empty-chips .empty-chip-muted { color: rgba(238, 241, 236, .78); opacity: 1; }
+.app-shell[data-input-mode="desktop"] .canvas-stage[data-board] .empty-canvas-hint .empty-chips kbd { border-color: rgba(255, 255, 255, .22); }
