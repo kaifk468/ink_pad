@@ -28,6 +28,24 @@ export function stepFontSize(size: number, direction: 1 | -1, steps: readonly nu
   const next = direction === 1 ? sorted.find((step) => step > size) : [...sorted].reverse().find((step) => step < size)
   return next ?? null
 }
+/** Beyond the panel presets the size keys step by this much. */
+export const TEXT_SIZE_KEY_STEP = 4
+/** Largest size the size keys reach (the canvas clamp for label sizes). */
+export const MAX_TEXT_KEY_SIZE = 300
+
+/**
+ * The size keys' step: the panel presets (10 .. 48) while a preset lies in that direction, then +/- 4 above 48
+ * (up to MAX_TEXT_KEY_SIZE; coming down it stops on 48, never skipping below it). Null at the smallest preset (10) or at the maximum.
+ */
+export function stepTextSize(size: number, direction: 1 | -1): number | null {
+  const top = TEXT_FONT_SIZES_DESKTOP[TEXT_FONT_SIZES_DESKTOP.length - 1]
+  if (direction === 1) {
+    if (size >= top) return size >= MAX_TEXT_KEY_SIZE ? null : Math.min(MAX_TEXT_KEY_SIZE, size + TEXT_SIZE_KEY_STEP)
+    return stepFontSize(size, 1)
+  }
+  if (size > top) return Math.max(top, size - TEXT_SIZE_KEY_STEP)
+  return stepFontSize(size, -1)
+}
 export const DEFAULT_TEXT_FONT_SIZE = 24
 export const MAX_TEXT_LENGTH = 2000
 export const TEXT_LINE_HEIGHT = 1.3

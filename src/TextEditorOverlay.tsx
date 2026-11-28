@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { keyCommand } from './desktopInput'
 import type { TextAlign, TextFontId } from './canvasModel'
 import { TEXT_LINE_HEIGHT, measureTextSize, textFontFamily, type TextMeasure } from './textLayout'
 import { continueList, minimalEdit } from './listContinuation'
@@ -40,10 +41,12 @@ type TextEditorOverlayProps = {
   onChange: (value: string) => void
   onCommit: () => void
   onCancel: () => void
+  /** Desktop: Ctrl/Cmd+Shift+. and , change the size of the text being edited; returns true when it took the key. */
+  onSizeKey?: (direction: 1 | -1) => boolean
 }
 
 /** A plain textarea positioned over the canvas, so the system keyboard and handwriting input work. */
-export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommit, onCancel }: TextEditorOverlayProps) {
+export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommit, onCancel, onSizeKey }: TextEditorOverlayProps) {
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const [value, setValue] = useState(editor.initialText)
   const scale = viewport.scale
@@ -131,7 +134,9 @@ export function TextEditorOverlay({ editor, viewport, measure, onChange, onCommi
       onBlur={onCommit}
       onPointerDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
-        if (event.key === 'Escape') { event.preventDefault(); onCancel() }
+        const sizeKey = onSizeKey && !event.nativeEvent.isComposing ? keyCommand(event, 'desktop') : null
+        if (sizeKey?.kind === 'fontSize') { if (onSizeKey?.(sizeKey.direction)) event.preventDefault() }
+        else if (event.key === 'Escape') { event.preventDefault(); onCancel() }
         else if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229 && (event.ctrlKey || event.metaKey || (editor.connectorId !== undefined && !event.shiftKey))) { event.preventDefault(); onCommit() }
         else if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
           // Plain Enter inserts a newline here (connector labels commit above), so it may continue a list.

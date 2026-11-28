@@ -50,7 +50,7 @@ test('help and the palette list both shortcuts', () => {
 
 test('App applies a step through the panel size path: one undo step, auto-fit off, locked labels refused', () => {
   assert.match(app, /case 'fontSize': return stepSelectedFontSize\(command\.direction\)/)
-  assert.match(app, /const stepSelectedFontSize = \(direction: 1 \| -1\): boolean => \{[\s\S]*?const item = selectedTextItem\(\)\s*if \(!item && inputModeRef\.current === .desktop.\) return stepBoxLabelFontSizes\(direction\)\s*if \(!item \|\| isItemLocked\(item\)\) return false\s*const size = stepFontSize\(item\.fontSize, direction\)\s*if \(size === null\) return true\s*pickTextSize\(size\)/)
+  assert.match(app, /const stepSelectedFontSize = \(direction: 1 \| -1\): boolean => \{[\s\S]*?const item = selectedTextItem\(\)\s*if \(!item && inputModeRef\.current === .desktop.\) return stepBoxLabelFontSizes\(direction\)\s*if \(!item \|\| isItemLocked\(item\)\) return false\s*const size = stepTextSize\(item\.fontSize, direction\)\s*if \(size === null\) return true\s*pickTextSize\(size\)/)
   // pickTextSize replaces the label with fitOff: true through replaceTextItem, which saves exactly one history step.
   assert.match(app, /replaceTextItem\(buildEditedLabel\(item, item\.text, \{ itemId: item\.id[^}]*fontSize: size[^}]*fitOff: true \}/)
   assert.match(app, /const replaceTextItem = \(updated: TextObject\) => \{\s*saveHistory\(\)/)

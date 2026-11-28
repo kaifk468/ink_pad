@@ -110,7 +110,7 @@ import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, label
 import { selectionBoundsWithEndLabels, setConnectorEndLabel } from './connectorEndLabels'
 import { cornersChoice, setRoundedCorners } from './roundedCorners'
 import { connectorLabelCentre, connectorLabelFontSize, connectorLabelPosition, labelPositionForDrag, pointOnConnectorLabel, setConnectorLabel, setConnectorLabelFontSize, setConnectorLabelPosition } from './connectorLabel'
-import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, keepAlignAnchor, stepFontSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
+import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, keepAlignAnchor, stepTextSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
 import type { TextAlign, TextFontId } from './canvasModel'
 import { useDocuments } from './app/useDocuments'
@@ -2524,7 +2524,7 @@ function App() {
     let changed = false
     const next = strokesRef.current.map((candidate): CanvasItem => {
       if (candidate.kind !== 'text' || !labelKeys.has(canvasItemKey(candidate))) return candidate
-      const size = stepFontSize(candidate.fontSize, direction)
+      const size = stepTextSize(candidate.fontSize, direction)
       if (size === null) return candidate
       changed = true
       return buildEditedLabel(candidate, candidate.text, { itemId: candidate.id, x: candidate.x, y: candidate.y, fontSize: size, fontFamily: candidate.fontFamily, initialText: candidate.text, fitOff: true }, createTextMeasure)
@@ -2543,16 +2543,24 @@ function App() {
     const labelled = selectedLabelledConnector()
     if (labelled && !selectedTextItem()) {
       if (labelled.locked) return false
-      const size = stepFontSize(connectorLabelFontSize(labelled), direction)
+      const size = stepTextSize(connectorLabelFontSize(labelled), direction)
       if (size !== null) pickConnectorLabelSize(size)
       return true
     }
     const item = selectedTextItem()
     if (!item && inputModeRef.current === 'desktop') return stepBoxLabelFontSizes(direction)
     if (!item || isItemLocked(item)) return false
-    const size = stepFontSize(item.fontSize, direction)
+    const size = stepTextSize(item.fontSize, direction)
     if (size === null) return true
     pickTextSize(size)
+    return true
+  }
+  /** The size keys while a text editor is open (Desktop; not a connector label editor, whose size is set on the selected connector): the text being edited steps one size, like a panel pick. */
+  const stepEditorFontSize = (direction: 1 | -1): boolean => {
+    const editor = textEditorRef.current
+    if (!editor || inputModeRef.current !== 'desktop' || editor.connectorId !== undefined) return false
+    const size = stepTextSize(editor.fontSize, direction)
+    if (size !== null) { pickTextSize(size); showToast(`Text size ${size}`) }
     return true
   }
   /** The Desktop text panel toggle: auto-fit on or off for the label being edited or selected. */
@@ -5918,6 +5926,10 @@ function App() {
     { id: 'export:outline-download', label: 'Download outline (.md)', group: 'Export', keywords: 'markdown text summary file', run: downloadOutline },
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
     ...(inputMode === 'desktop' ? [{ id: 'setting:grid-snap', label: gridSnap ? 'Snap to grid: off' : 'Snap to grid: on', group: 'Settings', keywords: 'snap grid align dots', run: () => updateGridSnap(!gridSnapRef.current) }] : []),
+    ...(inputMode === 'desktop' ? [
+      { id: 'edit:text-bigger', label: 'Bigger text', group: 'Edit', keywords: 'font size larger increase label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: 1 }) } },
+      { id: 'edit:text-smaller', label: 'Smaller text', group: 'Edit', keywords: 'font size decrease reduce label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: -1 }) } },
+    ] : []),
     { id: 'setting:snapping', label: 'Toggle snapping', group: 'Settings', keywords: 'snap guides align', run: () => updateSnapping(!snappingRef.current) },
     { id: 'setting:sketchy', label: 'Toggle hand-drawn style', group: 'Settings', keywords: 'sketchy rough', run: toggleSketchy },
     // Always last: equal search scores keep list order, so commands stay above diagrams. Opening goes through the Library's own open function (the open diagram is saved first).
@@ -6296,6 +6308,7 @@ function App() {
           measure={createTextMeasure}
           onChange={(value) => { textEditorValueRef.current = value }}
           onCommit={commitTextEditor}
+          onSizeKey={inputMode === 'desktop' ? stepEditorFontSize : undefined}
           onCancel={inputMode === 'desktop' ? () => { const e = textEditorRef.current; if (e && labelEscapeAction(e.itemId !== null || e.connectorId !== undefined, textEditorValueRef.current)==='cancel') cancelTextEditor(); else commitTextEditor() } : cancelTextEditor}
         />}
         {codeEditor && inputMode === 'desktop' && (() => {
