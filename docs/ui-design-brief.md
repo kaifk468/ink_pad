@@ -144,3 +144,7 @@ Dark theme: **held back** (round 1 review: only token surfaces turned dark). Shi
 
 ## 10. Unfinished / next rounds
 Next (from round 6 walk and review): connecting boxes is still the biggest friction (quick-connect circles look draggable but are click-to-spawn; Arrow tool has no attach preview) and still needs the owner's call; the right-click menu is long (about 790px for a connector) and should be split into a short first level plus a "More" submenu; the options panel opens over the canvas where a new user is about to drag (round 6 walk lost a first box under it) — consider opening it collapsed for a shape tool with nothing selected, or placing it so the first drag lands on canvas; dock is 17 icon-only buttons and first-timers had to hover everything (consider group captions on hover or a one-time labelled dock); empty-canvas hint chips look clickable but are not; Export dialog could show a small preview. Then: library recent/pinned rows and card action menu, dark theme, consolidating the right-edge floating islands, latin-ext font subset. See the newest `docs/progress/inkpad-ui-round-*.md`.
+
+## Round 7 (2026-11-28)
+- Picker dialogs on desktop use named tiles (icon over a one-line caption, 84px min column), a count line with the Enter target, the Enter target outlined in accent, and an empty state that suggests what to type. Hover lift 1px, 140ms, off under reduced motion.
+- Open question: chrome on the Chalkboard board stays light cards for now.

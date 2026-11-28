@@ -822,3 +822,8 @@ What got there: cached path is the only default (direct limit 0), the whole page
   - cached, `layers=one`, short strokes (letters): gap 22/33/33, slow 88%, 26 frames. So the late frames are not caused by the repaint box growing with a long stroke.
 - Reading: on the cached path, late frames follow the pixel count of the canvas (dpr squared: 97/45/3/0%), not our JavaScript (about 1.4 ms) and not stroke length. Two untested explanations: (a) a partial update of a big page canvas makes the browser copy the whole canvas every frame, while a full clear (direct path) avoids it; (b) the detached layer canvases are not drawn on the GPU. `?dirty=off` tests (a), `?layerdom=on` tests (b). If neither fixes it, tiles (separate small canvases on the page, moved with CSS transforms) are the next step.
 - Checks run: `npm test` 324/324, `tsc -b`, `npm run build`; headless: both switches give pixel-identical output to the default on the page and after three pen strokes (cached path). Not verified on the tablet.
+
+### 2026-11-28 UI round 7
+- Desktop Insert logo dialog: labelled tiles, match count with Enter hint, first match outlined, friendlier empty state, wider dialog. `LogoPicker` gained an optional `labelled` prop used only by `LogoDialog`; tablet tray unchanged.
+- Checks: npm test 1942/1942, build ok, headless capture 1440/1024 with no console errors. Not verified on device.
+- Next: labelled logo results in the desktop More shapes tray; Chalkboard chrome decision; round 6 held-back items.
