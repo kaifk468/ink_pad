@@ -95,3 +95,9 @@ test('canvas marks follow the board in the sheet layer, minimap and SVG export',
   assert.match(app, /pageSpacing,\s*benchmarkBackground \|\| theme === 'light' \? undefined : palette,/)
   assert.match(app, /drawPageTemplateOverview\(ctx, canvasType, \{[^}]*\}, theme === 'light' \? undefined : palette\)/)
 })
+
+test('template and import ink (#1e1e1e) and black follow the board too', async () => {
+  const colors = await loadModule('boardColors.ts')
+  for (const c of ['#202124', '#1e1e1e', '#1E1E1E', '#000000']) assert.equal(colors.isDefaultInk(c), true)
+  assert.equal(colors.isDefaultInk('#3568d4'), false)
+})

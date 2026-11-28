@@ -10,8 +10,10 @@ import { DEFAULT_FILL, DEFAULT_INK, boardPalette, boardTheme, type BoardPalette,
  */
 
 /** True when `color` is the stored default ink (compared case-insensitively). */
+/** The default inks: InkPad's own (#202124), the one templates and Excalidraw / Mermaid imports write (#1e1e1e), and plain black. */
+const DEFAULT_INKS = new Set([DEFAULT_INK, '#1e1e1e', '#000000', '#000'])
 export function isDefaultInk(color: string): boolean {
-  return color === DEFAULT_INK || color.toLowerCase() === DEFAULT_INK
+  return DEFAULT_INKS.has(color) || DEFAULT_INKS.has(color.toLowerCase())
 }
 
 /** True when `color` is the default white fill. */
