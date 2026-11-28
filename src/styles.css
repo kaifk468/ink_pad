@@ -898,6 +898,12 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .app-shell.ui-hidden .page-undo-bar { visibility: hidden; pointer-events: none; }
 .show-toolbars-pill { position: fixed; z-index: 31; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); height: 32px; padding: 0 14px; border: 1px solid rgba(36, 42, 52, .18); border-radius: 16px; background: rgba(255, 255, 255, .92); color: #343944; font-size: 13px; font-weight: 600; box-shadow: 0 2px 8px rgba(31, 39, 52, .16); cursor: pointer; opacity: .6; touch-action: manipulation; }
 .show-toolbars-pill:hover, .show-toolbars-pill:focus-visible { opacity: 1; }
+.slide-nav { position: fixed; z-index: 31; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid rgba(36, 42, 52, .18); border-radius: 24px; background: rgba(255, 255, 255, .86); color: #343944; box-shadow: 0 2px 8px rgba(31, 39, 52, .16); opacity: .6; touch-action: manipulation; user-select: none; }
+.slide-nav:hover, .slide-nav:focus-within { opacity: 1; }
+.slide-nav button { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 22px; background: transparent; color: inherit; font-size: 26px; line-height: 1; cursor: pointer; touch-action: manipulation; }
+.slide-nav button:hover:not(:disabled) { background: rgba(36, 42, 52, .08); }
+.slide-nav button:disabled { opacity: .3; cursor: default; }
+.slide-nav-label { min-width: 48px; text-align: center; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .page-overview { width: min(880px, 100%); max-height: min(640px, calc(100vh - 32px)); display: flex; flex-direction: column; }
 .page-overview-grid { list-style: none; margin: 0; padding: 4px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
 .page-tile { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 2px solid #d9dce2; border-radius: 12px; background: #fff; }

@@ -17,6 +17,7 @@ import { linkedNeighbour, revealViewport, walkCurrentKey, walkItemBounds, walkSt
 import { addBoundary } from './boundary'
 import { canSelectConnected, connectedKeys, linkedKeys } from './selectConnected'
 import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
+import { SLIDE_MAX_ZOOM, SLIDE_PADDING, showSlideControl, slideKeyTarget, slideLabel, slideStepEnabled } from './slideNav'
 import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeChoice } from './changeShape'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, pasteTranslation, type PasteResult } from './clipboard'
@@ -1152,6 +1153,25 @@ function App() {
     renderAll()
     renderNavigator(true)
     return true
+  }
+  /** Slides: zoom the page on screen to fit its content (the whole sheet when it is empty). The UI is hidden, so the full canvas is used. Respects a locked zoom. */
+  const fitSlideView = () => {
+    if (navigationSettingsRef.current.zoomLocked) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0 || rect.height <= 0) return
+    const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
+    if (!bounds) { fitCanvasView(); return }
+    applyViewport(fitViewportToBounds(bounds, rect.width, rect.height, SLIDE_PADDING, MIN_ZOOM, SLIDE_MAX_ZOOM))
+  }
+  /** Slides: show page `target` through the normal page switch (stash, history per page, autosave path), then fit it. */
+  const showSlide = (target: number) => {
+    if (target !== pageIndexRef.current) goToPage(target)
+    if (target === pageIndexRef.current) fitSlideView()
+  }
+  /** Palette "Present pages": hide the toolbars (if shown) and fit the page on screen. */
+  const presentPages = () => {
+    if (!presentModeRef.current) togglePresentMode()
+    fitSlideView()
   }
   const togglePresentMode = () => {
     setOptionsFor(null); setEraserMenuOpen(false)
@@ -5964,6 +5984,7 @@ function App() {
     ...(selectionKeysWithBox().size > 0 ? [{ id: 'template:save', label: 'Save selection as template…', group: 'Templates', keywords: 'my templates store reuse', run: openSaveTemplate }] : []),
     { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2, undefined, true).then((error) => { if (error) showToast(error) }) },
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
+    { id: 'view:presentPages', label: 'Present pages (slides: arrow keys or buttons step pages, each page fitted)', group: 'View', keywords: 'present slides slideshow talk pages fullscreen hide toolbars next previous', run: presentPages },
     { id: 'page:overview', label: 'Page overview', group: 'Pages', keywords: 'pages thumbnails grid reorder move jump', run: () => setPageOverviewOpen(true) },
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
     ...(currentSelectionKeys().size > 0 ? movePaletteEntries(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)).map((row) => ({ id: row.id, label: row.label, group: 'Pages', keywords: 'move selection send items to page', run: () => { moveSelectionToPageNow(row.target) } })) : []),
@@ -6197,6 +6218,8 @@ function App() {
     if (command.kind === 'saveNow') { if (activeStrokeRef.current === null && activePointerRef.current === null) saveNowWithToast(); return true } // saving works under dialogs, the Library and the palette too; never mid-stroke (the autosave follows when the stroke ends)
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (editingBlocksCanvas()) return false
+    // Present mode: arrow keys step pages (see onKeyDown) and never nudge a selection.
+    if (presentModeRef.current && command.kind === 'nudge') return true
     const gestureActive = canvasGestureActive()
     if (contextMenuRef.current) {
       // While the menu is open Escape closes it and no other shortcut runs.
@@ -6294,6 +6317,25 @@ function App() {
         return true
     }
   }
+  // Slides (present mode): these keys change page. Registered before the shortcut listener and stops it, so the same key never also nudges or pages twice.
+  const slideKeyRef = useRef<(event: KeyboardEvent) => void>(() => undefined)
+  slideKeyRef.current = (event) => {
+    if (!presentModeRef.current) return
+    const target = event.target as HTMLElement | null
+    const tag = (target?.tagName ?? 'BODY').toUpperCase()
+    const slideTarget = slideKeyTarget(event, pageIndexRef.current, pagesRef.current.length)
+    // Not while a field, editor, dialog, menu or canvas gesture has the keyboard; Space on a focused button presses that button.
+    if (slideTarget === null || isTypingTarget(tag, Boolean(target?.isContentEditable)) || (event.key === ' ' && ['BUTTON', 'A', 'SELECT'].includes(tag))) return
+    if (canvasCommandBlocked()) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    showSlide(slideTarget)
+  }
+  useEffect(() => {
+    const onSlideKey = (event: KeyboardEvent) => slideKeyRef.current(event)
+    window.addEventListener('keydown', onSlideKey)
+    return () => window.removeEventListener('keydown', onSlideKey)
+  }, [])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       clickPairRef.current = null
@@ -6741,6 +6783,13 @@ function App() {
         canDuplicatePage={canAddPage(pageCount)}
       />
       {focusActive && <button className="focus-chip" type="button" title="Exit focus (Esc)" onClick={exitFocus}>Focused · Exit</button>}
+      {showSlideControl(presentMode, pageCount) && (
+        <div className="slide-nav" role="group" aria-label="Slides">
+          <button type="button" aria-label="Previous page" title="Previous page (Left arrow or PageUp)" disabled={!slideStepEnabled(pageIndex, pageCount).previous} onClick={() => showSlide(pageIndexRef.current - 1)}>‹</button>
+          <span className="slide-nav-label" aria-live="polite" aria-label={`Page ${pageIndex + 1} of ${pageCount}`}>{slideLabel(pageIndex, pageCount)}</span>
+          <button type="button" aria-label="Next page" title="Next page (Right arrow, PageDown or Space)" disabled={!slideStepEnabled(pageIndex, pageCount).next} onClick={() => showSlide(pageIndexRef.current + 1)}>›</button>
+        </div>
+      )}
       {presentMode && <button className="show-toolbars-pill" type="button" title="Show the toolbars (Alt+Z or Esc)" onClick={() => setPresentMode(false)}>Show toolbars</button>}
       {classBoxEditor && <ClassBoxDialog
         key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}
