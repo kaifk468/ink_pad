@@ -148,3 +148,7 @@ Next (from round 6 walk and review): connecting boxes is still the biggest frict
 ## Round 7 (2026-11-28)
 - Picker dialogs on desktop use named tiles (icon over a one-line caption, 84px min column), a count line with the Enter target, the Enter target outlined in accent, and an empty state that suggests what to type. Hover lift 1px, 140ms, off under reduced motion.
 - Open question: chrome on the Chalkboard board stays light cards for now.
+
+
+## Board styles rule (round 8)
+- Any text drawn straight on the board (empty-state hint, captions) must switch to light ink (#eef1ec, muted at 78%) when `.canvas-stage[data-board]` is set (Dark, Chalkboard). Floating chrome stays light cards pending owner decision.

@@ -93,7 +93,7 @@ export function MoreShapesTray({ hldActive, onHldShape, onSticky, onLogo, deskto
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v10l-5 5H5z"/><path d="M14 19.5v-5h5"/></svg><span>Sticky note{stickyAlias && <small className="shape-search-alias">{stickyAlias}</small>}</span>
         </button>}
         {!searching && <div className="insert-tray-heading">Tech logos</div>}
-        <LogoPicker autoFocus={false} externalQuery={searching ? query : undefined} onInsert={(logo, showName) => { onLogo(logo, showName); setOpen(false) }} />
+        <LogoPicker autoFocus={false} labelled={desktopTip} externalQuery={searching ? query : undefined} onInsert={(logo, showName) => { onLogo(logo, showName); setOpen(false) }} />
       </div>}
     </div>
   )
