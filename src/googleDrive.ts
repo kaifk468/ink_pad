@@ -1,7 +1,7 @@
 import { documentItemCount, documentPageCount, DOCUMENT_FILE_EXTENSION, parseDocument, stringifyDocument, type InkPadDocument } from './documentFormat'
 import type { DocumentSummary, FolderRecord } from './documentStore'
 import { fileBase, sanitizeName } from './deviceStore'
-import { cleanFolderName, folderAndDescendantIds } from './folderTree'
+import { canMoveFolder, cleanFolderName, folderAndDescendantIds, folderMoveRefusalText } from './folderTree'
 import type { StorageBackend } from './storageBackend'
 import type { DriveCache } from './driveCache'
 import type { DriveProfile } from './driveProfile'
@@ -56,6 +56,7 @@ type DriveFile = {
   mimeType?: string
   parents?: string[]
   modifiedTime?: string
+  createdTime?: string
   appProperties?: Record<string, string>
 }
 
@@ -88,7 +89,7 @@ async function listAll(env: DriveEnv): Promise<DriveFile[]> {
       spaces: ROOT_ALIAS,
       q: 'trashed = false',
       pageSize: '1000',
-      fields: 'nextPageToken,files(id,name,mimeType,parents,modifiedTime,appProperties)',
+      fields: 'nextPageToken,files(id,name,mimeType,parents,modifiedTime,createdTime,appProperties)',
     })
     if (pageToken) params.set('pageToken', pageToken)
     const data = await (await call(env, `${FILES_URL}?${params}`)).json() as { files?: DriveFile[]; nextPageToken?: string }
@@ -109,6 +110,7 @@ function organise(files: DriveFile[]) {
     id: file.id,
     title: fileBase(file.name),
     updatedAt: file.modifiedTime ?? '',
+    ...(file.createdTime ? { createdAt: file.createdTime } : {}),
     itemCount: Number(file.appProperties?.itemCount) || 0,
     ...(Number(file.appProperties?.pageCount) > 1 ? { pageCount: Number(file.appProperties?.pageCount) } : {}),
     ...(file.appProperties?.starred === STARRED_VALUE ? { starred: true } : {}),
@@ -264,6 +266,17 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
       }
       return (await download(id))?.document ?? null
     },
+    async loadFresh(id) {
+      // an edit still on its way to Drive is newer than Drive's file: wait for it, and never replace an unsent browser copy
+      await (uploadQueues.get(id) ?? Promise.resolve()).catch(() => undefined)
+      let cached = null
+      try { cached = cache ? await cache.get(id) : null } catch { cached = null }
+      if (cached?.pending) {
+        const parsed = parseDocument(cached.text)
+        if (parsed.ok) return parsed.document
+      }
+      return (await download(id))?.document ?? null
+    },
     async save(id, document: InkPadDocument, folderId) {
       const content = stringifyDocument(document)
       if (!id) {
@@ -331,6 +344,20 @@ export function createDriveBackend(env: DriveEnv, options: { cache?: DriveCache 
         body: JSON.stringify({ name: cleanFolderName(name) }),
       })
       return null
+    },
+    async moveFolder(id, parentId) {
+      const files = await listAll(env)
+      const { folders } = organise(files)
+      const decision = canMoveFolder(folders, id, parentId)
+      if (!decision.ok) {
+        if (decision.reason === 'same-parent') return 'noop'
+        throw new Error(folderMoveRefusalText(decision.reason, folders.find((folder) => folder.id === id)?.name ?? ''))
+      }
+      const file = files.find((entry) => entry.id === id && entry.mimeType === FOLDER_MIME)
+      if (!file) throw new Error('That folder no longer exists.')
+      // Same call as moving a diagram: the folder (and everything in it) is re-parented, never copied. The cached listing is rebuilt by the next list().
+      const params = new URLSearchParams({ addParents: parentId ?? ROOT_ALIAS, removeParents: (file.parents ?? []).join(','), fields: 'id' })
+      await call(env, `${FILES_URL}/${encodeURIComponent(id)}?${params}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' })
     },
     async deleteFolder(id) {
       const { folders, documents } = organise(await listAll(env))

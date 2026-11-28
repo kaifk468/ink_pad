@@ -1,3 +1,4 @@
+import { DEFAULT_DOCUMENT_TITLE } from './documentFormat'
 import type { DocumentSummary, FolderRecord } from './documentStore'
 import { folderAndDescendantIds, folderPath } from './folderTree'
 import type { PageTemplate } from './pageTemplates'
@@ -12,6 +13,17 @@ export type LibraryQuery = {
 }
 
 export type LibraryLayout = 'grid' | 'list'
+export type LibrarySort = 'edited' | 'name' | 'created'
+export const LIBRARY_SORTS: readonly { id: LibrarySort; label: string }[] = [
+  { id: 'edited', label: 'Last edited' },
+  { id: 'name', label: 'Name' },
+  { id: 'created', label: 'Created' },
+]
+
+/** Reads a remembered sort choice; anything unknown means the default (Last edited). */
+export function parseLibrarySort(value: unknown): LibrarySort {
+  return value === 'name' || value === 'created' ? value : 'edited'
+}
 
 export type NewDiagramPreset = { id: string; label: string; hint: string; template: PageTemplate }
 
@@ -48,6 +60,51 @@ export function searchLibrary(library: DocumentSummary[], folders: FolderRecord[
     .sort((a, b) => time(b.updatedAt) - time(a.updatedAt))
 }
 
+function isUntitled(entry: DocumentSummary): boolean {
+  const title = entry.title.trim()
+  return !title || title.toLowerCase() === DEFAULT_DOCUMENT_TITLE.toLowerCase()
+}
+
+/**
+ * Orders diagrams. 'edited': newest edit first. 'name': A to Z, locale-aware and case-insensitive, untitled diagrams last.
+ * 'created': newest first by the created time the storage reports (browser and device storage and Google Drive do); a diagram whose
+ * created time is unknown (older browser records not saved since) uses its last-edited time instead. Ties fall back to last edited,
+ * so the order is stable. Never changes the input.
+ */
+export function sortLibrary(entries: DocumentSummary[], sort: LibrarySort): DocumentSummary[] {
+  const edited = (a: DocumentSummary, b: DocumentSummary) => time(b.updatedAt) - time(a.updatedAt)
+  const created = (entry: DocumentSummary) => {
+    const stamp = entry.createdAt ? time(entry.createdAt) : -Infinity
+    return stamp === -Infinity ? time(entry.updatedAt) : stamp
+  }
+  const compare = (a: DocumentSummary, b: DocumentSummary): number => {
+    if (sort === 'name') {
+      const ua = isUntitled(a)
+      const ub = isUntitled(b)
+      if (ua !== ub) return ua ? 1 : -1
+      if (!ua) {
+        const byName = a.title.trim().localeCompare(b.title.trim(), undefined, { sensitivity: 'base', numeric: true })
+        if (byName !== 0) return byName
+      }
+    } else if (sort === 'created') {
+      const ca = created(a)
+      const cb = created(b)
+      if (ca !== cb) return ca === -Infinity ? 1 : cb === -Infinity ? -1 : cb - ca
+    }
+    return edited(a, b)
+  }
+  return entries.slice().sort(compare)
+}
+
+/** The Recent row appears only when the library has more than this many diagrams. */
+export const RECENT_MIN_LIBRARY = 3
+export const RECENT_COUNT = 6
+
+/** The n most recently edited diagrams (unknown dates last). Never changes the input. */
+export function recentDiagrams(library: DocumentSummary[], n: number = RECENT_COUNT): DocumentSummary[] {
+  return library.slice().sort((a, b) => time(b.updatedAt) - time(a.updatedAt)).slice(0, Math.max(0, n))
+}
+
 /** How many diagrams are in a folder, counting its subfolders. */
 export function countInFolder(library: DocumentSummary[], folders: FolderRecord[], folderId: string): number {
   const ids = new Set(folderAndDescendantIds(folders, folderId))
@@ -67,4 +124,9 @@ export function describeEdited(updatedAt: string, now: number = Date.now()): str
   if (days === 1) return 'Yesterday'
   if (days < 7) return `${days} days ago`
   return new Date(stamp).toLocaleDateString()
+}
+
+/** True when the whole Library holds nothing (top level, no search, not the Starred view): desktop shows the welcoming empty state there. */
+export function showLibraryWelcome(input: { shown: number; inFolder: boolean; searching: boolean; starredView: boolean }): boolean {
+  return input.shown === 0 && !input.inFolder && !input.searching && !input.starredView
 }

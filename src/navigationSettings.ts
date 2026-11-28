@@ -23,3 +23,22 @@ export function saveNavigationSettings(settings: NavigationSettings, storage?: P
     /* storage unavailable: the choice lasts for this session only */
   }
 }
+
+const TAP_UNDO_KEY = 'inkpad.tapUndo'
+
+/** Two-finger tap = undo, three-finger tap = redo. On unless the person turned it off. */
+export function loadTapUndo(storage?: Pick<Storage, 'getItem'>): boolean {
+  try {
+    return (storage ?? window.localStorage).getItem(TAP_UNDO_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+
+export function saveTapUndo(enabled: boolean, storage?: Pick<Storage, 'setItem'>): void {
+  try {
+    ;(storage ?? window.localStorage).setItem(TAP_UNDO_KEY, enabled ? 'on' : 'off')
+  } catch {
+    /* storage unavailable: the choice lasts for this session only */
+  }
+}

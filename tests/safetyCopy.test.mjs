@@ -493,3 +493,27 @@ test('leaving a diagram never waits forever on the safety copy store', async () 
   assert.match(source, /const flushCopy = \(\): Promise<void> => Promise\.race\(\[keeper\.flush\(\)\.catch\(\(\) => undefined\), new Promise<void>\(\(resolve\) => window\.setTimeout\(resolve, SAFETY_FLUSH_WAIT_MS\)\)\]\)/)
   assert.doesNotMatch(source, /await keeper\.flush\(\)/)
 })
+
+test('rename: the dirty safety copy is rewritten with the new title once the storage holds it (flush after the rename save)', async () => {
+  const t = setup()
+  t.app.n = 2
+  t.keeper.noteChange()
+  await t.advance(600)
+  // the dirty copy (old title) exists; the user renames before autosave ran: the rename save creates the file and marks it synced
+  t.app.title = 'Client flow'
+  t.app.docId = 'd1'
+  t.app.backend = { title: 'Client flow', n: 2 }
+  await t.keeper.markSynced({ title: 'Client flow', n: 2 }, null, 'd1')
+  const [before] = await t.store.list()
+  assert.equal(safety.isDirty(before), true) // the bug: still dirty, with the old title, so the next start restores it over the rename
+  await t.keeper.flush()
+  const [record] = await t.store.list()
+  assert.equal(format.parseDocument(record.text).document.title, 'Client flow')
+  assert.equal(safety.isDirty(record), false)
+})
+
+test('wiring: renameDiagram flushes the safety copy after saving (bounded, never waits forever)', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const src = await readFile(new URL('../src/app/useDocuments.ts', import.meta.url), 'utf8')
+  assert.match(src, /const renameDiagram = [\s\S]*?persistNow\(\)\.then\(\(\) => flushCopy\(\)\)/)
+})

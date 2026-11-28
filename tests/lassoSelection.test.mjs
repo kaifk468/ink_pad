@@ -288,10 +288,10 @@ test('snapshot history undoes and redoes a connector movement and creation', () 
 
 test('snaps an endpoint to the nearest rectangle boundary within the S Pen tolerance', () => {
   const box = rectangle(7, 100, 100, 120, 80)
-  const snapped = model.snapConnectorEndpoint({ x: 155, y: 94, pressure: 0.6 }, [box])
+  const snapped = model.snapConnectorEndpoint({ x: 135, y: 94, pressure: 0.6 }, [box])
   assert.deepEqual(snapped, {
-    point: { x: 155, y: 100, pressure: 0.6 },
-    attachment: { rectangleId: 7, offsetX: 55, offsetY: 0 },
+    point: { x: 135, y: 100, pressure: 0.6 },
+    attachment: { rectangleId: 7, offsetX: 35, offsetY: 0 },
   })
   assert.equal(model.snapConnectorEndpoint({ x: 260, y: 200, pressure: 1 }, [box]), null)
 })

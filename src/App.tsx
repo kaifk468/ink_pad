@@ -1,13 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
-import { CONNECTOR_SNAP_TOLERANCE, CanvasSnapshotHistory, toItemFrame, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting } from './canvasModel'
+import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
+import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, rotatedItemBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, type ConnectorRouting } from './canvasModel'
+import { QUICK_CONNECT_DOUBLE_CLICK_MS, TABLET_QUICK_CONNECT_TAP_SLOP_PX, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHeadEnds, quickConnectHint, type QuickConnectDirection } from './quickConnect'
+import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConnectorHandle, hitConnectorLabel, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
-import { PASTE_OFFSET, copyItems, pasteItems } from './clipboard'
-import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type Guide } from './snapping'
+import { duplicateForDrag, isDuplicateDragPress, type DragDuplicate } from './dragDuplicate'
+import { similarItemKeys } from './selectSimilar'
+import { canSameSize, sameSizeItems, type SameSizeMode } from './sameSize'
+import { canSwapPositions, swapPositionsItems } from './swapPositions'
+import { canInsertBoxIntoConnector, connectorDropPaths, connectorUnderBox, insertBoxIntoConnector, insertExistingBoxIntoConnector } from './insertIntoConnector'
+import { canFlipSelection, flipSelectionItems, type FlipAxis } from './flipSelection'
+import { linkedNeighbour, revealViewport, walkCurrentKey, walkItemBounds, walkStep } from './keyboardWalk'
+import { addBoundary } from './boundary'
+import { canSelectConnected, connectedKeys, linkedKeys } from './selectConnected'
+import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
+import { SLIDE_MAX_ZOOM, SLIDE_PADDING, showSlideControl, slideKeyTarget, slideLabel, slideStepEnabled } from './slideNav'
+import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeChoice } from './changeShape'
+import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
+import { PASTE_OFFSET, copyItems, pasteItems, pasteTranslation, type PasteResult } from './clipboard'
+import { axisLock, isCornerHandle, keepAspect, keepLockedAxis, lockedAxis, sizeReadoutText } from './resizeModifiers'
+import { gridDots, gridSnapApplies, gridSpacingFor, isLatticeCanvas, loadGridSnap, saveGridSnap, gridNudgeDelta, snapAngle as snapPointAngle, snapMoveDelta, snapPoint, snapResizeBounds, unpaddedSelectionBounds } from './gridSnap'
+import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type GapMarker, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
-import { HLD_DEFAULT_SIZE, createHldShape, type HldShape } from './hldShapes'
+import { shapeKeywords } from './shapeSearch'
+import { HLD_DEFAULT_SIZE, HLD_SHAPES, HLD_SHAPE_LABELS, createHldShape, isHldTapCreate, type HldShape } from './hldShapes'
 import { describePenEvent, isPenButtonHeld, loadEraserPrefs, saveEraserPrefs } from './penButton'
 import { INK_BOX_DEFAULT_HEIGHT, newInkBoxContent, INK_BOX_DEFAULT_WIDTH, INK_BOX_MIN_HEIGHT, INK_BOX_MIN_WIDTH, addStrokeToInkBox, createInkClassBox, findInkBoxAt, hitInkBoxDivider, hitInkBoxMoveGrip, inkBoxMoveGrip, moveInkBoxDivider, type InkBoxDivider } from './inkClassBox'
 import type { CanvasItem, ClassBoxContent, CodeObject, ConnectorObject, ConnectorRelationshipType, Point, RectangleBounds, RectangleObject, RectangleResizeHandle, Stroke, TextObject } from './canvasModel'
@@ -17,9 +36,17 @@ import { MAX_PREDICTION_DISTANCE_SCREEN_PX, getPointerSamples, getPredictedPoint
 import { shouldAppendStrokeSample } from './strokeSampling'
 import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserStallSummary, type StrokeDiagnosticRow } from './performanceDiagnostics'
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
-import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
+import { applySheetLayer, drawPageTemplateOverview, effectiveMarks, getSheetLayerState, type MarkStrength, loadPageSpacing, loadPageTemplate, pageSpacingUnits, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
-import { getNextIds } from './documentFormat'
+import { chalkGrainCssUrl, chalkTextureApplies } from './chalkTexture'
+import { boardFieldsFor, boardPalette, boardStyleOf, isDarkBoard, type BoardStyleId, type BoardTheme } from './boardStyle'
+import { boardCommands } from './boardPicker'
+import { resolveInk, resolveItemForBoard, setBoardFill, setBoardInk, sheetBorderColor, sheetColorForBoard } from './boardColors'
+import { canvasFieldsFor, effectiveCanvasType, type CanvasType } from './canvasTypes'
+import { laneDir, laneFit, laneLabel, laneRects, type LaneSettings } from './canvasLanes'
+import { laneFitDelta } from './laneFit'
+import { ruledBaselineY } from './ruledText'
+import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
 import { thinItems, thinStroke } from './strokeThinning'
@@ -27,7 +54,7 @@ import { createTestInk, isTestInk } from './testInk'
 import { createFrameRecorder, createRedrawTracker, formatDrawFlags, formatFrameSummary, formatRedrawSummary } from './app/frameRecorder'
 import { createLiveStrokeState, drawLiveStrokeFrame, type LiveStrokeState } from './app/liveStroke'
 import { chooseDrawMode, countVisiblePoints, DEFAULT_DIRECT_MAX_VISIBLE_POINTS, isItemVisible, viewRectOf, type DrawMode } from './app/visibleInk'
-import { createFontMeasure, createTextMeasure, drawConnector, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, layerCanvasOptions, rawDrawingOptions } from './app/canvasRenderer'
+import { setConnectorLabelBackground, createFontMeasure, createTextMeasure, drawConnector, drawConnectorHalo, drawSideMidpointDots, drawItem as drawItemToCanvas, drawMinimapItems as drawMinimapItemsToCanvas, drawStroke as drawStrokeToCanvas, getReusableCanvasLayer, layerCanvasOptions, rawDrawingOptions } from './app/canvasRenderer'
 import { formatBrowserStall, formatFocusedP95, formatMetricSummary, getDiagnosticDeviceInfo, getSceneComplexity } from './app/performanceFormat'
 import { UmlConnectorIcon } from './app/UmlConnectorIcon'
 import { TextEditorOverlay, type TextEditorState } from './TextEditorOverlay'
@@ -37,34 +64,82 @@ import { MAX_CODE_FONT_SIZE, MIN_CODE_FONT_SIZE, codeFontSize, createCodeObject,
 import { onCodeHighlighterReady } from './codeHighlight'
 import { ClassBoxDialog } from './ClassBoxDialog'
 import { AccountButton } from './app/AccountButton'
+import { optionsContextName } from './app/optionsPanelModel'
 import { ContextPanel } from './app/ContextPanel'
+import { applyStyle, captureStyle, type StyleSnapshot } from './styleClipboard'
+import { applyNewShapeStyle, loadNewShapeStyle, newShapeStyleFrom, saveNewShapeStyle, withNewShapeDash, type NewShapeStyle } from './newShapeStyle'
+import { clearSteps, numberSteps, stepTargets } from './flowSteps'
+import { buildMermaid } from './mermaidExport'
+import { buildExcalidrawClipboard, buildExcalidrawFile, excalidrawExportMessage, excalidrawFileName } from './excalidrawExport'
 import { selectionFillColor, selectionHasFillable, setFillColor, matchingOutline } from './shapeFill'
 import { withSketchSeed, withSketchSeeds } from './sketchy'
+import { addLaserPoint, laserOnTouchDown, laserSegments, laserVisible, PEN_TOOL_FLAGS, pruneLaser, toolToRestoreAfterLaser, type LaserPoint, type ToolFlags } from './laserPointer'
+import { createStickyNote, STICKY_HEIGHT, STICKY_WIDTH } from './stickyNote'
 import { HistoryBar } from './app/HistoryBar'
+import { accountLeading } from './app/accountLeading'
+import { DockTip } from './app/DockTip'
+import { DesktopStatusCluster } from './app/DesktopStatusCluster'
+import { desktopStatusText, hideEmptyToast, UML_RESTORE_TIP } from './app/desktopChrome'
 import { ToolDock } from './app/ToolDock'
 import { TopLeftBar } from './app/TopLeftBar'
 import { HomeScreen } from './app/HomeScreen'
 import { storageLabel } from './StoragePanel'
 import { ZoomControls } from './app/ZoomControls'
+import type { ZoomMenuChoice } from './zoomMenu'
+import { EmptyCanvasHint } from './app/EmptyCanvasHint'
+import { ShortcutHelp } from './app/ShortcutHelp'
+import { CommandPalette } from './app/CommandPalette'
+import { FindBar } from './app/FindBar'
+import { replaceAcrossPages, replaceToast } from './canvasReplace'
+import { moveMenuChips, movedToast, movePaletteEntries, moveRecordUndoable, moveSelectionToPage, parseMoveAction, type MoveRecord, type MoveTarget } from './moveToPage'
+import { sameSearchFingerprint, searchCanvas, searchFingerprint, type SearchMatch } from './canvasSearch'
+import { buildDiagramOutline, outlineFileName } from './diagramOutline'
+import { downloadBlob } from './documentStore'
+import { diagramIdFromEntry, diagramPaletteEntries, logoSlugFromEntry, shortcutEntryId, shortcutPaletteEntries, textSizeShortcutKeys, withoutDuplicateTextSizeEntries, type PaletteEntry } from './commandPalette'
+import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
+import { TemplateChooser } from './app/TemplateChooser'
+import { MermaidDialog } from './app/MermaidDialog'
+import { LogoDialog } from './app/LogoDialog'
+import { buildLogoItems, logoColorChoice, findLogoNameLabels, selectedLogoBox, setLogoColor, setLogoNameShown } from './logoLayout'
+import { findTechLogo, subscribeTechLogos } from './techLogos'
+import type { TechLogo } from './techLogoSearch'
+import { buildExcalidrawItems, excalidrawInsertMessage, isExcalidrawText } from './excalidrawImport'
+import type { ExcalidrawResult } from './excalidrawImport'
+import { isOwnClipboardText } from './systemPaste'
+import { freeInsertOffset } from './insertPlacement'
+import { buildMermaidDiagram, isMermaidText, MAX_MERMAID_TEXT, mermaidInsertMessage } from './mermaidImport'
+import { DIAGRAM_TEMPLATES, buildTemplate } from './diagramTemplates'
+import { addUserTemplate, loadUserTemplates, newTemplateId, removeUserTemplate, saveUserTemplates, userTemplatesBlockedMessage, type UserTemplate } from './userTemplates'
 import { statusLabel } from './FilePanel'
 import { StoragePanel } from './StoragePanel'
 import { CLASS_BOX_DEFAULT_STROKE_WIDTH, EMPTY_CLASS_BOX, createClassBox, fitClassBoxBounds, isEmptyClassBox, normalizeClassBoxContent, sameClassBoxContent } from './classBoxLayout'
 import { buildEditedLabel, prepareEditorFit } from './textFit'
-import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
+import { facingSideSnap, penConnectorFor } from './penConnector'
+/** Desktop: a mouse end must be this far (screen px) inside a box outline before it jumps to the facing side's middle. */
+const FACING_SIDE_INSET_PX = 8
+import { arrowToolConnector, centreLabelOn, followResizeLabels, isFlowBox, labelsInside, quickCreateConnected, shapeDoubleClick, shapeLabelForSelection, type FlowDirection } from './diagramFlow'
+import { selectionBoundsWithEndLabels, setConnectorEndLabel } from './connectorEndLabels'
+import { cornersChoice, setRoundedCorners } from './roundedCorners'
+import { connectorLabelCentre, connectorLabelFontSize, connectorLabelPosition, labelPositionForDrag, pointOnConnectorLabel, setConnectorLabel, setConnectorLabelFontSize, setConnectorLabelPosition } from './connectorLabel'
+import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, keepAlignAnchor, stepTextSize, DEFAULT_TEXT_FONT, DEFAULT_TEXT_FONT_SIZE, LEGACY_TEXT_FONT, changeTextFont, createTextObject, isBlankText, normalizeText, updateTextObject } from './textLayout'
 import { loadTextFont } from './textFonts'
-import type { TextFontId } from './canvasModel'
+import type { TextAlign, TextFontId } from './canvasModel'
 import { useDocuments } from './app/useDocuments'
+import { newDiagramUsesHandFont } from './newDiagramChoice'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
-import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
+import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, fitViewportToBoundsInset, DESKTOP_FIT_INSETS, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
-import { MAX_PAGES, canAddPage, clampPageIndex, insertPageAfter, insertPageAt, removePageAt, writeLastPage } from './pages'
-import { PageControls, PageUndoBar } from './app/PageControls'
+import { MAX_PAGES, canAddPage, clampPageIndex, duplicatePageItems, duplicatedPageName, insertPageAfter, insertPageAt, movePage, indexAfterMove, removePageAt, writeLastPage } from './pages'
+import { MoveUndoBar, PageControls, PageUndoBar } from './app/PageControls'
+import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
-import { loadNavigationSettings, saveNavigationSettings } from './navigationSettings'
-import { canStartCanvasGesture, canvasCursor, clampMenuPosition, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, hitTarget, hoverTarget, nudgeStartsNewStep, normalizeSelection, isTypingTarget, keyCommand, loadInputMode, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, toggleSelectionKey, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { loadNavigationSettings, loadTapUndo, saveNavigationSettings, saveTapUndo } from './navigationSettings'
+import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuMaxHeight, CONTEXT_MENU_TOP_CLEARANCE, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, snappingSuspended, saveToastText, shouldShowKeepToolTip, KEEP_TOOL_TIP, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
+/** How long a toast stays on screen. */
+const TOAST_MS = 1800
 const DOUBLE_TAP_MS = 400
 /** The eraser circle hides this long after the last pen event (lifting the pen away sends none). */
 const ERASER_CURSOR_QUIET_MS = 350
@@ -165,6 +240,8 @@ function getDirtyRect(points: Point[], strokeWidth: number, viewport: Viewport, 
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
 }
 
+type DragDup = DragDuplicate & { before: SelectionState; selected?: boolean }
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const inkLayerRef = useRef<HTMLCanvasElement | null>(null)
@@ -182,7 +259,7 @@ function App() {
   // Where the browser predicts the pen will be in the next few milliseconds (drawn ahead of the ink, never saved).
   const predictedPointsRef = useRef<Point[]>([])
   const drawModeRef = useRef<DrawMode>(DIRECT_MAX_VISIBLE_POINTS <= 0 ? 'cached' : 'direct')
-  const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number } | null>(null)
+  const historyCacheRef = useRef<{ snapshot: CanvasItem[]; mode: StrokeDisplayMode; theme: BoardTheme; scale: number; offsetX: number; offsetY: number; dpr: number; width: number; height: number; focus: ReadonlySet<string> | null } | null>(null)
   const minimapRenderedAtRef = useRef(0)
   // What the saved minimap ink picture was drawn for (canvas size and map geometry); the ink is redrawn when this changes.
   const minimapInkKeyRef = useRef('')
@@ -210,10 +287,13 @@ function App() {
     relationshipType: ConnectorRelationshipType
     startAttachment?: ConnectorObject['startAttachment']
     endAttachment?: ConnectorObject['endAttachment']
+    /** Where the press began and what it snapped to, before the side rule (Desktop Arrow / Line). */
+    rawStart?: Point
+    snappedStart?: SnappedConnectorEndpoint | null
   } | null>(null)
   const shapePreviewRef = useRef<CanvasItem | null>(null)
   const selectedRectangleIdRef = useRef<number | null>(null)
-  const activeDragRef = useRef<{ pointerId: number; itemKey: string; start: Point; originalItems: CanvasItem[]; moved: boolean; editTextId?: number | null; editClassBoxId?: number | null } | null>(null)
+  const activeDragRef = useRef<{ pointerId: number; itemKey: string; start: Point; originalItems: CanvasItem[]; moved: boolean; editTextId?: number | null; editClassBoxId?: number | null; duplicate?: boolean; dup?: DragDup } | null>(null)
   const textTapRef = useRef<{ pointerId: number; point: Point } | null>(null)
   // Desktop double-click on empty canvas: the two clicks so far, and the items and history from before the first one.
   const clickPairRef = useRef<ClickPair | null>(null)
@@ -222,11 +302,13 @@ function App() {
   /** The ink class box the current pen/eraser stroke started inside: the stroke is stored in the box. */
   const activeStrokeBoxRef = useRef<number | null>(null)
   const activeDividerRef = useRef<{ pointerId: number; rectangleId: number; which: InkBoxDivider; originalItems: CanvasItem[]; moved: boolean } | null>(null)
-  const activeResizeRef = useRef<{ pointerId: number; rectangleId: number | null; selectedKeys: Set<string> | null; handle: RectangleResizeHandle; start: Point; originalBounds: RectangleBounds; originalItems: CanvasItem[]; moved: boolean; created?: boolean } | null>(null)
+  const activeResizeRef = useRef<{ pointerId: number; rectangleId: number | null; selectedKeys: Set<string> | null; handle: RectangleResizeHandle; start: Point; originalBounds: RectangleBounds; originalItems: CanvasItem[]; moved: boolean; created?: boolean; labelKeys?: string[] } | null>(null)
   /** A rotate-handle drag on the single selected label or plain shape. */
   const activeRotateRef = useRef<{ pointerId: number; key: string; originalItems: CanvasItem[]; moved: boolean } | null>(null)
+  /** A drag or click on a handle of the single selected connector: `which` is an end, or the middle dot (a click toggles straight/elbow). `saved` = its one history step was recorded. `target` = box highlighted as the snap target. */
+  const activeEndpointRef = useRef<{ pointerId: number; pointerType: string; id: number; which: ConnectorHandleKind | 'label'; startScreen: Point; startPoint: Point; startBend: number; startLabelPosition: number; routedConnector: ConnectorObject | null; originalItems: CanvasItem[]; dragged: boolean; saved: boolean; target: number | null } | null>(null)
   const activeLassoRef = useRef<{ pointerId: number; points: Point[] } | null>(null)
-  const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean } | null>(null)
+  const lassoDragRef = useRef<{ pointerId: number; start: Point; keys: Set<string>; originalItems: CanvasItem[]; moved: boolean; duplicate?: boolean; dup?: DragDup } | null>(null)
   const selectedKeysRef = useRef<Set<string>>(new Set())
   const nextRectangleIdRef = useRef(1)
   const nextStrokeIdRef = useRef(1)
@@ -247,10 +329,15 @@ function App() {
   const viewportRef = useRef<Viewport>({ scale: INITIAL_ZOOM, offsetX: 0, offsetY: 0 })
   const [navigationSettings, setNavigationSettings] = useState<NavigationSettings>(() => loadNavigationSettings())
   const navigationSettingsRef = useRef(navigationSettings)
-  navigationSettingsRef.current = navigationSettings
   // Per-device input mode (menu switch). Tablet, the default, leaves the canvas exactly as it always was; Desktop lets a mouse draw and edit.
   const [inputMode, setInputMode] = useState<InputMode>(() => loadInputMode())
+  const [toolLock, setToolLock] = useState<boolean>(() => loadToolLock())
+  const toolLockRef = useRef(toolLock)
+  toolLockRef.current = toolLock
   const inputModeRef = useRef(inputMode)
+  // The zoom lock is a tablet-only control: in Desktop mode a lock saved earlier is ignored (and its switch is hidden), so it can never trap the menu.
+  const zoomLockActive = navigationSettings.zoomLocked && inputMode !== 'desktop'
+  navigationSettingsRef.current = zoomLockActive === navigationSettings.zoomLocked ? navigationSettings : { ...navigationSettings, zoomLocked: zoomLockActive }
   inputModeRef.current = inputMode
   const updateInputMode = (mode: InputMode) => {
     inputModeRef.current = mode
@@ -259,11 +346,17 @@ function App() {
   }
   // True while the current canvas gesture was started by a mouse (hold-to-snap is off for it, unless the Shapes tool is on).
   const mouseGestureRef = useRef(false)
+  // Set every render: selects the arrow connector the Arrow tool just made (finishStroke is memoised and must not close over render state).
+  const selectNewConnectorRef = useRef<(key: string) => void>(() => {})
   // Desktop pan: a middle-button or Space + left drag moves the view (Desktop mode only).
   const mousePanRef = useRef<{ pointerId: number; start: Point; startViewport: Viewport } | null>(null)
   const spaceHeldRef = useRef(false)
   // Step 7: the item the mouse is over (Desktop mode; only a change redraws), and the pen's edge hold (select a box by holding on its edge).
   const hoverKeyRef = useRef<string | null>(null)
+  // Desktop quick-connect buttons: the hovered one, and the press in progress (a click, not a drag, makes the connected shape).
+  const quickHoverRef = useRef<QuickConnectDirection | null>(null)
+  const quickClickAtRef = useRef(-Infinity)
+  const activeQuickRef = useRef<{ pointerId: number; direction: QuickConnectDirection; pointerType: string; startScreen: Point; dragged: boolean } | null>(null)
   const hoverPointRef = useRef<Point | null>(null)
   // Desktop paste target: the last mouse position over the canvas (screen coordinates, converted at paste time so a pan or zoom keeps it right); null while the mouse is off the canvas.
   const cursorPointRef = useRef<Point | null>(null)
@@ -276,15 +369,53 @@ function App() {
   // Step 10: the in-app clipboard (a deep copy of the copied items; never the system clipboard, never saved). It outlives page changes,
   // so a paste works on any page, and in another diagram opened later; every paste takes fresh ids from the shared counters.
   const clipboardRef = useRef<CanvasItem[]>([])
+  // The last text InkPad itself wrote to the system clipboard (Copy Mermaid, Copy outline); a paste of exactly that text does not override in-app items.
+  const lastWrittenTextRef = useRef<string | null>(null)
   const pasteCountRef = useRef(0)
   const [clipboardCount, setClipboardCount] = useState(0)
   // Step 11: the right-click menu (Desktop only), at the pointer in screen coordinates.
   // The pointer type of the latest canvas press: a double-tap by a finger or pen is not a mouse double-click.
   const lastPointerTypeRef = useRef('')
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; lockedKey: string | null; shapesExpanded?: boolean } | null>(null)
   const contextMenuRef = useRef(contextMenu)
   contextMenuRef.current = contextMenu
   const contextMenuElementRef = useRef<HTMLDivElement>(null)
+  // A small message at the bottom centre (Desktop mode only; the tablet UI stays quiet). It is always position: fixed, so it never shifts the layout.
+  const [toast, setToast] = useState<{ id: number; text: string; action?: { label: string; run: () => void } } | null>(null)
+  const toastTimerRef = useRef<number | null>(null)
+  const showToast = (text: string) => {
+    if (inputModeRef.current !== 'desktop') return
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
+    setToast((current) => ({ id: (current?.id ?? 0) + 1, text }))
+    toastTimerRef.current = window.setTimeout(() => { toastTimerRef.current = null; setToast(null) }, TOAST_MS)
+  }
+  // One hint per page session (memory only, nothing stored): a drawing tool just handed over to Select on its own.
+  const keepToolTipShownRef = useRef(false)
+  const maybeShowKeepToolTip = () => {
+    if (!shouldShowKeepToolTip(keepToolTipShownRef.current, toolLockRef.current, inputModeRef.current)) return
+    keepToolTipShownRef.current = true
+    showToast(KEEP_TOOL_TIP)
+  }
+  // Ctrl+S: save now, say so in a toast, and flash the status pill once.
+  const [statusFlash, setStatusFlash] = useState(0)
+  const saveNowWithToast = () => {
+    setStatusFlash((n) => n + 1)
+    void saveNow().then((status) => {
+      showToast(status === 'saved' ? 'Saved' : saveToastText(status, statusLabel(status, storage.kind)))
+    }, () => showToast(statusLabel('error', storage.kind)))
+  }
+  // A toast with one action button (shown in every mode; stays a little longer so it can be tapped).
+  const showActionToast = (text: string, action?: { label: string; run: () => void }) => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
+    setToast((current) => ({ id: (current?.id ?? 0) + 1, text, ...(action ? { action } : {}) }))
+    toastTimerRef.current = window.setTimeout(() => { toastTimerRef.current = null; setToast(null) }, action ? TOAST_MS * 2.5 : TOAST_MS)
+  }
+  // The tap-undo confirmation shows in every mode (the tablet UI has no other sign that the tap did something).
+  const showTapToast = (text: string) => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
+    setToast((current) => ({ id: (current?.id ?? 0) + 1, text }))
+    toastTimerRef.current = window.setTimeout(() => { toastTimerRef.current = null; setToast(null) }, TOAST_MS)
+  }
   const edgeHoldRef = useRef<{ pointerId: number; boxId: number; start: Point; startedAt: number; timer: number } | null>(null)
   // Step 12: snap and alignment guides while dragging boxes and labels. The setting is per device (default on) and works in both input modes.
   const [snapping, setSnapping] = useState(() => loadSnapping())
@@ -298,8 +429,54 @@ function App() {
   // What a drag snaps to (read once when it starts) and the guide lines to draw. Guides live only here: never items, history or saved data.
   const snapStateRef = useRef<{ pointerId: number; moving: Bounds | null; targets: Bounds[] } | null>(null)
   const guidesRef = useRef<Guide[]>([])
+  // Round 10: the connector highlighted while one free box is dragged over it with the mouse (released there, the box is inserted); null otherwise.
+  const dropConnectorRef = useRef<number | null>(null)
+  // Connector paths routed once per drag without the dragged box (elbow routes would detour around it); see connectorDropPaths.
+  const dropPathsRef = useRef<Map<number, Point[]> | null>(null)
+  // The size pill ("W x H") shown near the pointer while a desktop resize or new-box drag is active; drawn only while that gesture is active, never saved or exported.
+  const sizeReadoutRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
+  const gapMarkersRef = useRef<GapMarker[]>([])
+  // Snap to grid (Desktop mode, mouse only; off by default, per device). `gridOverlayRef` holds the grid size while a snapped drag or resize is active, so the dot grid is drawn only then.
+  const [gridSnap, setGridSnap] = useState(() => loadGridSnap())
+  const gridSnapRef = useRef(gridSnap)
+  gridSnapRef.current = gridSnap
+  const gridOverlayRef = useRef<number | null>(null)
+  const updateGridSnap = (on: boolean) => {
+    gridSnapRef.current = on
+    setGridSnap(on)
+    saveGridSnap(on)
+    showToast(on ? 'Snap to grid on' : 'Snap to grid off')
+  }
+  // Alt held with a mouse (Desktop) places freely: no grid, smart guides or equal gaps for that pointer move.
+  const gridActive = (event: { pointerType: string; altKey?: boolean }): number | null =>
+    !snappingSuspended(event, inputModeRef.current) && gridSnapApplies(gridSnapRef.current, inputModeRef.current, event.pointerType) ? gridSpacingFor(effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current), pageSpacingRef.current) : null
+  /** True on the isometric canvas: snapping goes to its triangular lattice, not a square grid. */
+  const gridLattice = (): boolean => isLatticeCanvas(effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current))
+  const [tapUndo, setTapUndo] = useState(() => loadTapUndo())
+  const tapUndoRef = useRef(tapUndo)
+  tapUndoRef.current = tapUndo
   const touchNavRef = useRef<ReturnType<typeof createTouchNavigator> | null>(null)
-  if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => navigationSettingsRef.current)
+  // Laser pointer (transient presenting tool): the trail lives only in these refs and on its own overlay canvas, never in items, history or the saved diagram.
+  // Present mode: one class on the app root hides the dock, panels, top bar, minimap, page and zoom controls. Plain state, never saved.
+  const [presentMode, setPresentMode] = useState(false)
+  // Focus mode (view only, never saved): focusRef holds the keys drawn faded (null = off, the normal path); the kept keys decide when it ends.
+  const [focusActive, setFocusActive] = useState(false)
+  const focusRef = useRef<ReadonlySet<string> | null>(null)
+  const focusKeptRef = useRef<ReadonlySet<string> | null>(null)
+  const focusDrawnRef = useRef(new Set<CanvasItem>())
+  const focusCheckedItemsRef = useRef<CanvasItem[] | null>(null)
+  const presentModeRef = useRef(false)
+  presentModeRef.current = presentMode
+  const [laserMode, setLaserMode] = useState(false)
+  const laserModeRef = useRef(false)
+  laserModeRef.current = laserMode
+  const laserCanvasRef = useRef<HTMLCanvasElement>(null)
+  const laserTrailRef = useRef<LaserPoint[]>([])
+  const laserPointerRef = useRef<number | null>(null)
+  const laserPointerTypeRef = useRef<string | null>(null)
+  const laserFrameRef = useRef<number | null>(null)
+  // While the laser is on a single finger draws the trail, so one-finger pan is off; the second finger still goes to navigation (pinch, three-finger pan).
+  if (touchNavRef.current === null) touchNavRef.current = createTouchNavigator(() => laserModeRef.current ? { ...navigationSettingsRef.current, oneFingerPan: false } : navigationSettingsRef.current)
   const touchNav = touchNavRef.current
   const updateNavigationSettings = (patch: Partial<NavigationSettings>) => {
     const next = { ...navigationSettingsRef.current, ...patch }
@@ -319,6 +496,23 @@ function App() {
   const pageSpacingRef = useRef(pageSpacing)
   /** Hand-drawn style of the open diagram (saved in the file; off by default). */
   const [sketchy, setSketchy] = useState(false)
+  /** Board style theme of this diagram ('dark' | 'chalk' | unknown from a newer InkPad; undefined = light). Saved per diagram. */
+  const [board, setBoard] = useState<string | undefined>(undefined)
+  const boardRef = useRef<string | undefined>(undefined)
+  boardRef.current = board
+  /** Canvas type beyond the template ('grid' | 'isometric' | 'cornell' | unknown; undefined = the template). Saved per diagram. */
+  const [pageCanvas, setPageCanvas] = useState<string | undefined>(undefined)
+  const pageCanvasRef = useRef<string | undefined>(undefined)
+  pageCanvasRef.current = pageCanvas
+  /** Mark strength ('faint' | 'bold' | unknown from a newer InkPad; undefined = normal) and swimlane settings (round 12). Saved per diagram; not undo steps. */
+  const [pageMarks, setPageMarks] = useState<string | undefined>(undefined)
+  const pageMarksRef = useRef<string | undefined>(undefined)
+  pageMarksRef.current = pageMarks
+  const [pageLanes, setPageLanes] = useState<LaneSettings | undefined>(undefined)
+  const pageLanesRef = useRef<LaneSettings | undefined>(undefined)
+  pageLanesRef.current = pageLanes
+  /** What the sheet layer, minimap and export draw: a known `canvas` field wins, otherwise the template. */
+  const canvasType = effectiveCanvasType(pageTemplate, pageCanvas)
   const sketchyRef = useRef(false)
   sketchyRef.current = sketchy
   pageSpacingRef.current = pageSpacing
@@ -333,32 +527,38 @@ function App() {
   const workspaceBoundsRef = useRef(workspaceBoundsFor(sheetHeight))
   // Pages of the open diagram. Only the page on screen is live: its items are strokesRef and its undo history is historyRef.
   // The slot of the page on screen is stale on purpose; it is filled in when the page is left. Other pages are plain data.
-  const pagesRef = useRef<Array<{ items: CanvasItem[]; history: CanvasSnapshotHistory | null }>>([{ items: [], history: null }])
+  const pagesRef = useRef<Array<{ items: CanvasItem[]; history: CanvasSnapshotHistory | null; name?: string }>>([{ items: [], history: null }])
   const pageIndexRef = useRef(0)
   const [pageIndex, setPageIndex] = useState(0)
   const [pageCount, setPageCount] = useState(1)
+  // Page names live in the page slots (name?: string); this only makes the screen redraw when one changes.
+  const [, setPageNamesTick] = useState(0)
 
   const {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, autosavePending, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
-    newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
-    scheduleAutosave: scheduleAutosaveBase, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
-    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, exportToNotebookLm, exportBusy,
+    newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram, moveFolder,
+    loadForSearch, scheduleAutosave: scheduleAutosaveBase, saveNow, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
+    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   } = useDocuments({
     getItems: () => strokesRef.current,
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
-    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current }),
+    getPageNames: () => pagesRef.current.map((slot) => slot.name ?? ''),
+    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current, board: boardRef.current, canvas: pageCanvasRef.current, marks: pageMarksRef.current, lanes: pageLanesRef.current }),
+    getInputMode: () => inputModeRef.current,
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null || liveCodeEditor(),
     loadDocument: (loaded, startPage) => {
       resetInteractionState()
       dismissDeletedPage()
       // Every page is cloned as plain data; the page to open on (the one you left, remembered on this device) becomes the live one.
-      pagesRef.current = [{ items: cloneCanvasItems(loaded.items), history: null }, ...(loaded.pages ?? []).map((page) => ({ items: cloneCanvasItems(page.items), history: null }))]
+      const loadedNames = normalizePageNames(loaded.pageNames, 1 + (loaded.pages?.length ?? 0))
+      pagesRef.current = [{ items: cloneCanvasItems(loaded.items), history: null }, ...(loaded.pages ?? []).map((page) => ({ items: cloneCanvasItems(page.items), history: null }))].map((slot, index) => (loadedNames[index] ? { ...slot, name: loadedNames[index] } : slot))
       const openIndex = clampPageIndex(startPage, pagesRef.current.length)
       strokesRef.current = pagesRef.current[openIndex].items
       pageIndexRef.current = openIndex
       setPageIndex(openIndex)
       setPageCount(pagesRef.current.length)
+      setPageNamesTick((tick) => tick + 1)
       const nextIds = getNextIds(pagesRef.current.flatMap((slot) => slot.items))
       nextStrokeIdRef.current = nextIds.stroke
       nextRectangleIdRef.current = nextIds.rectangle
@@ -374,6 +574,14 @@ function App() {
       setPageSpacing(loaded.page.spacing ?? 'standard')
       sketchyRef.current = loaded.page.sketchy === true
       setSketchy(loaded.page.sketchy === true)
+      boardRef.current = loaded.page.board
+      setBoard(loaded.page.board)
+      pageCanvasRef.current = loaded.page.canvas
+      setPageCanvas(loaded.page.canvas)
+      pageMarksRef.current = loaded.page.marks
+      setPageMarks(loaded.page.marks)
+      pageLanesRef.current = loaded.page.lanes
+      setPageLanes(loaded.page.lanes)
       setPageTemplate(loaded.page.template)
       setPageBackground(loaded.page.background)
       // A saved height, grown if the content reaches past it (never shrunk).
@@ -389,6 +597,9 @@ function App() {
     activeConnectorRef.current = null
     activeResizeRef.current = null
     activeRotateRef.current = null
+    activeEndpointRef.current = null
+    activeQuickRef.current = null
+    quickHoverRef.current = null
     activeDividerRef.current = null
     activeStrokeBoxRef.current = null
     shapePreviewRef.current = null
@@ -396,7 +607,9 @@ function App() {
     lassoDragRef.current = null
     activeMarqueeRef.current = null
     guidesRef.current = []
+    gapMarkersRef.current = []
     snapStateRef.current = null
+    gridOverlayRef.current = null
     pasteCountRef.current = 0
     activePointerRef.current = null
     activeObjectEraserRef.current = null
@@ -421,6 +634,7 @@ function App() {
     pageIndexRef.current = index
     setPageIndex(index)
     setPageCount(pagesRef.current.length)
+    setPageNamesTick((tick) => tick + 1)
     setCanUndo(historyRef.current.canUndo)
     setCanRedo(historyRef.current.canRedo)
     setHasInk(strokesRef.current.length > 0)
@@ -429,7 +643,8 @@ function App() {
 
   /** Remembers the page on screen (its items and undo history) in its slot. Call before showing another page. */
   const stashCurrentPage = () => {
-    pagesRef.current[pageIndexRef.current] = { items: strokesRef.current, history: historyRef.current }
+    const name = pagesRef.current[pageIndexRef.current]?.name
+    pagesRef.current[pageIndexRef.current] = { items: strokesRef.current, history: historyRef.current, ...(name ? { name } : {}) }
   }
 
   // Reopening a saved diagram lands on the page you left (kept on this device, not in the diagram).
@@ -466,8 +681,30 @@ function App() {
     scheduleAutosave()
   }
 
+  /** Duplicate page: a copy of the page on screen goes right after it (fresh ids, connectors on the copied boxes, an empty undo history like an added page) and is shown. */
+  const duplicatePage = () => {
+    if (penBusy()) return
+    if (!canAddPage(pagesRef.current.length)) {
+      setFileNotice(`A diagram can have up to ${MAX_PAGES} pages.`)
+      return
+    }
+    if (textEditorRef.current) commitTextEditor()
+    dismissDeletedPage()
+    stashCurrentPage()
+    resetInteractionState()
+    const copy = duplicatePageItems(strokesRef.current, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current })
+    nextStrokeIdRef.current = copy.counters.stroke
+    nextRectangleIdRef.current = copy.counters.rectangle
+    nextConnectorIdRef.current = copy.counters.connector
+    nextTextIdRef.current = copy.counters.text
+    pagesRef.current = insertPageAfter(pagesRef.current, pageIndexRef.current, { items: copy.items, history: null, ...(duplicatedPageName(pagesRef.current[pageIndexRef.current]?.name) ? { name: duplicatedPageName(pagesRef.current[pageIndexRef.current]?.name) } : {}) })
+    showPageSlot(pageIndexRef.current + 1)
+    scheduleAutosave()
+    showToast(`Page duplicated (now page ${pageIndexRef.current + 1})${copy.skipped > 0 ? `; ${copy.skipped} ${copy.skipped === 1 ? 'item' : 'items'} this version can't copy ${copy.skipped === 1 ? 'was' : 'were'} left out` : ''}`)
+  }
+
   // The page deleted last, kept (items and its undo history) for a few seconds so the Undo bar can put it back.
-  const deletedPageRef = useRef<{ index: number; slot: { items: CanvasItem[]; history: CanvasSnapshotHistory } } | null>(null)
+  const deletedPageRef = useRef<{ index: number; slot: { items: CanvasItem[]; history: CanvasSnapshotHistory; name?: string } } | null>(null)
   const deletedPageTimerRef = useRef<number | null>(null)
   const [deletedPageNumber, setDeletedPageNumber] = useState<number | null>(null)
   function dismissDeletedPage() {
@@ -482,7 +719,8 @@ function App() {
     if (textEditorRef.current) cancelTextEditor()
     resetInteractionState()
     const removedIndex = pageIndexRef.current
-    const removedSlot = { items: strokesRef.current, history: historyRef.current }
+    const removedName = pagesRef.current[removedIndex]?.name
+    const removedSlot = { items: strokesRef.current, history: historyRef.current, ...(removedName ? { name: removedName } : {}) }
     const removed = removePageAt(pagesRef.current, removedIndex)
     pagesRef.current = removed.pages
     showPageSlot(removed.index)
@@ -491,6 +729,39 @@ function App() {
     deletedPageRef.current = { index: removedIndex, slot: removedSlot }
     setDeletedPageNumber(removedIndex + 1)
     deletedPageTimerRef.current = window.setTimeout(dismissDeletedPage, DELETED_PAGE_UNDO_MS)
+  }
+
+  const [pageOverviewOpen, setPageOverviewOpen] = useState(false)
+  /** Names a page (empty text clears it). Document metadata, not canvas undo history: it is just saved. */
+  const renamePage = (index: number, raw: string) => {
+    const slot = pagesRef.current[index]
+    if (!slot) return
+    const name = cleanPageName(raw)
+    if (name === (slot.name ?? '')) return
+    if (name) slot.name = name
+    else delete slot.name
+    setPageNamesTick((tick) => tick + 1)
+    scheduleAutosave()
+  }
+  /**
+   * Moves page `from` to position `to`: its items and its undo/redo history travel together (they are one slot), the page on screen stays on
+   * screen (pageIndex follows it), and the new order is saved. Not part of canvas undo, like add/delete page; move it back with the buttons.
+   * A pending "Page deleted" undo bar is dismissed first (its remembered position would be stale after a reorder); the deleted page is then gone for good.
+   */
+  const movePageTo = (from: number, to: number) => {
+    const count = pagesRef.current.length
+    const target = clampPageIndex(to, count)
+    if (penBusy() || from < 0 || from >= count || target === from) return
+    if (textEditorRef.current) commitTextEditor()
+    dismissDeletedPage()
+    stashCurrentPage()
+    resetInteractionState()
+    const current = pageIndexRef.current
+    pagesRef.current = movePage(pagesRef.current, from, target)
+    const shown = indexAfterMove(current, from, target)
+    showPageSlot(shown)
+    if (currentDocId) writeLastPage(currentDocId, shown)
+    scheduleAutosave()
   }
 
   const undoDeletePage = () => {
@@ -504,9 +775,97 @@ function App() {
     stashCurrentPage()
     resetInteractionState()
     const at = Math.min(deleted.index, pagesRef.current.length)
-    pagesRef.current = insertPageAt(pagesRef.current, at, { items: deleted.slot.items, history: deleted.slot.history })
+    pagesRef.current = insertPageAt(pagesRef.current, at, { items: deleted.slot.items, history: deleted.slot.history, ...(deleted.slot.name ? { name: deleted.slot.name } : {}) })
     dismissDeletedPage()
     showPageSlot(at)
+    scheduleAutosave()
+  }
+
+  // Move selection to another page: the record (both pages' items and undo histories) behind the Undo bar, valid only while neither page changed.
+  const moveUndoRef = useRef<MoveRecord | null>(null)
+  const moveUndoTimerRef = useRef<number | null>(null)
+  const [moveUndoBar, setMoveUndoBar] = useState<{ message: string } | null>(null)
+  const dismissMoveUndo = () => {
+    if (moveUndoTimerRef.current !== null) window.clearTimeout(moveUndoTimerRef.current)
+    moveUndoTimerRef.current = null
+    moveUndoRef.current = null
+    setMoveUndoBar(null)
+  }
+
+  /** Moves the selected items to another page (or a new page right after this one) at the same coordinates: one undo step on each page, then that page is shown with them selected. */
+  const moveSelectionToPageNow = (target: MoveTarget): boolean => {
+    if (penBusy()) return false
+    if (textEditorRef.current) commitTextEditor()
+    const keys = currentSelectionKeys()
+    for (const key of labelsInside(strokesRef.current, keys)) keys.add(key) // labels inside a moved box go with it
+    const from = pageIndexRef.current
+    const count = pagesRef.current.length
+    const newPage = target === 'new'
+    if (keys.size === 0) { showToast('Select something to move first'); return false }
+    if (newPage && !canAddPage(count)) { setFileNotice(`A diagram can have up to ${MAX_PAGES} pages.`); return false }
+    const to = newPage ? from + 1 : target
+    if (!newPage && (to === from || to < 0 || to >= count)) return false
+    const sourceBefore = strokesRef.current
+    const targetBefore = newPage ? [] : pagesRef.current[to].items
+    const result = moveSelectionToPage(sourceBefore, targetBefore, keys, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current })
+    if (!result) { showToast('Nothing to move: locked items stay on their page'); return false }
+    dismissDeletedPage()
+    dismissMoveUndo()
+    nextStrokeIdRef.current = result.counters.stroke
+    nextRectangleIdRef.current = result.counters.rectangle
+    nextConnectorIdRef.current = result.counters.connector
+    nextTextIdRef.current = result.counters.text
+    const selection = [...keys]
+    const sourceHistory = historyRef.current.capture()
+    const targetHistory = (newPage ? null : pagesRef.current[to].history) ?? new CanvasSnapshotHistory()
+    const targetHistoryState = targetHistory.capture()
+    // One undo step on each page: the old items go on that page's own history, then both pages get the new items.
+    historyRef.current.record(sourceBefore)
+    targetHistory.record(targetBefore)
+    strokesRef.current = result.source
+    historyCacheRef.current = null
+    stashCurrentPage()
+    resetInteractionState()
+    if (newPage) pagesRef.current = insertPageAfter(pagesRef.current, from, { items: result.target, history: targetHistory })
+    else pagesRef.current[to] = { ...pagesRef.current[to], items: result.target, history: targetHistory }
+    showPageSlot(to)
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    updateSelectedItems(result.movedKeys)
+    renderAll()
+    scheduleAutosave()
+    moveUndoRef.current = { sourceIndex: from, targetIndex: to, newPage, pageCount: pagesRef.current.length, beforeSource: sourceBefore, beforeTarget: targetBefore, afterSource: result.source, afterTarget: result.target, afterSourceLength: result.source.length, afterTargetLength: result.target.length, sourceHistory, targetHistory: targetHistoryState, selection }
+    // One message only: the Undo bar carries the toast text (page name, locked items left behind).
+    setMoveUndoBar({ message: movedToast(result.moved, to, pagesRef.current[to]?.name, result.lockedSkipped) })
+    moveUndoTimerRef.current = window.setTimeout(dismissMoveUndo, DELETED_PAGE_UNDO_MS)
+    return true
+  }
+
+  /** The Undo of the move bar: both pages back exactly as they were (items and undo histories), only while neither changed since. */
+  const undoMoveToPage = () => {
+    if (!moveUndoRef.current || penBusy()) return
+    if (textEditorRef.current) commitTextEditor()
+    const record = moveUndoRef.current // read after the commit: it can push a label into the same array
+    if (!record) return
+    const live = pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items))
+    if (!moveRecordUndoable(record, live)) {
+      dismissMoveUndo()
+      showTapToast('A page changed since the move: use Ctrl+Z on each page instead')
+      return
+    }
+    stashCurrentPage()
+    resetInteractionState()
+    const restore = (index: number, items: CanvasItem[], state: MoveRecord['sourceHistory']) => {
+      const history = new CanvasSnapshotHistory()
+      history.restore(state)
+      pagesRef.current[index] = { ...pagesRef.current[index], items, history }
+    }
+    restore(record.sourceIndex, record.beforeSource, record.sourceHistory)
+    if (record.newPage) pagesRef.current = removePageAt(pagesRef.current, record.targetIndex).pages
+    else restore(record.targetIndex, record.beforeTarget, record.targetHistory)
+    dismissMoveUndo()
+    showPageSlot(record.sourceIndex)
+    updateSelectedItems(record.selection.filter((key) => strokesRef.current.some((item) => canvasItemKey(item) === key)))
+    renderAll()
     scheduleAutosave()
   }
 
@@ -524,8 +883,19 @@ function App() {
   const shapeToolRef = useRef<ShapeKind | 'arrow' | 'line' | null>(null)
   shapeToolRef.current = shapeTool
   const recolorSessionRef = useRef(false)
+  const widthSessionRef = useRef(false)
+  /** Desktop shape tools: the line style new shapes, lines and arrows get ('solid' = none stored). */
+  const [lineDashDefault, setLineDashDefaultState] = useState<'solid' | LineDash>(() => loadLineDashDefault())
+  const lineDashDefaultRef = useRef(lineDashDefault)
+  lineDashDefaultRef.current = lineDashDefault
+  // "Use as default for new shapes": fill, line style, width and corners new boxes start with (per device; the outline colour keeps following the pen).
+  const [newShapeStyle, setNewShapeStyleState] = useState<NewShapeStyle | null>(() => loadNewShapeStyle())
+  const newShapeStyleRef = useRef(newShapeStyle)
+  newShapeStyleRef.current = newShapeStyle
+  const styleNewShape = <T extends CanvasItem>(item: T): T => applyNewShapeStyle(item, newShapeStyleRef.current)
   const [, bumpSelectionColor] = useState(0)
-  const [selectionMode, setSelectionMode] = useState(false)
+  // A new Desktop session starts on Select (a first click-drag scribbling with Pen surprised first-time users); the tool is not persisted, so Tablet keeps Pen.
+  const [selectionMode, setSelectionMode] = useState(() => initialSelectionMode(loadInputMode()))
   const [textMode, setTextMode] = useState(false)
   const [classMode, setClassMode] = useState(false)
   /** With classMode on: true = the hand-written (ink) class box tool, false = the typed class box tool. */
@@ -550,7 +920,9 @@ function App() {
   const [selectedConnectorId, setSelectedConnectorId] = useState<number | null>(null)
   const [selectedConnectorType, setSelectedConnectorType] = useState<ConnectorRelationshipType | null>(null)
   const [selectedConnectorReversed, setSelectedConnectorReversed] = useState(false)
-  const [selectedConnectorElbow, setSelectedConnectorElbow] = useState(false)
+  const [selectedConnectorRouting, setSelectedConnectorRouting] = useState<ConnectorRouting>('straight')
+  const [selectedConnectorTwoWay, setSelectedConnectorTwoWay] = useState(false)
+  const [selectedConnectorLabel, setSelectedConnectorLabel] = useState(false)
   // The eraser mode and size used last are remembered (saved), so holding the S Pen button erases the way the person last chose.
   const [savedEraser] = useState(() => loadEraserPrefs())
   const [eraserSize, setEraserSize] = useState(savedEraser.size)
@@ -573,7 +945,7 @@ function App() {
   const [benchmarkRunning, setBenchmarkRunning] = useState(false)
   const [benchmarkResult, setBenchmarkResult] = useState<Record<string, unknown> | null>(null)
   const [navigatorMinimized, setNavigatorMinimized] = useState(true)
-  const penModeActive = !eraser && !shapeMode && shapeTool === null && !selectionMode && !lassoMode && !connectorMode && !textMode && !classMode && umlConnectorType === null
+  const penModeActive = !laserMode && !eraser && !shapeMode && shapeTool === null && !selectionMode && !lassoMode && !connectorMode && !textMode && !classMode && umlConnectorType === null
 
   const getCurrentMinimapBounds = useCallback((): ViewBounds => {
     return { ...sheetBoundsRef.current }
@@ -588,7 +960,9 @@ function App() {
     setSelectedTextId(keys.length === 1 && keys[0].startsWith('text:') ? Number(keys[0].slice('text:'.length)) : null)
     setSelectedConnectorType(connector?.relationshipType ?? null)
     setSelectedConnectorReversed(connector?.reversed ?? false)
-    setSelectedConnectorElbow(connector?.routing === 'elbow')
+    setSelectedConnectorRouting(connector?.routing ?? 'straight')
+    setSelectedConnectorTwoWay(connector?.twoWay === true)
+    setSelectedConnectorLabel(!!connector?.label)
   }
 
   const reconcileSelectedItems = () => {
@@ -600,6 +974,7 @@ function App() {
 
   const saveHistory = () => {
     if (deletedPageRef.current) dismissDeletedPage() // drawing again settles the delete
+    if (moveUndoRef.current) dismissMoveUndo() // and the move
     historyRef.current.record(strokesRef.current)
     setCanUndo(historyRef.current.canUndo)
     setCanRedo(historyRef.current.canRedo)
@@ -611,6 +986,7 @@ function App() {
     saveHistory()
     strokesRef.current = updateConnectorRelationship(strokesRef.current, selectedConnectorId, relationshipType)
     setSelectedConnectorType(relationshipType)
+    if (relationshipType !== 'directed-association') setSelectedConnectorTwoWay(false)
     if (relationshipType === 'association') setSelectedConnectorReversed(false)
     renderAll()
   }
@@ -626,12 +1002,45 @@ function App() {
     setUmlConnectorType(null)
   }, [color])
 
-  const changeSelectedConnectorRouting = (elbow: boolean) => {
-    if (selectedConnectorId === null || selectedConnectorElbow === elbow) return
+  const changeSelectedConnectorRouting = (routing: ConnectorRouting) => {
+    if (selectedConnectorId === null || selectedConnectorRouting === routing) return
     saveHistory()
-    strokesRef.current = updateConnectorRouting(strokesRef.current, selectedConnectorId, elbow ? 'elbow' : 'straight')
-    setSelectedConnectorElbow(elbow)
+    strokesRef.current = updateConnectorRouting(strokesRef.current, selectedConnectorId, routing)
+    setSelectedConnectorRouting(routing)
+    scheduleAutosave()
     renderAll()
+  }
+
+  /**
+   * Keep boxes inside lanes (#297): when a move or a new box ends on a Lanes canvas, the boxes among `keys` (the group by its
+   * union bounds) slide into the lane body holding their centre if they fit. Runs once at the end of the gesture, before the
+   * connector side switch, and rides in the same history step (the gesture already saved its snapshot). Desktop Alt, the
+   * "Keep boxes inside lanes" switch and other canvases skip it. Labels and connectors follow like in a normal move.
+   */
+  const fitIntoLanes = (event: { pointerType: string; altKey?: boolean } | null, keys: ReadonlySet<string>): boolean => {
+    if (effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current) !== 'lanes' || !laneFit(pageLanesRef.current)) return false
+    if (event && snappingSuspended(event, inputModeRef.current)) return false
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    const boxKeys = new Set<string>()
+    for (const item of strokesRef.current) {
+      if (item.kind !== 'rectangle' || !keys.has(canvasItemKey(item))) continue
+      const box = rotatedItemBounds(item)
+      minX = Math.min(minX, box.x)
+      minY = Math.min(minY, box.y)
+      maxX = Math.max(maxX, box.x + box.width)
+      maxY = Math.max(maxY, box.y + box.height)
+      boxKeys.add(canvasItemKey(item))
+    }
+    if (boxKeys.size === 0) return false
+    const { dx, dy } = laneFitDelta({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, pageLanesRef.current, sheetHeightRef.current)
+    if (dx === 0 && dy === 0) return false
+    strokesRef.current = translateWithinWorkspace(strokesRef.current, new Set(keys), dx, dy)
+    scheduleAutosave()
+    renderAll()
+    return true
   }
 
   /** After a drag: connectors attached to the boxes that moved may switch to facing sides when that makes them clearly shorter (same undo step as the drag). */
@@ -655,6 +1064,55 @@ function App() {
     renderAll()
   }
 
+  /** Arrow ends: sets or clears the arrowhead at both ends of every selected unlocked arrow connector. One undo step; nothing happens when none would change. */
+  const setSelectedArrowEnds = (twoWay: boolean) => {
+    const next = setSelectedArrowsTwoWay(strokesRef.current, selectedKeysRef.current, twoWay)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    setSelectedConnectorTwoWay(twoWay)
+    renderAll()
+  }
+
+  /** Corners: rounds or squares every selected unlocked plain rectangle. One undo step; nothing happens when none would change. */
+  const setSelectedCorners = (rounded: boolean) => {
+    const next = setRoundedCorners(strokesRef.current, currentSelectionKeys(), rounded)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    scheduleAutosave()
+  }
+
+  const setSelectedLogoColor = (brand: boolean) => {
+    const next = setLogoColor(strokesRef.current, currentSelectionKeys(), brand)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    scheduleAutosave()
+  }
+
+  // Name: Show / Hide for the one selected logo box: adds or removes its brand name label, one undo step each.
+  const setSelectedLogoName = (show: boolean) => {
+    const target = selectedLogoBox(strokesRef.current, currentSelectionKeys(), findTechLogo)
+    if (!target) return
+    const next = setLogoNameShown(strokesRef.current, target.box, target.logo, show, nextTextIdRef.current)
+    if (next === strokesRef.current) return
+    saveHistory()
+    if (show) nextTextIdRef.current += 1
+    strokesRef.current = next
+    historyCacheRef.current = null
+    reconcileSelectedItems() // Hiding deletes the label, which may have been selected with the box (group)
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    scheduleAutosave()
+  }
+
   const reverseSelectedConnector = () => {
     if (selectedConnectorId === null || selectedConnectorType === null || selectedConnectorType === 'association') return
     saveHistory()
@@ -670,6 +1128,7 @@ function App() {
   }
 
   const selectPenMode = () => {
+    setLaserMode(false)
     setTextMode(false); setClassMode(false)
     setEraser(false)
     setEraserMenuOpen(false)
@@ -680,6 +1139,122 @@ function App() {
     setUmlConnectorType(null)
     clearLassoSelection()
   }
+
+  // The laser trail: points are screen coordinates; one rAF loop runs only while points remain visible.
+  const drawLaser = () => {
+    laserFrameRef.current = null
+    const now = performance.now()
+    laserTrailRef.current = pruneLaser(laserTrailRef.current, now)
+    const canvas = laserCanvasRef.current
+    if (canvas) {
+      const dpr = window.devicePixelRatio || 1
+      const width = Math.round(window.innerWidth * dpr)
+      const height = Math.round(window.innerHeight * dpr)
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height }
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight)
+        const segments = laserSegments(laserTrailRef.current, now)
+        // Glow: one continuous path (no overlapping caps, so no darker dots at the joints).
+        if (segments.length > 0) {
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+          ctx.beginPath(); ctx.moveTo(segments[0].x1, segments[0].y1)
+          for (const segment of segments) ctx.lineTo(segment.x2, segment.y2)
+          ctx.strokeStyle = `rgba(255, 40, 40, ${segments[segments.length - 1].alpha * 0.25})`; ctx.lineWidth = 14; ctx.stroke()
+        }
+        // Core: per segment so the tail fades; butt caps so segments do not overlap.
+        ctx.lineCap = 'butt'
+        for (const segment of segments) {
+          ctx.beginPath(); ctx.moveTo(segment.x1, segment.y1); ctx.lineTo(segment.x2, segment.y2)
+          ctx.strokeStyle = `rgba(255, 30, 30, ${segment.alpha})`; ctx.lineWidth = 5; ctx.stroke()
+          ctx.strokeStyle = `rgba(255, 190, 190, ${segment.alpha})`; ctx.lineWidth = 1.8; ctx.stroke()
+        }
+      }
+    }
+    if (laserVisible(laserTrailRef.current, now)) laserFrameRef.current = requestAnimationFrame(drawLaser)
+    else laserTrailRef.current = []
+  }
+  const pushLaserPoints = (points: ReadonlyArray<{ clientX: number; clientY: number }>) => {
+    const now = performance.now()
+    for (const point of points) laserTrailRef.current = addLaserPoint(laserTrailRef.current, point.clientX, point.clientY, now)
+    if (laserFrameRef.current === null) laserFrameRef.current = requestAnimationFrame(drawLaser)
+  }
+  const exitFocus = () => {
+    if (focusRef.current === null) return
+    focusRef.current = null
+    focusKeptRef.current = null
+    focusCheckedItemsRef.current = null
+    focusDrawnRef.current.clear()
+    setFocusActive(false)
+    historyCacheRef.current = null
+    renderAll()
+    renderNavigator(true)
+  }
+  // Another page or another diagram: the focus belongs to the page it was started on.
+  useEffect(() => { exitFocus() }, [pageIndex, currentDocId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const startFocus = (): boolean => {
+    const kept = focusSet(strokesRef.current, currentSelectionKeys())
+    if (kept.size === 0) { showToast('Select something to focus on'); return false }
+    focusKeptRef.current = kept
+    focusRef.current = fadedKeysOf(strokesRef.current, kept)
+    focusCheckedItemsRef.current = strokesRef.current
+    setFocusActive(true)
+    historyCacheRef.current = null
+    renderAll()
+    renderNavigator(true)
+    return true
+  }
+  /** Slides: zoom the page on screen to fit its content (the whole sheet when it is empty). The UI is hidden, so the full canvas is used. Respects a locked zoom. */
+  const fitSlideView = () => {
+    if (navigationSettingsRef.current.zoomLocked) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0 || rect.height <= 0) return
+    const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
+    if (!bounds) { fitCanvasView(); return }
+    applyViewport(fitViewportToBounds(bounds, rect.width, rect.height, SLIDE_PADDING, MIN_ZOOM, SLIDE_MAX_ZOOM))
+  }
+  /** Slides: show page `target` through the normal page switch (stash, history per page, autosave path), then fit it. */
+  const showSlide = (target: number) => {
+    if (target !== pageIndexRef.current) goToPage(target)
+    if (target === pageIndexRef.current) fitSlideView()
+  }
+  /** Palette "Present pages": hide the toolbars (if shown) and fit the page on screen. */
+  const presentPages = () => {
+    if (!presentModeRef.current) togglePresentMode()
+    fitSlideView()
+  }
+  const togglePresentMode = () => {
+    setOptionsFor(null); setEraserMenuOpen(false)
+    setPresentMode((value) => !value)
+  }
+  const laserPreviousToolRef = useRef<ToolFlags>(PEN_TOOL_FLAGS)
+  const leaveLaser = () => {
+    // Back to the tool that was active before the laser (Pen when it was Pen).
+    const previous = toolToRestoreAfterLaser(laserPreviousToolRef.current)
+    laserPreviousToolRef.current = PEN_TOOL_FLAGS
+    setLaserMode(false)
+    setEraser(previous.eraser); setShapeMode(previous.shapeMode); setShapeTool(previous.shapeTool as ShapeKind | 'arrow' | 'line' | null)
+    setSelectionMode(previous.selectionMode); setLassoMode(previous.lassoMode); setConnectorMode(previous.connectorMode)
+    setTextMode(previous.textMode); setClassMode(previous.classMode); setUmlConnectorType(previous.umlConnectorType as ConnectorRelationshipType | null)
+  }
+  const toggleLaserTool = () => {
+    setOptionsFor(null)
+    if (laserModeRef.current) { leaveLaser(); return }
+    laserPreviousToolRef.current = { eraser, shapeMode, shapeTool, selectionMode, lassoMode, connectorMode, textMode, classMode, umlConnectorType }
+    selectPenMode() // clears every other tool ...
+    setLaserMode(true) // ... then the laser is set; the last state update wins
+  }
+  // Leaving the laser (another tool, Esc, the menu) clears the trail and stops the animation loop.
+  useEffect(() => {
+    if (laserMode) return
+    laserPointerRef.current = null
+    laserTrailRef.current = []
+    if (laserFrameRef.current !== null) { cancelAnimationFrame(laserFrameRef.current); laserFrameRef.current = null }
+  }, [laserMode])
+  // Picking any other tool (dock, keys, palette, tray) leaves the laser.
+  const anotherToolActive = eraser || selectionMode || textMode || classMode || lassoMode || connectorMode || umlConnectorType !== null || shapeMode || shapeTool !== null
+  useEffect(() => { if (anotherToolActive) setLaserMode(false) }, [anotherToolActive])
 
   const undo = () => {
     const previous = historyRef.current.undo(strokesRef.current)
@@ -736,7 +1311,7 @@ function App() {
         } else recognized = recognizeLine(stroke)
       }
       if (recognized.kind === 'rectangle' || (recognized.kind === 'stroke' && recognized.shape)) {
-        shapePreviewRef.current = recognized
+        shapePreviewRef.current = styleNewShape(recognized) // the finish path uses the preview as is, so it carries the default shape style
         renderAll()
       }
       holdTimerRef.current = null
@@ -747,6 +1322,7 @@ function App() {
     const routedItems = routeConnectors(strokesRef.current)
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
+      if (isItemLocked(item)) continue // the whole-object eraser never removes a locked item
       if (item.kind === 'text' || item.kind === 'code') {
         if (itemHitTest(item, point, 8 / viewportRef.current.scale)) return index
         continue
@@ -799,10 +1375,8 @@ function App() {
   const hitTestRectangle = (point: Point) => {
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
-      if (item.kind !== 'rectangle') continue
-      const pad = Math.max(8 / viewportRef.current.scale, item.strokeWidth * 2)
-      const local = toItemFrame(item, point)
-      if (local.x >= item.x - pad && local.x <= item.x + item.width + pad && local.y >= item.y - pad && local.y <= item.y + item.height + pad) return item
+      if (item.kind !== 'rectangle' || item.locked) continue
+      if (rectanglePicked(strokesRef.current, item, point, viewportRef.current.scale)) return item
     }
     return null
   }
@@ -811,7 +1385,7 @@ function App() {
     const routedItems = routeConnectors(strokesRef.current)
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
-      if (item.kind === 'connector' && itemHitTest(item, point, Math.max(12 / viewportRef.current.scale, item.strokeWidth * 2))) return strokesRef.current[index] as ConnectorObject
+      if (item.kind === 'connector' && !item.locked && (itemHitTest(item, point, Math.max(12 / viewportRef.current.scale, item.strokeWidth * 2)) || pointOnConnectorLabel(item, point, createTextMeasure(connectorLabelFontSize(item), DEFAULT_TEXT_FONT)))) return strokesRef.current[index] as ConnectorObject
     }
     return null
   }
@@ -820,7 +1394,7 @@ function App() {
     const pad = 8 / viewportRef.current.scale
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
-      if (item.kind === 'code' && itemHitTest(item, point, pad)) return item
+      if (item.kind === 'code' && !item.locked && itemHitTest(item, point, pad)) return item
     }
     return null
   }
@@ -829,7 +1403,7 @@ function App() {
     const pad = 8 / viewportRef.current.scale
     for (let index = strokesRef.current.length - 1; index >= 0; index -= 1) {
       const item = strokesRef.current[index]
-      if (item.kind === 'text' && itemHitTest(item, point, pad)) return item
+      if (item.kind === 'text' && !item.locked && itemHitTest(item, point, pad)) return item
     }
     return null
   }
@@ -837,7 +1411,7 @@ function App() {
   const openTextEditor = (rawEditor: TextEditorState) => {
     if (textEditorRef.current) commitTextEditor()
     // Desktop auto-fit: find the shape the label sits in (none on the tablet or on plain canvas).
-    const editor = prepareEditorFit(rawEditor, strokesRef.current, inputModeRef.current === 'desktop')
+    const editor = rawEditor.connectorId !== undefined ? rawEditor : prepareEditorFit(rawEditor, strokesRef.current, inputModeRef.current === 'desktop')
     textEditorRef.current = editor
     textEditorValueRef.current = editor.initialText
     setTextEditor(editor)
@@ -852,11 +1426,23 @@ function App() {
     textEditorRef.current = null
     setTextEditor(null)
     const value = normalizeText(textEditorValueRef.current)
+    if (editor.connectorId !== undefined) {
+      const next = setConnectorLabel(strokesRef.current, editor.connectorId, value)
+      if (next !== strokesRef.current) {
+        saveHistory()
+        strokesRef.current = next
+        setSelectedConnectorLabel(strokesRef.current.some((item) => item.kind === 'connector' && item.id === editor.connectorId && !!item.label))
+        setHasInk(true)
+      }
+      renderAll()
+      return
+    }
     if (editor.itemId === null) {
       if (!isBlankText(value)) {
-        saveHistory()
+        if (!editor.mergeHistory) saveHistory()
         const created = createTextObject(nextTextIdRef.current++, editor.x, editor.y, value, editor.color, editor.fontSize, createTextMeasure(editor.fontSize, editor.fontFamily), editor.fontFamily)
-        strokesRef.current.push(editor.fitArea || editor.fitOff ? buildEditedLabel(created, value, editor, createTextMeasure) : created)
+        const label = editor.fitArea || editor.fitOff ? buildEditedLabel(created, value, editor, createTextMeasure) : created
+        strokesRef.current.push(editor.centerOn ? { ...centreLabelOn(label, editor.centerOn), align: 'center' as const } : label)
         setHasInk(true)
       }
     } else {
@@ -873,7 +1459,8 @@ function App() {
           const updated = autoFit ? buildEditedLabel(existing, value, editor, createTextMeasure) : value !== existing.text ? updateTextObject(existing, value, existing.fontSize, createTextMeasure(existing.fontSize, existing.fontFamily)) : existing
           if (updated.text !== existing.text || updated.fontSize !== existing.fontSize || updated.fit !== existing.fit) {
             saveHistory()
-            strokesRef.current = strokesRef.current.map((item, itemIndex) => (itemIndex === index ? updated : item))
+            const anchored = keepAlignAnchor(existing, updated)
+            strokesRef.current = strokesRef.current.map((item, itemIndex) => (itemIndex === index ? anchored : item))
           }
         }
       }
@@ -889,9 +1476,19 @@ function App() {
   }
 
   // A new empty label at the point (the Text tool's tap and the Desktop double-click on empty canvas): nothing is made until text is typed.
-  const openNewTextEditorAt = (point: Point) => openTextEditor({ itemId: null, x: point.x, y: point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
+  // With event (the Text tool's tap) on Lined / Notebook / Cornell the first baseline snaps to the nearest ruled line (#299); Alt on a desktop mouse skips it.
+  const openNewTextEditorAt = (point: Point, event?: { pointerType: string; altKey?: boolean }) => openTextEditor({ itemId: null, x: point.x, y: event && !snappingSuspended(event, inputModeRef.current) ? ruledBaselineY(point.y - textSize * 0.65, textSize, pageSpacingUnits(pageSpacingRef.current), effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current)) : point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
 
-  const editTextItem = (item: TextObject) => openTextEditor({ itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text })
+  const editTextItem = (item: TextObject, selectAll = false) => openTextEditor({ ...(selectAll ? { selectAll: true } : {}), itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text, ...(item.align ? { align: item.align } : {}), ...(item.align === 'center' ? { centerOn: { x: item.x + item.width / 2, y: item.y + item.height / 2 } } : {}), ...(item.align === 'right' ? { anchorRight: item.x + item.width } : {}) })
+
+  // Edits the label of a connector in the text overlay, centred on the middle of its drawn path; committing writes connector.label (one undo step).
+  const editConnectorLabel = (connectorId: number): boolean => {
+    const connector = routeConnectors(strokesRef.current).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
+    if (!connector || connector.locked) return false
+    const centre = connectorLabelCentre(connector)
+    openTextEditor({ itemId: null, connectorId, x: centre.x, y: centre.y, fontSize: connectorLabelFontSize(connector), fontFamily: DEFAULT_TEXT_FONT, color: connector.strokeColor, initialText: connector.label ?? '', centerOn: { x: centre.x, y: centre.y } })
+    return true
+  }
 
   const openClassBoxEditor = (editor: { rectangleId: number | null; x: number; y: number; content: ClassBoxContent }) => {
     if (textEditorRef.current) commitTextEditor()
@@ -907,7 +1504,9 @@ function App() {
     if (editor.rectangleId === null) {
       if (isEmptyClassBox(clean)) return
       saveHistory()
-      strokesRef.current.push(createClassBox(nextRectangleIdRef.current++, editor.x, editor.y, clean, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, measure))
+      const classBoxId = nextRectangleIdRef.current++
+      strokesRef.current.push(createClassBox(classBoxId, editor.x, editor.y, clean, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, measure))
+      fitIntoLanes(null, new Set([`rectangle:${classBoxId}`]))
       setHasInk(true)
       renderAll()
       return
@@ -917,7 +1516,7 @@ function App() {
     if (!existing.classBox && isEmptyClassBox(clean)) return
     if (sameClassBoxContent(existing.classBox, clean)) return
     saveHistory()
-    const withContent = strokesRef.current.map((item) => (item.kind === 'rectangle' && item.id === existing.id ? { ...item, classBox: clean } : item))
+    const withContent = strokesRef.current.map((item) => (item.kind === 'rectangle' && item.id === existing.id ? (({ rounded: _rounded, ...rest }) => ({ ...rest, classBox: clean }))(item) : item))
     const bounds = fitClassBoxBounds(existing, clean, measure)
     const grown = bounds.width !== existing.width || bounds.height !== existing.height
     strokesRef.current = grown ? resizeRectangleItems(withContent, existing.id, bounds) : withContent
@@ -984,13 +1583,27 @@ function App() {
 
   const drawStroke = useCallback((ctx: CanvasRenderingContext2D, stroke: Stroke) => drawStrokeToCanvas(ctx, stroke, strokeDisplayMode), [strokeDisplayMode])
 
+  // Board (round 11): the palette the default ink / white fill resolve to at draw time (light = identity, nothing changes).
+  const palette = boardPalette(board)
+  const theme = palette.theme
+  const chalkGrain = chalkTextureApplies(board) ? chalkGrainCssUrl() : null
+  setConnectorLabelBackground(sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]))
+  setBoardFill(palette.fill)
+  setBoardInk(theme === 'light' ? null : palette.ink)
   const drawItem = useCallback((ctx: CanvasRenderingContext2D, item: CanvasItem) => {
-    drawItemToCanvas(ctx, item, strokeDisplayMode, sketchy)
-  }, [strokeDisplayMode, sketchy])
+    const faded = focusRef.current
+    // Focus on: a faded box that several connectors redraw is drawn once (a second faded pass would darken it). Off: nothing extra.
+    if (faded !== null) {
+      // An erase stroke starts a new pass: the connectors, locked items and boxes redrawn after it must really draw (they repair what it cut).
+      if (item.kind === 'stroke' && item.erase) focusDrawnRef.current.clear()
+      else if (faded.has(canvasItemKey(item))) { if (focusDrawnRef.current.has(item)) return; focusDrawnRef.current.add(item) }
+    }
+    drawItemToCanvas(ctx, resolveItemForBoard(item, palette, strokesRef.current), strokeDisplayMode, sketchy, faded)
+  }, [strokeDisplayMode, sketchy, palette])
 
   const drawMinimapItems = useCallback((ctx: CanvasRenderingContext2D, geometry: MinimapGeometry) => {
-    drawMinimapItemsToCanvas(ctx, canvasItemsForRendering(routeConnectors(strokesRef.current)), geometry)
-  }, [])
+    drawMinimapItemsToCanvas(ctx, canvasItemsForRendering(routeConnectors(strokesRef.current)), geometry, focusRef.current, palette)
+  }, [palette])
 
 
 
@@ -1028,14 +1641,14 @@ function App() {
     const pageY = sheetBoundsRef.current.y * geometry.scale + geometry.offsetY
     const pageWidth = SHEET_WIDTH * geometry.scale
     const pageHeight = sheetHeightRef.current * geometry.scale
-    ctx.fillStyle = '#e9ebf0'
+    ctx.fillStyle = theme === 'light' ? '#e9ebf0' : palette.desk
     ctx.fillRect(workspaceX, workspaceY, workspaceWidth, workspaceHeight)
     ctx.strokeStyle = '#c5cad4'
     ctx.lineWidth = 1
     ctx.strokeRect(workspaceX + 0.5, workspaceY + 0.5, workspaceWidth - 1, workspaceHeight - 1)
-    ctx.fillStyle = PAGE_BACKGROUND_COLORS[pageBackground]
+    ctx.fillStyle = sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground])
     ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
-    drawPageTemplateOverview(ctx, pageTemplate, { x: pageX, y: pageY, width: pageWidth, height: pageHeight })
+    drawPageTemplateOverview(ctx, canvasType, { x: pageX, y: pageY, width: pageWidth, height: pageHeight }, effectiveMarks(theme === 'light' ? undefined : palette, pageMarks, sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]), palette.ink), pageLanes)
     ctx.strokeStyle = '#cfd4df'
     ctx.lineWidth = 1
     ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
@@ -1072,7 +1685,7 @@ function App() {
     ctx.fillRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.strokeRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.restore()
-  }, [drawMinimapItems, getCurrentMinimapBounds, pageBackground, pageTemplate])
+  }, [board, drawMinimapItems, getCurrentMinimapBounds, canvasType, pageBackground, pageLanes, pageMarks, palette, theme])
 
   // The single selected box (select tool) is kept in a ref for the gesture code; the state copy only lets the toolbar show Delete for it.
   const [hasSelectedRectangle, setHasSelectedRectangle] = useState(false)
@@ -1097,7 +1710,287 @@ function App() {
     return true
   }
 
+  // Desktop lock (Ctrl+Shift+L, right-click menu): locked items are drawn but never selected, edited or erased. One undo step each.
+  const lockSelection = (): boolean => {
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) return false
+    const next = setItemsLocked(strokesRef.current, keys, true)
+    if (next === strokesRef.current) return false
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    updateSelectedItems([])
+    setSelectedRectangle(null)
+    renderAll()
+    showToast('Locked')
+    return true
+  }
+  // Group / Ungroup (Ctrl+G / Ctrl+Shift+G, menu, panel): one undo step each; the selection stays and now covers the whole group.
+  const groupSelection = (): boolean => {
+    const keys = currentSelectionKeys()
+    const next = groupItems(strokesRef.current, keys)
+    if (next === strokesRef.current) return false
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    applySelectionState(normalizeSelection(expandToGroups(next, keys)))
+    showToast('Grouped')
+    return true
+  }
+  // Change shape (right-click menu, panel): the selected boxes become another shape of their family; one undo step.
+  const changeShapeSelection = (target: string): boolean => {
+    const next = changeSelectedShapes(strokesRef.current, currentSelectionKeys(), target as ShapeChoice)
+    if (next === strokesRef.current) return false
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+    bumpSelectionColor((n) => n + 1)
+    showToast(`Changed to ${shapeChoiceLabel(target as ShapeChoice)}`)
+    return true
+  }
+  // Number steps / Clear step numbers (right-click menu, palette, tablet panel): connector labels; one undo step each.
+  const numberFlowSteps = (): boolean => {
+    const keys = currentSelectionKeys()
+    const count = stepTargets(strokesRef.current, keys).length
+    const next = numberSteps(strokesRef.current, keys)
+    if (count === 0) { showToast('Select connectors to number'); return false }
+    if (!next) { showToast(`Numbered ${count} step${count === 1 ? '' : 's'}`); return true }
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+    showToast(`Numbered ${count} step${count === 1 ? '' : 's'}`)
+    return true
+  }
+  const clearFlowSteps = (): boolean => {
+    const next = clearSteps(strokesRef.current, currentSelectionKeys())
+    if (!next) { showToast('No step numbers to clear'); return false }
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+    showToast('Cleared step numbers')
+    return true
+  }
+  const ungroupSelection = (): boolean => {
+    const next = ungroupItems(strokesRef.current, currentSelectionKeys())
+    if (next === strokesRef.current) return false
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    showToast('Ungrouped')
+    return true
+  }
+  // A selection state widened to every member of the groups it touches (a no-op when nothing on the page is grouped).
+  const expandSelectionState = (state: SelectionState): SelectionState => {
+    if (!strokesRef.current.some((item) => item.kind !== 'opaque' && item.group !== undefined)) return state
+    const keys = new Set(state.keys)
+    if (state.rectangleId !== null) keys.add(`rectangle:${state.rectangleId}`)
+    return normalizeSelection(expandToGroups(strokesRef.current, keys))
+  }
+  const unlockItems = (keys: ReadonlySet<string> | null): boolean => {
+    const next = setItemsLocked(strokesRef.current, keys, false)
+    if (next === strokesRef.current) return false
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    showToast('Unlocked')
+    return true
+  }
+
   // Select every item on the page, switching to the select tool first when no selecting tool is active so the selection can be moved.
+  // Select similar (right-click): the unlocked items of the same kind / shape as the one selected, through the normal selection path. No history entry.
+  const soleSelectedKey = (): string | null => {
+    const keys = currentSelectionKeys()
+    return keys.size === 1 ? [...keys][0] : null
+  }
+  const selectSimilarItems = (): boolean => {
+    const key = soleSelectedKey()
+    const keys = key ? similarItemKeys(strokesRef.current, key) : []
+    if (keys.length === 0) return false
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    setSelectedRectangle(null)
+    updateSelectedItems(keys)
+    renderAll()
+    showToast(`Selected ${keys.length} similar item${keys.length === 1 ? '' : 's'}`)
+    return true
+  }
+  // Swap positions (right-click chip, palette): two selected boxes trade centres; labels inside and attached connectors follow; one undo step.
+  const swapPositionsSelection = (): boolean => {
+    const result = swapPositionsItems(strokesRef.current, currentSelectionKeys(), workspaceBoundsRef.current)
+    if (!result) { showToast(canSwapPositions(strokesRef.current, currentSelectionKeys()) ? 'Already in each other\'s place' : 'Select exactly two boxes (not locked or grouped)'); return false }
+    saveHistory()
+    strokesRef.current = result
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+    bumpSelectionColor((n) => n + 1)
+    showToast('Swapped the two boxes')
+    return true
+  }
+  // Insert box into connector (right-click row, panel button, palette): a plain rectangle on the middle of the one selected connector; the connector now ends on it and a new one runs on to the old end. One undo step; desktop opens the box for typing, the tablet leaves it selected.
+  const soleConnectorId = (): number | null => {
+    const key = soleSelectedKey()
+    const match = key ? /^connector:(\d+)$/.exec(key) : null
+    return match ? Number(match[1]) : null
+  }
+  const canInsertBoxNow = (): boolean => { const id = soleConnectorId(); return id !== null && canInsertBoxIntoConnector(strokesRef.current, id) }
+  const insertBoxIntoSelectedConnector = (): boolean => {
+    const id = soleConnectorId()
+    if (id === null) return false
+    if (textEditorRef.current) commitTextEditor()
+    const result = insertBoxIntoConnector(strokesRef.current, id, { rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current }, { style: newShapeStyleRef.current, workspace: workspaceBoundsRef.current })
+    if (!result) { showToast('Select one unlocked connector'); return false }
+    nextRectangleIdRef.current += 1
+    nextConnectorIdRef.current += 1
+    saveHistory()
+    const box = sketchyRef.current ? withSketchSeed(result.box) : result.box
+    strokesRef.current = box === result.box ? result.items : result.items.map((item) => (item === result.box ? box : item))
+    historyCacheRef.current = null
+    setHasInk(true)
+    scheduleAutosave()
+    setSelectedRectangle(box.id)
+    updateSelectedItems([])
+    if (inputModeRef.current === 'desktop') {
+      const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+      openTextEditor({ itemId: null, x: middle.x, y: middle.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: middle, mergeHistory: true })
+      setSelectedRectangle(box.id)
+    }
+    renderAll()
+    return true
+  }
+  // Round 10, drop onto a connector (Desktop mouse): while one free box is dragged, the connector under its centre is remembered (and highlighted);
+  // releasing there inserts the box (insertExistingBoxIntoConnector). The drag already recorded the history step, so move + insert is one undo step.
+  const updateConnectorDropTarget = (event: React.PointerEvent<HTMLCanvasElement>, drag: { itemKey: string; duplicate?: boolean }, items: CanvasItem[]) => {
+    let target: number | null = null
+    const match = /^rectangle:(\d+)$/.exec(drag.itemKey)
+    if (match && !drag.duplicate && inputModeRef.current === 'desktop' && event.pointerType === 'mouse') {
+      const box = items.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === Number(match[1]))
+      if (box) {
+        if (!dropPathsRef.current) dropPathsRef.current = connectorDropPaths(items, box.id)
+        target = connectorUnderBox(items, box.id, { x: box.x + box.width / 2, y: box.y + box.height / 2, pressure: 1 }, viewportRef.current.scale, undefined, dropPathsRef.current)
+      }
+    }
+    dropConnectorRef.current = target
+  }
+  const dropBoxOnConnector = (boxKey: string, connectorId: number): boolean => {
+    const match = /^rectangle:(\d+)$/.exec(boxKey)
+    const box = match ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === Number(match[1])) : undefined
+    if (!box) return false
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2, pressure: 1 }
+    const path = dropPathsRef.current?.get(connectorId)
+    const result = insertExistingBoxIntoConnector(strokesRef.current, connectorId, box.id, centre, { connector: nextConnectorIdRef.current }, { workspace: workspaceBoundsRef.current, ...(path ? { path } : {}) })
+    if (!result) return false
+    nextConnectorIdRef.current += 1
+    // The labels that travelled with the box during the drag follow it to the line (same update, same undo step).
+    const labelKeys = new Set(labelsInside(strokesRef.current, new Set([boxKey])))
+    const shiftX = result.box.x - box.x
+    const shiftY = result.box.y - box.y
+    strokesRef.current = labelKeys.size > 0 && (shiftX !== 0 || shiftY !== 0) ? translateWithinWorkspace(result.items, labelKeys, shiftX, shiftY) : result.items
+    historyCacheRef.current = null
+    scheduleAutosave()
+    showActionToast('Inserted into the arrow', { label: 'Undo', run: () => undo() })
+    renderAll()
+    return true
+  }
+  // Flip selection (Shift+H / Shift+V, right-click chips, palette, context panel): mirrors the selection about its bounding-box centre; one undo step.
+  const flipKeysWithLabels = (): Set<string> => {
+    const keys = new Set(currentSelectionKeys())
+    for (const key of labelsInside(strokesRef.current, keys)) keys.add(key) // labels inside a flipped box go with it
+    return keys
+  }
+  const flipSelection = (axis: FlipAxis): boolean => {
+    const flipKeys = flipKeysWithLabels()
+    const result = flipSelectionItems(strokesRef.current, flipKeys, axis)
+    if (!result) { showToast(canFlipSelection(strokesRef.current, flipKeys) ? 'Nothing to flip' : 'Select two or more items (or a stroke or connector) to flip'); return false }
+    saveHistory()
+    strokesRef.current = result
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+    bumpSelectionColor((n) => n + 1)
+    showToast(axis === 'horizontal' ? 'Flipped horizontally' : 'Flipped vertically')
+    return true
+  }
+  // Keyboard walk (Tab / Shift+Tab, Alt+Arrow; Select tool only): selects `key` through the normal selection path (a group member selects its group)
+  // and pans the view when the item is off screen. Selection and view only: no history entry.
+  const walkSelect = (key: string | null): boolean => {
+    if (!selectionMode || key === null) return false
+    applySelectionState(expandSelectionState(normalizeSelection([key])))
+    const bounds = walkItemBounds(strokesRef.current, key)
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (bounds && rect) {
+      const next = revealViewport(viewportRef.current, bounds, rect)
+      if (next !== viewportRef.current) applyViewport(next)
+    }
+    return true
+  }
+  const walkedKeyRef = useRef<string | null>(null)
+  const walkSelectTracked = (key: string | null): boolean => { const ok = walkSelect(key); if (ok) walkedKeyRef.current = key; return ok }
+  /** Tab / Shift+Tab. Past the last (first) stop the selection is cleared and false is returned so the browser moves focus. */
+  const walkTo = (step: 1 | -1): boolean => {
+    if (!selectionMode) return false
+    const result = walkStep(strokesRef.current, walkCurrentKey(strokesRef.current, currentSelectionKeys(), walkedKeyRef.current), step)
+    if (result === null) return false
+    if ('leave' in result) { walkedKeyRef.current = null; applySelectionState({ keys: [], rectangleId: null }); return false }
+    return walkSelectTracked(result.key)
+  }
+  const walkLinked = (direction: 'right' | 'left' | 'up' | 'down'): boolean => {
+    const from = soleSelectedKey()
+    return from !== null && walkSelectTracked(linkedNeighbour(strokesRef.current, from, direction))
+  }
+  // Select connected / Select all linked (right-click chip, palette, panel): the box, its connectors and the boxes at their other ends (all the way through, for linked). No history entry.
+  const selectConnectedItems = (transitive: boolean): boolean => {
+    const keys = (transitive ? linkedKeys : connectedKeys)(strokesRef.current, currentSelectionKeys())
+    if (keys.length === 0 || !canSelectConnected(strokesRef.current, currentSelectionKeys())) { showToast('No connected items'); return false }
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    setSelectedRectangle(null)
+    updateSelectedItems(keys)
+    renderAll()
+    showToast(`Selected ${keys.length} connected item${keys.length === 1 ? '' : 's'}`)
+    return true
+  }
+  // Same size (right-click chips, palette, panel): the selected boxes take the largest width and / or height around their centres. Connectors and inside labels follow; one undo step.
+  const sameSizeSelection = (mode: SameSizeMode): boolean => {
+    const result = sameSizeItems(strokesRef.current, currentSelectionKeys(), mode, workspaceBoundsRef.current, createTextMeasure)
+    if (!result) { showToast(canSameSize(strokesRef.current, currentSelectionKeys()) ? 'Already the same size' : 'Select two or more boxes'); return false }
+    saveHistory()
+    strokesRef.current = result.items
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+    bumpSelectionColor((n) => n + 1)
+    showToast(`Made ${result.count} boxes the same ${mode === 'both' ? 'size' : mode}`)
+    return true
+  }
+  // Add boundary (right-click chip, palette, panel): a dashed grey rectangle behind everything around the selection plus a "Boundary" label; one undo step. Desktop opens the editor on the label.
+  const addBoundaryAroundSelection = (): boolean => {
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) return false
+    if (textEditorRef.current) commitTextEditor()
+    const result = addBoundary(strokesRef.current, keys, { rectangle: nextRectangleIdRef.current, text: nextTextIdRef.current }, workspaceBoundsRef.current, { strokeWidth: width, fontFamily: DEFAULT_TEXT_FONT, measure: createTextMeasure(16, DEFAULT_TEXT_FONT) })
+    if (!result) return false
+    nextRectangleIdRef.current += 1
+    nextTextIdRef.current += 1
+    saveHistory()
+    const rectangle = sketchyRef.current ? withSketchSeed(result.rectangle) : result.rectangle
+    strokesRef.current = rectangle === result.rectangle ? result.items : result.items.map((item) => (item === result.rectangle ? rectangle : item))
+    historyCacheRef.current = null
+    setHasInk(true)
+    scheduleAutosave()
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    setSelectedRectangle(null)
+    updateSelectedItems([canvasItemKey(result.label)])
+    if (inputModeRef.current === 'desktop') editTextItem(result.label, true)
+    renderAll()
+    return true
+  }
   const selectAllItems = (): boolean => {
     const keys = allCanvasItemKeys(strokesRef.current)
     if (keys.length === 0) return false
@@ -1109,7 +2002,7 @@ function App() {
   }
 
   // Step 7. The tool the mouse is using, as the click-to-select rule names it.
-  const clickToolName = (): ClickTool => eraser ? 'eraser'
+  const clickToolName = (): ClickTool => laserMode ? 'laser' : eraser ? 'eraser'
     : selectionMode ? 'select' : lassoMode ? 'lasso' : textMode ? 'text' : classMode ? 'classBox'
     : (connectorMode || umlConnectorType !== null) ? 'connector' : shapeTool !== null ? 'shapeDraw' : shapeMode ? 'shape' : 'pen'
 
@@ -1120,6 +2013,13 @@ function App() {
     const item = strokesRef.current.find((candidate) => canvasItemKey(candidate) === target.key)
     if (!item) return null
     hoverKeyRef.current = null
+    // A member of a group selects the whole group (and the select tool, whose handles move it).
+    const groupState = expandSelectionState({ keys: [target.key], rectangleId: null })
+    if (groupState.keys.length > 1) {
+      if (!selectionMode && !lassoMode) toggleSelectTool()
+      applySelectionState(groupState)
+      return item
+    }
     if (item.kind === 'rectangle' && !lassoMode) {
       if (!item.inkBox && !selectionMode) toggleSelectTool()
       setSelectedRectangle(item.id)
@@ -1156,22 +2056,71 @@ function App() {
   // Starts dragging the whole group selection (the lasso's move, reused).
   const startGroupDrag = (event: React.PointerEvent<HTMLCanvasElement>, point: Point) => {
     event.currentTarget.setPointerCapture(event.pointerId)
-    lassoDragRef.current = { pointerId: event.pointerId, start: point, keys: new Set(selectedKeysRef.current), originalItems: strokesRef.current.slice(), moved: false }
+    lassoDragRef.current = { pointerId: event.pointerId, start: point, keys: new Set(selectedKeysRef.current), originalItems: strokesRef.current.slice(), moved: false, ...(duplicatePress(event) ? { duplicate: true } : {}) }
+  }
+  // Ctrl (Cmd) + mouse press with the Select tool in Desktop mode: if it turns into a drag, a copy moves instead of the originals.
+  const duplicatePress = (event: React.PointerEvent<HTMLCanvasElement>): boolean => selectionMode && !lassoMode && isDuplicateDragPress(inputModeRef.current, event.pointerType, event.button, event.ctrlKey, event.metaKey)
+  // The copy for a duplicating drag, made at the first move past the threshold: originals stay, the copies get the moving keys.
+  const beginDuplicate = (holder: { dup?: DragDup }, originalItems: CanvasItem[], dragged: Set<string>, event: React.PointerEvent<HTMLCanvasElement>): DragDup | null => {
+    if (holder.dup) return holder.dup
+    const carried = withCarriedLabels(event, originalItems, dragged)
+    const result = duplicateForDrag(originalItems, dragged, [...carried].filter((key) => !dragged.has(key)), { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, workspaceBoundsRef.current)
+    if (!result) return null
+    nextStrokeIdRef.current = result.counters.stroke
+    nextRectangleIdRef.current = result.counters.rectangle
+    nextConnectorIdRef.current = result.counters.connector
+    nextTextIdRef.current = result.counters.text
+    holder.dup = { ...result, before: normalizeSelection(selectionKeysWithBox()) }
+    return holder.dup
+  }
+
+  // Desktop mouse drag of plain or HLD shapes: text labels lying fully inside a dragged shape travel with it. Pen and touch drags are unchanged.
+  const withCarriedLabels = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], keys: Set<string>): Set<string> => {
+    if (inputModeRef.current !== 'desktop' || event.pointerType !== 'mouse') return keys
+    const carried = labelsInside(originalItems, keys)
+    return carried.length === 0 ? keys : new Set([...keys, ...carried])
+  }
+
+  // Desktop mouse resize of one plain or HLD shape: the labels inside it at the start follow the resize (decided once, here).
+  const resizeLabelKeys = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], box: RectangleObject): string[] | undefined => {
+    if (inputModeRef.current !== 'desktop' || event.pointerType !== 'mouse' || !isFlowBox(box)) return undefined
+    const keys = labelsInside(originalItems, new Set([canvasItemKey(box)]))
+    return keys.length > 0 ? keys : undefined
   }
 
   // The guides and snap state end with the drag, however it ends; the canvas is repainted only when a guide was showing.
   const clearSnapGuides = (repaint = true) => {
-    const hadGuides = guidesRef.current.length > 0
+    const hadGuides = guidesRef.current.length > 0 || gapMarkersRef.current.length > 0 || gridOverlayRef.current !== null
     guidesRef.current = []
+    gapMarkersRef.current = []
+    gridOverlayRef.current = null
     snapStateRef.current = null
     if (hadGuides && repaint) renderAll()
   }
+  // Shift while moving (Desktop mouse): the drag runs along its main axis; read live, so releasing Shift mid-drag frees it.
+  const shiftAxisLock = (event: React.PointerEvent<HTMLCanvasElement>, dx: number, dy: number): { dx: number; dy: number; locked: 'dx' | 'dy' | null } =>
+    event.shiftKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop' ? { ...axisLock(dx, dy), locked: lockedAxis(dx, dy) } : { dx, dy, locked: null }
+  // The snap may nudge the locked axis; keep only that axis at zero (only while Shift locked one) so the move stays straight.
+  const lockSnapped = (locked: 'dx' | 'dy' | null, snapped: { dx: number; dy: number }): { dx: number; dy: number } => keepLockedAxis(locked, snapped)
   // One drag move: the pointer's delta, nudged so the moving bounds line up with nearby boxes and labels. Off when the setting is off,
   // while Alt is held with a mouse in Desktop mode, and for selections without a box or label (ink and connectors alone never snap).
-  const snapDragDelta = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], keys: ReadonlySet<string>, dx: number, dy: number): { dx: number; dy: number } => {
-    const altWithMouse = event.altKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop'
-    if (!snappingRef.current || altWithMouse) {
+  const snapDragDelta = (event: React.PointerEvent<HTMLCanvasElement>, originalItems: CanvasItem[], keys: ReadonlySet<string>, dx: number, dy: number, duplicating = false): { dx: number; dy: number } => {
+    gapMarkersRef.current = []
+    // Grid snap replaces the smart guides while it is on (Desktop mouse): the selection's top-left lands on a grid point and everything moves together.
+    const grid = gridActive(event)
+    if (grid !== null) {
       guidesRef.current = []
+      let gridState = snapStateRef.current
+      if (!gridState || gridState.pointerId !== event.pointerId) {
+        gridState = { pointerId: event.pointerId, moving: unpaddedSelectionBounds(routeConnectors(originalItems), keys), targets: [] }
+        snapStateRef.current = gridState
+      }
+      gridOverlayRef.current = grid
+      return gridState.moving ? snapMoveDelta(gridState.moving, dx, dy, grid, gridLattice()) : { dx, dy }
+    }
+    if (!snappingRef.current || snappingSuspended(event, inputModeRef.current)) {
+      guidesRef.current = []
+      gridOverlayRef.current = null
       return { dx, dy }
     }
     let state = snapStateRef.current
@@ -1185,8 +2134,9 @@ function App() {
       snapStateRef.current = state
     }
     if (!state.moving) return { dx, dy }
-    const result = snapForDrag(true, false, { ...state.moving, x: state.moving.x + dx, y: state.moving.y + dy }, state.targets, event.pointerType, viewportRef.current.scale)
+    const result = snapForDrag(true, false, { ...state.moving, x: state.moving.x + dx, y: state.moving.y + dy }, state.targets, event.pointerType, viewportRef.current.scale, !duplicating && inputModeRef.current === 'desktop' && event.pointerType === 'mouse')
     guidesRef.current = result?.guides ?? []
+    gapMarkersRef.current = result?.gapMarkers ?? []
     return result ? { dx: dx + result.dx, dy: dy + result.dy } : { dx, dy }
   }
 
@@ -1196,6 +2146,7 @@ function App() {
     if (!canvas) return
     const key = hoverKeyRef.current
     const selected = key !== null && (selectedKeysRef.current.has(key) || key === `rectangle:${selectedRectangleIdRef.current}`)
+    if (quickHoverRef.current !== null && inputModeRef.current === 'desktop' && mousePanRef.current === null && !spaceHeldRef.current) { canvas.style.cursor = 'pointer'; return }
     canvas.style.cursor = canvasCursor({ mode: inputModeRef.current, tool: clickToolName(), hover: key === null ? 'none' : selected ? 'selected' : 'item', panning: mousePanRef.current !== null, spaceHeld: spaceHeldRef.current })
   }
   const applyCursorRef = useRef(applyCanvasCursor)
@@ -1211,11 +2162,14 @@ function App() {
   const refreshHover = () => {
     hoverFrameRef.current = null
     const point = hoverPointRef.current
-    const ready = point !== null && inputModeRef.current === 'desktop' && !eraser
+    const ready = point !== null && inputModeRef.current === 'desktop' && !eraser && !laserModeRef.current
     const target = ready ? hoverTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale) : null
     const key = target?.key ?? null
-    const changed = key !== hoverKeyRef.current
+    const quickBox = ready ? quickConnectSource() : null
+    const quick = quickBox && point ? hitQuickConnect(quickBox, point, viewportRef.current.scale, quickInsideSheet, false, quickConnectHeadEnds(strokesRef.current, quickBox.id)) : null
+    const changed = key !== hoverKeyRef.current || quick !== quickHoverRef.current
     hoverKeyRef.current = key
+    quickHoverRef.current = quick
     applyCanvasCursor()
     if (changed) renderAll()
   }
@@ -1223,7 +2177,7 @@ function App() {
     hoverPointRef.current = point
     if (point === null) {
       if (hoverFrameRef.current !== null) { cancelAnimationFrame(hoverFrameRef.current); hoverFrameRef.current = null }
-      if (hoverKeyRef.current !== null) { hoverKeyRef.current = null; renderAll() }
+      if (hoverKeyRef.current !== null || quickHoverRef.current !== null) { hoverKeyRef.current = null; quickHoverRef.current = null; renderAll() }
       applyCanvasCursor()
       return
     }
@@ -1276,6 +2230,176 @@ function App() {
     const item = strokesRef.current.find((candidate) => canvasItemKey(candidate) === key)
     return item && (item.kind === 'text' || item.kind === 'rectangle') && isRotatable(item) ? item : null
   }
+  /** The routed copy of the one selected connector when it shows endpoint handles (Select / lasso only; null otherwise). */
+  const soleConnectorWithHandles = (): ConnectorObject | null => {
+    if (!selectionMode && !lassoMode) return null
+    const keys = currentSelectionKeys()
+    if (keys.size !== 1 || ![...keys][0].startsWith('connector:')) return null
+    return soleSelectedConnector(routeConnectors(strokesRef.current), keys)
+  }
+  /**
+   * The one selected plain or HLD box that shows the quick-connect buttons: Desktop Select mode, not locked, not rotated, big enough on
+   * screen, with no gesture or editor active. Null otherwise. Desktop: only the mouse starts a press. Tablet: a pen or one-finger tap
+   * does (bigger buttons), and the buttons hide while a finger is down for navigation.
+   */
+  /** Buttons whose centre is off the page are hidden (and not hit): the page-bounds check would drop the press anyway. */
+  const quickInsideSheet = (point: Point) => isPointWithinBounds(point, sheetBoundsRef.current)
+  const quickConnectSource = (): RectangleObject | null => {
+    if (!selectionMode) return null
+    const tablet = inputModeRef.current === 'tablet'
+    if (tablet && touchNav.touchCount() > 0) return null
+    if (textEditorRef.current || codeEditorRef.current || activeMarqueeRef.current || activePointerRef.current !== null || activeConnectorRef.current || activeDragRef.current || activeResizeRef.current || activeRotateRef.current || activeEndpointRef.current || activeDividerRef.current || activeLassoRef.current || lassoDragRef.current || mousePanRef.current) return null
+    const keys = currentSelectionKeys()
+    if (keys.size !== 1) return null
+    const item = strokesRef.current.find((candidate) => keys.has(canvasItemKey(candidate)))
+    if (!item || item.kind !== 'rectangle' || !isFlowBox(item) || isItemLocked(item) || itemAngle(item) !== 0) return null
+    return quickConnectFits(item, viewportRef.current.scale, tablet) ? item : null
+  }
+  /** Starts a quick-connect press when a mouse pointer lands on one of the buttons. A click (not a drag) runs Ctrl+Arrow for that side. */
+  /** Desktop Shift + press: true when the press is on a resize handle of the current selection (one box, or a group / text / code selection). */
+  const shiftPressOnSelectionHandle = (point: Point): boolean => {
+    const tolerance = 14 / viewportRef.current.scale
+    const box = selectedRectangleIdRef.current === null ? null : strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === selectedRectangleIdRef.current) ?? null
+    if (box && hitTestRectangleResizeHandle(box, point, tolerance)) return true
+    const soleKey = selectedKeysRef.current.size === 1 ? [...selectedKeysRef.current][0] : null
+    if (selectedKeysRef.current.size > 1 || soleKey?.startsWith('text:') || soleKey?.startsWith('code:')) {
+      const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), selectedKeysRef.current)
+      if (bounds && hitTestRectangleResizeHandle(bounds, point, tolerance)) return true
+    }
+    return false
+  }
+
+  const startQuickConnectPress = (event: React.PointerEvent<HTMLCanvasElement>, point: Point): boolean => {
+    const tablet = inputModeRef.current === 'tablet'
+    // Desktop: the mouse (main button, no modifier). Tablet: the pen (not while its button erases) or a lone finger with no pen near.
+    const allowed = tablet
+      ? (event.pointerType === 'pen' && !isPenButtonHeld(event.nativeEvent)) || (event.pointerType === 'touch' && touchNav.touchCount() === 0 && !touchNav.penNear(performance.now()))
+      : event.pointerType === 'mouse' && event.button === 0 && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
+    if (!allowed) return false
+    const source = quickConnectSource()
+    const direction = source ? hitQuickConnect(source, point, viewportRef.current.scale, quickInsideSheet, tablet, quickConnectHeadEnds(strokesRef.current, source.id)) : null
+    if (!direction) return false
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    activeQuickRef.current = { pointerId: event.pointerId, direction, pointerType: event.pointerType, startScreen: getScreenPoint(event), dragged: false }
+    // The press must not join a double-click pair (its second click would undo the new shape or open a label editor).
+    clickPairRef.current = null
+    clickBeforeRef.current = null
+    quickHoverRef.current = null
+    renderAll()
+    return true
+  }
+  const moveQuickConnectPress = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const press = activeQuickRef.current
+    if (!press) return
+    event.preventDefault()
+    const now = getScreenPoint(event)
+    if (Math.hypot(now.x - press.startScreen.x, now.y - press.startScreen.y) >= (press.pointerType === 'mouse' ? CONNECTOR_CLICK_SLOP_PX : TABLET_QUICK_CONNECT_TAP_SLOP_PX)) press.dragged = true
+  }
+  const finishQuickConnectPress = () => {
+    const press = activeQuickRef.current
+    activeQuickRef.current = null
+    quickClickAtRef.current = performance.now()
+    if (press && !press.dragged) quickCreateShape(press.direction)
+    renderAll()
+  }
+  const cancelQuickConnectPress = () => {
+    if (activeQuickRef.current === null) return
+    activeQuickRef.current = null
+    renderAll()
+  }
+  /** Starts a handle gesture when `point` is on a handle of the selected connector. Returns true when it did. */
+  const startConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>, point: Point, labelOnly = false): boolean => {
+    const connector = soleConnectorWithHandles()
+    if (!connector) return false
+    // The handles win; otherwise a press on the label of the selected connector drags it along the path (a click without movement does nothing, so double-click still edits).
+    const which: ConnectorHandleKind | 'label' | null = (labelOnly ? null : hitConnectorHandle(connector, point, viewportRef.current.scale, event.pointerType)) ?? (hitConnectorLabel(connector, point) ? 'label' : null)
+    if (!which) return false
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    activeEndpointRef.current = { pointerId: event.pointerId, pointerType: event.pointerType, id: connector.id, which, startScreen: getScreenPoint(event), startPoint: point, startBend: connector.bend ?? 0, startLabelPosition: connectorLabelPosition(connector), routedConnector: which === 'label' ? (routeConnectors(strokesRef.current).find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connector.id) ?? null) : null, originalItems: strokesRef.current.slice(), dragged: false, saved: false, target: null }
+    return true
+  }
+  const moveConnectorHandleGesture = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const gesture = activeEndpointRef.current
+    if (!gesture) return
+    event.preventDefault()
+    const now = getScreenPoint(event)
+    if (!gesture.dragged && Math.hypot(now.x - gesture.startScreen.x, now.y - gesture.startScreen.y) < CONNECTOR_CLICK_SLOP_PX) return
+    gesture.dragged = true
+    if (gesture.which === 'label') {
+      // Dragging the label slides it along the routed path (fraction of its length, 0.05..0.95); one undo step per drag.
+      event.currentTarget.style.cursor = 'grabbing'
+      const connector = gesture.routedConnector // routed once at the start of the gesture (originalItems never change during it)
+      if (!connector) return
+      const next = setConnectorLabelPosition(gesture.originalItems, gesture.id, labelPositionForDrag(connector, gesture.startPoint, getBoundedPoint(event), gesture.startLabelPosition))
+      if (next === strokesRef.current || (!gesture.saved && next === gesture.originalItems)) return
+      if (!gesture.saved) { saveHistory(); gesture.saved = true }
+      strokesRef.current = next
+      renderAll()
+      return
+    }
+    if (gesture.which === 'middle') {
+      // Dragging the middle dot of an elbow connector moves its middle segment, of a curved one bends the curve (one undo step); on a straight connector it does nothing.
+      const bend = bendForDrag(gesture.originalItems, gesture.id, gesture.startPoint, getBoundedPoint(event), gesture.startBend)
+      if (bend === null) return
+      const next = setConnectorBend(gesture.originalItems, gesture.id, bend)
+      if (next === strokesRef.current || (!gesture.saved && next === gesture.originalItems)) return
+      if (!gesture.saved) { saveHistory(); gesture.saved = true }
+      strokesRef.current = next
+      renderAll()
+      return
+    }
+    const point = getBoundedPoint(event)
+    const snapped = snapEndpointTarget(point, gesture.originalItems, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale, (p) => isPointWithinBounds(p, workspaceBoundsRef.current))
+    // A free end (not attaching to a box): Shift keeps its angle to the other end at 15 degree steps, otherwise Snap to grid puts it on a grid point. Attaching wins over both.
+    let freePoint = point
+    if (!snapped && gesture.pointerType === 'mouse' && inputModeRef.current === 'desktop') {
+      const grid = gridActive(event)
+      const connector = gesture.originalItems.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === gesture.id)
+      let candidate: { x: number; y: number } = point
+      if (event.shiftKey && connector) candidate = snapPointAngle(gesture.which === 'start' ? connector.end : connector.start, point, 15)
+      else if (grid !== null) candidate = snapPoint(point, grid, gridLattice())
+      if (isPointWithinBounds(candidate as Point, workspaceBoundsRef.current)) freePoint = { ...point, x: candidate.x, y: candidate.y }
+    }
+    if (!gesture.saved) { saveHistory(); gesture.saved = true }
+    strokesRef.current = moveConnectorEndpoint(gesture.originalItems, gesture.id, gesture.which, snapped?.point ?? freePoint, snapped)
+    gesture.target = snapped?.attachment.rectangleId ?? null
+    renderAll()
+  }
+  const finishConnectorHandleGesture = () => {
+    const gesture = activeEndpointRef.current
+    activeEndpointRef.current = null
+    if (!gesture) return
+    if (gesture.which === 'middle' && !gesture.dragged) {
+      saveHistory()
+      strokesRef.current = toggleConnectorRouting(gesture.originalItems, gesture.id)
+      scheduleAutosave()
+    } else if (gesture.saved && gesture.which === 'label' && connectorLabelPosition(strokesRef.current.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === gesture.id) ?? {}) === gesture.startLabelPosition) {
+      // The label ended exactly where it started: no change, so no history step.
+      strokesRef.current = gesture.originalItems
+      historyRef.current.discardLast()
+      setCanUndo(historyRef.current.canUndo)
+      setCanRedo(historyRef.current.canRedo)
+    } else if (gesture.saved) scheduleAutosave()
+    if (gesture.which === 'label') applyCanvasCursor()
+    renderAll()
+  }
+  /** Escape or pointercancel mid-gesture: put the original items back and forget the history step the drag recorded. */
+  const cancelConnectorHandleGesture = () => {
+    const gesture = activeEndpointRef.current
+    activeEndpointRef.current = null
+    if (!gesture) return
+    if (gesture.saved) {
+      strokesRef.current = gesture.originalItems
+      historyRef.current.discardLast()
+      setCanUndo(historyRef.current.canUndo)
+      setCanRedo(historyRef.current.canRedo)
+      scheduleAutosave()
+    }
+    if (gesture.which === 'label') applyCanvasCursor()
+    renderAll()
+  }
   const setSelectedItemAngle = (radians: number) => {
     const item = soleRotatable()
     if (!item) return
@@ -1318,6 +2442,67 @@ function App() {
     }
     if (commit) recolorSessionRef.current = false
   }
+  /** Sets the outline width of the selection; one undo step per slider drag or preset click (`commit` or `endWidthChange` closes it). */
+  const changeSelectionWidth = (value: number, commit: boolean) => {
+    const next = restrokeItems(strokesRef.current, currentSelectionKeys(), value)
+    if (next !== strokesRef.current) {
+      if (!widthSessionRef.current) { saveHistory(); widthSessionRef.current = true }
+      strokesRef.current = next
+      renderAll()
+      bumpSelectionColor((n) => n + 1)
+    }
+    if (commit) widthSessionRef.current = false
+  }
+  const endWidthChange = () => { widthSessionRef.current = false }
+  /** Line style of the selection (solid / dashed / dotted), or the default for new shapes when nothing is selected. */
+  const changeLineDash = (dash: 'solid' | LineDash) => {
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) {
+      setLineDashDefaultState(dash)
+      saveLineDashDefault(dash)
+      // The newer choice wins: a stored default shape style takes the new line style too.
+      if (newShapeStyleRef.current) storeNewShapeStyle(withNewShapeDash(newShapeStyleRef.current, dash))
+      return
+    }
+    const next = setLineDash(strokesRef.current, keys, dash === 'solid' ? null : dash)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+  }
+  const changeArrowheads = (heads: Arrowheads) => {
+    const next = setArrowheads(strokesRef.current, currentSelectionKeys(), heads)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+  }
+  /** Layer order of the selection (array order is paint order). One undo step; the saved picture of the page is dropped because it assumes items only get added on top. */
+  const moveSelectionLayer = (move: LayerMove): boolean => {
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) return false
+    const next = reorderItems(strokesRef.current, keys, move)
+    if (next === strokesRef.current) return true
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    return true
+  }
+  /** Aligns or distributes the selection; connectors attached to moved boxes follow. One undo step. */
+  const arrangeSelection = (moves: ReturnType<typeof alignMoves>) => {
+    if (moves.length === 0) return
+    saveHistory()
+    strokesRef.current = applyMoves(strokesRef.current, moves)
+    historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+  }
+  const alignSelection = (op: AlignOp) => arrangeSelection(alignMoves(strokesRef.current, currentSelectionKeys(), op))
+  const distributeSelection = (op: DistributeOp) => arrangeSelection(distributeMoves(strokesRef.current, currentSelectionKeys(), op))
   /** Turns the hand-drawn style on or off for the whole diagram. Turning it on gives every shape that lacks one a stored seed, in the same undo step. */
   const toggleSketchy = () => {
     const turningOn = !sketchyRef.current
@@ -1331,6 +2516,52 @@ function App() {
     }
     sketchyRef.current = turningOn
     setSketchy(turningOn)
+  }
+
+  /** Board style picker: sets the board theme and the hand-drawn style together. Never rewrites any item colour. */
+  const chooseBoardStyle = (style: BoardStyleId, dark: boolean) => {
+    const next = boardFieldsFor(style, dark)
+    if (next.sketchy !== sketchyRef.current) toggleSketchy()
+    // Sketch and Chalkboard write new text in the hand-drawn font (Excalifont) unless it already is.
+    if (style !== 'clean' && textFontId !== 'excalifont') setTextFontId('excalifont')
+    boardRef.current = next.board
+    setBoard(next.board)
+  }
+
+  /** Canvas type picker: sets the template and the additive canvas field together. Drawings never move. */
+  const chooseCanvasType = (type: CanvasType) => {
+    const next = canvasFieldsFor(type)
+    pageCanvasRef.current = next.canvas
+    setPageCanvas(next.canvas)
+    pageTemplateRef.current = next.template
+    setPageTemplate(next.template)
+  }
+
+  /** Mark strength picker (Faint / Normal / Bold). Only the colour of dots, lines and lane borders changes; not an undo step. */
+  const chooseMarkStrength = (strength: MarkStrength) => {
+    const next = strength === 'normal' ? undefined : strength
+    pageMarksRef.current = next
+    setPageMarks(next)
+  }
+
+  /**
+   * Lane settings: merges a change into the saved `lanes` (unknown keys from a newer InkPad stay). Rows is the default direction,
+   * so it is stored as no `dir`; all-empty names are not stored; nothing left means no `lanes` field. Not an undo step.
+   */
+  const updateLanes = (patch: LaneSettings) => {
+    const merged: LaneSettings & Record<string, unknown> = { ...(pageLanesRef.current ?? {}), ...patch }
+    if (merged.dir === 'rows') delete merged.dir
+    if (merged.fit !== false) delete merged.fit // on is the default and is not written
+    if (patch.names !== undefined) {
+      const names = patch.names.slice(0, 8).map((name) => cleanPageName(name))
+      while (names.length > 0 && names[names.length - 1] === '') names.pop()
+      if (names.length > 0) merged.names = names
+      else delete merged.names
+    }
+    const next = Object.keys(merged).length > 0 ? merged : undefined
+    if (JSON.stringify(next ?? null) === JSON.stringify(pageLanesRef.current ?? null)) return
+    pageLanesRef.current = next
+    setPageLanes(next)
   }
 
   const rotatableForPanel = soleRotatable()
@@ -1362,6 +2593,118 @@ function App() {
     }
     const item = selectedTextItem()
     if (item && (item.fontSize !== size || item.fit !== 'off')) replaceTextItem(buildEditedLabel(item, item.text, { itemId: item.id, x: item.x, y: item.y, fontSize: size, fontFamily: item.fontFamily, initialText: item.text, fitOff: true }, createTextMeasure))
+  }
+  /** The one selected connector when it has a label (its size can be changed), else null. */
+  const selectedLabelledConnector = (): ConnectorObject | null => {
+    const keys = [...selectedKeysRef.current]
+    if (keys.length !== 1 || !keys[0].startsWith('connector:')) return null
+    const id = Number(keys[0].slice('connector:'.length))
+    const item = strokesRef.current.find((candidate) => candidate.kind === 'connector' && candidate.id === id)
+    return item?.kind === 'connector' && item.label ? item : null
+  }
+  /** Sets the label size of the selected labelled connector (panel buttons and the font keys); one undo step. */
+  const pickConnectorLabelSize = (size: number) => {
+    const connector = selectedLabelledConnector()
+    if (!connector || connector.locked) return
+    const next = setConnectorLabelFontSize(strokesRef.current, connector.id, size)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    scheduleAutosave()
+  }
+  /** End labels of a connector for the panel inputs, and the commit that sets one (one undo step per change). */
+  const endLabelProps = (connectorId: number) => {
+    const connector = strokesRef.current.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === connectorId)
+    return {
+      startLabel: connector?.startLabel ?? '',
+      endLabel: connector?.endLabel ?? '',
+      connectorId,
+      onEndLabel: (id: number, end: 'start' | 'end', text: string) => {
+        const next = setConnectorEndLabel(strokesRef.current, id, end, text)
+        if (next === strokesRef.current) return
+        saveHistory()
+        strokesRef.current = next
+        historyCacheRef.current = null
+        renderAll()
+        bumpSelectionColor((n) => n + 1)
+        scheduleAutosave()
+      },
+    }
+  }
+  /** Text labels the alignment buttons act on: the selected labels plus the labels inside a selected box (both modes). */
+  const alignTargetKeys = (): Set<string> => {
+    const selected = currentSelectionKeys()
+    const keys = new Set([...selected].filter((key) => key.startsWith('text:')))
+    for (const key of labelsInside(strokesRef.current, selected)) keys.add(key)
+    return keys
+  }
+  /** Left / Centre / Right for every target label; one undo step. */
+  const pickTextAlign = (align: TextAlign | 'left') => {
+    const next = setTextAlign(strokesRef.current, alignTargetKeys(), align)
+    if (next === strokesRef.current) return
+    saveHistory()
+    strokesRef.current = next
+    historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    scheduleAutosave()
+  }
+  /** The alignment panel state: the shared alignment of the target labels (null when mixed), or undefined when none are selected. */
+  const textAlignPanel = (() => {
+    const keys = alignTargetKeys()
+    if (keys.size === 0) return undefined
+    const aligns = new Set<TextAlign | 'left'>(strokesRef.current.filter((item): item is TextObject => item.kind === 'text' && keys.has(`text:${item.id}`) && !item.locked).map((item) => item.align ?? 'left'))
+    if (aligns.size === 0) return undefined
+    return { value: aligns.size === 1 ? [...aligns][0] : null, onPick: pickTextAlign }
+  })()
+  /** Font size keys with a plain or HLD box selected: the unlocked labels inside it step one size (each from its own size), one undo step. */
+  const stepBoxLabelFontSizes = (direction: 1 | -1): boolean => {
+    const labelKeys = new Set(labelsInside(strokesRef.current, currentSelectionKeys()))
+    if (labelKeys.size === 0) return false
+    let changed = false
+    const next = strokesRef.current.map((candidate): CanvasItem => {
+      if (candidate.kind !== 'text' || !labelKeys.has(canvasItemKey(candidate))) return candidate
+      const size = stepTextSize(candidate.fontSize, direction)
+      if (size === null) return candidate
+      changed = true
+      return buildEditedLabel(candidate, candidate.text, { itemId: candidate.id, x: candidate.x, y: candidate.y, fontSize: size, fontFamily: candidate.fontFamily, initialText: candidate.text, fitOff: true }, createTextMeasure)
+    })
+    if (changed) {
+      saveHistory()
+      strokesRef.current = next
+      historyCacheRef.current = null
+      renderAll()
+      scheduleAutosave()
+    }
+    return true
+  }
+  /** Ctrl+Shift+. / Ctrl+Shift+, : the selected label one panel size step larger or smaller (turns its auto-fit off like a panel pick); one undo step. */
+  const stepSelectedFontSize = (direction: 1 | -1): boolean => {
+    const labelled = selectedLabelledConnector()
+    if (labelled && !selectedTextItem()) {
+      if (labelled.locked) return false
+      const size = stepTextSize(connectorLabelFontSize(labelled), direction)
+      if (size !== null) pickConnectorLabelSize(size)
+      return true
+    }
+    const item = selectedTextItem()
+    if (!item && inputModeRef.current === 'desktop') return stepBoxLabelFontSizes(direction)
+    if (!item || isItemLocked(item)) return false
+    const size = stepTextSize(item.fontSize, direction)
+    if (size === null) return true
+    pickTextSize(size)
+    return true
+  }
+  /** The size keys while a text editor is open (Desktop; not a connector label editor, whose size is set on the selected connector): the text being edited steps one size, like a panel pick. */
+  const stepEditorFontSize = (direction: 1 | -1): boolean => {
+    const editor = textEditorRef.current
+    if (!editor || inputModeRef.current !== 'desktop' || editor.connectorId !== undefined) return false
+    const size = stepTextSize(editor.fontSize, direction)
+    if (size !== null) { pickTextSize(size); showToast(`Text size ${size}`) }
+    return true
   }
   /** The Desktop text panel toggle: auto-fit on or off for the label being edited or selected. */
   const textFitOn = (() => {
@@ -1417,6 +2760,13 @@ function App() {
     const nothingEdited = editingTextId === null && editingCodeId === null
     const items = strokesRef.current
     const liveStroke = activeStrokeRef.current
+    // Focus ends when every kept item is gone (checked only when the items changed, never while a stroke is being written).
+    if (focusKeptRef.current !== null && liveStroke === null && focusCheckedItemsRef.current !== items) {
+      focusCheckedItemsRef.current = items
+      const remaining = pruneFocus(items, focusKeptRef.current)
+      if (remaining === null) { focusRef.current = null; focusKeptRef.current = null; focusCheckedItemsRef.current = null; historyCacheRef.current = null; setFocusActive(false) }
+      else focusKeptRef.current = remaining
+    }
     const penStrokeFrame = !benchmarkBackground && nothingEdited && liveStroke !== null && liveStroke.kind === 'stroke' && !liveStroke.erase
     const gestureFrame = !benchmarkBackground && nothingEdited && viewportGestureRef.current
     // The picture of everything already on the page is kept between frames and between strokes. A finished pen stroke is
@@ -1448,7 +2798,7 @@ function App() {
     const cache = historyCacheRef.current
     const historyLayerNow = historyLayerRef.current
     const cacheBase = cacheAllowed && cache !== null && historyLayerNow !== null
-      && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height && cache.mode === strokeDisplayMode
+      && cache.dpr === dpr && cache.width === canvas.width && cache.height === canvas.height && cache.mode === strokeDisplayMode && cache.theme === theme && cache.focus === focusRef.current
     const viewportSame = cacheBase && cache!.scale === viewport.scale && cache!.offsetX === viewport.offsetX && cache!.offsetY === viewport.offsetY
     let itemsMatch = cacheBase && sameItems(cache!.snapshot, items, items.length)
     // One item added on top since the picture was made (a stroke, or a recognized rectangle or line, a connector, a text
@@ -1487,7 +2837,8 @@ function App() {
       const live = liveLayerRef.current
       if (!base || !live || !liveStateRef.current || !liveStroke || liveStroke.kind !== 'stroke') return
       const activeStrokeRenderStartedAt = measureFrame ? performance.now() : 0
-      drawLiveStrokeFrame({ page: ctx, base, live, stroke: liveStroke, predicted: PEN_PREDICTION_ENABLED ? predictedPointsRef.current : [], state: liveStateRef.current, transform: liveTransform, clip: workspaceBoundsRef.current })
+      // The live stroke draws in the colour it will have once saved: default ink on a dark board is the board's ink from the first dab (a string compare, no allocation).
+      drawLiveStrokeFrame({ page: ctx, base, live, stroke: liveStroke, color: resolveInk(liveStroke.color, palette), predicted: PEN_PREDICTION_ENABLED ? predictedPointsRef.current : [], state: liveStateRef.current, transform: liveTransform, clip: workspaceBoundsRef.current })
       if (measureFrame) diagnostics?.recordActiveStrokeRender(performance.now() - activeStrokeRenderStartedAt)
     }
     if (incrementalLive && liveState && liveState.strokeId === liveStroke!.id
@@ -1520,16 +2871,18 @@ function App() {
     const sheetLayer = sheetLayerRef.current
     if (sheetLayer) {
       applySheetLayer(sheetLayer, sheetLayerAppliedRef.current, getSheetLayerState(
-        benchmarkBackground?.template ?? pageTemplate,
-        PAGE_BACKGROUND_COLORS[benchmarkBackground ? 'white' : pageBackground],
+        benchmarkBackground?.template ?? canvasType,
+        benchmarkBackground ? PAGE_BACKGROUND_COLORS.white : sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]),
         viewport,
         pageSpacing,
+        benchmarkBackground ? undefined : effectiveMarks(theme === 'light' ? undefined : palette, pageMarksRef.current, sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]), palette.ink),
+        benchmarkBackground ? undefined : pageLanesRef.current,
       ))
     }
     if (benchmarkBackground) benchmarkBackground.onBackgroundRendered(performance.now() - backgroundStartedAt)
     const drawSheetBorders = () => {
       ctx.save()
-      ctx.strokeStyle = '#d9dce2'
+      ctx.strokeStyle = sheetBorderColor(theme)
       ctx.lineWidth = 1
       ctx.strokeRect(sheetBoundsRef.current.x + 0.5, sheetBoundsRef.current.y + 0.5, SHEET_WIDTH - 1, sheetHeightRef.current - 1)
       ctx.restore()
@@ -1558,7 +2911,8 @@ function App() {
         else ctx.strokeRect(item.x - 6, item.y - 6, item.width + 12, item.height + 12)
         ctx.restore()
       } else if (item.kind === 'connector') {
-        drawConnector(ctx, item, '#5574ed', item.strokeWidth + 8)
+        if (inputModeRef.current === 'desktop') drawConnectorHalo(ctx, item, '#5574ed', item.strokeWidth + 6)
+        else drawConnector(ctx, item, '#5574ed', item.strokeWidth + 8)
       } else if (item.kind === 'stroke' && !item.erase) {
         ctx.save()
         ctx.globalAlpha = 0.28
@@ -1595,6 +2949,7 @@ function App() {
       target.restore()
     } else {
       const redrawStartedAt = DRAW_READOUT_ENABLED && cacheAllowed ? performance.now() : 0
+      if (focusRef.current !== null) focusDrawnRef.current.clear() // focus on: faded items are drawn once per full redraw (see drawItem)
       canvasItemsForRendering(routeConnectors(items)).forEach((item) => { if (!isItemVisible(item, view)) return; if ((editingTextId === null || item.kind !== 'text' || item.id !== editingTextId) && (editingCodeId === null || item.kind !== 'code' || item.id !== editingCodeId)) drawItem(target, item) })
       if (redrawStartedAt) {
         // Time of this full redraw (zoom, pan, undo, erase, opening a diagram): JS drawing time, and time until the next frame starts.
@@ -1611,7 +2966,7 @@ function App() {
           historyContext.setTransform(1, 0, 0, 1, 0, 0)
           historyContext.clearRect(0, 0, historyLayer.width, historyLayer.height)
           historyContext.drawImage(inkLayer, 0, 0)
-          historyCacheRef.current = { snapshot: items.slice(), mode: strokeDisplayMode, scale: viewport.scale, offsetX: viewport.offsetX, offsetY: viewport.offsetY, dpr, width: canvas.width, height: canvas.height }
+          historyCacheRef.current = { snapshot: items.slice(), mode: strokeDisplayMode, theme, scale: viewport.scale, offsetX: viewport.offsetX, offsetY: viewport.offsetY, dpr, width: canvas.width, height: canvas.height, focus: focusRef.current }
         }
       } else {
         historyCacheRef.current = null
@@ -1656,6 +3011,8 @@ function App() {
         activeConnector.startAttachment ? activeConnector.start : null,
         activeConnector.endAttachment ? activeConnector.end : null,
       ].filter((point): point is Point => point !== null)
+      const targetBox = activeConnector.endAttachment ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === activeConnector.endAttachment?.rectangleId) : undefined
+      if (targetBox) drawSideMidpointDots(ctx, targetBox, viewport.scale)
       if (snapPoints.length) {
         ctx.save()
         ctx.fillStyle = '#ffffff'
@@ -1682,6 +3039,31 @@ function App() {
         else if (hovered.kind === 'connector') drawConnector(ctx, hovered, 'rgba(83, 111, 224, 0.3)', hovered.strokeWidth + 6)
         ctx.restore()
       }
+    }
+    const handleConnector = soleConnectorWithHandles()
+    if (handleConnector) {
+      // Excalidraw-style connector handles: a dot on each end, a smaller one mid-path (all a constant size on screen); the box an end would attach to is outlined.
+      const scale = viewportRef.current.scale
+      const handles = connectorHandlePositions(handleConnector)
+      const target = activeEndpointRef.current?.target
+      const box = target === null || target === undefined ? undefined : strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === target)
+      ctx.save()
+      if (box) {
+        ctx.strokeStyle = '#5269df'
+        ctx.lineWidth = 3 / scale
+        ctx.strokeRect(box.x - 4 / scale, box.y - 4 / scale, box.width + 8 / scale, box.height + 8 / scale)
+        drawSideMidpointDots(ctx, box, scale)
+      }
+      ctx.strokeStyle = '#5269df'
+      ctx.fillStyle = '#ffffff'
+      ctx.lineWidth = 2 / scale
+      for (const [dot, radius] of [[handles.start, 6], [handles.end, 6], [handles.middle, 4]] as const) {
+        ctx.beginPath()
+        ctx.arc(dot.x, dot.y, radius / scale, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.stroke()
+      }
+      ctx.restore()
     }
     const rotatableSelected = (selectionMode || lassoMode) ? soleRotatable() : null
     const rotatedSelected = rotatableSelected !== null && itemAngle(rotatableSelected) !== 0
@@ -1782,6 +3164,55 @@ function App() {
       }
       ctx.restore()
     }
+    const quickSource = quickConnectSource()
+    if (quickSource) {
+      // Desktop quick-connect buttons: round, a constant size on screen, with an arrow pointing out; the hovered one is filled stronger and shows a hint.
+      const scale = viewportRef.current.scale
+      const hovered = activeQuickRef.current?.direction ?? quickHoverRef.current
+      const tabletButtons = inputModeRef.current === 'tablet'
+      ctx.save()
+      ctx.lineWidth = 1.5 / scale
+      ctx.strokeStyle = '#5269df'
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      for (const button of quickConnectButtons(quickSource, scale, quickInsideSheet, tabletButtons, quickConnectHeadEnds(strokesRef.current, quickSource.id))) {
+        const { x, y } = button.center
+        const r = button.radius
+        const k = r * 0.4
+        const [dx, dy] = button.direction === 'right' ? [1, 0] : button.direction === 'left' ? [-1, 0] : button.direction === 'up' ? [0, -1] : [0, 1]
+        ctx.beginPath()
+        ctx.arc(x, y, r, 0, Math.PI * 2)
+        ctx.fillStyle = button.direction === hovered ? 'rgba(83, 111, 224, 0.92)' : 'rgba(255, 255, 255, 0.92)'
+        ctx.fill()
+        ctx.stroke()
+        // Chevron pointing outward: tip at +k along the direction, the two tails behind it.
+        ctx.beginPath()
+        ctx.strokeStyle = button.direction === hovered ? '#ffffff' : '#5269df'
+        ctx.moveTo(x - dx * k - dy * k, y - dy * k - dx * k)
+        ctx.lineTo(x + dx * k, y + dy * k)
+        ctx.lineTo(x - dx * k + dy * k, y - dy * k + dx * k)
+        ctx.stroke()
+        ctx.strokeStyle = '#5269df'
+        if (button.direction === hovered && !tabletButtons) {
+          const text = quickConnectHint(button.direction)
+          ctx.font = `${12 / scale}px system-ui, sans-serif`
+          ctx.textBaseline = 'middle'
+          const w = ctx.measureText(text).width
+          const pad = 6 / scale
+          const h = 20 / scale
+          const left = view.x + 4 / scale
+          const right = view.x + view.width - 4 / scale
+          const bx = Math.max(left, Math.min(x - w / 2 - pad, right - w - 2 * pad))
+          const by = button.direction === 'down' ? y + r + 6 / scale : y - r - 6 / scale - h
+          ctx.fillStyle = 'rgba(30, 36, 60, 0.92)'
+          ctx.fillRect(bx, by, w + 2 * pad, h)
+          ctx.fillStyle = '#ffffff'
+          ctx.textAlign = 'left'
+          ctx.fillText(text, bx + pad, by + h / 2)
+        }
+      }
+      ctx.restore()
+    }
     const lasso = activeLassoRef.current
     if (lasso && lasso.points.length > 1) {
       ctx.save()
@@ -1797,6 +3228,20 @@ function App() {
       ctx.stroke()
       ctx.restore()
     }
+    // Snap to grid: a faint dot grid over the visible area while a snapped drag or resize is active and the page is plain. Never saved or exported.
+    const gridSize = gridOverlayRef.current
+    if (gridSize !== null && pageTemplateRef.current === 'blank') {
+      const dots = gridDots(view, gridSize)
+      if (dots.length > 0) {
+        ctx.save()
+        ctx.fillStyle = 'rgba(83, 111, 224, 0.35)'
+        const r = 1.2 / viewport.scale
+        ctx.beginPath()
+        for (const dot of dots) { ctx.moveTo(dot.x + r, dot.y); ctx.arc(dot.x, dot.y, r, 0, Math.PI * 2) }
+        ctx.fill()
+        ctx.restore()
+      }
+    }
     const guides = guidesRef.current
     if (guides.length > 0) {
       ctx.save()
@@ -1809,6 +3254,67 @@ function App() {
         else { ctx.moveTo(guide.start, guide.position); ctx.lineTo(guide.end, guide.position) }
       }
       ctx.stroke()
+      ctx.restore()
+    }
+    const dropConnectorId = dropConnectorRef.current
+    if (dropConnectorId !== null) {
+      // Round 10: the connector the dragged box would be inserted into: a wide accent halo along its drawn path (view only, never saved or exported).
+      const target = strokesRef.current.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === dropConnectorId)
+      const path = dropPathsRef.current?.get(dropConnectorId) ?? []
+      if (target && path.length > 1) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(83, 111, 224, 0.55)'
+        ctx.lineWidth = Math.max(target.strokeWidth + 6, 8 / viewport.scale)
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.beginPath()
+        ctx.moveTo(path[0].x, path[0].y)
+        for (let i = 1; i < path.length; i += 1) ctx.lineTo(path[i].x, path[i].y)
+        ctx.stroke()
+        ctx.restore()
+      }
+    }
+    const readout = sizeReadoutRef.current
+    if (readout && activeResizeRef.current?.moved) {
+      // Screen-sized pill, offset below-right of the pointer and clamped inside the visible canvas.
+      const k = 1 / viewport.scale
+      ctx.save()
+      ctx.font = `600 ${12 * k}px system-ui, sans-serif`
+      const text = sizeReadoutText(readout.width, readout.height)
+      const padX = 7 * k
+      const w = ctx.measureText(text).width + padX * 2
+      const h = 20 * k
+      const bx = Math.max(view.x + 4 * k, Math.min(readout.x + 14 * k, view.x + view.width - w - 4 * k))
+      const by = Math.max(view.y + 4 * k, Math.min(readout.y + 14 * k, view.y + view.height - h - 4 * k))
+      ctx.fillStyle = 'rgba(32, 38, 56, 0.88)'
+      ctx.beginPath()
+      ctx.roundRect(bx, by, w, h, 6 * k)
+      ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(text, bx + padX, by + h / 2)
+      ctx.restore()
+    }
+    const gapMarkers = gapMarkersRef.current
+    if (gapMarkers.length > 0) {
+      // Equal-gap measure markers: a short line with end ticks and the gap size, drawn on the guide layer (never an item).
+      const px = 1 / viewport.scale
+      const tick = 4 * px
+      ctx.save()
+      ctx.strokeStyle = '#e0245e'
+      ctx.fillStyle = '#e0245e'
+      ctx.lineWidth = px
+      ctx.font = `${11 * px}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'bottom'
+      ctx.beginPath()
+      for (const marker of gapMarkers) {
+        ctx.moveTo(marker.x1, marker.y1); ctx.lineTo(marker.x2, marker.y2)
+        if (marker.y1 === marker.y2) { ctx.moveTo(marker.x1, marker.y1 - tick); ctx.lineTo(marker.x1, marker.y1 + tick); ctx.moveTo(marker.x2, marker.y2 - tick); ctx.lineTo(marker.x2, marker.y2 + tick) }
+        else { ctx.moveTo(marker.x1 - tick, marker.y1); ctx.lineTo(marker.x1 + tick, marker.y1); ctx.moveTo(marker.x2 - tick, marker.y2); ctx.lineTo(marker.x2 + tick, marker.y2) }
+      }
+      ctx.stroke()
+      for (const marker of gapMarkers) ctx.fillText(String(Math.round(marker.size)), (marker.x1 + marker.x2) / 2 + (marker.y1 === marker.y2 ? 0 : 12 * px), (marker.y1 + marker.y2) / 2 - (marker.y1 === marker.y2 ? 3 * px : -5 * px))
       ctx.restore()
     }
     const marqueeNow = activeMarqueeRef.current
@@ -1863,7 +3369,7 @@ function App() {
     }
     if (measureFrame) diagnostics?.recordMinimapRender(performance.now() - minimapStartedAt)
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
-  }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageSpacing, pageTemplate, renderNavigator, selectionMode, lassoMode, strokeDisplayMode, width])
+  }, [board, color, drawConnector, drawItem, drawStroke, canvasType, pageBackground, pageSpacing, renderNavigator, theme, palette, selectionMode, lassoMode, strokeDisplayMode, width])
   const renderAllRef = useRef(renderAll)
   renderAllRef.current = renderAll
   // Excalifont is a web font: load it at start and repaint (dropping the cached ink layer, which may hold fallback letters) when fonts finish loading.
@@ -1874,6 +3380,8 @@ function App() {
     fonts?.addEventListener?.('loadingdone', refresh)
     return () => fonts?.removeEventListener?.('loadingdone', refresh)
   }, [])
+  // The tech logo table is a lazily loaded chunk: logos draw as placeholders until it arrives, then the page repaints (dropping the cached ink layer).
+  useEffect(() => subscribeTechLogos(() => { historyCacheRef.current = null; renderAllRef.current() }), [])
 
   /** Sets the page height (ref first, so the very next draw uses it) and keeps the view inside the new page. */
   const applySheetHeight = (next: number) => {
@@ -1980,7 +3488,7 @@ function App() {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const anyGestureBusy = () => activeMarqueeRef.current !== null || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || mousePanRef.current !== null
+    const anyGestureBusy = () => activeQuickRef.current !== null || activeMarqueeRef.current !== null || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || mousePanRef.current !== null
     const setPanCursor = () => applyCursorRef.current()
     const onWheel = (event: WheelEvent) => {
       if (inputModeRef.current !== 'desktop') return
@@ -2110,6 +3618,18 @@ function App() {
     renderAll()
     scheduleAutosave()
   }, [pageBackground, renderAll])
+
+  useEffect(() => {
+    historyCacheRef.current = null
+    renderAll()
+    scheduleAutosave()
+  }, [board, pageCanvas, renderAll])
+
+  // Mark strength and lane settings only change the sheet layer, the minimap and exports: no ink is redrawn and nothing is an undo step.
+  useEffect(() => {
+    renderAll()
+    scheduleAutosave()
+  }, [pageMarks, pageLanes, renderAll])
 
 
   useEffect(() => {
@@ -2280,6 +3800,25 @@ function App() {
     const snapped = snapConnectorEndpoint(point, strokesRef.current, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale, inputModeRef.current === 'desktop')
     return snapped && isPointWithinBounds(snapped.point, workspaceBoundsRef.current) ? snapped : null
   }
+  /**
+   * Sets both ends of the Arrow / Line connector being drawn. Desktop: an end inside a box (not on or near the outline) attaches to the
+   * middle of the side facing the other end, the same rule as the pen (facingSideSnap); other ends keep the snap they have.
+   */
+  const placeConnectorEnds = (gesture: NonNullable<typeof activeConnectorRef.current>, rawEnd: Point) => {
+    let endSnap = snapConnectorEndpointWithinWorkspace(rawEnd)
+    let startSnap = gesture.snappedStart ?? null
+    if (inputModeRef.current === 'desktop' && gesture.rawStart) {
+      const boxes = strokesRef.current.filter((item): item is RectangleObject => item.kind === 'rectangle')
+      const facedStart = facingSideSnap(boxes, startSnap, gesture.rawStart, rawEnd, FACING_SIDE_INSET_PX / viewportRef.current.scale)
+      const facedEnd = facingSideSnap(boxes, endSnap, rawEnd, gesture.rawStart, FACING_SIDE_INSET_PX / viewportRef.current.scale)
+      if (facedStart && isPointWithinBounds(facedStart.point, workspaceBoundsRef.current)) startSnap = facedStart
+      if (facedEnd && isPointWithinBounds(facedEnd.point, workspaceBoundsRef.current)) endSnap = facedEnd
+    }
+    gesture.start = startSnap?.point ?? gesture.rawStart ?? gesture.start
+    gesture.startAttachment = startSnap?.attachment
+    gesture.end = endSnap?.point ?? rawEnd
+    gesture.endAttachment = endSnap?.attachment
+  }
 
   const fitCanvasView = () => {
     const canvas = canvasRef.current
@@ -2300,13 +3839,69 @@ function App() {
     if (navigationSettingsRef.current.zoomLocked) return
     const canvas = canvasRef.current
     if (!canvas) return
-    const bounds = getCanvasSelectionBounds(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
+    const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
     if (!bounds) {
       fitCanvasView()
       return
     }
     const rect = canvas.getBoundingClientRect()
     applyViewport(fitViewportToBounds(bounds, rect.width, rect.height, 48))
+  }
+
+  /** Desktop Shift+2: fit the selection with padding (zoom clamped to the limits). With nothing selected, do nothing. */
+  const zoomToSelection = (): boolean => {
+    if (navigationSettingsRef.current.zoomLocked) return false
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return false
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) return false
+    const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), keys)
+    if (!bounds) return false
+    applyViewport(fitViewportToBoundsInset(bounds, rect.width, rect.height, DESKTOP_FIT_INSETS, 2))
+    return true
+  }
+
+  /** Desktop Shift+1: fit the whole drawing into the area clear of the panel and dock, never above 100%. */
+  const zoomToFitDesktop = () => {
+    if (navigationSettingsRef.current.zoomLocked) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
+    if (!bounds) {
+      fitCanvasView()
+      return
+    }
+    applyViewport(fitViewportToBoundsInset(bounds, rect.width, rect.height, DESKTOP_FIT_INSETS, 1))
+  }
+
+  /** Desktop Ctrl+0 and the % readout: 100% zoom around the centre of the current view. */
+  const zoomToActualSize = () => {
+    if (navigationSettingsRef.current.zoomLocked) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const viewport = viewportRef.current
+    const center = { x: rect.width / 2, y: rect.height / 2, pressure: 1 }
+    const anchor = screenToCanvasPoint(center, viewport)
+    applyViewport({ scale: DEFAULT_ZOOM, offsetX: center.x - anchor.x * DEFAULT_ZOOM, offsetY: center.y - anchor.y * DEFAULT_ZOOM })
+  }
+
+  /** Zoom menu level: the given percentage around the centre of the current view. */
+  const zoomToPercent = (percent: number) => {
+    if (navigationSettingsRef.current.zoomLocked) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const viewport = viewportRef.current
+    const scale = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, percent / 100))
+    const center = { x: rect.width / 2, y: rect.height / 2, pressure: 1 }
+    const anchor = screenToCanvasPoint(center, viewport)
+    applyViewport({ scale, offsetX: center.x - anchor.x * scale, offsetY: center.y - anchor.y * scale })
+  }
+
+  /** Applies a choice from the zoom menu on the % readout, reusing the Shift+1 / Shift+2 handlers (the tablet fits the drawing with the plain fit). */
+  const applyZoomChoice = (choice: ZoomMenuChoice) => {
+    if (choice.kind === 'level') zoomToPercent(choice.percent)
+    else if (choice.kind === 'fitDrawing') { if (inputMode === 'desktop') zoomToFitDesktop(); else fitDrawingView() }
+    else zoomToSelection()
   }
 
   const resetView = () => {
@@ -2359,7 +3954,13 @@ function App() {
   }
 
   const finishTouchPointer = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    touchNav.up(event.pointerId)
+    // A cancelled pointer never counts as a tap. Only real touch pointers up can complete a two- or three-finger tap.
+    if (event.type !== 'pointerup' || event.pointerType !== 'touch') { touchNav.up(event.pointerId); return }
+    const tap = touchNav.up(event.pointerId, performance.now())
+    if (!tap || !tapUndoRef.current) return
+    // A tap under an open editor or panel must not undo: the editor would later commit its text as an orphan step.
+    if (editingBlocksCanvas()) return
+    if (tap.fingers === 2) { if (historyRef.current.canUndo) { undo(); showTapToast('Undo') } } else if (historyRef.current.canRedo) { redo(); showTapToast('Redo') }
   }
 
   const finishStroke = useCallback((pointerId: number) => {
@@ -2399,13 +4000,32 @@ function App() {
         stroke = recognizedShape.kind === 'rectangle' || (recognizedShape.kind === 'stroke' && recognizedShape.shape)
           ? recognizedShape
           : heldLongEnough ? recognizeLine(heldStroke) : heldStroke
+        stroke = styleNewShape(stroke)
       }
       const lineTool = shapeToolRef.current === 'line' || shapeToolRef.current === 'arrow' ? shapeToolRef.current : null
-      if (lineTool && stroke.kind === 'stroke' && !stroke.erase) {
+      // Desktop Arrow tool with a mouse: a drag that starts or ends on a plain or HLD shape makes an attached arrow connector instead of a stroke.
+      let arrowConnector: ConnectorObject | null = null
+      let selectDesktopArrow = false // only the desktop Arrow tool selects its new connector; a pen connector leaves the tool and Shapes mode alone
+      if (lineTool === 'arrow' && inputModeRef.current === 'desktop' && mouseGestureRef.current && stroke.kind === 'stroke' && !stroke.erase && stroke.points.length >= 2) {
+        const first = stroke.points[0]
+        const last = stroke.points[stroke.points.length - 1]
+        if (Math.hypot(last.x - first.x, last.y - first.y) >= 4) {
+          arrowConnector = arrowToolConnector(strokesRef.current, first, last, { id: nextConnectorIdRef.current, color: stroke.color, width: stroke.width, dash: lineDashDefaultRef.current === 'solid' ? undefined : lineDashDefaultRef.current }, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale, FACING_SIDE_INSET_PX / viewportRef.current.scale)
+          if (arrowConnector) { nextConnectorIdRef.current += 1; selectDesktopArrow = true }
+        }
+      }
+      // Pen/touch: a recognized arrow (Shapes mode) or a hold-straightened line that lands on boxes becomes an attached connector (src/penConnector.ts).
+      if (!arrowConnector && !lineTool && inkBoxId === null && stroke.kind === 'stroke' && !stroke.erase && (stroke.shape === 'arrow' || stroke.shape === 'line') && stroke.points.length === 2) {
+        arrowConnector = penConnectorFor(strokesRef.current, stroke.shape, stroke.points[0], stroke.points[1], { id: nextConnectorIdRef.current, color: stroke.color, width: stroke.width, dash: stroke.dash }, CONNECTOR_SNAP_TOLERANCE / viewportRef.current.scale)
+        if (arrowConnector) nextConnectorIdRef.current += 1
+      }
+      if (arrowConnector) {
+        // handled below: the connector replaces the stroke
+      } else if (lineTool && stroke.kind === 'stroke' && !stroke.erase) {
         // Straight line or arrow from the press point to the release point; a click without a drag adds nothing.
         const first = stroke.points[0]
         const last = stroke.points[stroke.points.length - 1]
-        stroke = Math.hypot(last.x - first.x, last.y - first.y) < 4 ? { ...stroke, points: [first] } : { ...stroke, shape: lineTool, points: [first, last] }
+        stroke = Math.hypot(last.x - first.x, last.y - first.y) < 4 ? { ...stroke, points: [first] } : { ...stroke, shape: lineTool, points: [first, last], ...(lineDashDefaultRef.current !== 'solid' ? { dash: lineDashDefaultRef.current } : {}) }
       } else if (stroke.kind === 'stroke' && STROKE_THINNING_ENABLED) stroke = thinStroke(stroke)
       const targetBox = inkBoxId !== null && stroke.kind === 'stroke'
         ? strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === inkBoxId && item.inkBox !== undefined)
@@ -2415,6 +4035,10 @@ function App() {
         const grown = addStrokeToInkBox(targetBox, stroke)
         // The box just written in comes to the front, so its grown area and ink are never hidden under a neighbouring box.
         strokesRef.current = [...strokesRef.current.filter((item) => item !== targetBox), grown]
+      } else if (arrowConnector) {
+        strokesRef.current.push(arrowConnector)
+        if (selectDesktopArrow && !toolLockRef.current) selectNewConnectorRef.current(canvasItemKey(arrowConnector))
+        if (selectDesktopArrow) maybeShowKeepToolTip()
       } else {
         strokesRef.current.push(stroke)
         if (stroke.kind === 'stroke' && stroke.erase) strokesRef.current = compactAfterErase(strokesRef.current, () => nextStrokeIdRef.current++)
@@ -2493,14 +4117,47 @@ function App() {
     // A pen landing ends a mouse marquee still being dragged (the pen always wins over the mouse).
     if (event.pointerType === 'pen' && activeMarqueeRef.current) { activeMarqueeRef.current = null; renderAll() }
     moveEraserCursor(event)
+    // A pen landing ends a finger's quick-connect press (the pen wins).
+    if (event.pointerType === 'pen' && activeQuickRef.current?.pointerType === 'touch') cancelQuickConnectPress()
+    // A pen landing cancels a connector handle gesture a finger owns (palm rejection: the pen wins).
+    if (event.pointerType === 'pen' && activeEndpointRef.current?.pointerType === 'touch') cancelConnectorHandleGesture()
     if (event.pointerType === 'pen') touchNav.penDown()
     if (event.pointerType === 'touch') {
       event.preventDefault()
+      const touchQuick = activeQuickRef.current?.pointerType === 'touch' ? activeQuickRef.current : null
+      if (touchQuick) {
+        // A second finger ends the button press (nothing is made) and both fingers go to navigation (pinch, three-finger pan).
+        const firstId = touchQuick.pointerId
+        const firstStart = touchQuick.startScreen
+        cancelQuickConnectPress()
+        touchNav.down(firstId, firstStart, performance.now())
+        touchNav.cancelTap()
+      } else if (selectionMode && !laserModeRef.current && touchNav.touchCount() === 0 && startQuickConnectPress(event, getPoint(event))) {
+        // A lone finger on a quick-connect button (tablet Select, one plain or HLD box selected): a tap makes the connected box; it is never navigation.
+        return
+      }
+      const touchHandle = activeEndpointRef.current?.pointerType === 'touch' ? activeEndpointRef.current : null
+      if (touchHandle) {
+        // A second finger ends the handle drag (originals restored, no history step) and both fingers go to navigation (pinch, three-finger pan).
+        const firstId = touchHandle.pointerId
+        const firstStart = touchHandle.startScreen
+        cancelConnectorHandleGesture()
+        touchNav.down(firstId, firstStart, performance.now())
+        touchNav.cancelTap() // the cancelled handle drag must not turn into an undo
+      } else if (touchNav.touchCount() === 0 && activeEndpointRef.current === null && !touchNav.penNear(performance.now()) && startConnectorHandleGesture(event, getPoint(event))) {
+        // A single finger on a handle of the selected connector drags it (Select / lasso) when no pen is near or down; every other touch is navigation.
+        return
+      }
       event.currentTarget.setPointerCapture(event.pointerId)
       touchNav.down(event.pointerId, getScreenPoint(event), performance.now())
+      // Laser: one finger draws the trail; a second finger ends it and both fingers go to navigation (pinch, three-finger pan).
+      if (laserModeRef.current) {
+        const laserAction = laserOnTouchDown(laserPointerRef.current === null ? null : laserPointerTypeRef.current, touchNav.touchCount(), touchNav.penNear(performance.now()))
+        if (laserAction === 'start') { laserPointerRef.current = event.pointerId; laserPointerTypeRef.current = 'touch'; pushLaserPoints([event]) } else if (laserAction === 'clear') { laserPointerRef.current = null; laserPointerTypeRef.current = null }
+      }
       return
     }
-    const penGestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null
+    const penGestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeQuickRef.current !== null
     const anyGestureActive = penGestureActive || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null
     if (startsMousePan(event.pointerType, event.button, inputModeRef.current, spaceHeldRef.current)) {
       // Middle button, or Space + left button: drag the view instead of using a tool. Refused while any other gesture or finger is active.
@@ -2512,6 +4169,16 @@ function App() {
       mousePanRef.current = { pointerId: event.pointerId, start: getScreenPoint(event), startViewport: viewportRef.current }
       touchNav.mouseDown()
       event.currentTarget.style.cursor = 'grabbing'
+      return
+    }
+    // Laser pointer: handled before any drawing, selection or editing logic, and only while the laser is on. Pen and mouse (main button) draw the trail; touch is handled in the touch branch above.
+    if (laserModeRef.current && (event.pointerType === 'pen' || (event.pointerType === 'mouse' && event.button === 0))) {
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      if (event.pointerType === 'mouse') touchNav.mouseDown()
+      laserPointerRef.current = event.pointerId
+      laserPointerTypeRef.current = event.pointerType
+      pushLaserPoints([event])
       return
     }
     if (!canStartCanvasGesture(event.pointerType, event.button, inputModeRef.current, penGestureActive, anyGestureActive, touchNav.touchCount() > 0)) return
@@ -2534,12 +4201,15 @@ function App() {
       if (!continued) clickBeforeRef.current = { items: strokesRef.current.slice(), history: historyRef.current.capture(), owner: historyRef.current }
     }
     if (event.pointerType === 'mouse') setMouseHover(null)
+    if (selectionMode && startQuickConnectPress(event, point)) return
+    if ((selectionMode || lassoMode) && (event.pointerType !== 'mouse' || event.button === 0) && startConnectorHandleGesture(event, point)) return
     if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') {
       if (event.shiftKey && !eraser) {
-        // Shift + click adds or removes one item (a stroke too) without starting anything else.
-        const shiftHit = shiftClickTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
+        // Shift + click adds or removes one item (a stroke too) without starting anything else,
+        // except on a resize handle of the current selection: Shift held before grabbing a corner keeps proportions (round 10).
+        const shiftHit = shiftPressOnSelectionHandle(point) ? null : shiftClickTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
         if (shiftHit) {
-          applySelectionState(toggleSelectionKey(selectedKeysRef.current, selectedRectangleIdRef.current, shiftHit.key))
+          applySelectionState(normalizeSelection(toggleGroupKeys(strokesRef.current, selectionKeysWithBox(), shiftHit.key)))
           return
         }
       }
@@ -2551,9 +4221,14 @@ function App() {
         return
       }
       const clickedItem = clicked ? selectHitTarget(clicked) : null
+      if (clicked && clickedItem && selectedKeysRef.current.size > 1 && selectedKeysRef.current.has(clicked.key)) {
+        // The click selected a whole group: dragging it moves every member.
+        startGroupDrag(event, point)
+        return
+      }
       if (clicked && clickedItem) {
         event.currentTarget.setPointerCapture(event.pointerId)
-        activeDragRef.current = { pointerId: event.pointerId, itemKey: clicked.key, start: point, originalItems: strokesRef.current.slice(), moved: false, editTextId: null, editClassBoxId: null }
+        activeDragRef.current = { pointerId: event.pointerId, itemKey: clicked.key, start: point, originalItems: strokesRef.current.slice(), moved: false, editTextId: null, editClassBoxId: null, ...(duplicatePress(event) ? { duplicate: true } : {}) }
         return
       }
     }
@@ -2562,7 +4237,16 @@ function App() {
       // Press where the shape starts and drag to size it (Shift keeps it square); a plain click makes a default-sized shape.
       event.currentTarget.setPointerCapture(event.pointerId)
       saveHistory()
-      const box = sketchyRef.current ? withSketchSeed(createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)) : createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)
+      // Snap to grid (Desktop mouse): the new shape starts on a grid point.
+      const createGrid = gridActive(event)
+      const startPoint = createGrid !== null ? snapPoint(point, createGrid, gridLattice()) : point
+      const startX = startPoint.x
+      const startY = startPoint.y
+      const plainBox = createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)
+      const gridBox = createGrid !== null ? { ...plainBox, x: startX, y: startY } : plainBox
+      const dashedBox = lineDashDefaultRef.current !== 'solid' ? { ...gridBox, dash: lineDashDefaultRef.current } : gridBox
+      const styledBox = styleNewShape(dashedBox)
+      const box = sketchyRef.current ? withSketchSeed(styledBox) : styledBox
       strokesRef.current.push(box)
       setHasInk(true)
       activeResizeRef.current = {
@@ -2588,9 +4272,13 @@ function App() {
       // Press where the box's top-left corner goes, then drag to size it; a plain tap makes a default-sized box.
       event.currentTarget.setPointerCapture(event.pointerId)
       saveHistory()
+      const classGrid = gridActive(event)
+      const boxPoint = classGrid !== null ? snapPoint(point, classGrid, gridLattice()) : point
+      const boxX = boxPoint.x
+      const boxY = boxPoint.y
       const newBox = hldShapeTool
-        ? createHldShape(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, hldShapeTool)
-        : createInkClassBox(nextRectangleIdRef.current++, point.x, point.y, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH)
+        ? styleNewShape(createHldShape(nextRectangleIdRef.current++, boxX, boxY, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, hldShapeTool))
+        : createInkClassBox(nextRectangleIdRef.current++, boxX, boxY, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH)
       const box = sketchyRef.current ? withSketchSeed(newBox) : newBox
       strokesRef.current.push(box)
       setHasInk(true)
@@ -2622,6 +4310,8 @@ function App() {
         end: point,
         relationshipType: umlConnectorType ?? 'association',
         startAttachment: snappedStart?.attachment,
+        rawStart: point,
+        snappedStart,
       }
       renderAll()
       return
@@ -2727,6 +4417,7 @@ function App() {
           originalBounds: { x: currentlySelectedRectangle.x, y: currentlySelectedRectangle.y, width: currentlySelectedRectangle.width, height: currentlySelectedRectangle.height },
           originalItems: strokesRef.current.slice(),
           moved: false,
+          labelKeys: resizeLabelKeys(event, strokesRef.current, currentlySelectedRectangle),
         }
         return
       }
@@ -2752,8 +4443,17 @@ function App() {
       setSelectedRectangle(rectangle?.id ?? null)
       updateSelectedItems(textHit ? [canvasItemKey(textHit)] : codeHit ? [canvasItemKey(codeHit)] : connector ? [canvasItemKey(connector)] : [])
       renderAll()
+      // A press on the label of a connector that was not selected selects it and starts the label drag (a plain click only selects).
+      if (connector && !textHit && !codeHit && !rectangle && (event.pointerType !== 'mouse' || event.button === 0) && !duplicatePress(event) && expandSelectionState({ keys: [canvasItemKey(connector)], rectangleId: null }).keys.length === 1 && startConnectorHandleGesture(event, point, true)) return
       const selectedItem = textHit ?? codeHit ?? rectangle ?? connector
       if (!selectedItem) return
+      // A member of a group selects the whole group and a drag moves every member (mouse, pen and touch alike).
+      const pressedGroup = expandSelectionState({ keys: [canvasItemKey(selectedItem)], rectangleId: null })
+      if (pressedGroup.keys.length > 1) {
+        applySelectionState(pressedGroup)
+        startGroupDrag(event, point)
+        return
+      }
       event.currentTarget.setPointerCapture(event.pointerId)
       activeDragRef.current = {
         pointerId: event.pointerId,
@@ -2764,6 +4464,7 @@ function App() {
         // Tapping already-selected text (without dragging) edits it.
         editTextId: textWasSelected && textHit ? textHit.id : null,
         editClassBoxId: rectangle?.classBox && previouslySelectedRectangleId === rectangle.id ? rectangle.id : null,
+        ...(duplicatePress(event) ? { duplicate: true } : {}),
       }
       return
     }
@@ -2789,6 +4490,7 @@ function App() {
             originalBounds: { x: selectedBox.x, y: selectedBox.y, width: selectedBox.width, height: selectedBox.height },
             originalItems: strokesRef.current.slice(),
             moved: false,
+            labelKeys: resizeLabelKeys(event, strokesRef.current, selectedBox),
           }
           return
         }
@@ -2856,6 +4558,11 @@ function App() {
     if (PEN_BUTTON_DEBUG) showPenButtonState('move', event)
     if (event.pointerType === 'pen') touchNav.penSeen(performance.now())
     moveEraserCursor(event)
+    if (laserPointerRef.current === event.pointerId) {
+      if (event.pointerType !== 'touch' || touchNav.touchCount() === 1) pushLaserPoints(event.nativeEvent.getCoalescedEvents?.().length ? event.nativeEvent.getCoalescedEvents() : [event])
+      else laserPointerRef.current = null
+      if (event.pointerType !== 'touch') { event.preventDefault(); return }
+    }
     if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') cursorPointRef.current = getScreenPoint(event)
     if (clickPairRef.current && event.pointerType === 'mouse') clickPairRef.current = clickPairOnMove(clickPairRef.current, event.clientX, event.clientY)
     const mousePan = mousePanRef.current
@@ -2863,6 +4570,20 @@ function App() {
       event.preventDefault()
       const now = getScreenPoint(event)
       applyViewport(panViewport(mousePan.startViewport, now.x - mousePan.start.x, now.y - mousePan.start.y), true)
+      return
+    }
+    if (activeEndpointRef.current?.pointerId === event.pointerId) { moveConnectorHandleGesture(event); return }
+    if (activeQuickRef.current?.pointerId === event.pointerId) {
+      const press = activeQuickRef.current
+      moveQuickConnectPress(event)
+      // One-finger pan on: a finger that drags off a quick-connect button past the tap slop becomes navigation (no shape is made).
+      if (press.pointerType === 'touch' && press.dragged && navigationSettingsRef.current.oneFingerPan) {
+        const { pointerId, startScreen } = press
+        cancelQuickConnectPress()
+        touchNav.down(pointerId, startScreen, performance.now())
+        touchNav.cancelTap()
+        updateTouchPoint(event)
+      }
       return
     }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
@@ -2896,9 +4617,7 @@ function App() {
     if (activeConnector?.pointerId === event.pointerId) {
       event.preventDefault()
       const point = getBoundedPoint(event)
-      const snappedEnd = snapConnectorEndpointWithinWorkspace(point)
-      activeConnector.end = snappedEnd?.point ?? point
-      activeConnector.endAttachment = snappedEnd?.attachment
+      placeConnectorEnds(activeConnector, point)
       scheduleRender()
       return
     }
@@ -2947,12 +4666,36 @@ function App() {
         bounds.width = side
         bounds.height = side
       }
+      // Shift on a corner of an existing box or selection keeps its proportions (Desktop mouse); grid snap is skipped then.
+      const keepRatio = event.shiftKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop' && !activeResize.created && isCornerHandle(activeResize.handle)
+      if (keepRatio) {
+        const kept = keepAspect(activeResize.originalBounds, bounds, activeResize.handle, undefined, workspaceBoundsRef.current)
+        bounds.x = kept.x; bounds.y = kept.y; bounds.width = kept.width; bounds.height = kept.height
+      }
+      const resizeGrid = gridActive(event)
+      if (resizeGrid === null) gridOverlayRef.current = null
+      if (resizeGrid !== null && !(activeResize.created && event.shiftKey) && !keepRatio) {
+        // The moved edge(s) land on the grid (a new shape's corner too: its press point was snapped when it was made).
+        // A group's bounds are padded by stroke width; snap the unpadded edges so boxes (not their outlines) land on the grid.
+        const raw = activeResize.rectangleId === null && activeResize.selectedKeys ? unpaddedSelectionBounds(routeConnectors(activeResize.originalItems), activeResize.selectedKeys) : null
+        const o = activeResize.originalBounds
+        const pad = raw ? { l: raw.x - o.x, t: raw.y - o.y, r: o.x + o.width - raw.x - raw.width, b: o.y + o.height - raw.y - raw.height } : { l: 0, t: 0, r: 0, b: 0 }
+        const inner = snapResizeBounds({ x: bounds.x + pad.l, y: bounds.y + pad.t, width: bounds.width - pad.l - pad.r, height: bounds.height - pad.t - pad.b }, activeResize.handle, resizeGrid, gridLattice())
+        const snapped = { x: inner.x - pad.l, y: inner.y - pad.t, width: inner.width + pad.l + pad.r, height: inner.height + pad.t + pad.b }
+        bounds.x = snapped.x; bounds.y = snapped.y; bounds.width = snapped.width; bounds.height = snapped.height
+        if (snapStateRef.current?.pointerId !== event.pointerId) snapStateRef.current = { pointerId: event.pointerId, moving: null, targets: [] }
+        gridOverlayRef.current = resizeGrid
+      }
       const original = activeResize.originalBounds
       const unchanged = bounds.x === original.x && bounds.y === original.y
         && bounds.width === original.width && bounds.height === original.height
       if (!activeResize.moved && unchanged) return
+      if (event.pointerType === 'mouse' && inputModeRef.current === 'desktop') sizeReadoutRef.current = { x: point.x, y: point.y, width: bounds.width, height: bounds.height }
       const nextItems = activeResize.rectangleId !== null
-        ? resizeRectangleItems(activeResize.originalItems, activeResize.rectangleId, bounds)
+        ? (() => {
+          const resized = resizeRectangleItems(activeResize.originalItems, activeResize.rectangleId, bounds)
+          return activeResize.labelKeys ? followResizeLabels(resized, activeResize.rectangleId, original, bounds, activeResize.labelKeys, createTextMeasure) : resized
+        })()
         : activeResize.selectedKeys?.size === 1 && [...activeResize.selectedKeys][0].startsWith('text:')
           ? resizeTextItem(activeResize.originalItems, Number([...activeResize.selectedKeys][0].slice('text:'.length)), original, bounds, activeResize.handle)
           : resizeSelectedItems(activeResize.originalItems, activeResize.selectedKeys ?? new Set(), bounds)
@@ -2968,17 +4711,22 @@ function App() {
     if (lassoDrag?.pointerId === event.pointerId) {
       event.preventDefault()
       const point = getBoundedPoint(event)
-      const deltaX = point.x - lassoDrag.start.x
-      const deltaY = point.y - lassoDrag.start.y
-      if (!lassoDrag.moved && Math.hypot(deltaX, deltaY) < 2) return
-      const lassoSnap = snapDragDelta(event, lassoDrag.originalItems, lassoDrag.keys, deltaX, deltaY)
-      const nextItems = translateWithinWorkspace(lassoDrag.originalItems, lassoDrag.keys, lassoSnap.dx, lassoSnap.dy)
-      if (!lassoDrag.moved && nextItems.every((item, index) => item === lassoDrag.originalItems[index])) return
+      const rawX = point.x - lassoDrag.start.x
+      const rawY = point.y - lassoDrag.start.y
+      if (!lassoDrag.moved && Math.hypot(rawX, rawY) < 2) return
+      const { dx: deltaX, dy: deltaY, locked: lockedAxisName } = shiftAxisLock(event, rawX, rawY)
+      const lassoDup = lassoDrag.duplicate ? beginDuplicate(lassoDrag, lassoDrag.originalItems, lassoDrag.keys, event) : null
+      const lassoBase = lassoDup?.items ?? lassoDrag.originalItems
+      const lassoKeys = lassoDup ? lassoDup.copyKeys : withCarriedLabels(event, lassoDrag.originalItems, lassoDrag.keys)
+      const lassoSnap = lockSnapped(lockedAxisName, snapDragDelta(event, lassoBase, lassoKeys, deltaX, deltaY, !!lassoDrag.duplicate))
+      const nextItems = translateWithinWorkspace(lassoBase, lassoKeys, lassoSnap.dx, lassoSnap.dy)
+      if (!lassoDrag.moved && nextItems.every((item, index) => item === lassoBase[index])) return
       if (!lassoDrag.moved) {
         saveHistory()
         lassoDrag.moved = true
       }
       strokesRef.current = nextItems
+      if (lassoDup && !lassoDup.selected) { lassoDup.selected = true; applySelectionState(normalizeSelection(lassoDup.selectedKeys)) }
       renderAll()
       return
     }
@@ -3006,18 +4754,23 @@ function App() {
     if (drag?.pointerId === event.pointerId) {
       event.preventDefault()
       const point = getBoundedPoint(event)
-      const deltaX = point.x - drag.start.x
-      const deltaY = point.y - drag.start.y
-      if (!drag.moved && Math.hypot(deltaX, deltaY) < 2) return
-      const dragKeys = new Set([drag.itemKey])
-      const dragSnap = snapDragDelta(event, drag.originalItems, dragKeys, deltaX, deltaY)
-      const nextItems = translateWithinWorkspace(drag.originalItems, dragKeys, dragSnap.dx, dragSnap.dy)
-      if (!drag.moved && nextItems.every((item, index) => item === drag.originalItems[index])) return
+      const rawX = point.x - drag.start.x
+      const rawY = point.y - drag.start.y
+      if (!drag.moved && Math.hypot(rawX, rawY) < 2) return
+      const { dx: deltaX, dy: deltaY, locked: lockedAxisName } = shiftAxisLock(event, rawX, rawY)
+      const dragDup = drag.duplicate ? beginDuplicate(drag, drag.originalItems, new Set([drag.itemKey]), event) : null
+      const dragBase = dragDup?.items ?? drag.originalItems
+      const dragKeys = dragDup ? dragDup.copyKeys : withCarriedLabels(event, drag.originalItems, new Set([drag.itemKey]))
+      const dragSnap = lockSnapped(lockedAxisName, snapDragDelta(event, dragBase, dragKeys, deltaX, deltaY, !!drag.duplicate))
+      const nextItems = translateWithinWorkspace(dragBase, dragKeys, dragSnap.dx, dragSnap.dy)
+      if (!drag.moved && nextItems.every((item, index) => item === dragBase[index])) return
       if (!drag.moved) {
         saveHistory()
         drag.moved = true
       }
       strokesRef.current = nextItems
+      updateConnectorDropTarget(event, drag, nextItems)
+      if (dragDup && !dragDup.selected) { dragDup.selected = true; applySelectionState(normalizeSelection(dragDup.selectedKeys)) }
       renderAll()
       return
     }
@@ -3061,11 +4814,14 @@ function App() {
     if (edgeHoldRef.current?.pointerId === event.pointerId) cancelEdgeHold()
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
+    if (laserPointerRef.current === event.pointerId) { laserPointerRef.current = null; if (event.pointerType !== 'touch') return }
     if (mousePanRef.current?.pointerId === event.pointerId) {
       mousePanRef.current = null
       applyCanvasCursor()
       return
     }
+    if (activeEndpointRef.current?.pointerId === event.pointerId) { finishConnectorHandleGesture(); return }
+    if (activeQuickRef.current?.pointerId === event.pointerId) { finishQuickConnectPress(); return }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
@@ -3076,7 +4832,7 @@ function App() {
       textTapRef.current = null
       const existing = hitTestText(tap.point)
       if (existing) editTextItem(existing)
-      else openNewTextEditorAt(tap.point)
+      else openNewTextEditorAt(tap.point, event)
       return
     }
     if (classTapRef.current?.pointerId === event.pointerId) {
@@ -3096,7 +4852,7 @@ function App() {
       marquee.current = getBoundedPoint(event)
       const box = rectFromPoints(marquee.start, marquee.current)
       // A bare click (no real drag) just leaves the selection as the press set it.
-      if (Math.max(box.width, box.height) * viewportRef.current.scale >= 4) applySelectionState(marqueeSelection(routeConnectors(strokesRef.current), box, marquee.base, marquee.shift))
+      if (Math.max(box.width, box.height) * viewportRef.current.scale >= 4) applySelectionState(expandSelectionState(marqueeSelection(routeConnectors(strokesRef.current), box, marquee.base, marquee.shift)))
       else renderAll()
       return
     }
@@ -3107,9 +4863,7 @@ function App() {
     const activeConnector = activeConnectorRef.current
     if (activeConnector?.pointerId === event.pointerId) {
       const point = getBoundedPoint(event)
-      const snappedEnd = snapConnectorEndpointWithinWorkspace(point)
-      activeConnector.end = snappedEnd?.point ?? point
-      activeConnector.endAttachment = snappedEnd?.attachment
+      placeConnectorEnds(activeConnector, point)
       if (Math.hypot(activeConnector.end.x - activeConnector.start.x, activeConnector.end.y - activeConnector.start.y) >= 2) {
         saveHistory()
         strokesRef.current.push(createConnector(
@@ -3151,20 +4905,31 @@ function App() {
             const y = Math.min(finished.originalBounds.y, workspaceBoundsRef.current.y + workspaceBoundsRef.current.height - size.height)
             strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: size.width, height: size.height })
           }
+          fitIntoLanes(event, new Set([`rectangle:${finished.rectangleId}`]))
+          if (toolLockRef.current) {
+            // Tool lock: the shape tool stays active for the next one and the new shape is not left selected.
+            setSelectedRectangle(null)
+            updateSelectedItems([])
+            renderAll()
+            return
+          }
           setShapeTool(null)
           setSelectionMode(true)
           setSelectedRectangle(finished.rectangleId)
+          maybeShowKeepToolTip()
           updateSelectedItems([])
           renderAll()
           return
         }
-        if (!finished.moved) {
-          const createdShape = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === finished.rectangleId)?.hldShape
+        const createdNow = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === finished.rectangleId)
+        if (!finished.moved || (createdNow?.hldShape && isHldTapCreate(finished.originalBounds, createdNow, viewportRef.current.scale))) {
+          const createdShape = createdNow?.hldShape
           const size = createdShape ? HLD_DEFAULT_SIZE[createdShape] : { width: INK_BOX_DEFAULT_WIDTH, height: INK_BOX_DEFAULT_HEIGHT }
           const x = Math.min(finished.originalBounds.x, workspaceBoundsRef.current.x + workspaceBoundsRef.current.width - size.width)
           const y = Math.min(finished.originalBounds.y, workspaceBoundsRef.current.y + workspaceBoundsRef.current.height - size.height)
           strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: size.width, height: size.height })
         }
+        fitIntoLanes(event, new Set([`rectangle:${finished.rectangleId}`]))
         // A new box is empty, so its sections start at the standard 15 / 70 / 15 split of its final size.
         strokesRef.current = strokesRef.current.map((item) => (item.kind === 'rectangle' && item.id === finished.rectangleId && item.inkBox ? { ...item, inkBox: newInkBoxContent(item.y, item.height) } : item))
         // The new box is ready to write in: back to the pen, with the box selected.
@@ -3183,7 +4948,7 @@ function App() {
       const previous = activeLasso.points[activeLasso.points.length - 1]
       if (Math.hypot(finalPoint.x - previous.x, finalPoint.y - previous.y) >= 1.5) activeLasso.points.push(finalPoint)
       activeLassoRef.current = null
-      updateSelectedItems(selectItemsByLasso(routeConnectors(strokesRef.current), activeLasso.points))
+      updateSelectedItems([...expandToGroups(strokesRef.current, selectItemsByLasso(routeConnectors(strokesRef.current), activeLasso.points))])
       setSelectedRectangle(null)
       renderAll()
       return
@@ -3191,13 +4956,19 @@ function App() {
     if (lassoDragRef.current?.pointerId === event.pointerId) {
       const lassoDrag = lassoDragRef.current
       lassoDragRef.current = null
-      if (lassoDrag.moved) switchConnectorSides(lassoDrag.keys)
+      if (lassoDrag.moved) fitIntoLanes(event, lassoDrag.dup ? lassoDrag.dup.copyKeys : withCarriedLabels(event, lassoDrag.originalItems, lassoDrag.keys))
+      if (lassoDrag.moved) switchConnectorSides(lassoDrag.dup ? lassoDrag.dup.copyKeys : lassoDrag.keys)
       return
     }
     if (activeDragRef.current?.pointerId === event.pointerId) {
       const drag = activeDragRef.current
       activeDragRef.current = null
-      if (drag.moved) switchConnectorSides(new Set([drag.itemKey]))
+      if (drag.moved) fitIntoLanes(event, drag.dup ? drag.dup.copyKeys : withCarriedLabels(event, drag.originalItems, new Set([drag.itemKey])))
+      if (drag.moved) switchConnectorSides(drag.dup ? drag.dup.copyKeys : new Set([drag.itemKey]))
+      const dropConnectorId = dropConnectorRef.current
+      dropConnectorRef.current = null
+      if (drag.moved && dropConnectorId !== null) dropBoxOnConnector(drag.itemKey, dropConnectorId)
+      dropPathsRef.current = null
       if (!drag.moved && drag.editTextId != null) {
         const tapped = strokesRef.current.find((item): item is TextObject => item.kind === 'text' && item.id === drag.editTextId)
         if (tapped) editTextItem(tapped)
@@ -3224,11 +4995,14 @@ function App() {
     if (edgeHoldRef.current?.pointerId === event.pointerId) cancelEdgeHold()
     if (event.pointerType === 'pen') touchNav.penUp(performance.now())
     else if (event.pointerType === 'mouse') touchNav.mouseUp()
+    if (laserPointerRef.current === event.pointerId) { laserPointerRef.current = null; if (event.pointerType !== 'touch') return }
     if (mousePanRef.current?.pointerId === event.pointerId) {
       mousePanRef.current = null
       applyCanvasCursor()
       return
     }
+    if (activeEndpointRef.current?.pointerId === event.pointerId) { cancelConnectorHandleGesture(); return }
+    if (activeQuickRef.current?.pointerId === event.pointerId) { cancelQuickConnectPress(); return }
     if (touchNav.tracks(event.pointerId) || event.pointerType === 'touch') {
       finishTouchPointer(event)
       return
@@ -3282,6 +5056,8 @@ function App() {
     }
     if (activeDragRef.current?.pointerId === event.pointerId) {
       activeDragRef.current = null
+      dropPathsRef.current = null
+      if (dropConnectorRef.current !== null) { dropConnectorRef.current = null; renderAll() }
       return
     }
     finishStroke(event.pointerId)
@@ -3449,6 +5225,8 @@ function App() {
     setOptionsFor(null); setShapeMode(false); setTextMode(false); setClassMode(false); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false)
     if (next) { clearLassoSelection(); setSelectedRectangle(null) }
   }
+  const toggleToolLock = () => { const next = !toolLockRef.current; toolLockRef.current = next; setToolLock(next); saveToolLock(next) }
+  selectNewConnectorRef.current = (key) => { toggleSelectTool(); setSelectedRectangle(null); updateSelectedItems([key]) }
   const toggleSelectTool = () => { const next = !selectionMode; setSelectionMode(next); setTextMode(false); setClassMode(false); setLassoMode(false); setConnectorMode(false); setShapeMode(false); setShapeTool(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
   const openTextOptions = () => { setTextMode(true); setClassMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); clearLassoSelection(); setOptionsFor('text') }
   const toggleTextTool = () => { const next = !textMode; setTextMode(next); setClassMode(false); setShapeMode(false); setShapeTool(null); setSelectionMode(false); setLassoMode(false); setConnectorMode(false); setUmlConnectorType(null); setEraser(false); setEraserMenuOpen(false); clearLassoSelection() }
@@ -3498,14 +5276,17 @@ function App() {
     let restored: CanvasItem[] | null = null
     let discardStep = false
     let handled = false
+    let restoredSelection: SelectionState | null = null
     const drag = activeDragRef.current
-    if (drag) { activeDragRef.current = null; handled = true; if (drag.moved) { restored = drag.originalItems; discardStep = true } }
+    if (drag) { activeDragRef.current = null; handled = true; if (drag.moved) { restored = drag.originalItems; discardStep = true; restoredSelection = drag.dup?.before ?? null } }
     const lassoDrag = lassoDragRef.current
-    if (lassoDrag) { lassoDragRef.current = null; handled = true; if (lassoDrag.moved) { restored = lassoDrag.originalItems; discardStep = true } }
+    if (lassoDrag) { lassoDragRef.current = null; handled = true; if (lassoDrag.moved) { restored = lassoDrag.originalItems; discardStep = true; restoredSelection = lassoDrag.dup?.before ?? null } }
     const divider = activeDividerRef.current
     if (divider) { activeDividerRef.current = null; handled = true; if (divider.moved) { restored = divider.originalItems; discardStep = true } }
     const rotate = activeRotateRef.current
     if (rotate) { activeRotateRef.current = null; handled = true; if (rotate.moved) { restored = rotate.originalItems; discardStep = true } }
+    if (activeEndpointRef.current) { cancelConnectorHandleGesture(); handled = true }
+    if (activeQuickRef.current) { cancelQuickConnectPress(); handled = true }
     const resize = activeResizeRef.current
     if (resize) {
       activeResizeRef.current = null
@@ -3526,7 +5307,11 @@ function App() {
     }
     if (!handled) return false
     clearSnapGuides(false)
+    dropConnectorRef.current = null
+    dropPathsRef.current = null
     if (restored) strokesRef.current = restored
+    // A duplicating drag put the selection on the copies: Escape removes them and selects the originals again.
+    if (restoredSelection) applySelectionState(restoredSelection)
     if (discardStep) {
       historyRef.current.discardLast()
       setCanUndo(historyRef.current.canUndo)
@@ -3549,15 +5334,103 @@ function App() {
     setClipboardCount(copied.length)
     return true
   }
+  // Desktop wrappers: the same actions, with a toast.
+  const copyWithToast = (): boolean => { const done = copySelection(); if (done) showToast('Copied'); return done }
+  const cutWithToast = (): boolean => { const done = cutSelection(); if (done) showToast('Cut'); return done }
+  const pasteWithToast = (at?: Point | null): boolean => {
+    const empty = clipboardRef.current.length === 0
+    const done = pasteClipboard(at)
+    if (done) showToast('Pasted')
+    else if (empty) showToast('Nothing to paste')
+    return done
+  }
+  const duplicateWithToast = (): boolean => { const done = duplicateSelection(); if (done) showToast('Duplicated'); return done }
+  // Copy as PNG: the selection, or the whole page when nothing is selected. Called straight from the key or click so the clipboard write keeps the gesture.
+  // Copy style / Paste style (Ctrl+Alt+C / Ctrl+Alt+V, right-click menu): the stored style is session memory only.
+  const copiedStyleRef = useRef<StyleSnapshot | null>(null)
+  function storeNewShapeStyle(style: NewShapeStyle | null) {
+    newShapeStyleRef.current = style
+    setNewShapeStyleState(style)
+    saveNewShapeStyle(style)
+  }
+  const defaultStyleSource = (): RectangleObject | null => {
+    const source = soleStyleSource()
+    return source && newShapeStyleFrom(source) ? (source as RectangleObject) : null
+  }
+  const resetDefaultShapeStyle = (): boolean => {
+    if (!newShapeStyleRef.current) { showActionToast('No default shape style set'); return true }
+    storeNewShapeStyle(null)
+    showActionToast('New shapes use the normal style')
+    return true
+  }
+  const useAsDefaultShapeStyle = (): boolean => {
+    const style = newShapeStyleFrom(defaultStyleSource())
+    if (!style) { showActionToast('Select one shape first'); return true }
+    storeNewShapeStyle(style)
+    showActionToast('New shapes use this style', { label: 'Reset', run: () => { resetDefaultShapeStyle() } })
+    return true
+  }
+  const soleStyleSource = (): CanvasItem | null => {
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) return null
+    if (keys.size === 1) return strokesRef.current.find((item) => keys.has(canvasItemKey(item))) ?? null
+    return groupStyleSource(strokesRef.current, keys)
+  }
+  const copyStyleWithToast = (): boolean => {
+    const item = soleStyleSource()
+    const style = item ? captureStyle(item) : null
+    if (!style) return false
+    copiedStyleRef.current = style
+    showToast('Style copied')
+    return true
+  }
+  const pasteStyleWithToast = (): boolean => {
+    const style = copiedStyleRef.current
+    if (!style) { showToast('Copy a style first'); return true }
+    const keys = currentSelectionKeys()
+    if (keys.size === 0) return false
+    const pageAtPress = pageIndexRef.current
+    const run = () => {
+      // The font may take a moment: do nothing if a gesture started or the page changed meanwhile.
+      if (pageIndexRef.current !== pageAtPress || activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || mousePanRef.current !== null || touchNav.touchCount() > 0) return
+      const next = applyStyle(strokesRef.current, keys, style, { measureFor: createTextMeasure })
+      if (next === strokesRef.current) { showToast('Style pasted'); return }
+      saveHistory()
+      strokesRef.current = next
+      historyCacheRef.current = null
+      renderAll()
+      bumpSelectionColor((n) => n + 1)
+      showToast('Style pasted')
+    }
+    // A label font is loaded before its text is measured.
+    if (style.fontFamily) void loadTextFont(style.fontFamily).then(run, run)
+    else run()
+    return true
+  }
+
+  const copyAsPng = (): boolean => {
+    const keys = selectionKeysWithBox()
+    void copyPngToClipboard(keys.size > 0 ? keys : null).then((error) => showToast(error ?? 'Copied as PNG'))
+    return true
+  }
+  const exportSelectionAs = (kind: 'png' | 'svg') => {
+    const keys = selectionKeysWithBox()
+    if (keys.size === 0) return
+    void (kind === 'png' ? exportPngFile(2, keys, true) : exportSvgFile(keys)).then((error) => { if (error) showToast(error) })
+  }
   // Cut = copy + delete: one undo step (deleteSelection records it).
   const cutSelection = (): boolean => copySelection() && deleteSelection()
   // Adds fresh clones (new ids, +24 units per consecutive paste, kept inside the workspace) as one undo step and selects them.
   const pasteClipboard = (at?: Point | null): boolean => {
     const clip = clipboardRef.current
     if (clip.length === 0) return false
-    const result = pasteItems(clip, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET * (pasteCountRef.current + 1), workspaceBoundsRef.current, at)
+    const result = pasteItems(clip, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET * (pasteCountRef.current + 1), workspaceBoundsRef.current, at, strokesRef.current)
     if (!result) return false
     if (!at) pasteCountRef.current += 1
+    return insertPasted(result)
+  }
+  const insertPasted = (result: PasteResult | null): boolean => {
+    if (!result) return false
     saveHistory()
     nextStrokeIdRef.current = result.counters.stroke
     nextRectangleIdRef.current = result.counters.rectangle
@@ -3571,12 +5444,147 @@ function App() {
     return true
   }
   // Duplicate = copy + paste at +24 in one step.
-  const duplicateSelection = (): boolean => copySelection() && pasteClipboard()
+  // Duplicate = paste the selection straight away at +24 without touching the in-app clipboard.
+  const duplicateSelection = (): boolean => {
+    const copied = copyItems(strokesRef.current, selectionKeysWithBox())
+    return copied.length > 0 && insertPasted(pasteItems(copied, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET, workspaceBoundsRef.current, null, strokesRef.current))
+  }
+
+  // Insert template: the template's items go through the paste path (new ids, counters, groups, workspace bounds), centred in the view, as one undo step, selected afterwards.
+  const insertTemplate = (id: string): boolean => insertTemplateItems(buildTemplate(id))
+  // "My templates" use the same path: the saved items are plain canvas items with local ids, so pasteItems gives them fresh ones.
+  const insertUserTemplate = (id: string): boolean => insertTemplateItems(userTemplates.find((template) => template.id === id)?.items ?? null)
+  // Insert logo: a logo box (and its name label) goes through the template path, centred in the view at its own size, one undo step; only the box is selected afterwards.
+  const insertLogo = (logo: TechLogo, showName: boolean): boolean => {
+    const boxId = nextRectangleIdRef.current
+    if (!insertTemplateItems(buildLogoItems(logo, color, showName), null, false)) return false
+    applySelectionState(normalizeSelection([`rectangle:${boxId}`]))
+    return true
+  }
+  const insertTemplateItems = (items: CanvasItem[] | null, at: Point | null = null, fitToView = true, avoidOverlap = false): boolean => {
+    const canvas = canvasRef.current
+    setTemplateChooserOpen(false)
+    if (!canvas || !items) return false
+    if (textEditorRef.current) commitTextEditor()
+    if (codeEditorRef.current) commitCodeEditor()
+    const rect = canvas.getBoundingClientRect()
+    let centre = at ?? screenToCanvasPoint({ x: rect.width / 2, y: rect.height / 2, pressure: 1 }, viewportRef.current)
+    // Imports land in free space: when the placed bounds would overlap existing items, move them beside the content (right, else below).
+    if (avoidOverlap && strokesRef.current.length > 0) {
+      const own = getCanvasSelectionBounds(items, new Set(items.map(canvasItemKey)))
+      if (own) {
+        const shift = pasteTranslation(own, PASTE_OFFSET, workspaceBoundsRef.current, centre)
+        const existingBounds: ViewBounds[] = []
+        for (const item of strokesRef.current) {
+          const itemBounds = getCanvasSelectionBounds([item], new Set([canvasItemKey(item)]))
+          if (itemBounds) existingBounds.push(itemBounds)
+        }
+        const free = freeInsertOffset({ ...own, x: own.x + shift.dx, y: own.y + shift.dy }, existingBounds, workspaceBoundsRef.current)
+        if (free.dx !== 0 || free.dy !== 0) centre = { x: own.x + own.width / 2 + shift.dx + free.dx, y: own.y + own.height / 2 + shift.dy + free.dy, pressure: 1 }
+      }
+    }
+    const result = pasteItems(items, { stroke: nextStrokeIdRef.current, rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current, text: nextTextIdRef.current }, PASTE_OFFSET, workspaceBoundsRef.current, centre, strokesRef.current)
+    if (!result) return false
+    const done = insertPasted(sketchyRef.current ? { ...result, items: withSketchSeeds(result.items) } : result)
+    if (done) {
+      // A template larger than the view is zoomed out to fit (never zoomed in), so the whole layout is visible at once.
+      const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), new Set(result.keys))
+      if (fitToView && bounds && !navigationSettingsRef.current.zoomLocked) {
+        const insets = inputModeRef.current === 'desktop' ? DESKTOP_FIT_INSETS : { top: 72, right: 24, bottom: 96, left: 24 }
+        applyViewport(fitViewportToBoundsInset(bounds, rect.width, rect.height, insets, viewportRef.current.scale))
+      }
+      renderAll()
+    }
+    return done
+  }
+
+  // Insert from Mermaid (dialog, command palette and pasted Mermaid text): the same insert path as templates. Returns an error message, or null when inserted.
+  const importMermaid = (text: string, at: Point | null = null): string | null => {
+    const built = buildMermaidDiagram(text)
+    if (!built.ok) return built.error
+    if (!insertTemplateItems(built.items, at, true, true)) return 'Could not insert the diagram.'
+    setMermaidOpen(false) // closed only after a successful insert; on failure the dialog stays open with the message
+    showToast(mermaidInsertMessage(built.boxes, built.links, built.ignoredLines, built.kind, built.frames ?? 0))
+    return null
+  }
+  // Excalidraw JSON (pasted clipboard text or an opened .excalidraw file): the same insert path as templates. Returns an error message, or null when inserted.
+  // `source` may be an already built result (the paste check parses once).
+  const importExcalidraw = (source: string | ExcalidrawResult, at: Point | null = null): string | null => {
+    const built = typeof source === 'string' ? buildExcalidrawItems(source) : source
+    if (!built.ok) return built.error
+    if (!insertTemplateItems(built.items, at, true, true)) return 'Could not insert the drawing.'
+    showToast(excalidrawInsertMessage(built.shapes, built.skipped))
+    return null
+  }
+  const excalidrawFileRef = useRef<HTMLInputElement>(null)
+  const MAX_EXCALIDRAW_FILE_BYTES = 20 * 1024 * 1024
+  const openExcalidrawFile = (file: File | undefined) => {
+    if (!file) return
+    if (file.size > MAX_EXCALIDRAW_FILE_BYTES) { showToast('File too large'); return }
+    file.text().then((text) => {
+      const error = importExcalidraw(text)
+      if (error) showToast(error)
+    }, () => showToast('Not an Excalidraw file'))
+  }
+  // Desktop paste with an empty in-app clipboard: the browser's paste event carries the system clipboard text. Mermaid text becomes a diagram, other text one label.
+  // Returns true when the paste was handled (including a shown error), false when there was nothing to paste.
+  const pasteSystemText = (raw: string, at: Point | null, structuredOnly = false): boolean => {
+    const full = normalizeText(raw).trim()
+    if (full === '') return false
+    // Mermaid is detected and parsed on the whole text (capped at MAX_MERMAID_TEXT); only the plain label below is cut to 2000 characters.
+    // Excalidraw clipboard JSON comes first: it is inserted as shapes (a failed parse falls through to plain text).
+    const excalidraw = isExcalidrawText(full) ? buildExcalidrawItems(full) : null
+    if (excalidraw?.ok) {
+      const error = importExcalidraw(excalidraw, at)
+      if (error) showToast(error)
+      return true
+    }
+    const mermaidText = full.slice(0, MAX_MERMAID_TEXT)
+    if (isMermaidText(mermaidText)) {
+      const parsed = buildMermaidDiagram(mermaidText)
+      // A flowchart needs at least one link, otherwise it is just text that starts with "graph"; any other diagram header is unambiguous.
+      if (parsed.ok && (parsed.links > 0 || (parsed.kind !== 'flowchart' && parsed.boxes > 0))) {
+        const error = importMermaid(mermaidText, at)
+        if (error) showToast(error)
+        return true
+      }
+    }
+    if (structuredOnly) return false // plain text never beats the in-app items
+    const text = full.slice(0, 2000)
+    const label = createTextObject(1, 0, 0, text, color, textSize, createTextMeasure(textSize, textFontId), textFontId)
+    const done = insertTemplateItems([label], at, false)
+    if (done) showToast('Pasted text')
+    return done
+  }
+
+  // Ctrl+Arrow with one plain or HLD shape selected: a new empty shape of the same kind in that direction, joined by an arrow. One undo step.
+  const quickCreateShape = (direction: FlowDirection): boolean => {
+    const keys = selectionKeysWithBox()
+    if (keys.size !== 1) return false
+    const source = strokesRef.current.find((item): item is RectangleObject => item.kind === 'rectangle' && keys.has(canvasItemKey(item)))
+    if (!source || !isFlowBox(source)) return false
+    const made = quickCreateConnected(strokesRef.current, source, direction, workspaceBoundsRef.current, { rectangle: nextRectangleIdRef.current, connector: nextConnectorIdRef.current }, newInkBoxContent)
+    if (!made) return true
+    saveHistory()
+    nextRectangleIdRef.current += 1
+    nextConnectorIdRef.current += 1
+    strokesRef.current = [...strokesRef.current, sketchyRef.current ? withSketchSeed(made.box) : made.box, made.connector]
+    setHasInk(true)
+    setSelectedRectangle(made.box.id)
+    updateSelectedItems([])
+    renderAll()
+    return true
+  }
 
   // Arrow keys: move the selection 1 unit (Shift 10) inside the workspace; connectors follow their boxes. A burst of presses is one undo step.
   const nudgeSelection = (dx: number, dy: number): boolean => {
     const keys = selectionKeysWithBox()
     if (keys.size === 0) return false
+    // Snap to grid on (Desktop): one grid step (five with Shift) and the selection's top-left ends on a grid line.
+    if (gridSnapApplies(gridSnapRef.current, inputModeRef.current, 'mouse')) {
+      const bounds = unpaddedSelectionBounds(routeConnectors(strokesRef.current), keys)
+      if (bounds) ({ dx, dy } = gridNudgeDelta(bounds, dx, dy, gridSpacingFor(effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current), pageSpacingRef.current), gridLattice()))
+    }
     const next = translateWithinWorkspace(strokesRef.current, keys, dx, dy)
     if (next.every((item, index) => item === strokesRef.current[index])) return true
     const now = performance.now()
@@ -3642,6 +5650,33 @@ function App() {
     openCodeEditor(block.id)
     renderAll()
   }
+  // Sticky note: a plain yellow rectangle. Desktop (N key or More shapes): at the mouse, or the view centre from the menu, with the text editor opened inside it. Tablet (Insert tray): at the view centre, selected; the user writes in it with the pen as in any box.
+  const insertStickyNote = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const desktop = inputModeRef.current === 'desktop'
+    if (textEditorRef.current) commitTextEditor()
+    if (codeEditorRef.current) commitCodeEditor()
+    const rect = canvas.getBoundingClientRect()
+    const mouse = desktop ? cursorPointRef.current : null
+    const anchor = screenToCanvasPoint(mouse ?? { x: rect.width / 2, y: rect.height / 2, pressure: 1 }, viewportRef.current)
+    // At the mouse the note's top-left corner sits on the pointer (as a code block does); from a menu it is centred.
+    const centre = mouse ? { x: anchor.x + STICKY_WIDTH / 2, y: anchor.y + STICKY_HEIGHT / 2 } : anchor
+    saveHistory()
+    const plain = createStickyNote(nextRectangleIdRef.current++, centre, width, workspaceBoundsRef.current)
+    const note = sketchyRef.current ? withSketchSeed(plain) : plain
+    strokesRef.current = [...strokesRef.current, note]
+    setHasInk(true)
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    updateSelectedItems([])
+    setSelectedRectangle(note.id)
+    if (desktop) {
+      const middle = { x: note.x + note.width / 2, y: note.y + note.height / 2 }
+      openTextEditor({ itemId: null, x: middle.x, y: middle.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: middle, mergeHistory: true })
+      setSelectedRectangle(note.id)
+    }
+    renderAll()
+  }
   const changeCode = (change: (items: CanvasItem[], id: number) => CanvasItem[]) => {
     const block = soleCode()
     if (!block) return
@@ -3666,15 +5701,22 @@ function App() {
   } : null
 
   // Opens the editor of a text label or class box: the same editors and commit rules as a tap in the select tool.
-  const openEditTarget = (target: { kind: 'text' | 'classBox' | 'code'; id: number }): boolean => {
+  const openEditTarget = (target: { kind: 'text' | 'classBox' | 'code' | 'connector'; id: number }): boolean => {
+    if (target.kind === 'connector') return editConnectorLabel(target.id)
     if (target.kind === 'code') return openCodeEditor(target.id)
     const item = strokesRef.current.find((candidate) => candidate.kind === (target.kind === 'text' ? 'text' : 'rectangle') && candidate.id === target.id)
     if (item?.kind === 'text') { editTextItem(item); return true }
     if (item?.kind === 'rectangle' && item.classBox) { openClassBoxEditor({ rectangleId: item.id, x: item.x, y: item.y, content: item.classBox }); return true }
     return false
   }
+  const openShapeLabelAction = (shapeAction: NonNullable<ReturnType<typeof shapeDoubleClick>>) => {
+    if (shapeAction.kind === 'editLabel') openEditTarget({ kind: 'text', id: shapeAction.id })
+    else openTextEditor({ itemId: null, x: shapeAction.centre.x, y: shapeAction.centre.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '', centerOn: { x: shapeAction.centre.x, y: shapeAction.centre.y } })
+  }
   const onCanvasDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (inputModeRef.current !== 'desktop' || lastPointerTypeRef.current !== 'mouse' || event.button !== 0 || textEditorRef.current || classBoxEditor) return
+    // The second click of a double-click on a quick-connect button already made its shape: no undo, no label editor.
+    if (performance.now() - quickClickAtRef.current < QUICK_CONNECT_DOUBLE_CLICK_MS) return
     const rect = event.currentTarget.getBoundingClientRect()
     const point = screenToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, viewportRef.current)
     const routed = routeConnectors(strokesRef.current)
@@ -3683,8 +5725,29 @@ function App() {
     const before = clickBeforeRef.current
     clickPairRef.current = null
     clickBeforeRef.current = null
-    if (target) { openEditTarget(target); return }
-    const anyGesture = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0
+    if (target) {
+      // The two clicks of a double-click on a connector's middle dot toggled its routing: put back what they did and their history steps, then edit the label.
+      if (target.kind === 'connector' && before && before.owner === historyRef.current && !clickItemsUnchanged(before.items, strokesRef.current)) {
+        historyRef.current.restore(before.history)
+        setCanUndo(historyRef.current.canUndo)
+        setCanRedo(historyRef.current.canRedo)
+        strokesRef.current = before.items
+        reconcileSelectedItems()
+        scheduleAutosave()
+        renderAll()
+      }
+      openEditTarget(target)
+      return
+    }
+    // Select tool on a plain or HLD shape: edit the label already inside it, or start a new one centred in the shape (auto-fit as for any label inside a shape).
+    const shapeHit = selectionMode ? hitTarget(routed, point, viewportRef.current.scale) : null
+    const shapeAction = shapeHit?.kind === 'rectangle' ? shapeDoubleClick(strokesRef.current, shapeHit.id) : null
+    if (shapeAction) {
+      clickPairRef.current = null
+      openShapeLabelAction(shapeAction)
+      return
+    }
+    const anyGesture = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeMarqueeRef.current !== null || activeQuickRef.current !== null || touchNav.touchCount() > 0
     if (anyGesture || !before || before.owner !== historyRef.current || !isPointWithinBounds(point, sheetBoundsRef.current)) return
     // Empty canvas, any tool: a new label, as one undo step (the label) or nothing. The two single clicks already ran through the tool.
     const itemsChanged = !clickItemsUnchanged(before.items, strokesRef.current)
@@ -3713,40 +5776,130 @@ function App() {
     const native = event.nativeEvent as MouseEvent & { pointerType?: string }
     if (inputModeRef.current !== 'desktop' || native.pointerType === 'touch' || native.pointerType === 'pen') return
     if (textEditorRef.current || classBoxEditor) return
-    if (activePointerRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0) return
+    if (activePointerRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || touchNav.touchCount() > 0) return
     const rect = event.currentTarget.getBoundingClientRect()
     const point = screenToCanvasPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top, pressure: 1 }, viewportRef.current)
-    const target = hitTarget(routeConnectors(strokesRef.current), point, viewportRef.current.scale)
+    const routed = routeConnectors(strokesRef.current)
+    const target = hitTarget(routed, point, viewportRef.current.scale)
     if (target && !selectionKeysWithBox().has(target.key)) selectHitTarget(target)
+    // A locked item cannot be selected; right-clicking it offers Unlock for that item (the hit test here looks through the lock).
+    const lockedKey = target ? null : hitTarget(routed, point, viewportRef.current.scale, false, true)?.key ?? null
     setMouseHover(null)
     contextMenuPointRef.current = point
-    setContextMenu({ x: event.clientX, y: event.clientY })
+    setContextMenu({ x: event.clientX, y: event.clientY, lockedKey })
   }
-  const runContextMenuAction = (action: ContextMenuAction) => {
+  const runContextMenuAction = (action: ContextMenuAction, lockedKey: string | null = null) => {
+    if (action === 'shapesMore') { setContextMenu((menu) => menu && { ...menu, shapesExpanded: true }); return }
     setContextMenu(null)
     switch (action) {
-      case 'cut': cutSelection(); break
-      case 'copy': copySelection(); break
-      case 'paste': pasteClipboard(inputModeRef.current === 'desktop' ? contextMenuPointRef.current : null); break
-      case 'duplicate': duplicateSelection(); break
+      case 'cut': cutWithToast(); break
+      case 'copy': copyWithToast(); break
+      case 'paste': pasteWithToast(inputModeRef.current === 'desktop' ? contextMenuPointRef.current : null); break
+      case 'duplicate': duplicateWithToast(); break
+      case 'copyPng': copyAsPng(); break
+      case 'copyStyle': copyStyleWithToast(); break
+      case 'pasteStyle': pasteStyleWithToast(); break
+      case 'lineStraight': changeSelectedConnectorRouting('straight'); break
+      case 'lineElbow': changeSelectedConnectorRouting('elbow'); break
+      case 'lineCurved': changeSelectedConnectorRouting('curved'); break
+      case 'arrowBothEnds': setSelectedArrowEnds(true); break
+      case 'arrowOneEnd': setSelectedArrowEnds(false); break
+      case 'cornersRound': setSelectedCorners(true); break
+      case 'cornersSharp': setSelectedCorners(false); break
+      case 'useAsDefaultStyle': useAsDefaultShapeStyle(); break
+      case 'exportPng': exportSelectionAs('png'); break
+      case 'exportSvg': exportSelectionAs('svg'); break
+      case 'saveTemplate': openSaveTemplate(); break
       case 'delete': deleteSelection(); break
       case 'selectAll': selectAllItems(); break
+      case 'selectSimilar': selectSimilarItems(); break
+      case 'selectConnected': selectConnectedItems(false); break
+      case 'focus': startFocus(); break
+      case 'addBoundary': addBoundaryAroundSelection(); break
+      case 'sameWidth': sameSizeSelection('width'); break
+      case 'sameHeight': sameSizeSelection('height'); break
+      case 'sameSize': sameSizeSelection('both'); break
+      case 'swapPositions': swapPositionsSelection(); break
+      case 'insertBox': insertBoxIntoSelectedConnector(); break
+      case 'flipHorizontal': flipSelection('horizontal'); break
+      case 'flipVertical': flipSelection('vertical'); break
+      case 'numberSteps': numberFlowSteps(); break
+      case 'clearSteps': clearFlowSteps(); break
+      case 'bringToFront': moveSelectionLayer('front'); break
+      case 'sendToBack': moveSelectionLayer('back'); break
+      case 'editText': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); if (target) openEditTarget(target); break }
+      case 'zoomSelection': zoomToSelection(); break
+      case 'lock': lockSelection(); break
+      case 'group': groupSelection(); break
+      case 'ungroup': ungroupSelection(); break
+      case 'unlock': if (lockedKey) unlockItems(new Set([lockedKey])); break
+      case 'unlockAll': unlockItems(null); break
+      default: {
+        const moveTarget = parseMoveAction(action)
+        if (moveTarget !== null) moveSelectionToPageNow(moveTarget)
+        else if (action.startsWith('shape:')) changeShapeSelection(action.slice('shape:'.length))
+      }
     }
   }
+  // Menu keyboard: arrows (and Home/End) move focus between the enabled rows; Enter runs the focused row (a button click); Escape is handled with the other keys.
+  const onContextMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    // Left / Right move between the chips of the focused chip row (and are left alone elsewhere).
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      const row = (document.activeElement as HTMLElement | null)?.closest('.canvas-context-chips-row')
+      if (!row || !event.currentTarget.contains(row)) return
+      event.preventDefault()
+      event.stopPropagation()
+      const chips = [...row.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+      const at = chips.indexOf(document.activeElement as HTMLButtonElement)
+      if (chips.length > 0 && at >= 0) chips[(at + (event.key === 'ArrowRight' ? 1 : chips.length - 1)) % chips.length].focus()
+      return
+    }
+    const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End']
+    if (!keys.includes(event.key)) return
+    event.preventDefault()
+    event.stopPropagation()
+    const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+    if (buttons.length === 0) return
+    const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : event.key === 'ArrowDown' ? (current + 1) % buttons.length : (current <= 0 ? buttons.length - 1 : current - 1)
+    buttons[next].focus()
+  }
+  const dockRange = () => { const r = document.querySelector('.tool-dock')?.getBoundingClientRect(); return r ? { left: r.left, right: r.right } : null }
+  // The height estimate can be a little low (chip wrapping, fonts): after layout, a menu that still runs past the bottom edge is moved up to fit.
+  useLayoutEffect(() => {
+    const menu = contextMenuElementRef.current
+    if (!contextMenu || !menu) return
+    const rect = menu.getBoundingClientRect()
+    const clearance = menuBottomClearance(rect.left, rect.width, dockRange())
+    const overflow = rect.bottom - (window.innerHeight - clearance)
+    if (overflow > 0) {
+      // Never above the top clearance (the top bar); what still does not fit scrolls.
+      const top = Math.max(CONTEXT_MENU_TOP_CLEARANCE, rect.top - overflow)
+      menu.style.top = `${top}px`
+      menu.style.maxHeight = `${contextMenuMaxHeight(top, window.innerHeight, clearance)}px`
+    }
+  }, [contextMenu])
+  // Opening the menu puts focus on its first enabled row so the keyboard works at once.
+  useEffect(() => {
+    if (contextMenu) contextMenuElementRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+  }, [contextMenu])
   // The menu closes on an outside press, scrolling, losing focus, or leaving Desktop mode (Escape is handled with the other keys).
   useEffect(() => {
     if (!contextMenu) return
     const onPointerDown = (event: PointerEvent) => { if (!contextMenuElementRef.current?.contains(event.target as Node)) setContextMenu(null) }
     const close = () => setContextMenu(null)
+    // Scrolling inside a tall menu (short windows) must not close it.
+    const closeOutside = (event: Event) => { if (!contextMenuElementRef.current?.contains(event.target as Node)) setContextMenu(null) }
     window.addEventListener('pointerdown', onPointerDown, true)
-    window.addEventListener('wheel', close, true)
-    window.addEventListener('scroll', close, true)
+    window.addEventListener('wheel', closeOutside, true)
+    window.addEventListener('scroll', closeOutside, true)
     window.addEventListener('blur', close)
     window.addEventListener('resize', close)
     return () => {
       window.removeEventListener('pointerdown', onPointerDown, true)
-      window.removeEventListener('wheel', close, true)
-      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('wheel', closeOutside, true)
+      window.removeEventListener('scroll', closeOutside, true)
       window.removeEventListener('blur', close)
       window.removeEventListener('resize', close)
     }
@@ -3770,43 +5923,445 @@ function App() {
     return () => { off(); if (timer !== null) window.clearTimeout(timer) }
   }, [renderAll])
 
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
+  const [templateChooserOpen, setTemplateChooserOpen] = useState(false)
+  /** Counter: the empty-page "Choose board" button bumps it and TopLeftBar opens the menu at the Board section. */
+  const [menuRequest, setMenuRequest] = useState(0)
+  const [logoDialogOpen, setLogoDialogOpen] = useState(false)
+  const [mermaidOpen, setMermaidOpen] = useState(false)
+  // "My templates": saved on this device only (localStorage). Re-read each time the chooser opens; `templateSaveMode` opens it with the name field showing.
+  const [userTemplates, setUserTemplates] = useState<UserTemplate[]>(() => loadUserTemplates())
+  const [templateSaveMode, setTemplateSaveMode] = useState(false)
+  useEffect(() => {
+    if (templateChooserOpen) setUserTemplates(loadUserTemplates())
+    else setTemplateSaveMode(false)
+  }, [templateChooserOpen])
+  const openSaveTemplate = () => {
+    if (selectionKeysWithBox().size === 0) { showToast('Select something first to save it as a template'); return }
+    setTemplateSaveMode(true)
+    setTemplateChooserOpen(true)
+  }
+  // Returns an error message for the chooser to show, or null when the template was saved.
+  const saveSelectionAsTemplate = (name: string): string | null => {
+    const blocked = userTemplatesBlockedMessage()
+    if (blocked) return blocked
+    const copied = copyItems(strokesRef.current, selectionKeysWithBox())
+    const stored = loadUserTemplates()
+    const result = addUserTemplate(stored, name, copied, newTemplateId(), new Date().toISOString())
+    if (!result.ok) return result.message
+    if (!saveUserTemplates(result.templates)) return 'Could not save on this device (storage is full or blocked).'
+    setUserTemplates(result.templates)
+    setTemplateChooserOpen(false)
+    showToast(`Saved template “${result.template.name}” on this device`)
+    return null
+  }
+  const deleteUserTemplate = (id: string) => {
+    const blocked = userTemplatesBlockedMessage()
+    if (blocked) { showToast(blocked); return }
+    const next = removeUserTemplate(loadUserTemplates(), id)
+    if (saveUserTemplates(next)) setUserTemplates(next)
+    else showToast('Could not update the saved templates on this device')
+  }
+  const toggleLibrary = () => {
+    void refreshLibrary()
+    if (!libraryOpen) window.setTimeout(() => void captureThumbnail(), 250) // after the Library has painted
+    setLibraryOpen((open) => !open)
+  }
+  // Command palette (Desktop, Ctrl/Cmd+K). The ref is cleared the moment the palette closes so the command it runs is not refused as "a dialog is open".
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const paletteOpenRef = useRef(false)
+  const openPalette = () => { paletteOpenRef.current = true; setPaletteOpen(true) }
+  const closePalette = () => { paletteOpenRef.current = false; setPaletteOpen(false) }
+  // The "Open: <title>" rows come from the Library list: each time the palette opens, the list is refreshed (rows appear when it arrives).
+  useEffect(() => { if (paletteOpen) void refreshLibraryIfStale() }, [paletteOpen])
+  // Text outline (Markdown) of the whole diagram: copied to the clipboard or downloaded as a .md file.
+  const currentOutline = (): string => buildDiagramOutline(docTitle, pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)), pagesRef.current.map((slot) => slot.name ?? ''))
+  const copyOutline = () => {
+    const text = currentOutline()
+    lastWrittenTextRef.current = text
+    const done = () => showToast('Outline copied')
+    const failed = () => showToast('Could not copy the outline')
+    try {
+      navigator.clipboard.writeText(text).then(done, failed)
+    } catch {
+      failed()
+    }
+  }
+  // Current page as a Mermaid flowchart on the clipboard.
+  const copyMermaid = () => {
+    const result = buildMermaid(strokesRef.current)
+    const text = result.text
+    lastWrittenTextRef.current = text
+    const noun = result.kind === 'class' ? (result.boxes === 1 ? 'class' : 'classes') : result.kind === 'sequence' ? (result.boxes === 1 ? 'participant' : 'participants') : result.boxes === 1 ? 'box' : 'boxes'
+    const linkNoun = result.kind === 'sequence' ? (result.links === 1 ? 'message' : 'messages') : result.links === 1 ? 'link' : 'links'
+    const done = () => showToast(result.kind === 'er' ? `Copied ER diagram as Mermaid${result.skipped ? '; text and ink skipped' : ''}` : `Copied ${result.boxes} ${noun} and ${result.links} ${linkNoun} as Mermaid${result.skipped ? '; text and ink skipped' : ''}`)
+    const failed = () => showToast('Could not copy Mermaid')
+    try {
+      navigator.clipboard.writeText(text).then(done, failed)
+    } catch {
+      failed()
+    }
+  }
+  // Excalidraw export: the selection when something is selected, else the current page.
+  const downloadExcalidraw = () => {
+    const keys = selectionKeysWithBox()
+    // The saved file has its own background, so on a dark board it gets the board's sheet colour and the resolved ink (default ink would vanish on it).
+    // The clipboard variant (copy as Excalidraw) keeps the stored colours: it is pasted into whatever scene the user has open.
+    const exportPalette = boardPalette(boardRef.current)
+    const exportItems = exportPalette.theme === 'light' ? strokesRef.current : strokesRef.current.map((item) => resolveItemForBoard(item, exportPalette, strokesRef.current))
+    const built = buildExcalidrawFile(exportItems, keys, sheetColorForBoard(boardRef.current, PAGE_BACKGROUND_COLORS[pageBackgroundRef.current]))
+    if (built.count === 0) { showToast(excalidrawExportMessage(built, 'Saved', false)); return }
+    downloadBlob(new Blob([built.text], { type: 'application/json' }), excalidrawFileName(docTitle))
+    showToast(excalidrawExportMessage(built, 'Saved', keys.size > 0))
+  }
+  const copyExcalidraw = () => {
+    const keys = selectionKeysWithBox()
+    const built = buildExcalidrawClipboard(strokesRef.current, selectionKeysWithBox())
+    if (built.count === 0) { showToast(excalidrawExportMessage(built, 'Copied', false)); return }
+    const text = built.text
+    lastWrittenTextRef.current = text
+    const done = () => showToast(excalidrawExportMessage(built, 'Copied', keys.size > 0))
+    const failed = () => showToast('Could not copy for Excalidraw')
+    try {
+      navigator.clipboard.writeText(text).then(done, failed)
+    } catch {
+      failed()
+    }
+  }
+  const downloadOutline = () => {
+    downloadBlob(new Blob([currentOutline()], { type: 'text/markdown' }), outlineFileName(docTitle))
+    showToast('Outline downloaded')
+  }
+  /** Extra palette entries beyond the keyboard shortcuts. Add one line here to make a new command searchable (a later template list can append its own). */
+  const paletteExtras = (): Array<PaletteEntry & { run: () => void }> => [
+    ...HLD_SHAPES.map((shape) => ({ id: `hld:${shape}`, label: `Insert shape: ${HLD_SHAPE_LABELS[shape]}`, group: 'Shapes', keywords: `hld system design add ${shapeKeywords(shape)}`, run: () => toggleHldShapeTool(shape) })),
+    ...DIAGRAM_TEMPLATES.map((template) => ({ id: `template:${template.id}`, label: `Template: ${template.name}`, group: 'Templates', keywords: `insert starter layout ${template.description}`, run: () => { insertTemplate(template.id) } })),
+    ...(alignTargetKeys().size > 0 ? (['left', 'center', 'right'] as const).map((align) => ({ id: `align:${align}`, label: `Align text ${align === 'center' ? 'centre' : align}`, group: 'Edit', keywords: 'text label alignment justify', run: () => pickTextAlign(align) })) : []),
+    { id: 'excalidraw:import', label: 'Import Excalidraw file…', group: 'Templates', keywords: 'excalidraw open diagram json import paste', run: () => excalidrawFileRef.current?.click() },
+    { id: 'logo:insert', label: 'Insert logo…', group: 'Shapes', keywords: 'tech brand icon logos simple icons kafka postgres redis docker kubernetes', run: () => setLogoDialogOpen(true) },
+    { id: 'mermaid:insert', label: 'Insert from Mermaid…', group: 'Templates', keywords: 'import flowchart graph diagram text paste plantuml uml class sequence', run: () => setMermaidOpen(true) },
+    { id: 'template:choose', label: 'Insert template…', group: 'Templates', keywords: 'starter layout my templates saved', run: () => setTemplateChooserOpen(true) },
+    ...(selectionKeysWithBox().size > 0 ? [{ id: 'template:save', label: 'Save selection as template…', group: 'Templates', keywords: 'my templates store reuse', run: openSaveTemplate }] : []),
+    { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2, undefined, true).then((error) => { if (error) showToast(error) }) },
+    { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
+    { id: 'view:presentPages', label: 'Present pages (slides: arrow keys or buttons step pages, each page fitted)', group: 'View', keywords: 'present slides slideshow talk pages fullscreen hide toolbars next previous', run: presentPages },
+    { id: 'page:overview', label: 'Page overview', group: 'Pages', keywords: 'pages thumbnails grid reorder move jump', run: () => setPageOverviewOpen(true) },
+    { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
+    ...(currentSelectionKeys().size > 0 ? movePaletteEntries(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)).map((row) => ({ id: row.id, label: row.label, group: 'Pages', keywords: 'move selection send items to page', run: () => { moveSelectionToPageNow(row.target) } })) : []),
+    ...pagesRef.current.flatMap((slot, index) => (slot.name ? [{ id: `page:go:${index}`, label: `Go to page: ${slot.name}`, group: 'Pages', keywords: `jump open ${index + 1}`, run: () => goToPage(index) }] : [])),
+    { id: 'select:next', label: 'Select next item', group: 'Select', keywords: 'tab walk keyboard step forward reading order', run: () => { if (!walkTo(1) && !selectionMode) showToast('Switch to the Select tool first') } },
+    { id: 'select:previous', label: 'Select previous item', group: 'Select', keywords: 'shift tab walk keyboard step back reading order', run: () => { if (!walkTo(-1) && !selectionMode) showToast('Switch to the Select tool first') } },
+    ...(soleSelectedKey() !== null ? (['right', 'left', 'up', 'down'] as const).map((direction) => ({ id: `select:linked-${direction}`, label: `Select linked box: ${direction}`, group: 'Select', keywords: 'alt arrow walk neighbour connected keyboard', run: () => { if (!walkLinked(direction)) showToast('No linked box that way') } })) : []),
+    ...(soleSelectedKey() !== null ? [{ id: 'select:similar', label: 'Select similar', group: 'Select', keywords: 'same kind shape matching', run: () => { if (!selectSimilarItems()) showToast('No similar items') } }] : []),
+    ...(selectedConnectorId !== null ? [
+      { id: 'connector:straight', label: 'Straight connector', group: 'Edit', keywords: 'line shape routing connector arrow', run: () => changeSelectedConnectorRouting('straight') },
+      { id: 'connector:elbow', label: 'Elbow connector', group: 'Edit', keywords: 'line shape routing right angle connector arrow', run: () => changeSelectedConnectorRouting('elbow') },
+      { id: 'connector:curved', label: 'Curved connector', group: 'Edit', keywords: 'line shape routing smooth bezier curve connector arrow', run: () => changeSelectedConnectorRouting('curved') },
+    ] : []),
+    ...(canInsertBoxNow() ? [{ id: 'connector:insert-box', label: 'Insert box into connector', group: 'Edit', keywords: 'add rectangle middle split connector arrow line box between', run: () => { insertBoxIntoSelectedConnector() } }] : []),
+    ...(canSwapPositions(strokesRef.current, currentSelectionKeys()) ? [{ id: 'arrange:swap', label: 'Swap positions', group: 'Arrange', keywords: 'exchange switch two boxes places', run: () => { swapPositionsSelection() } }] : []),
+    ...(canFlipSelection(strokesRef.current, flipKeysWithLabels()) ? [
+      { id: 'arrange:flip-horizontal', label: 'Flip horizontal', group: 'Arrange', keywords: 'mirror reflect left right selection', run: () => { flipSelection('horizontal') } },
+      { id: 'arrange:flip-vertical', label: 'Flip vertical', group: 'Arrange', keywords: 'mirror reflect up down selection', run: () => { flipSelection('vertical') } },
+    ] : []),
+    ...(canSameSize(strokesRef.current, currentSelectionKeys()) ? [
+      { id: 'arrange:same-width', label: 'Same width', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('width') } },
+      { id: 'arrange:same-height', label: 'Same height', group: 'Arrange', keywords: 'size equal resize boxes match', run: () => { sameSizeSelection('height') } },
+      { id: 'arrange:same-size', label: 'Same size', group: 'Arrange', keywords: 'width height equal resize boxes match', run: () => { sameSizeSelection('both') } },
+    ] : []),
+    ...(() => {
+      const corners = cornersChoice(strokesRef.current, currentSelectionKeys())
+      return corners === null ? [] : [corners === 'round'
+        ? { id: 'corners:round', label: 'Corners: round', group: 'Edit', keywords: 'rounded rectangle corner radius box', run: () => { setSelectedCorners(true) } }
+        : { id: 'corners:sharp', label: 'Corners: sharp', group: 'Edit', keywords: 'square rectangle corner box', run: () => { setSelectedCorners(false) } }]
+    })(),
+    ...(() => {
+      const choice = arrowEndsChoice(strokesRef.current, selectedKeysRef.current)
+      return choice === null ? [] : [
+        ...(choice === 'both' ? [{ id: 'arrow:both-ends', label: 'Arrow: both ends', group: 'Edit', keywords: 'arrowhead two way bidirectional double connector', run: () => { setSelectedArrowEnds(true) } }] : []),
+        ...(choice === 'one' ? [{ id: 'arrow:one-end', label: 'Arrow: one end', group: 'Edit', keywords: 'arrowhead one way single direction connector', run: () => { setSelectedArrowEnds(false) } }] : []),
+      ]
+    })(),
+    ...(currentSelectionKeys().size > 0 ? [{ id: 'arrange:boundary', label: 'Add boundary', group: 'Arrange', keywords: 'frame group box around zone region trust', run: () => { addBoundaryAroundSelection() } }] : []),
+    ...(currentSelectionKeys().size > 0 ? [{ id: 'view:focus', label: 'Focus on selection', group: 'View', keywords: 'fade dim highlight spotlight present explain isolate linked', run: () => { startFocus() } }] : []),
+    ...(focusActive ? [{ id: 'view:focus-exit', label: 'Exit focus', group: 'View', keywords: 'focus fade dim leave stop', run: exitFocus }] : []),
+    ...(canSelectConnected(strokesRef.current, currentSelectionKeys()) ? [
+      { id: 'select:connected', label: 'Select connected', group: 'Select', keywords: 'neighbours arrows linked attached boxes', run: () => { selectConnectedItems(false) } },
+      { id: 'select:linked', label: 'Select all linked', group: 'Select', keywords: 'transitive reachable chain connected everything arrows', run: () => { selectConnectedItems(true) } },
+    ] : []),
+    ...(stepTargets(strokesRef.current, currentSelectionKeys()).length > 0 ? [
+      { id: 'flow:number', label: 'Number steps', group: 'Select', keywords: 'flow order sequence connectors arrows label 1 2 3', run: () => { numberFlowSteps() } },
+      { id: 'flow:clear', label: 'Clear step numbers', group: 'Select', keywords: 'flow order sequence connectors arrows remove', run: () => { clearFlowSteps() } },
+    ] : []),
+    { id: 'export:outline-copy', label: 'Copy as text outline', group: 'Export', keywords: 'markdown summary list copy', run: copyOutline },
+    { id: 'export:excalidraw-file', label: 'Download .excalidraw', group: 'Export', keywords: 'excalidraw export file save diagram json', run: downloadExcalidraw },
+    ...(inputMode === 'desktop' ? [{ id: 'export:excalidraw-copy', label: 'Copy for Excalidraw', group: 'Export', keywords: 'excalidraw export clipboard paste copy diagram', run: copyExcalidraw }] : []),
+    { id: 'style:use-as-default', label: 'Use as default for new shapes', group: 'Edit', keywords: 'default style new shape fill line width corners remember', run: () => { useAsDefaultShapeStyle() } },
+    ...(newShapeStyle ? [{ id: 'style:reset-default', label: 'Reset default shape style', group: 'Edit', keywords: 'default style new shapes normal clear', run: () => { resetDefaultShapeStyle() } }] : []),
+    { id: 'export:mermaid-copy', label: 'Copy as Mermaid', group: 'Export', keywords: 'flowchart diagram text copy markdown', run: copyMermaid },
+    { id: 'export:outline-download', label: 'Download outline (.md)', group: 'Export', keywords: 'markdown text summary file', run: downloadOutline },
+    { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
+    ...(inputMode === 'desktop' ? [{ id: 'setting:grid-snap', label: gridSnap ? 'Snap to grid: off' : 'Snap to grid: on', group: 'Settings', keywords: 'snap grid align dots', run: () => updateGridSnap(!gridSnapRef.current) }] : []),
+    ...(inputMode === 'desktop' ? [
+      { id: 'edit:text-bigger', label: 'Bigger text', group: 'Edit', keys: textSizeShortcutKeys('Larger'), keywords: 'font size larger increase label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: 1 }) } },
+      { id: 'edit:text-smaller', label: 'Smaller text', group: 'Edit', keys: textSizeShortcutKeys('Smaller'), keywords: 'font size decrease reduce label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: -1 }) } },
+    ] : []),
+    { id: 'setting:snapping', label: 'Toggle snapping', group: 'Settings', keywords: 'snap guides align', run: () => updateSnapping(!snappingRef.current) },
+    { id: 'setting:sketchy', label: 'Toggle hand-drawn style', group: 'Settings', keywords: 'sketchy rough', run: toggleSketchy },
+    ...boardCommands(boardStyleOf(board, sketchy), isDarkBoard(board)).map((command) => ({
+      id: `setting:${command.id}`, label: command.label, group: 'Settings', keywords: command.keywords,
+      run: command.kind === 'style' ? () => chooseBoardStyle(command.style, command.dark) : () => chooseCanvasType(command.canvas),
+    })),
+    ...(['faint', 'normal', 'bold'] as const).map((strength) => ({ id: `setting:marks:${strength}`, label: `Marks: ${strength[0].toUpperCase()}${strength.slice(1)}`, group: 'Settings', keywords: 'marks dots lines strength projector contrast board', run: () => chooseMarkStrength(strength) })),
+    // Always last: equal search scores keep list order, so commands stay above diagrams. Opening goes through the Library's own open function (the open diagram is saved first).
+    ...diagramPaletteEntries(library, folders, currentDocId).map((entry) => ({ ...entry, run: () => { const id = diagramIdFromEntry(entry.id); if (id) void openStoredDiagram(id) } })),
+  ]
+  const runPaletteEntry = (id: string) => {
+    const row = DESKTOP_SHORTCUTS.find((entry) => shortcutEntryId(entry) === id)
+    if (row) {
+      const input = shortcutKeyInput(row)
+      if (input) { const command = keyCommand(input, 'desktop'); if (command) keyActionsRef.current(command) }
+      return
+    }
+    const logoSlug = logoSlugFromEntry(id)
+    if (logoSlug !== null) {
+      const logo = findTechLogo(logoSlug)
+      if (logo) insertLogo(logo, true)
+      return
+    }
+    paletteExtras().find((entry) => entry.id === id)?.run()
+  }
+  // Find on the canvas (both modes): the bar, the query and which match is shown. Matches are searched again on every step, so edits and undo never leave stale ones.
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
+  const [findIndex, setFindIndex] = useState(-1)
+  const [findFocusTick, setFindFocusTick] = useState(0)
+  const findQueryRef = useRef('')
+  const findIndexRef = useRef(-1)
+  const [findReplaceOpen, setFindReplaceOpen] = useState(false)
+  const [findReplacement, setFindReplacement] = useState('')
+  const findReplacementRef = useRef('')
+  const openFind = (withReplace = false) => { setFindOpen(true); if (withReplace) setFindReplaceOpen(true); setFindFocusTick((tick) => tick + 1) }
+  const closeFind = () => setFindOpen(false)
+  const findMatches = (query: string): SearchMatch[] => searchCanvas(pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)), query)
+  // The bar's count is memoised on the query and a fingerprint of the searchable text of every page, so an ordinary re-render does not search again but an in-place label edit refreshes the count.
+  const findCountCacheRef = useRef<{ query: string; fingerprint: string[]; count: number } | null>(null)
+  const findCount = (query: string): number => {
+    if (!query.trim()) return 0
+    const sources = pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items))
+    const fingerprint = searchFingerprint(sources)
+    const cache = findCountCacheRef.current
+    if (cache && cache.query === query && sameSearchFingerprint(cache.fingerprint, fingerprint)) return cache.count
+    const count = searchCanvas(sources, query).length
+    findCountCacheRef.current = { query, fingerprint, count }
+    return count
+  }
+  /** Shows the match: switches page, centres the view on the item (zooming out only when it does not fit) and selects it (a locked item is only shown). */
+  const goToFindMatch = (match: SearchMatch): boolean => {
+    if (match.pageIndex !== pageIndexRef.current) goToPage(match.pageIndex)
+    if (pageIndexRef.current !== match.pageIndex) return false
+    const canvas = canvasRef.current
+    const item = strokesRef.current.find((candidate) => canvasItemKey(candidate) === match.key)
+    if (!canvas || !item) return false
+    const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), new Set([match.key]))
+    if (bounds) {
+      const rect = canvas.getBoundingClientRect()
+      const insets = inputModeRef.current === 'desktop' ? DESKTOP_FIT_INSETS : { left: 16, top: 120, right: 16, bottom: 96 }
+      const viewport = viewportRef.current
+      const freeWidth = rect.width - insets.left - insets.right
+      const freeHeight = rect.height - insets.top - insets.bottom
+      const fits = bounds.width * viewport.scale <= freeWidth && bounds.height * viewport.scale <= freeHeight
+      if (!fits && !navigationSettingsRef.current.zoomLocked && freeWidth >= 120 && freeHeight >= 120) {
+        applyViewport(fitViewportToBoundsInset(bounds, rect.width, rect.height, insets, viewport.scale))
+      } else {
+        const targetX = (insets.left + rect.width - insets.right) / 2
+        const targetY = (insets.top + rect.height - insets.bottom) / 2
+        applyViewport({ scale: viewport.scale, offsetX: targetX - (bounds.x + bounds.width / 2) * viewport.scale, offsetY: targetY - (bounds.y + bounds.height / 2) * viewport.scale })
+      }
+    }
+    if (isItemLocked(item)) { renderAll(); return true }
+    // Selecting needs the Select tool (as Select all and paste do).
+    if (!selectionMode && !lassoMode) toggleSelectTool()
+    applySelectionState(normalizeSelection(expandToGroups(strokesRef.current, new Set([match.key]))))
+    return true
+  }
+  const setFindCurrent = (index: number) => { findIndexRef.current = index; setFindIndex(index) }
+  const changeFindQuery = (query: string) => {
+    findQueryRef.current = query
+    setFindQuery(query)
+    const matches = findMatches(query)
+    if (matches.length === 0) { setFindCurrent(-1); return }
+    setFindCurrent(0)
+    goToFindMatch(matches[0])
+  }
+  const changeFindReplacement = (text: string) => { findReplacementRef.current = text; setFindReplacement(text) }
+  /** Replaces on all pages, or in one item. Each changed page gets one undo step on its own history (the current page through the normal history path); the result refreshes Find. */
+  const runReplace = (only?: { pageIndex: number; key: string }): { replacements: number; changedItems: number } => {
+    const query = findQueryRef.current
+    if (!query.trim() || penBusy()) return { replacements: 0, changedItems: 0 }
+    if (textEditorRef.current) commitTextEditor()
+    pagesRef.current[pageIndexRef.current].items = strokesRef.current
+    const result = replaceAcrossPages(pagesRef.current, pageIndexRef.current, strokesRef.current, query, findReplacementRef.current, { measureFor: createTextMeasure, fontMeasure: createFontMeasure(), ...(only ? { only } : {}) })
+    if (result.replacements === 0) return { replacements: 0, changedItems: 0 }
+    if (result.currentItems !== strokesRef.current) {
+      saveHistory()
+      strokesRef.current = result.currentItems
+      historyCacheRef.current = null
+      reconcileSelectedItems()
+      setHasInk(strokesRef.current.length > 0)
+    } else {
+      scheduleAutosave() // only other pages changed
+    }
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    return { replacements: result.replacements, changedItems: result.changedItems }
+  }
+  const replaceAllFind = () => {
+    const done = runReplace()
+    showToast(replaceToast(done.replacements, done.changedItems))
+    if (done.replacements === 0) return
+    const matches = findMatches(findQueryRef.current)
+    setFindCurrent(matches.length === 0 ? -1 : 0)
+    if (matches.length > 0) goToFindMatch(matches[0])
+  }
+  const replaceCurrentFind = () => {
+    const matches = findMatches(findQueryRef.current)
+    if (matches.length === 0) return
+    const at = findIndexRef.current >= 0 && findIndexRef.current < matches.length ? findIndexRef.current : 0
+    const current = matches[at]
+    const done = runReplace({ pageIndex: current.pageIndex, key: current.key })
+    showToast(replaceToast(done.replacements, done.changedItems))
+    // The replaced item usually left the list, so the same index is the next match; when it still matches (its replacement contains the query) move on one.
+    const next = findMatches(findQueryRef.current)
+    if (next.length === 0) { setFindCurrent(-1); return }
+    const stay = next[at]
+    const index = stay && stay.key === current.key && stay.pageIndex === current.pageIndex ? (at + 1) % next.length : at % next.length
+    setFindCurrent(index)
+    goToFindMatch(next[index])
+  }
+  const stepFind = (delta: 1 | -1) => {
+    const matches = findMatches(findQueryRef.current)
+    if (matches.length === 0) { setFindCurrent(-1); return }
+    const from = findIndexRef.current
+    const next = from < 0 || from >= matches.length ? (delta > 0 ? 0 : matches.length - 1) : (from + delta + matches.length) % matches.length
+    setFindCurrent(next)
+    goToFindMatch(matches[next])
+  }
+  // A panel, dialog or text editor is open: shortcuts and Desktop paste leave the canvas alone.
+  const overlayOpen = (): boolean => paletteOpenRef.current || shortcutHelpOpen || templateChooserOpen || logoDialogOpen || mermaidOpen || pageOverviewOpen || filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || Boolean(textEditor) || textEditorRef.current !== null || Boolean(classBoxEditor)
+  const editingBlocksCanvas = (): boolean => overlayOpen() || Boolean(codeEditor && liveCodeEditor())
+  const canvasGestureActive = (): boolean => activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null || activeQuickRef.current !== null
+  // Shared by the keyboard commands and the Desktop paste event: an overlay or editor, an open context menu, any canvas gesture or marquee, or fingers down.
+  const canvasCommandBlocked = (): boolean => editingBlocksCanvas() || Boolean(contextMenuRef.current) || canvasGestureActive() || activeMarqueeRef.current !== null || touchNav.touchCount() > 0
+  // Desktop Ctrl+V with an empty in-app clipboard is not handled on keydown (so the browser still fires its paste event): this reads the system clipboard text from that event.
+  const pasteEventRef = useRef<(event: ClipboardEvent) => void>(() => undefined)
+  pasteEventRef.current = (event) => {
+    if (inputModeRef.current !== 'desktop' || event.defaultPrevented) return
+    const target = event.target as HTMLElement | null
+    if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) return
+    // Same guards as the Ctrl+V keydown path: no paste under a dialog, editor, context menu, gesture, marquee or fingers on the canvas (and then no preventDefault).
+    if (canvasCommandBlocked()) return
+    event.preventDefault()
+    const at = cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null
+    const systemText = event.clipboardData?.getData('text/plain') ?? ''
+    if (clipboardRef.current.length > 0) {
+      // In-app items win over plain text, but Excalidraw JSON or Mermaid copied elsewhere wins over them (unless InkPad wrote that text itself).
+      if (!isOwnClipboardText(systemText, lastWrittenTextRef.current) && pasteSystemText(systemText, at, true)) return
+      pasteWithToast(at)
+      return
+    }
+    if (!pasteSystemText(systemText, at)) showToast('Nothing to paste')
+  }
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => pasteEventRef.current(event)
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [])
   const keyActionsRef = useRef<(command: KeyCommand) => boolean>(() => false)
   keyActionsRef.current = (command) => {
+    if (command.kind === 'library' && libraryOpen) return true // the Library is already open: only keep the browser's open dialog away
+    if (command.kind === 'saveNowRepeat') return true // a held Ctrl+S: swallowed, the first press already saved
+    if (command.kind === 'saveNow') { if (activeStrokeRef.current === null && activePointerRef.current === null) saveNowWithToast(); return true } // saving works under dialogs, the Library and the palette too; never mid-stroke (the autosave follows when the stroke ends)
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
-    if (filePanelOpen || storagePanelOpen || libraryOpen || performanceDiagnosticsOpen || textEditor || textEditorRef.current || classBoxEditor) return false
-    if (codeEditor && liveCodeEditor()) return false
-    const gestureActive = activePointerRef.current !== null || activeConnectorRef.current !== null || activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || textTapRef.current !== null || classTapRef.current !== null || activeObjectEraserRef.current !== null || minimapDragPointerRef.current !== null || umlToolboxDragRef.current !== null || mousePanRef.current !== null
+    if (editingBlocksCanvas()) return false
+    // Present mode: arrow keys step pages (see onKeyDown) and never nudge a selection.
+    if (presentModeRef.current && command.kind === 'nudge') return true
+    const gestureActive = canvasGestureActive()
     if (contextMenuRef.current) {
       // While the menu is open Escape closes it and no other shortcut runs.
       if (command.kind === 'deselect') { closeContextMenu(); return true }
       return false
     }
-    const cancelableGesture = activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null
+    const cancelableGesture = activeDragRef.current !== null || activeResizeRef.current !== null || activeRotateRef.current !== null || activeEndpointRef.current !== null || activeDividerRef.current !== null || activeLassoRef.current !== null || lassoDragRef.current !== null || activeMarqueeRef.current !== null || activeQuickRef.current !== null
     if (command.kind === 'deselect') {
+      // Esc leaves the laser first (it has no selection or gesture of its own).
+      if (laserModeRef.current && !cancelableGesture) { leaveLaser(); return true }
+      // Then focus mode ends (before the selection is cleared); a drag in progress is cancelled first.
+      if (focusRef.current !== null && !cancelableGesture && !gestureActive && touchNav.touchCount() === 0) { exitFocus(); return true }
       const action = escapeAction({ cancelableGesture, anyGesture: gestureActive || touchNav.touchCount() > 0, hasSelection: selectedKeysRef.current.size > 0 || selectedRectangleIdRef.current !== null })
       if (action === 'cancelGesture') return cancelActiveGesture()
-      if (action === 'none') return false
+      if (action === 'none') {
+        // Nothing to cancel or deselect: Esc shows the toolbars again, but never under a stroke, a drag or a pinch.
+        if (presentModeRef.current && !gestureActive && touchNav.touchCount() === 0) { setPresentMode(false); return true }
+        return false
+      }
     }
     if (gestureActive || activeMarqueeRef.current !== null || touchNav.touchCount() > 0) return false
     if (command.kind !== 'nudge') lastNudgeAtRef.current = null
     switch (command.kind) {
       case 'undo': undo(); return true
       case 'redo': redo(); return true
+      case 'library': toggleLibrary(); return true
+      case 'palette': openPalette(); return true
+      case 'find': openFind(); return true
+      case 'findReplace': openFind(true); return true
       case 'zoomIn': if (!navigationSettingsRef.current.zoomLocked) zoomBy(ZOOM_STEP); return true
       case 'zoomOut': if (!navigationSettingsRef.current.zoomLocked) zoomBy(1 / ZOOM_STEP); return true
-      case 'zoomReset': if (!navigationSettingsRef.current.zoomLocked) resetView(); return true
+      case 'zoomReset': zoomToActualSize(); return true
+      case 'zoomFit': zoomToFitDesktop(); return true
+      case 'zoomSelection': zoomToSelection(); return true
+      case 'focus': return startFocus()
+      case 'flip': return currentSelectionKeys().size > 0 ? (flipSelection(command.axis), true) : false
+      case 'pagePrev': goToPage(pageIndexRef.current - 1); return true
+      case 'pageNext': goToPage(pageIndexRef.current + 1); return true
+      case 'presentMode': togglePresentMode(); return true
+      case 'gridSnap': updateGridSnap(!gridSnapRef.current); return true
+      case 'help': setShortcutHelpOpen((open) => !open); return true
       case 'deselect':
         if (selectedKeysRef.current.size === 0 && selectedRectangleIdRef.current === null) return false
         clearLassoSelection()
         return true
+      case 'quickCreate': return quickCreateShape(command.direction)
+      case 'walk': return walkTo(command.step)
+      case 'walkLinked': return walkLinked(command.direction)
       case 'nudge': return nudgeSelection(command.dx, command.dy)
-      case 'edit': { const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current); return target ? openEditTarget(target) : false }
-      case 'copy': return copySelection()
-      case 'cut': return cutSelection()
-      case 'paste': return pasteClipboard(inputModeRef.current === 'desktop' && cursorPointRef.current ? screenToCanvasPoint(cursorPointRef.current, viewportRef.current) : null)
-      case 'duplicate': return duplicateSelection()
+      case 'edit': {
+        const target = editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current)
+        if (target) return openEditTarget(target)
+        // Desktop: Enter on one selected shape labels it, as a double-click does (letters stay tool shortcuts).
+        const shapeAction = inputModeRef.current === 'desktop' ? shapeLabelForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current) : null
+        if (!shapeAction) return false
+        openShapeLabelAction(shapeAction)
+        return true
+      }
+      case 'copy': return copyWithToast()
+      case 'cut': return cutWithToast()
+      case 'copyPng': return copyAsPng()
+      case 'copyStyle': return copyStyleWithToast()
+      case 'pasteStyle': return pasteStyleWithToast()
+      case 'paste':
+        // Desktop: no preventDefault, the browser's paste event brings the system clipboard text (see pasteEventRef), which decides between it and the in-app items.
+        if (inputModeRef.current === 'desktop') return false
+        return pasteWithToast(null)
+      case 'duplicate': return duplicateWithToast()
       case 'deleteSelection': return deleteSelection()
       case 'selectAll': return selectAllItems()
+      case 'layer': return moveSelectionLayer(command.move)
+      case 'lock': return lockSelection()
+      case 'toolLock': toggleToolLock(); return true
+      case 'fontSize': return stepSelectedFontSize(command.direction)
+      case 'group': return groupSelection()
+      case 'ungroup': return ungroupSelection()
       case 'tool':
         setOptionsFor(null)
         switch (command.tool) {
@@ -3818,6 +6373,8 @@ function App() {
             break
           case 'text': if (!textMode) toggleTextTool(); break
           case 'code': insertCodeBlock(); break
+          case 'sticky': insertStickyNote(); break
+          case 'laser': toggleLaserTool(); break
           case 'lasso': if (!lassoMode) toggleLassoTool(); break
           case 'connector': if (!connectorMode) toggleConnectorTool(); break
           case 'classBox': if (!(classMode && inkClassTool && hldShapeTool === null)) toggleInkClassTool(); break
@@ -3826,26 +6383,75 @@ function App() {
         return true
     }
   }
+  // Slides (present mode): these keys change page. Registered before the shortcut listener and stops it, so the same key never also nudges or pages twice.
+  const slideKeyRef = useRef<(event: KeyboardEvent) => void>(() => undefined)
+  slideKeyRef.current = (event) => {
+    if (!presentModeRef.current) return
+    const target = event.target as HTMLElement | null
+    const tag = (target?.tagName ?? 'BODY').toUpperCase()
+    const slideTarget = slideKeyTarget(event, pageIndexRef.current, pagesRef.current.length)
+    // Not while a field, editor, dialog, menu or canvas gesture has the keyboard; Space on a focused button presses that button.
+    if (slideTarget === null || isTypingTarget(tag, Boolean(target?.isContentEditable)) || (event.key === ' ' && ['BUTTON', 'A', 'SELECT'].includes(tag))) return
+    if (canvasCommandBlocked()) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    showSlide(slideTarget)
+  }
+  useEffect(() => {
+    const onSlideKey = (event: KeyboardEvent) => slideKeyRef.current(event)
+    window.addEventListener('keydown', onSlideKey)
+    return () => window.removeEventListener('keydown', onSlideKey)
+  }, [])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       clickPairRef.current = null
       const command = keyCommand(event, inputModeRef.current)
       if (!command) return
       const target = event.target as HTMLElement | null
-      if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) return
+      if (isTypingTarget(target?.tagName ?? 'BODY', Boolean(target?.isContentEditable))) {
+        if (command.kind === 'saveNow') { event.preventDefault(); keyActionsRef.current(command); return } // Ctrl+S saves inside a text field too, without committing or closing it
+        if (command.kind === 'palette' || command.kind === 'find' || command.kind === 'findReplace' || command.kind === 'saveNowRepeat') event.preventDefault() // Chrome's Ctrl+K (search bar) and Ctrl+F (find bar) never win, even inside a text field
+        return
+      }
+      // Tab and Alt+Arrow walk the items only from the canvas: on a focused button, link or panel Tab keeps moving focus.
+      if ((command.kind === 'walk' || command.kind === 'walkLinked') && !['BODY', 'CANVAS', 'MAIN', 'SECTION'].includes((target?.tagName ?? 'BODY').toUpperCase())) { if (command.kind === 'walkLinked') event.preventDefault(); return } // Alt+Left/Right on a focused button must not navigate Back
       // Enter on a focused button or link activates it: only a canvas-level Enter edits.
       if (command.kind === 'edit' && ['BUTTON', 'A'].includes((target?.tagName ?? '').toUpperCase())) return
-      if (keyActionsRef.current(command)) event.preventDefault()
+      const handled = keyActionsRef.current(command)
+      // Group, Ungroup, Library and the style shortcuts never fall through to the browser (Ctrl+G opens Chrome's find bar), even when they do nothing.
+      if (handled || alwaysPreventsDefault(command, inputModeRef.current)) event.preventDefault()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // Lane names (round 12): plain text children of the sheet layer, sized in sheet units because the layer is scaled by its transform.
+  // They render only when the lane settings, the board or the sheet height change, never per stroke or frame.
+  const laneHeaderLabels = canvasType === 'lanes' ? (() => {
+    const dir = laneDir(pageLanes)
+    return laneRects(pageLanes, SHEET_WIDTH, sheetHeight).map((rect) => {
+      const label = laneLabel(rect, dir)
+      if (!label) return null
+      return (
+        <span key={rect.slot} className="lane-label" style={{ left: label.x, top: label.y, fontSize: label.fontSize, color: palette.ink, transform: `translate(-50%, -50%)${label.rotate ? ` rotate(${label.rotate}deg)` : ''}` }}>{label.text}</span>
+      )
+    })
+  })() : null
+
   return (
-    <main className="app-shell">
-      <section className="canvas-stage" aria-label="Drawing canvas">
-        <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: sheetHeight }} />
+    <main className={`app-shell${presentMode ? ' ui-hidden' : ''}`} data-input-mode={inputMode}>
+      <section className="canvas-stage" aria-label="Drawing canvas" data-board={theme === 'light' ? undefined : theme}>
+        <div
+          ref={sheetLayerRef}
+          className="sheet-layer"
+          aria-hidden="true"
+          data-board={chalkTextureApplies(board) ? 'chalk' : undefined}
+          style={{ width: SHEET_WIDTH, height: sheetHeight, ...(chalkGrain ? ({ '--chalk-grain': chalkGrain } as CSSProperties) : null) }}
+        >
+          {canvasType === 'lanes' && laneHeaderLabels}
+        </div>
         <div ref={eraserCursorRef} className="eraser-cursor" aria-hidden="true" />
+        {laserMode && <canvas ref={laserCanvasRef} className="laser-overlay" aria-hidden="true" />}
         {PEN_BUTTON_DEBUG && <div ref={penButtonReadoutRef} className="pen-button-readout" role="status">pen button: waiting for the pen</div>}
         <canvas
           ref={canvasRef}
@@ -3862,15 +6468,60 @@ function App() {
           onPointerLeave={onPointerLeave}
         />
         {contextMenu && inputMode === 'desktop' && (() => {
-          const position = clampMenuPosition(contextMenu.x, contextMenu.y, 184, 236, window.innerWidth, window.innerHeight)
+          const hasSelection = selectedItemCount > 0 || hasSelectedRectangle
+          const styleSource = soleStyleSource()
+          const entries = contextMenuEntries({
+            canCopyStyle: styleSource !== null && captureStyle(styleSource) !== null,
+            canPasteStyle: copiedStyleRef.current !== null && hasSelection,
+            hasSelection,
+            clipboardHasItems: clipboardCount > 0,
+            pageHasItems: hasInk,
+            canEditText: editTargetForSelection(strokesRef.current, selectedKeysRef.current, selectedRectangleIdRef.current) !== null,
+            lockedTarget: contextMenu.lockedKey !== null,
+            anyLocked: strokesRef.current.some(isItemLocked),
+            canGroup: canGroup(strokesRef.current, currentSelectionKeys()),
+            canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()),
+            changeShapes: changeShapeChoices(strokesRef.current, currentSelectionKeys())?.choices ?? [],
+            changeShapesExpanded: contextMenu.shapesExpanded === true,
+            canNumberSteps: stepTargets(strokesRef.current, currentSelectionKeys()).length > 0,
+            canSameSize: canSameSize(strokesRef.current, currentSelectionKeys()),
+            canSwap: canSwapPositions(strokesRef.current, currentSelectionKeys()),
+            canInsertBox: canInsertBoxNow(),
+            canFlip: canFlipSelection(strokesRef.current, flipKeysWithLabels()),
+            canSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()),
+            lineShape: selectedConnectorId !== null ? selectedConnectorRouting : null,
+            arrowEnds: arrowEndsChoice(strokesRef.current, selectedKeysRef.current),
+            corners: cornersChoice(strokesRef.current, currentSelectionKeys()),
+            canSetDefaultStyle: defaultStyleSource() !== null,
+            canSelectSimilar: (() => { const key = soleSelectedKey(); return key !== null && similarItemKeys(strokesRef.current, key).length > 0 })(),
+            movePages: moveMenuChips(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)),
+          })
+          const position = clampMenuPosition(contextMenu.x, contextMenu.y, CONTEXT_MENU_WIDTH, contextMenuHeight(entries), window.innerWidth, window.innerHeight - menuBottomClearance(contextMenu.x, CONTEXT_MENU_WIDTH, dockRange()), CONTEXT_MENU_TOP_CLEARANCE)
+          const maxHeight = contextMenuMaxHeight(position.y, window.innerHeight, menuBottomClearance(position.x, CONTEXT_MENU_WIDTH, dockRange()))
+          const origin = `${position.x < contextMenu.x ? 'right' : 'left'} ${position.y < contextMenu.y ? 'bottom' : 'top'}`
           return (
-            <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y }} onContextMenu={(event) => event.preventDefault()}>
-              {contextMenuEntries(selectedItemCount > 0 || hasSelectedRectangle, clipboardCount > 0, hasInk).map((entry) => (
-                <button key={entry.action} type="button" role="menuitem" disabled={!entry.enabled} onClick={() => runContextMenuAction(entry.action)}>{entry.label}</button>
-              ))}
+            <div ref={contextMenuElementRef} className="canvas-context-menu" role="menu" aria-label="Canvas actions" style={{ left: position.x, top: position.y, maxHeight, transformOrigin: origin }} onContextMenu={(event) => event.preventDefault()} onKeyDown={onContextMenuKeyDown}>
+              {contextMenuRows(entries).map((row, index) => row.separator
+                ? <div key={`separator-${index}`} className="canvas-context-separator" role="separator" />
+                : row.chips ? (
+                  <div key={`chips-${row.chips[0].chipGroup}`} className="canvas-context-chips" role="group" aria-label={row.chips[0].chipGroup}>
+                    <span className="canvas-context-chips-caption">{row.chips[0].chipGroup}</span>
+                    <div className="canvas-context-chips-row">
+                      {row.chips.map((chip) => (
+                        <button key={chip.action} type="button" role="menuitem" className="canvas-context-chip" disabled={chip.disabled} title={chip.hint ? `${chip.label} (${chip.hint})` : chip.label} aria-label={chip.hint ? `${chip.label} (${chip.hint})` : chip.label} onClick={() => runContextMenuAction(chip.action, contextMenu.lockedKey)}>{chip.chip}</button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <button key={row.entry.action} type="button" role="menuitem" disabled={row.entry.disabled} onClick={() => runContextMenuAction(row.entry.action, contextMenu.lockedKey)}>
+                    <span>{row.entry.label}</span>
+                    {row.entry.hint && <kbd className="canvas-context-hint">{row.entry.hint}</kbd>}
+                  </button>
+                ))}
             </div>
           )
         })()}
+        <div className={`app-toast${toast ? ' app-toast-visible' : ''}${hideEmptyToast(toast?.text, inputMode === 'desktop') ? ' app-toast-empty' : ''}`} role="status" aria-live="polite">{toast?.text ?? ''}{toast?.action && <button type="button" className="app-toast-action" onClick={() => { const run = toast.action?.run; setToast(null); run?.() }}>{toast.action.label}</button>}</div>
         {DRAW_READOUT_ENABLED && (
           <div className="draw-readouts" aria-hidden="true">
             <div className="draw-readout">{DRAW_FLAGS_TEXT}</div>
@@ -3882,20 +6533,23 @@ function App() {
         {textEditor && <TextEditorOverlay
           key={`${textEditor.itemId ?? 'new'}:${textEditor.x}:${textEditor.y}`}
           editor={textEditor}
+          displayColor={resolveInk(textEditor.color, palette)}
+          dark={theme !== 'light'}
           viewport={viewportRef.current}
           measure={createTextMeasure}
           onChange={(value) => { textEditorValueRef.current = value }}
           onCommit={commitTextEditor}
-          onCancel={cancelTextEditor}
+          onSizeKey={inputMode === 'desktop' ? stepEditorFontSize : undefined}
+          onCancel={inputMode === 'desktop' ? () => { const e = textEditorRef.current; if (e && labelEscapeAction(e.itemId !== null || e.connectorId !== undefined, textEditorValueRef.current)==='cancel') cancelTextEditor(); else commitTextEditor() } : cancelTextEditor}
         />}
         {codeEditor && inputMode === 'desktop' && (() => {
           const block = strokesRef.current.find((candidate) => candidate.kind === 'code' && candidate.id === codeEditor.id)
           return block?.kind === 'code' ? <CodeEditorOverlay key={codeEditor.id} item={block} viewport={viewportRef.current} onChange={(value) => { codeEditorValueRef.current = value }} onCommit={commitCodeEditor} /> : null
         })()}
-        {!hasInk && <div className="canvas-hint" aria-hidden="true">{inputMode === 'desktop' ? 'Draw here with your mouse' : 'Draw here with your S Pen'}</div>}
+        {!hasInk && !textEditor && !codeEditor && !classBoxEditor && !libraryOpen && !filePanelOpen && !storagePanelOpen && !shortcutHelpOpen && !templateChooserOpen && !mermaidOpen && <EmptyCanvasHint desktop={inputMode === 'desktop'} onTemplates={() => setTemplateChooserOpen(true)} onBoard={() => setMenuRequest((count) => count + 1)} />}
         <aside
           ref={umlToolboxRef}
-          className={`uml-toolbox${umlToolboxMinimized ? ' minimized' : ''}`}
+          className={`uml-toolbox${umlToolboxMinimized ? ' minimized' : ''}${inputMode === 'desktop' ? ' desktop' : ''}`}
           aria-label="UML connector tools"
           style={umlToolboxPosition ? { left: umlToolboxPosition.left, top: umlToolboxPosition.top, transform: 'none' } : undefined}
         >
@@ -3904,7 +6558,7 @@ function App() {
               className="uml-toolbox-restore"
               type="button"
               aria-label="Restore UML connector tools"
-              title="Restore UML connector tools (drag to move)"
+              title={inputMode === 'desktop' ? undefined : 'Restore UML connector tools (drag to move)'}
               onPointerDown={startUmlToolboxDrag}
               onPointerMove={moveUmlToolbox}
               onPointerUp={endUmlToolboxDrag}
@@ -3913,6 +6567,7 @@ function App() {
               onClick={restoreUmlToolbox}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="6" rx="1"/><rect x="14" y="14" width="7" height="6" rx="1"/><path d="m9 9 6 6"/></svg>
+              {inputMode === 'desktop' && <DockTip name={UML_RESTORE_TIP} hint="Drag to move" />}
             </button>
           ) : (
             <>
@@ -3958,7 +6613,7 @@ function App() {
           )}
         </aside>
         <aside className={`viewport-navigator${navigatorMinimized ? ' minimized' : ''}`} aria-label="Canvas navigation">
-          <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDelete={deletePage} />
+          <PageControls index={pageIndex} count={pageCount} canAdd={canAddPage(pageCount) && hasInk} addHint={!canAddPage(pageCount) ? 'Page limit reached' : hasInk ? 'Add page after this one' : 'Write something on this page first'} onPrevious={() => goToPage(pageIndex - 1)} onNext={() => goToPage(pageIndex + 1)} onAdd={addPage} onDuplicate={duplicatePage} canDuplicate={canAddPage(pageCount)} duplicateHint={canAddPage(pageCount) ? 'Duplicate page: copy this page right after it' : 'Page limit reached'} onDelete={deletePage} onOverview={() => setPageOverviewOpen(true)} name={pagesRef.current[pageIndex]?.name ?? ''} desktop={inputMode === 'desktop'} />
           {navigatorMinimized ? (
             <button className="navigator-restore" type="button" aria-label="Show workspace map" title="Show workspace map" onClick={() => setNavigatorMinimized(false)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><rect x="7" y="8.5" width="6" height="5" rx="1"/></svg>
@@ -4004,12 +6659,22 @@ function App() {
         </aside>
       </section>
       {/* With the zoom lock on the screen is in focus mode: the menu, folders, title and account hide; undo/redo, the dock, the pen colours and the zoom controls stay. */}
-      {!navigationSettings.zoomLocked && (
+      {!zoomLockActive && (
         <TopLeftBar
+          history={inputMode === 'desktop' ? { canUndo, canRedo, onUndo: undo, onRedo: redo } : undefined}
           title={docTitle}
           onRenameTitle={renameDiagram}
           pageTemplate={pageTemplate}
-          onPageTemplate={setPageTemplate}
+          onPageTemplate={(value) => chooseCanvasType(value)}
+          pageCanvas={pageCanvas}
+          onCanvasType={chooseCanvasType}
+          board={board}
+          onBoardStyle={chooseBoardStyle}
+          marks={pageMarks}
+          onMarks={chooseMarkStrength}
+          lanes={pageLanes}
+          onLanes={updateLanes}
+          menuRequest={menuRequest}
           pageSpacing={pageSpacing}
           onPageSpacing={setPageSpacing}
           sketchy={sketchy}
@@ -4020,8 +6685,14 @@ function App() {
           onInputMode={updateInputMode}
           snapping={snapping}
           onSnapping={updateSnapping}
+          gridSnap={gridSnap}
+          onGridSnap={updateGridSnap}
+          onShortcutHelp={() => setShortcutHelpOpen(true)}
+          onCommandPalette={openPalette}
           oneFingerPan={navigationSettings.oneFingerPan}
           onOneFingerPan={(value) => updateNavigationSettings({ oneFingerPan: value })}
+          tapUndo={tapUndo}
+          onTapUndo={(value) => { setTapUndo(value); saveTapUndo(value) }}
           hasInk={hasInk}
           filePanelOpen={filePanelOpen}
           onToggleFilePanel={() => setFilePanelOpen((open) => !open)}
@@ -4030,20 +6701,17 @@ function App() {
           libraryOpen={libraryOpen}
           statusText={statusLabel(saveStatus, storage.kind)}
           statusOk={saveStatus === 'saved'}
-          onOpenLibrary={() => {
-            void refreshLibrary()
-            if (!libraryOpen) window.setTimeout(() => void captureThumbnail(), 250) // after the Library has painted
-            setLibraryOpen((open) => !open)
-          }}
+          onOpenLibrary={toggleLibrary}
           storage={storage}
           onOpenStorage={() => setStoragePanelOpen(true)}
           diagnostics={{ enabled: PERFORMANCE_DIAGNOSTICS_ENABLED, open: performanceDiagnosticsOpen, onToggle: () => setPerformanceDiagnosticsOpen((open) => !open), onFillTestInk: fillTestInk, onRemoveTestInk: removeTestInk }}
         />
       )}
-      <HistoryBar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
-      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={navigationSettings.zoomLocked} onOpenStorage={() => setStoragePanelOpen(true)} leading={penModeActive && inputMode !== 'desktop' ? <PenColors color={color} onColor={selectColor} /> : undefined} />
-      <ContextPanel
+      {(inputMode !== 'desktop' || zoomLockActive) && <HistoryBar desktop={inputMode !== 'tablet'} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />}
+      <AccountButton profile={driveProfile} needsReconnect={storage.kind === 'drive' && storage.locked} onReconnect={() => void reconnectDeviceFolder()} hideAccount={zoomLockActive} onOpenStorage={() => setStoragePanelOpen(true)} leading={inputMode === 'desktop' ? <DesktopStatusCluster status={saveStatus} hasContent={hasInk} text={desktopStatusText(saveStatus, statusLabel(saveStatus, storage.kind), hasInk, true, autosavePending)} onSave={saveNowWithToast} onExport={() => setFilePanelOpen((open) => !open)} exportOpen={filePanelOpen} hideExport={zoomLockActive} flashKey={statusFlash} /> : accountLeading(penModeActive, inputMode, <PenColors color={color} onColor={selectColor} theme={theme} />)} />
+      <ContextPanel boardTheme={theme}
         desktop={inputMode === 'desktop'}
+        contextName={inputMode === 'desktop' ? optionsContextName({ count: selectedItemCount + (hasSelectedRectangle && selectedItemCount === 0 ? 1 : 0), selectedKind: hasSelectedRectangle && selectedItemCount === 0 ? 'rectangle' : (selectedItemCount === 1 ? (strokesRef.current.find((item) => currentSelectionKeys().has(canvasItemKey(item)))?.kind ?? null) : null), tool: shapeTool, eraser, text: textMode, editing: textEditor ? (textEditor.connectorId !== undefined || textEditor.centerOn ? 'label' : 'text') : null }) : undefined}
         showDisplayMode={shapeTool === null}
         showSelectionColor={inputMode === 'desktop' && (selectedItemCount > 0 || hasSelectedRectangle)}
         selectionColor={selectionColor(strokesRef.current, currentSelectionKeys())}
@@ -4052,6 +6720,47 @@ function App() {
           ? { color: selectionFillColor(strokesRef.current, currentSelectionKeys()), onFill: fillSelection, onMatchOutline: (hex) => recolorSelection(hex, true), outlineFor: matchingOutline }
           : null}
         showEraser={inputMode === 'desktop' && eraser}
+        selectionWidth={inputMode === 'desktop' && selectionHasOutlineWidth(strokesRef.current, currentSelectionKeys())
+          ? { value: selectionStrokeWidth(strokesRef.current, currentSelectionKeys()), onChange: changeSelectionWidth, onEnd: endWidthChange }
+          : null}
+        lineStyle={inputMode === 'desktop'
+          ? (currentSelectionKeys().size > 0
+            ? (strokesRef.current.some((item) => currentSelectionKeys().has(canvasItemKey(item)) && hasLineDash(item)) ? { value: selectionDash(strokesRef.current, currentSelectionKeys()), label: 'Line style', onChange: changeLineDash } : null)
+            : (shapeTool !== null ? { value: lineDashDefault, label: 'Line style for new shapes', onChange: changeLineDash } : null))
+          : null}
+        arrowheads={inputMode === 'desktop' && selectionHasArrowheads(strokesRef.current, currentSelectionKeys())
+          ? { value: selectionArrowheads(strokesRef.current, currentSelectionKeys()), onChange: changeArrowheads }
+          : null}
+        newShapeDefault={currentSelectionKeys().size > 0 || newShapeStyle ? { canSet: defaultStyleSource() !== null, isSet: newShapeStyle !== null, onSet: () => { useAsDefaultShapeStyle() }, onReset: () => { resetDefaultShapeStyle() } } : null}
+        logoName={(() => { const target = selectedLogoBox(strokesRef.current, currentSelectionKeys(), findTechLogo); return target === null ? null : { shown: findLogoNameLabels(strokesRef.current, target.box, target.logo).length > 0, onChange: setSelectedLogoName } })()}
+        logoColor={(() => { const choice = logoColorChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { brand: choice === 'brand', onChange: setSelectedLogoColor } })()}
+        corners={(() => { const choice = cornersChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { rounded: choice === 'sharp', onChange: setSelectedCorners } })()}
+        changeShape={(() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })()}
+        flip={canFlipSelection(strokesRef.current, flipKeysWithLabels()) ? { onFlip: (axis) => { flipSelection(axis) } } : null}
+        sameSize={canSameSize(strokesRef.current, currentSelectionKeys()) ? { onSameSize: (mode) => { sameSizeSelection(mode) } } : null}
+        boundaryTools={currentSelectionKeys().size > 0 ? { onFocus: () => { startFocus() }, onAddBoundary: () => { addBoundaryAroundSelection() }, onSelectConnected: canSelectConnected(strokesRef.current, currentSelectionKeys()) ? () => { selectConnectedItems(false) } : null } : null}
+        selectionTools={inputMode !== 'desktop' && currentSelectionKeys().size > 0 ? (() => {
+          const keys = currentSelectionKeys()
+          const sole = soleSelectedKey()
+          const source = soleStyleSource()
+          return {
+            onSelectSimilar: sole !== null && similarItemKeys(strokesRef.current, sole).length > 0 ? () => { selectSimilarItems() } : null,
+            onCopyStyle: source !== null && captureStyle(source) !== null ? () => { copyStyleWithToast() } : null,
+            onPasteStyle: () => { pasteStyleWithToast() },
+            canPasteStyle: copiedStyleRef.current !== null,
+            onNumberSteps: stepTargets(strokesRef.current, keys).length > 0 ? () => { numberFlowSteps() } : null,
+          }
+        })() : null}
+        movePages={inputMode !== 'desktop' && currentSelectionKeys().size > 0
+          ? { chips: moveMenuChips(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)), onMove: (action) => { const target = parseMoveAction(action); if (target !== null) moveSelectionToPageNow(target) } }
+          : null}
+        layer={inputMode === 'desktop' && (selectedItemCount > 0 || hasSelectedRectangle) ? { onMove: (move) => { moveSelectionLayer(move) } } : null}
+        arrange={inputMode === 'desktop' && canAlign(strokesRef.current, currentSelectionKeys())
+          ? { canAlign: true, canDistribute: canDistribute(strokesRef.current, currentSelectionKeys()), onAlign: alignSelection, onDistribute: distributeSelection }
+          : null}
+        group={(canGroup(strokesRef.current, currentSelectionKeys()) || canUngroup(strokesRef.current, currentSelectionKeys()))
+          ? { canGroup: canGroup(strokesRef.current, currentSelectionKeys()), canUngroup: canUngroup(strokesRef.current, currentSelectionKeys()), onGroup: () => { groupSelection() }, onUngroup: () => { ungroupSelection() } }
+          : null}
         rotation={rotationPanel}
         code={codePanel}
         objectEraser={objectEraser}
@@ -4066,9 +6775,11 @@ function App() {
         strokeDisplayMode={strokeDisplayMode}
         onStrokeDisplayMode={setStrokeDisplayMode}
         showTextSizes={(optionsFor === 'text' || inputMode === 'desktop') && textMode}
-        textSize={textSize}
+        textSize={inputMode === 'desktop' ? (textEditor ? textEditor.fontSize : (selectedTextItem()?.fontSize ?? textSize)) : textSize}
         onTextSize={pickTextSize}
         textSizeChoices={inputMode === 'desktop' ? TEXT_FONT_SIZES_DESKTOP : undefined}
+        textAlign={textAlignPanel}
+        connectorLabelSize={selectedConnectorLabel && selectedItemCount === 1 && selectedConnectorId !== null ? (() => { const c = selectedLabelledConnector(); return c && !c.locked ? { size: connectorLabelFontSize(c), onPick: pickConnectorLabelSize } : undefined })() : undefined}
         textFit={textFitOn === null ? undefined : { on: textFitOn, onToggle: toggleTextFit }}
         showTextFonts={((optionsFor === 'text' || inputMode === 'desktop') && textMode) || (selectedTextId !== null && selectedItemCount === 1)}
         textFontId={selectedTextFont ?? textFontId}
@@ -4083,11 +6794,20 @@ function App() {
         onPaste={() => { pasteClipboard() }}
         onDuplicate={() => { duplicateSelection() }}
         relationship={selectedConnectorId !== null && selectedConnectorType !== null
-          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, elbow: selectedConnectorElbow, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onElbow: changeSelectedConnectorRouting }
+          ? { type: selectedConnectorType, reversed: selectedConnectorReversed, routing: selectedConnectorRouting, hasLabel: selectedConnectorLabel, twoWay: selectedConnectorTwoWay, onTwoWay: setSelectedArrowEnds, onEditLabel: () => { if (selectedConnectorId !== null) editConnectorLabel(selectedConnectorId) }, canInsertBox: canInsertBoxNow(), onInsertBox: () => { insertBoxIntoSelectedConnector() }, onChange: changeSelectedConnectorType, onReverse: reverseSelectedConnector, onRouting: changeSelectedConnectorRouting, ...endLabelProps(selectedConnectorId) }
           : null}
       />
+      {pageOverviewOpen && <PageOverview count={pageCount} current={pageIndex} names={pagesRef.current.map((slot) => slot.name ?? '')} onRename={renamePage} loadThumbnail={renderPageThumbnail} onGo={(index) => { goToPage(index); setPageOverviewOpen(false) }} onMove={movePageTo} onClose={() => setPageOverviewOpen(false)} />}
       {deletedPageNumber !== null && <PageUndoBar pageNumber={deletedPageNumber} onUndo={undoDeletePage} />}
-      <ZoomControls zoomPercent={zoomPercent} locked={navigationSettings.zoomLocked} onToggleLock={() => updateNavigationSettings({ zoomLocked: !navigationSettings.zoomLocked })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
+      {moveUndoBar !== null && deletedPageNumber === null && <MoveUndoBar message={moveUndoBar.message} onUndo={undoMoveToPage} />}
+      {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} replaceOpen={findReplaceOpen} onToggleReplace={() => setFindReplaceOpen((open) => !open)} replacement={findReplacement} onReplacementChange={changeFindReplacement} onReplace={replaceCurrentFind} onReplaceAll={replaceAllFind} />}
+      {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
+      {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...withoutDuplicateTextSizeEntries(shortcutPaletteEntries()), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
+      <input ref={excalidrawFileRef} type="file" accept=".excalidraw,application/json" hidden onChange={(event) => { openExcalidrawFile(event.target.files?.[0]); event.target.value = '' }} />
+      {logoDialogOpen && <LogoDialog onInsert={insertLogo} onClose={() => setLogoDialogOpen(false)} />}
+      {mermaidOpen && <MermaidDialog onInsert={importMermaid} onClose={() => setMermaidOpen(false)} />}
+      {templateChooserOpen && <TemplateChooser onChoose={insertTemplate} onClose={() => setTemplateChooserOpen(false)} onMermaid={() => { setTemplateChooserOpen(false); setMermaidOpen(true) }} userTemplates={userTemplates} onChooseUser={insertUserTemplate} onDeleteUser={deleteUserTemplate} canSave={selectedItemCount > 0 || hasSelectedRectangle} startSaving={templateSaveMode} onSave={saveSelectionAsTemplate} />}
+      <ZoomControls desktop={inputMode === 'desktop'} hasSelection={currentSelectionKeys().size > 0} onZoomChoice={applyZoomChoice} zoomPercent={zoomPercent} locked={zoomLockActive} onToggleLock={() => updateNavigationSettings({ zoomLocked: !zoomLockActive })} onZoomIn={() => zoomBy(ZOOM_STEP)} onZoomOut={() => zoomBy(1 / ZOOM_STEP)} />
       <ToolDock
         desktop={inputMode === 'desktop'}
         dockRef={toolbarRef}
@@ -4103,6 +6823,7 @@ function App() {
         inkClassActive={classMode && inkClassTool && hldShapeTool === null}
         hldShapeActive={classMode && inkClassTool ? hldShapeTool : null}
         onHldShape={toggleHldShapeTool}
+        onLogo={insertLogo}
         shapeActive={shapeMode}
         shapeTool={shapeTool}
         onShapeTool={toggleShapeDrawTool}
@@ -4119,7 +6840,30 @@ function App() {
         tidyLabel={tidyScope(strokesRef.current, selectedKeysRef.current).selection ? 'Tidy selected' : 'Tidy all'}
         onTidy={tidyDiagram}
         onCode={insertCodeBlock}
+        onFind={openFind}
+        onSticky={insertStickyNote}
+        toolLock={toolLock}
+        onToolLock={toggleToolLock}
+        onTemplates={() => setTemplateChooserOpen(true)}
+        onMermaid={() => setMermaidOpen(true)}
+        onExcalidraw={() => excalidrawFileRef.current?.click()}
+        laserActive={laserMode}
+        onLaser={toggleLaserTool}
+        presentActive={presentMode}
+        onPresent={togglePresentMode}
+        onDuplicatePage={duplicatePage}
+        onPageOverview={() => setPageOverviewOpen(true)}
+        canDuplicatePage={canAddPage(pageCount)}
       />
+      {focusActive && <button className="focus-chip" type="button" title="Exit focus (Esc)" onClick={exitFocus}>Focused · Exit</button>}
+      {showSlideControl(presentMode, pageCount) && (
+        <div className="slide-nav" role="group" aria-label="Slides">
+          <button type="button" aria-label="Previous page" title="Previous page (Left arrow or PageUp)" disabled={!slideStepEnabled(pageIndex, pageCount).previous} onClick={() => showSlide(pageIndexRef.current - 1)}>‹</button>
+          <span className="slide-nav-label" aria-live="polite" aria-label={`Page ${pageIndex + 1} of ${pageCount}`}>{slideLabel(pageIndex, pageCount)}</span>
+          <button type="button" aria-label="Next page" title="Next page (Right arrow, PageDown or Space)" disabled={!slideStepEnabled(pageIndex, pageCount).next} onClick={() => showSlide(pageIndexRef.current + 1)}>›</button>
+        </div>
+      )}
+      {presentMode && <button className="show-toolbars-pill" type="button" title="Show the toolbars (Alt+Z or Esc)" onClick={() => setPresentMode(false)}>Show toolbars</button>}
       {classBoxEditor && <ClassBoxDialog
         key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}
         initial={classBoxEditor.content}
@@ -4140,6 +6884,7 @@ function App() {
         onCopyBrowserHere={() => void copyBrowserToDevice()}
       />}
       {libraryOpen && <HomeScreen
+        loadForSearch={loadForSearch}
         library={library}
         folders={folders}
         currentId={currentDocId}
@@ -4153,30 +6898,50 @@ function App() {
         showConnectHint={storage.kind === 'browser'}
         onClose={() => setLibraryOpen(false)}
         onOpenDiagram={(id) => { setLibraryOpen(false); void openStoredDiagram(id) }}
-        onNewDiagram={(folderId, template) => { setLibraryOpen(false); void newDiagramIn(folderId, template) }}
+        onNewDiagram={(folderId, template, options) => {
+          setLibraryOpen(false)
+          // Same as picking Sketch or Chalkboard on an open diagram: new text uses the hand-drawn font.
+          if (newDiagramUsesHandFont(options) && textFontId !== 'excalifont') setTextFontId('excalifont')
+          void newDiagramIn(folderId, template, options)
+        }}
         onImportFile={(file) => void importDocumentFile(file)}
-        onCreateFolder={(name, parentId) => void createFolder(name, parentId)}
-        onRenameFolder={(id, name) => void renameFolder(id, name)}
-        onDeleteFolder={(id) => void deleteFolder(id)}
-        onMoveDiagram={(docId, folderId) => void moveDiagram(docId, folderId)}
-        onDeleteDiagram={(id) => void deleteStoredDiagram(id)}
+        onCreateFolder={(name, parentId) => createFolder(name, parentId)}
+        onRenameFolder={(id, name) => renameFolder(id, name)}
+        onRenameDiagram={(id, title) => renameStoredDiagram(id, title)}
+        onMakeCopy={(id) => copyStoredDiagram(id)}
+        onDeleteFolder={(id, confirmed) => deleteFolder(id, confirmed)}
+        onFolderDeleteScheduled={(id) => releaseFolderTarget(id)}
+        onMoveDiagram={(docId, folderId) => moveDiagram(docId, folderId)}
+        canMoveFolders={storage.kind !== 'device'}
+        onMoveFolder={(id, parentId) => moveFolder(id, parentId)}
+        onDeleteDiagram={(id) => deleteStoredDiagram(id)}
         onChangeStorage={() => { setLibraryOpen(false); setStoragePanelOpen(true) }}
+        desktop={inputMode === 'desktop'}
       />}
       {filePanelOpen && <FilePanel
         title={docTitle}
         saveStatus={saveStatus}
         notice={fileNotice}
         canExport={hasInk}
+        canOutline={hasInk || pagesRef.current.some((slot, index) => index !== pageIndex && slot.items.some((item) => !(item.kind === 'stroke' && item.erase)))}
         storage={storage}
         onClose={() => setFilePanelOpen(false)}
         onTitleChange={renameDiagram}
         onNew={() => void newDiagram()}
         onExportDocument={exportDocumentFile}
         onImportFile={(file) => void importDocumentFile(file)}
-        onExportSvg={exportSvgFile}
-        onExportPng={(scale) => void exportPngFile(scale)}
+        onCopyOutline={copyOutline}
+        onCopyMermaid={copyMermaid}
+        onDownloadOutline={downloadOutline}
+        onDownloadExcalidraw={downloadExcalidraw}
+        onCopyExcalidraw={inputMode === 'desktop' ? copyExcalidraw : undefined}
+        onExportSvg={() => void exportSvgFile().then((error) => { if (inputMode === 'desktop') showToast(exportToastText('SVG', error)) })}
+        onExportPng={(scale) => void exportPngFile(scale, undefined, inputMode === 'desktop').then((error) => { if (inputMode === 'desktop') showToast(exportToastText('PNG', error)) })}
+        transparent={transparentExport}
+        onTransparentChange={setTransparentExport}
         onExportNotebookLm={() => void exportToNotebookLm()}
         exportBusy={exportBusy}
+        desktop={inputMode === 'desktop'}
       />}
       {PERFORMANCE_DIAGNOSTICS_ENABLED && performanceDiagnosticsOpen && <section id="inkpad-performance-panel" className="performance-panel" aria-label="Development performance diagnostics">
         <div className="performance-panel-header">

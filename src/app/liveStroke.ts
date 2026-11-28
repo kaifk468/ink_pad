@@ -119,6 +119,8 @@ export type LiveStrokeFrame = {
   base: HTMLCanvasElement
   live: HTMLCanvasElement
   stroke: Stroke
+  /** The colour to draw with when it differs from `stroke.color` (the default ink on a dark board). */
+  color?: string
   predicted: Point[]
   state: LiveStrokeState
   transform: CanvasTransform
@@ -128,6 +130,7 @@ export type LiveStrokeFrame = {
 /** Draws one frame of the stroke being written. Returns the page-canvas box that was repainted (null if none). */
 export function drawLiveStrokeFrame(frame: LiveStrokeFrame): DeviceRect | null {
   const { page, base, live, stroke, predicted, state, transform, clip } = frame
+  const color = frame.color ?? stroke.color
   const points = stroke.points
   if (!points.length) return null
   const liveContext = live.getContext('2d')
@@ -141,7 +144,7 @@ export function drawLiveStrokeFrame(frame: LiveStrokeFrame): DeviceRect | null {
     for (let index = state.drawnFinal; index < finalCount; index += 1) spans.push(buildInterpolatingSegment(points, index))
     liveContext.save()
     applyCanvasTransform(liveContext, transform, clip)
-    preparePenContext(liveContext, stroke.color)
+    preparePenContext(liveContext, color)
     for (const span of spans) drawInterpolatingSegment(liveContext, span, stroke.width)
     liveContext.restore()
     newFinalRect = spansDeviceRect(spans, stroke.width, transform)
@@ -170,7 +173,7 @@ export function drawLiveStrokeFrame(frame: LiveStrokeFrame): DeviceRect | null {
   page.drawImage(base, rect.x, rect.y, rect.width, rect.height, rect.x, rect.y, rect.width, rect.height)
   page.drawImage(live, rect.x, rect.y, rect.width, rect.height, rect.x, rect.y, rect.width, rect.height)
   applyCanvasTransform(page, transform, clip)
-  preparePenContext(page, stroke.color)
+  preparePenContext(page, color)
   if (dot) drawStrokeDot(page, dot, stroke.width)
   for (const span of tailSpans) drawInterpolatingSegment(page, span, stroke.width)
   page.restore()

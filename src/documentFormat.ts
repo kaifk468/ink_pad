@@ -1,4 +1,8 @@
 import { clampCodeFontSize, cleanCodeLanguage, DEFAULT_CODE_FONT_SIZE, MAX_CODE_LENGTH, normalizeCodeText } from './codeBlock'
+import { cleanConnectorLabel, cleanConnectorLabelFontSize, cleanConnectorLabelPosition } from './connectorLabel'
+import { cleanConnectorEndLabel } from './connectorEndLabels'
+import { MAX_CONNECTOR_BEND } from './canvasModel'
+import { isLogoSlug } from './techLogoSearch'
 import type { CodeObject, OpaqueObject, TextFontId, HldShape, CanvasItem, ClassBoxContent, ConnectorAttachment, InkBoxContent, ConnectorObject, ConnectorRelationshipType, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 
 /**
@@ -19,6 +23,13 @@ export type DocumentPageTemplate = 'blank' | 'lined' | 'dotted'
 export type DocumentPageSpacing = 'narrow' | 'standard' | 'wide'
 export type DocumentPageBackground = 'white' | 'warm' | 'blue' | 'yellow' | 'green'
 
+/**
+ * Swimlane settings (page field `lanes`). Known fields are checked: `dir` a page word ('columns'; anything else draws as rows),
+ * `count` an integer 2..8, `names` at most 8 cleaned names ('' keeps a lane's place), `fit` only `false` (the default, on, is not written).
+ * Unknown keys from a newer InkPad are kept when their value is a short string, a finite number or a boolean.
+ */
+export type DocumentLanes = { dir?: string; count?: number; names?: string[]; fit?: false; [unknownKey: string]: unknown }
+
 export type InkPadDocument = {
   format: typeof DOCUMENT_FORMAT
   version: number
@@ -26,7 +37,16 @@ export type InkPadDocument = {
   createdAt: string
   updatedAt: string
   /** `spacing` is written only when it is not the standard one; `sheetHeight` only when the page has grown past its first height. */
-  page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: true }
+  /**
+   * `board` (board style theme: 'dark' or 'chalk'; missing = light) and `canvas` (canvas type beyond the template:
+   * 'grid', 'isometric', 'cornell'; missing = the template) are written only when set. Unknown values from a newer
+   * InkPad are kept as they are (short identifiers) so a re-save never drops them; this build draws them as the default.
+   * `marks` ('faint' | 'bold'; missing = normal) is the mark strength of dots and lines; `lanes` the swimlane settings of
+   * `canvas: 'lanes'` (see DocumentLanes). Both are written only when set and are additive: the file version is unchanged.
+   */
+  page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: true; board?: string; canvas?: string; marks?: string; lanes?: DocumentLanes }
+  /** Optional page names, one per page ('' = unnamed). Written only when at least one page has a name. */
+  pageNames?: string[]
   /** `items` is page 1. Pages 2 and on, only when the diagram has more than one page. */
   items: CanvasItem[]
   pages?: Array<{ items: CanvasItem[] }>
@@ -43,10 +63,20 @@ export type DocumentInput = {
   sheetHeight?: number
   /** Hand-drawn style for the whole diagram; written only when true. */
   sketchy?: boolean
+  /** Board style theme ('dark', 'chalk', or an unknown identifier from a newer InkPad); written only when set. */
+  board?: string
+  /** Canvas type beyond the template ('grid', 'isometric', 'cornell', or an unknown identifier); written only when set. */
+  canvas?: string
+  /** Mark strength ('faint', 'bold', or an unknown identifier from a newer InkPad); written only when set. */
+  marks?: string
+  /** Swimlane settings; written only when it holds something. */
+  lanes?: DocumentLanes
   /** Page 1. */
   items: CanvasItem[]
   /** Pages 2 and on. */
   extraPages?: CanvasItem[][]
+  /** One name per page ('' = unnamed); written only when at least one is named. */
+  pageNames?: string[]
   /** Reuse finished strokes as they are instead of copying them (committed strokes are never changed afterwards). Used for autosave. */
   shareStrokes?: boolean
 }
@@ -66,17 +96,101 @@ const BACKGROUNDS: DocumentPageBackground[] = ['white', 'warm', 'blue', 'yellow'
 /** Same kinds as HLD_SHAPES in canvasModel.ts (not imported: this file only takes types from there). */
 /** Kept in step with TEXT_FONT_IDS in canvasModel.ts (a test checks it); this module stays free of value imports. */
 const TEXT_FONT_KINDS: string[] = ['excalifont', 'sans', 'serif', 'mono']
-const HLD_SHAPE_KINDS: string[] = ['database', 'queue', 'service']
+const HLD_SHAPE_KINDS: string[] = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn', 'apiGateway', 'server', 'objectStorage', 'stream', 'worker', 'dns', 'search', 'function', 'scheduler', 'external', 'monitoring']
 const RELATIONSHIPS: ConnectorRelationshipType[] = ['association', 'directed-association', 'inheritance', 'realization', 'dependency', 'aggregation', 'composition']
 const KNOWN_KINDS = ['stroke', 'rectangle', 'text', 'connector', 'code']
-const MAX_TITLE_LENGTH = 120
+export const MAX_TITLE_LENGTH = 120
 const MAX_TEXT_LENGTH = 2000
 const MIN_FONT_SIZE = 4
 const MAX_FONT_SIZE = 400
 export const DEFAULT_DOCUMENT_TITLE = 'Untitled diagram'
+export const MAX_PAGE_NAME_LENGTH = 40
+
+/**
+ * A page setting word (`board`, `canvas`) as stored: a short lower-case identifier, or undefined. Values this build does
+ * not know are kept (a newer InkPad may have written them); only non-identifiers are dropped.
+ */
+export function cleanPageWord(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(value) ? value : undefined
+}
+/** Count of present fields the current parse dropped without dropping their item or page (a bad page word, a logo on a shape that cannot carry one). */
+let droppedFieldCount = 0
+function pageWord<K extends 'board' | 'canvas' | 'marks'>(key: K, value: unknown, track = false): { [P in K]?: string } {
+  const word = cleanPageWord(value)
+  if (track && value !== undefined && word === undefined) droppedFieldCount += 1
+  return (word ? { [key]: word } : {}) as { [P in K]?: string }
+}
+
+const MAX_LANE_NAMES = 8
+const MAX_LANE_UNKNOWN_KEYS = 8
+
+/**
+ * The `lanes` record as stored (see DocumentLanes), or undefined when nothing is left. With `track`, every present value
+ * that had to be dropped (a bad dir / count / names / fit, an unsafe unknown value, extra names) is counted in droppedFieldCount.
+ */
+export function cleanLanes(value: unknown, track = false): DocumentLanes | undefined {
+  if (value === undefined) return undefined
+  const drop = () => { if (track) droppedFieldCount += 1 }
+  if (!isRecord(value)) { drop(); return undefined }
+  const out: DocumentLanes = {}
+  if (value.dir !== undefined) {
+    const dir = cleanPageWord(value.dir)
+    if (dir) out.dir = dir
+    else drop()
+  }
+  if (value.count !== undefined) {
+    if (typeof value.count === 'number' && Number.isInteger(value.count) && value.count >= 2 && value.count <= 8) out.count = value.count
+    else drop()
+  }
+  if (value.names !== undefined) {
+    if (Array.isArray(value.names)) {
+      const names = value.names.slice(0, MAX_LANE_NAMES).map((name) => {
+        if (typeof name !== 'string') drop()
+        return cleanPageName(name)
+      })
+      if (value.names.length > MAX_LANE_NAMES) drop()
+      if (names.some((name) => name !== '')) out.names = names
+    } else drop()
+  }
+  if (value.fit !== undefined) {
+    if (value.fit === false) out.fit = false
+    else if (value.fit !== true) drop() // true is the default and is simply not written
+  }
+  let unknownKept = 0
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === 'dir' || key === 'count' || key === 'names' || key === 'fit') continue
+    const safe = /^[a-zA-Z][a-zA-Z0-9-]{0,23}$/.test(key) && key !== '__proto__' && unknownKept < MAX_LANE_UNKNOWN_KEYS
+      && ((typeof entry === 'string' && entry.length <= 100) || (typeof entry === 'number' && Number.isFinite(entry)) || typeof entry === 'boolean')
+    if (safe) { out[key] = entry; unknownKept += 1 } else drop()
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function laneField(value: unknown, track = false): { lanes?: DocumentLanes } {
+  const lanes = cleanLanes(value, track)
+  return lanes ? { lanes } : {}
+}
+
+/** A page name as stored: control characters removed, spaces collapsed, trimmed, at most 40 characters. Anything that is not text is no name. */
+export function cleanPageName(value: unknown): string {
+  return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_PAGE_NAME_LENGTH).trim() : ''
+}
+
+/** One cleaned name per page (padded with '' or cut to `count`). */
+export function normalizePageNames(raw: unknown, count: number): string[] {
+  const list = Array.isArray(raw) ? raw : []
+  return Array.from({ length: count }, (_, index) => cleanPageName(list[index]))
+}
+
+/** The names to save: one per page, or undefined when no page has a name (so unnamed diagrams are saved exactly as before). */
+export function writablePageNames(raw: unknown, count: number): string[] | undefined {
+  const names = normalizePageNames(raw, count)
+  return names.some((name) => name !== '') ? names : undefined
+}
 
 export function createDocument(input: DocumentInput, now = new Date().toISOString()): InkPadDocument {
   const extraPages = (input.extraPages ?? []).slice(0, MAX_DOCUMENT_PAGES - 1)
+  const names = writablePageNames(input.pageNames, 1 + extraPages.length)
   const copy = (item: CanvasItem) => (input.shareStrokes && item.kind === 'stroke' ? item : cloneItem(item))
   return {
     format: DOCUMENT_FORMAT,
@@ -84,7 +198,8 @@ export function createDocument(input: DocumentInput, now = new Date().toISOStrin
     title: cleanTitle(input.title),
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
-    page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}), ...grownSheetHeight(input.sheetHeight), ...(input.sketchy === true ? { sketchy: true as const } : {}) },
+    page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}), ...grownSheetHeight(input.sheetHeight), ...(input.sketchy === true ? { sketchy: true as const } : {}), ...pageWord('board', input.board), ...pageWord('canvas', input.canvas), ...pageWord('marks', input.marks), ...laneField(input.lanes) },
+    ...(names ? { pageNames: names } : {}),
     items: input.items.map(copy),
     ...(extraPages.length > 0 ? { pages: extraPages.map((items) => ({ items: items.map(copy) })) } : {}),
   }
@@ -125,15 +240,18 @@ export function documentPageCount(document: InkPadDocument): number {
 }
 
 /** An open diagram's content for "did anything change since the last save" checks. */
-export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; items: CanvasItem[]; extraPages?: CanvasItem[][] }
+export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; board?: string; canvas?: string; marks?: string; lanes?: DocumentLanes; items: CanvasItem[]; extraPages?: CanvasItem[][]; pageNames?: string[] }
 
 export function sameSignature(a: DocumentSignature | null, b: DocumentSignature | null): boolean {
   if (!a || !b) return false
-  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || (a.sheetHeight ?? 1500) !== (b.sheetHeight ?? 1500) || (a.sketchy === true) !== (b.sketchy === true) || a.items.length !== b.items.length) return false
+  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || (a.sheetHeight ?? 1500) !== (b.sheetHeight ?? 1500) || (a.sketchy === true) !== (b.sketchy === true) || cleanPageWord(a.board) !== cleanPageWord(b.board) || cleanPageWord(a.canvas) !== cleanPageWord(b.canvas) || cleanPageWord(a.marks) !== cleanPageWord(b.marks) || JSON.stringify(cleanLanes(a.lanes) ?? null) !== JSON.stringify(cleanLanes(b.lanes) ?? null) || a.items.length !== b.items.length) return false
   for (let index = 0; index < a.items.length; index += 1) if (a.items[index] !== b.items[index]) return false
   const aPages = a.extraPages ?? []
   const bPages = b.extraPages ?? []
   if (aPages.length !== bPages.length) return false
+  const aNames = normalizePageNames(a.pageNames, 1 + aPages.length)
+  const bNames = normalizePageNames(b.pageNames, 1 + bPages.length)
+  for (let index = 0; index < aNames.length; index += 1) if (aNames[index] !== bNames[index]) return false
   for (let page = 0; page < aPages.length; page += 1) {
     if (aPages[page].length !== bPages[page].length) return false
     for (let index = 0; index < aPages[page].length; index += 1) if (aPages[page][index] !== bPages[page][index]) return false
@@ -176,6 +294,15 @@ export function documentFileName(title: string): string {
 /** Version migrations: migrations[n] upgrades a version-n payload to n + 1. */
 const migrations: Record<number, (raw: Record<string, unknown>) => Record<string, unknown>> = {}
 
+const KNOWN_DOCUMENT_KEYS = new Set(['format', 'version', 'title', 'createdAt', 'updatedAt', 'page', 'items', 'pages', 'pageNames'])
+const KNOWN_PAGE_KEYS = new Set(['template', 'background', 'spacing', 'sheetHeight', 'sketchy', 'board', 'canvas', 'marks', 'lanes'])
+const lossyParses = new WeakSet<object>()
+
+/** True when the document came from parseDocument and the parse dropped damaged items or fields this version does not know, so saving it again would lose data. */
+export function isLossyParse(document: InkPadDocument): boolean {
+  return lossyParses.has(document)
+}
+
 export function parseDocument(text: string): ParseResult {
   let raw: unknown
   try {
@@ -197,6 +324,7 @@ export function parseDocument(text: string): ParseResult {
   if (!Array.isArray(current.items)) return { ok: false, error: 'The document has no items list.' }
 
   const page = isRecord(current.page) ? current.page : {}
+  droppedFieldCount = 0
   const first = cleanItems(current.items)
   const finalItems = first.items
   let droppedItems = first.dropped
@@ -211,12 +339,10 @@ export function parseDocument(text: string): ParseResult {
     droppedItems += Math.max(0, current.pages.length - (MAX_DOCUMENT_PAGES - 1))
   }
 
+  const names = writablePageNames(current.pageNames, 1 + extraPages.length)
   const now = new Date().toISOString()
-  return {
-    ok: true,
-    droppedItems,
-    migratedFrom: version < DOCUMENT_VERSION ? version : null,
-    document: {
+  const unknownFields = Object.keys(current).some((key) => !KNOWN_DOCUMENT_KEYS.has(key)) || Object.keys(page).some((key) => !KNOWN_PAGE_KEYS.has(key))
+  const parsed: InkPadDocument = {
       format: DOCUMENT_FORMAT,
       version: extraPages.length > 0 ? MULTI_PAGE_VERSION : DOCUMENT_VERSION,
       title: cleanTitle(current.title),
@@ -228,11 +354,17 @@ export function parseDocument(text: string): ParseResult {
         ...(page.spacing === 'narrow' || page.spacing === 'wide' ? { spacing: page.spacing } : {}),
         ...grownSheetHeight(page.sheetHeight),
         ...(page.sketchy === true ? { sketchy: true as const } : {}),
+        ...pageWord('board', page.board, true),
+        ...pageWord('canvas', page.canvas, true),
+        ...pageWord('marks', page.marks, true),
+        ...laneField(page.lanes, true),
       },
+      ...(names ? { pageNames: names } : {}),
       items: finalItems,
       ...(extraPages.length > 0 ? { pages: extraPages } : {}),
-    },
   }
+  if (droppedItems > 0 || unknownFields || droppedFieldCount > 0) lossyParses.add(parsed)
+  return { ok: true, droppedItems, migratedFrom: version < DOCUMENT_VERSION ? version : null, document: parsed }
 }
 
 function cleanItems(candidates: unknown[]): { items: CanvasItem[]; dropped: number } {
@@ -289,7 +421,7 @@ function sanitizeInkBox(value: unknown, y: number, height: number): InkBoxConten
   if (!isRecord(value) || !isNum(value.top) || !isNum(value.mid) || !Array.isArray(value.ink)) return undefined
   const ink: Stroke[] = []
   for (const raw of value.ink.slice(0, MAX_INK_BOX_STROKES)) {
-    const item = sanitizeItem(raw)
+    const item = sanitizeItemFields(raw)
     if (item && item.kind === 'stroke') ink.push(item)
   }
   // Keep both dividers inside the box with room for each section, even if the file was edited by hand (same limits as canvasModel's clampInkBoxDividers).
@@ -306,7 +438,16 @@ function sanitizeAttachment(value: unknown): ConnectorAttachment | undefined {
   return { rectangleId: value.rectangleId, offsetX: value.offsetX, offsetY: value.offsetY }
 }
 
-function sanitizeItem(value: unknown): CanvasItem | null {
+/** Reads one item; the optional `locked: true` is kept on canvas items only (never on eraser marks or unknown items; any other value is dropped). */
+export function sanitizeItem(value: unknown): CanvasItem | null {
+  let item = sanitizeItemFields(value)
+  if (item && item.kind !== 'opaque' && isRecord(value) && value.locked === true && !(item.kind === 'stroke' && item.erase)) item = { ...item, locked: true }
+  // `group`: a positive safe integer only, on canvas items (never eraser marks or unknown items).
+  if (item && item.kind !== 'opaque' && isRecord(value) && typeof value.group === 'number' && Number.isSafeInteger(value.group) && value.group > 0 && !(item.kind === 'stroke' && item.erase)) item = { ...item, group: value.group }
+  return item
+}
+
+function sanitizeItemFields(value: unknown): CanvasItem | null {
   if (!isRecord(value) || !isId(value.id)) return null
   if (value.kind === 'stroke') {
     if (!Array.isArray(value.points) || !isColor(value.color) || !isNum(value.width) || value.width <= 0) return null
@@ -318,7 +459,12 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     }
     if (!points.length) return null
     const stroke: Stroke = { kind: 'stroke', id: value.id, points, color: value.color, width: value.width, erase: value.erase === true }
-    if (value.shape === 'arrow' || value.shape === 'line') stroke.shape = value.shape
+    if (value.shape === 'arrow' || value.shape === 'line') {
+      stroke.shape = value.shape
+      // Line style and arrowheads exist on straight arrow/line strokes only.
+      if (value.dash === 'dashed' || value.dash === 'dotted') stroke.dash = value.dash
+      if (value.arrowheads === 'none' || value.arrowheads === 'start' || value.arrowheads === 'both' || value.arrowheads === 'end') stroke.arrowheads = value.arrowheads
+    }
     return stroke
   }
   if (value.kind === 'rectangle') {
@@ -326,12 +472,22 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     const classBox = sanitizeClassBox(value.classBox)
     const inkBox = sanitizeInkBox(value.inkBox, value.y, value.height)
     const rectangle: RectangleObject = { kind: 'rectangle', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth, ...(classBox ? { classBox } : {}), ...(inkBox ? { inkBox } : {}), ...(inkBox && HLD_SHAPE_KINDS.includes(value.hldShape as string) ? { hldShape: value.hldShape as HldShape } : {}), ...(value.ellipse === true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { ellipse: true as const } : {}), ...(value.diamond === true && value.ellipse !== true && !classBox && !inkBox && value.width > 0 && value.height > 0 ? { diamond: true as const } : {}) }
+    if (value.rounded === true && !classBox && !inkBox && !rectangle.ellipse && !rectangle.diamond) rectangle.rounded = true
+    // Tech logo box: a plain rectangle with a Simple Icons slug. An unknown slug is kept (drawn as a placeholder), so a newer file survives an older build.
+    if (isLogoSlug(value.logo) && !classBox && !inkBox && !rectangle.ellipse && !rectangle.diamond) {
+      rectangle.logo = value.logo
+      if (value.logoColor === 'brand') rectangle.logoColor = 'brand'
+    }
+    // A present logo / logoColor that was not kept (wrong shape, bad slug, unknown colour mode) makes the parse lossy.
+    if ((value.logo !== undefined && rectangle.logo === undefined) || (value.logoColor !== undefined && rectangle.logoColor === undefined)) droppedFieldCount += 1
     const rectAngle = !classBox && !inkBox && !hldShapeKept(value) ? sanitizeAngle(value.angle) : undefined
     if (rectAngle !== undefined) rectangle.angle = rectAngle
     // Hand-drawn style seed and fill colour: only on shapes that can carry them (not service, class boxes or ink class boxes).
     const sketchable = !classBox && (!inkBox || value.hldShape === 'database' || value.hldShape === 'queue')
     if (sketchable && typeof value.seed === 'number' && Number.isInteger(value.seed) && value.seed >= 0 && value.seed <= 4294967295) rectangle.seed = value.seed
     if (sketchable && isColor(value.fillColor)) rectangle.fillColor = value.fillColor
+    // Line style: plain and HLD shapes only (not class boxes or ink class boxes).
+    if (!classBox && (!inkBox || rectangle.hldShape) && (value.dash === 'dashed' || value.dash === 'dotted')) rectangle.dash = value.dash
     return rectangle
   }
   if (value.kind === 'text') {
@@ -340,6 +496,7 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     const text: TextObject = { kind: 'text', id: value.id, x: value.x, y: value.y, width: value.width, height: value.height, text: value.text.replace(/\u0000/g, '').slice(0, MAX_TEXT_LENGTH), fontSize: value.fontSize, color: value.color, ...(TEXT_FONT_KINDS.includes(value.fontFamily as string) ? { fontFamily: value.fontFamily as TextFontId } : {}) }
     const textAngle = sanitizeAngle(value.angle)
     if (textAngle !== undefined) text.angle = textAngle
+    if (value.align === 'center' || value.align === 'right') text.align = value.align
     if (value.fit === 'off' || (value.fit === 'wrap' && value.width > 0)) text.fit = value.fit
     return text
   }
@@ -360,9 +517,17 @@ function sanitizeItem(value: unknown): CanvasItem | null {
     const connector: ConnectorObject = {
       kind: 'connector', id: value.id, start, end, strokeColor: value.strokeColor, strokeWidth: value.strokeWidth,
       relationshipType, reversed: value.reversed === true,
-      ...(value.routing === 'elbow' ? { routing: 'elbow' as const } : {}),
+      ...(value.routing === 'elbow' ? { routing: 'elbow' as const } : value.routing === 'curved' ? { routing: 'curved' as const } : {}),
+      ...(value.twoWay === true && relationshipType === 'directed-association' ? { twoWay: true as const } : {}),
+      ...(isNum(value.bend) && value.bend !== 0 ? { bend: Math.max(-MAX_CONNECTOR_BEND, Math.min(MAX_CONNECTOR_BEND, value.bend)) } : {}),
+      ...(value.dash === 'dashed' || value.dash === 'dotted' || value.dash === 'solid' ? { dash: value.dash } : {}),
       ...(startAttachment ? { startAttachment } : {}),
       ...(endAttachment ? { endAttachment } : {}),
+      ...(cleanConnectorLabel(value.label) !== undefined ? { label: cleanConnectorLabel(value.label) } : {}),
+      ...(cleanConnectorEndLabel(value.startLabel) !== undefined ? { startLabel: cleanConnectorEndLabel(value.startLabel) } : {}),
+      ...(cleanConnectorEndLabel(value.endLabel) !== undefined ? { endLabel: cleanConnectorEndLabel(value.endLabel) } : {}),
+      ...(cleanConnectorLabelFontSize(value.labelFontSize) !== undefined ? { labelFontSize: cleanConnectorLabelFontSize(value.labelFontSize) } : {}),
+      ...(cleanConnectorLabel(value.label) !== undefined && cleanConnectorLabelPosition(value.labelPosition) !== undefined ? { labelPosition: cleanConnectorLabelPosition(value.labelPosition) } : {}),
     }
     return connector
   }

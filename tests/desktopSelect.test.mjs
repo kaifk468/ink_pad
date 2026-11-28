@@ -12,6 +12,8 @@ const connector = (id, x1, y1, x2, y2) => ({ kind: 'connector', id, start: { x: 
 const pt = (x, y) => ({ x, y, pressure: 1 })
 const inkBox = () => ({ top: 30, mid: 70, ink: [] })
 
+const menuOf = (hasSelection, clipboardHasItems, pageHasItems, extra = {}) => input.contextMenuEntries({ hasSelection, clipboardHasItems, pageHasItems, canEditText: false, lockedTarget: false, anyLocked: false, ...extra })
+
 test('hitTarget picks text, then a box, then a connector, topmost first, and ignores empty space', () => {
   const items = [rect(1, 0, 0, 100, 100), rect(2, 20, 20, 100, 100), text(3, 30, 30), connector(4, 300, 300, 400, 300)]
   assert.deepEqual(input.hitTarget(items, pt(40, 38), 1), { key: 'text:3', kind: 'text', id: 3 })
@@ -101,7 +103,7 @@ test('App wiring: mouse click-select is Desktop only and before the tool branche
   const textBranch = app.indexOf('    if (textMode) {\n      event.currentTarget.setPointerCapture', down)
   assert.ok(clickBranch > down && clickBranch < textBranch)
   assert.match(app, /clickSelectTarget\(routeConnectors\(strokesRef\.current\), point, viewportRef\.current\.scale, clickToolName\(\)/)
-  assert.match(app, /const changed = key !== hoverKeyRef\.current\n\s*hoverKeyRef\.current = key\n\s*applyCanvasCursor\(\)\n\s*if \(changed\) renderAll\(\)/)
+  assert.match(app, /const changed = key !== hoverKeyRef\.current \|\| quick !== quickHoverRef\.current\n\s*hoverKeyRef\.current = key\n\s*quickHoverRef\.current = quick\n\s*applyCanvasCursor\(\)\n\s*if \(changed\) renderAll\(\)/)
   assert.match(app, /event\.pointerType === 'mouse' && event\.buttons === 0 && inputModeRef\.current === 'desktop'\) setMouseHover\(/)
   assert.match(app, /if \(event\.pointerType === 'pen' && !eraser && !buttonErase && !shapeMode && shapeTool === null\) \{\n\s*const edgeBox = edgeBandBox\(/)
   assert.match(app, /window\.setTimeout\(\(\) => fireEdgeHold\(pointerId\), EDGE_HOLD_MS\)/)
@@ -184,7 +186,10 @@ test('arrow keys nudge by 1, Shift by 10, in Desktop mode only, and other modifi
   assert.deepEqual(input.keyCommand(key('ArrowDown', { shiftKey: true }), 'desktop'), { kind: 'nudge', dx: 0, dy: 10 })
   assert.deepEqual(input.keyCommand(key('ArrowDown', { repeat: true }), 'desktop'), { kind: 'nudge', dx: 0, dy: 1 })
   assert.equal(input.keyCommand(key('ArrowLeft'), 'tablet'), null)
-  for (const extra of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) assert.equal(input.keyCommand(key('ArrowLeft', extra), 'desktop'), null)
+  assert.deepEqual(input.keyCommand(key('ArrowLeft', { ctrlKey: true }), 'desktop'), { kind: 'quickCreate', direction: 'left' }) // Ctrl+Arrow makes a connected shape (batch C)
+  // Alt+Arrow walks to the linked box (keyboard walk, round 8); Alt+Shift+Arrow stays with the browser.
+  assert.deepEqual(input.keyCommand(key('ArrowLeft', { altKey: true }), 'desktop'), { kind: 'walkLinked', direction: 'left' })
+  assert.equal(input.keyCommand(key('ArrowLeft', { altKey: true, shiftKey: true }), 'desktop'), null)
 })
 
 test('a burst of nudges is one undo step: only the first press after a 500 ms pause starts a step', () => {
@@ -243,7 +248,7 @@ test('double-click edits a text label or a class box, and nothing else', () => {
   assert.equal(input.doubleClickTarget(items, pt(550, 30), 1), null)
   assert.equal(input.doubleClickTarget(items, pt(750, 30), 1), null)
   assert.deepEqual(input.doubleClickTarget(items, pt(30, 210), 1), { kind: 'text', id: 5 })
-  assert.equal(input.doubleClickTarget(items, pt(50, 401), 1), null)
+  assert.deepEqual(input.doubleClickTarget(items, pt(50, 401), 1), { kind: 'connector', id: 6 })
   assert.equal(input.doubleClickTarget(items, pt(900, 900), 1), null)
 })
 
@@ -262,12 +267,12 @@ test('Enter edits only a single selected label or class box', () => {
   assert.equal(input.keyCommand(keyEvent('Enter', { ctrlKey: true }), 'desktop'), null)
 })
 
-test('the menu lists Cut, Copy, Paste, Duplicate, Delete, Select all and disables what does not apply', () => {
-  const entries = (...args) => Object.fromEntries(input.contextMenuEntries(...args).map((e) => [e.action, e.enabled]))
-  assert.deepEqual(input.contextMenuEntries(false, false, false).map((e) => e.label), ['Cut', 'Copy', 'Paste', 'Duplicate', 'Delete', 'Select all'])
-  assert.deepEqual(entries(false, false, false), { cut: false, copy: false, paste: false, duplicate: false, delete: false, selectAll: false })
-  assert.deepEqual(entries(true, false, true), { cut: true, copy: true, paste: false, duplicate: true, delete: true, selectAll: true })
-  assert.deepEqual(entries(false, true, true), { cut: false, copy: false, paste: true, duplicate: false, delete: false, selectAll: true })
+test('the menu lists the clipboard, arrange, view, export and select entries and disables what does not apply', () => {
+  const entries = (...args) => Object.fromEntries(menuOf(...args).map((e) => [e.action, !e.disabled]))
+  assert.deepEqual(menuOf(false, false, false).map((e) => e.label), ['Cut', 'Copy', 'Paste', 'Duplicate', 'Delete', 'Copy style', 'Paste style', 'Bring to front', 'Send to back', 'Zoom to selection', 'Focus on selection (fade the rest)', 'Copy as PNG', 'Select all'])
+  assert.deepEqual(entries(false, false, false), { cut: false, copy: false, paste: false, duplicate: false, delete: false, copyStyle: false, pasteStyle: false, bringToFront: false, sendToBack: false, zoomSelection: false, focus: false, copyPng: false, selectAll: false })
+  assert.deepEqual(entries(true, false, true), { cut: true, copy: true, paste: false, duplicate: true, delete: true, copyStyle: false, pasteStyle: false, bringToFront: true, sendToBack: true, addBoundary: true, zoomSelection: true, focus: true, lock: true, copyPng: true, exportPng: true, exportSvg: true, saveTemplate: true, selectAll: true })
+  assert.deepEqual(entries(false, true, true), { cut: false, copy: false, paste: true, duplicate: false, delete: false, copyStyle: false, pasteStyle: false, bringToFront: false, sendToBack: false, zoomSelection: false, focus: false, copyPng: true, selectAll: true })
 })
 
 test('the menu stays on screen', () => {
@@ -294,8 +299,8 @@ test('App wiring: the menu and double-click are Desktop only, touch and pen righ
   assert.match(app, /const onCanvasContextMenu = \(event: React\.MouseEvent<HTMLCanvasElement>\) => \{\n\s*event\.preventDefault\(\)\n\s*const native/)
   assert.match(app, /if \(inputModeRef\.current !== 'desktop' \|\| native\.pointerType === 'touch' \|\| native\.pointerType === 'pen'\) return/)
   assert.match(app, /if \(!contextMenuElementRef\.current\?\.contains\(event\.target as Node\)\) setContextMenu\(null\)/)
-  assert.match(app, /window\.addEventListener\('wheel', close, true\)/)
-  assert.match(app, /window\.removeEventListener\('wheel', close, true\)/)
+  assert.match(app, /window\.addEventListener\('wheel', closeOutside, true\)/)
+  assert.match(app, /window\.removeEventListener\('wheel', closeOutside, true\)/)
   assert.match(app, /if \(command\.kind === 'deselect'\) \{ closeContextMenu\(\); return true \}/)
   assert.match(app, /if \(inputMode !== 'desktop'\) setContextMenu\(null\)/)
   assert.match(app, /if \(inputModeRef\.current !== 'desktop' \|\| lastPointerTypeRef\.current !== 'mouse' \|\| event\.button !== 0 \|\| textEditorRef\.current \|\| classBoxEditor\) return/)

@@ -114,7 +114,7 @@ test('the item count and the unchanged-check cover every page', () => {
 
 test('the app keeps one live page and per-page undo, and stays off the pen', () => {
   assert.match(appSource, /getPageItems: \(\) => pagesRef\.current\.map\(\(slot, index\) => \(index === pageIndexRef\.current \? strokesRef\.current : slot\.items\)\)/)
-  assert.match(appSource, /pagesRef\.current\[pageIndexRef\.current\] = \{ items: strokesRef\.current, history: historyRef\.current \}/)
+  assert.match(appSource, /pagesRef\.current\[pageIndexRef\.current\] = \{ items: strokesRef\.current, history: historyRef\.current, \.\.\.\(name \? \{ name \} : \{\}\) \}/)
   assert.match(appSource, /historyRef\.current = slot\.history \?\? new CanvasSnapshotHistory\(\)/)
   assert.match(appSource, /const penBusy = \(\) => activePointerRef\.current !== null \|\| activeStrokeRef\.current !== null/)
   for (const name of ['goToPage', 'addPage', 'deletePage', 'undoDeletePage']) assert.match(appSource, new RegExp(`const ${name} = \\(`))
@@ -145,10 +145,10 @@ test('a new page needs something on the current one first, in the button and in 
 
 test('a deleted page comes back with its drawing and undo history, in the same place, for 8 seconds', () => {
   assert.match(appSource, /const DELETED_PAGE_UNDO_MS = 8000/)
-  assert.match(appSource, /const removedSlot = \{ items: strokesRef\.current, history: historyRef\.current \}/)
+  assert.match(appSource, /const removedSlot = \{ items: strokesRef\.current, history: historyRef\.current, \.\.\.\(removedName/)
   assert.match(appSource, /deletedPageRef\.current = \{ index: removedIndex, slot: removedSlot \}/)
   assert.match(appSource, /const at = Math\.min\(deleted\.index, pagesRef\.current\.length\)/)
-  assert.match(appSource, /insertPageAt\(pagesRef\.current, at, \{ items: deleted\.slot\.items, history: deleted\.slot\.history \}\)/)
+  assert.match(appSource, /insertPageAt\(pagesRef\.current, at, \{ items: deleted\.slot\.items, history: deleted\.slot\.history, \.\.\.\(deleted\.slot\.name/)
   assert.match(appSource, /if \(deletedPageRef\.current\) dismissDeletedPage\(\)/, 'drawing again settles the delete')
   assert.match(appSource, /<PageUndoBar pageNumber=\{deletedPageNumber\} onUndo=\{undoDeletePage\} \/>/)
 })
@@ -195,7 +195,7 @@ test('pen colours sit beside the profile button and show only while the pen is t
   const { readFile } = await import('node:fs/promises')
   const account = await readFile(new URL('../src/app/AccountButton.tsx', import.meta.url), 'utf8')
   assert.match(account, /\{props\.leading\}/)
-  assert.match(appSource, /leading=\{penModeActive && inputMode !== 'desktop' \? <PenColors color=\{color\} onColor=\{selectColor\} \/> : undefined\}/)
+  assert.match(appSource, /leading=\{inputMode === 'desktop' \? <DesktopStatusCluster [^]*?: accountLeading\(penModeActive, inputMode, <PenColors color=\{color\} onColor=\{selectColor\} theme=\{theme\} \/>\)\}/)
 })
 
 test('page counts reach the Library for multi-page diagrams only', async () => {

@@ -2,22 +2,29 @@
 const MIN_CODE_WIDTH = 96
 const MIN_CODE_HEIGHT = 48
 export type Point = { x: number; y: number; pressure: number }
-export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line' }
+/** Line style other than solid (missing = solid). Only on arrow/line strokes, plain and HLD shapes and connectors. */
+export type LineDash = 'dashed' | 'dotted'
+/** Which ends of an arrow/line stroke carry an arrowhead. Missing = the default for the shape (arrow: end, line: none). */
+export type Arrowheads = 'none' | 'end' | 'start' | 'both'
+export type Stroke = { kind: 'stroke'; id: number; points: Point[]; color: string; width: number; erase: boolean; shape?: 'arrow' | 'line'; dash?: LineDash; arrowheads?: Arrowheads; /** Desktop lock: drawn normally, but never selected, edited or erased. Only ever `true`. */ locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
 /** Ink class box: three bands (name, variables, methods) divided at the canvas heights `top` and `mid`, holding its own pen strokes (canvas coordinates). */
 export type InkBoxContent = { top: number; mid: number; ink: Stroke[] }
 export type ClassBoxContent = { name: string; attributes: string; methods: string }
 /** HLD shape kinds: Database (cylinder), Queue, Service. A rectangle with one of these is an ink box drawn as that shape. */
-export const HLD_SHAPES = ['database', 'queue', 'service'] as const
+export const HLD_SHAPES = ['database', 'queue', 'service', 'user', 'browser', 'mobile', 'cache', 'loadBalancer', 'cdn', 'apiGateway', 'server', 'objectStorage', 'stream', 'worker', 'dns', 'search', 'function', 'scheduler', 'external', 'monitoring'] as const
 export type HldShape = (typeof HLD_SHAPES)[number]
-export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; angle?: number; /** Hand-drawn style random seed (integer), written only by diagrams that use the sketchy style. */ seed?: number; /** Optional fill colour under the outline (not on service, typed or ink class boxes). */ fillColor?: string }
+export type RectangleObject = { kind: 'rectangle'; id: number; x: number; y: number; width: number; height: number; strokeColor: string; strokeWidth: number; classBox?: ClassBoxContent; inkBox?: InkBoxContent; hldShape?: HldShape; ellipse?: true; diamond?: true; /** Rounded corners (radius min(16, w/4, h/4)); only on plain rectangles, saved only as `true`. */ rounded?: true; angle?: number; /** Hand-drawn style random seed (integer), written only by diagrams that use the sketchy style. */ seed?: number; /** Optional fill colour under the outline (not on service, typed or ink class boxes). */ fillColor?: string; dash?: LineDash; /** Tech logo box: a Simple Icons slug (kept even when this build does not know it). Only on plain rectangles. */ logo?: string; /** Logo drawn in its brand colour; missing = flat (the box's line colour). Only with `logo`. */ logoColor?: 'brand'; locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
 /** The fixed list of label fonts. A saved label without `fontFamily` is the original clean sans. */
 export const TEXT_FONT_IDS = ['excalifont', 'sans', 'serif', 'mono'] as const
 export type TextFontId = (typeof TEXT_FONT_IDS)[number]
 /** `fit` (Desktop auto-fit): 'off' = the size was picked by hand, no auto-fit; 'wrap' = at the minimum size and word-wrapped to `width`. Missing = plain label. */
-export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId; angle?: number; fit?: 'off' | 'wrap' }
+export type TextAlign = 'center' | 'right'
+export type TextObject = { kind: 'text'; id: number; x: number; y: number; width: number; height: number; text: string; fontSize: number; color: string; fontFamily?: TextFontId; angle?: number; fit?: 'off' | 'wrap'; /** Lines inside the label box: centred or right-aligned. Omitted = left. Saved. */ align?: TextAlign; locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
 export type RectangleResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RectangleBounds = Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>
-export type ConnectorRouting = 'straight' | 'elbow'
+export type ConnectorRouting = 'straight' | 'elbow' | 'curved'
+/** Largest saved elbow `bend` (canvas units, either direction). */
+export const MAX_CONNECTOR_BEND = 5000
 export type ConnectorAttachment = { rectangleId: number; offsetX: number; offsetY: number }
 export type ConnectorRelationshipType = 'association' | 'directed-association' | 'inheritance' | 'realization' | 'dependency' | 'aggregation' | 'composition'
 export type ConnectorObject = {
@@ -31,13 +38,32 @@ export type ConnectorObject = {
   reversed: boolean
   startAttachment?: ConnectorAttachment
   endAttachment?: ConnectorAttachment
-  /** Line shape: straight (default when missing) or elbow (right angles). Saved. */
+  /** Line shape: straight (default when missing), elbow (right angles) or curved (smooth bezier, sampled into routedPath). Saved. */
   routing?: ConnectorRouting
-  /** The right-angle path worked out for an elbow connector. Derived while drawing, never saved: only on copies made by routeConnectors. */
+  /** Elbow or curved: how far (canvas units) the middle segment of the Z route (the middle of the curve) is moved from its default middle, sideways. Finite, |bend| <= MAX_CONNECTOR_BEND; omitted when 0. Saved. */
+  bend?: number
+  /** Own line style: wins over the dash of the relationship type ('solid' = draw solid although the relationship type is dashed). Missing = the relationship type decides. */
+  dash?: LineDash | 'solid'
+  /** Text drawn centred on the middle of the path, over a background-coloured pad. Non-empty, at most 500 characters. Saved. */
+  label?: string
+  /** Label text size (canvas units), 10..48. Omitted at the default size (18). Saved. */
+  labelFontSize?: number
+  /** Where along the path the label sits, as a fraction of the path length, 0.05..0.95. Omitted at the middle (0.5) and when there is no label. Saved. */
+  labelPosition?: number
+  /** Arrowhead at both ends. Saved only as `true`, only on a directed association. */
+  twoWay?: true
+  /** Short text (multiplicity, e.g. "1" or "0..*") drawn beside the start / end of the line. Trimmed, 1..24 characters; omitted when empty. Saved. */
+  startLabel?: string
+  endLabel?: string
+  /** Desktop lock: drawn normally, never selected, edited or erased. Only ever `true`. */
+  locked?: true
+  /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */
+  group?: number
+  /** The path worked out for an elbow or curved connector. Derived while drawing, never saved: only on copies made by routeConnectors. */
   routedPath?: Point[]
 }
 /** A code block: monospaced, syntax coloured, with line numbers. `theme` and `fontSize` are written only when not the default (light, 13). */
-export type CodeObject = { kind: 'code'; id: number; x: number; y: number; width: number; height: number; text: string; language: string; theme?: 'dark'; fontSize?: number }
+export type CodeObject = { kind: 'code'; id: number; x: number; y: number; width: number; height: number; text: string; language: string; theme?: 'dark'; fontSize?: number; locked?: true; /** Desktop group: items sharing the number (per page) are selected together. Positive integer, never drawn. */ group?: number }
 /**
  * An item of a kind this InkPad does not know (saved by a newer copy). It is kept as read and written back unchanged (`raw`), and shown as a grey box.
  * `box` is its saved position and size when it had a usable one. It is never edited, selected or moved.
@@ -45,6 +71,8 @@ export type CodeObject = { kind: 'code'; id: number; x: number; y: number; width
 export type OpaqueObject = { kind: 'opaque'; id: number; box: RectangleBounds | null; raw: Record<string, unknown> }
 export type CanvasItem = Stroke | RectangleObject | ConnectorObject | TextObject | CodeObject | OpaqueObject
 export const CONNECTOR_SNAP_TOLERANCE = 36
+/** Curved connectors: how far from the tip (canvas units) the arrowhead / symbol direction is measured. */
+const CURVE_SYMBOL_REACH = 48
 
 export function createConnector(
   id: number,
@@ -96,6 +124,56 @@ export function getConnectorRenderSpec(connector: ConnectorObject): ConnectorRen
   }
 }
 
+/** The canvas/SVG dash pattern for a line style at a stroke width ([] = solid). Dots are zero-length dashes, drawn round by the round line cap. */
+export function dashPattern(dash: LineDash | undefined, width: number): number[] {
+  if (dash === 'dashed') return [Math.max(6, width * 2.5), Math.max(4, width * 1.8)]
+  if (dash === 'dotted') return [0.01, Math.max(4, width * 2)]
+  return []
+}
+
+/** A connector's dash pattern: its own style when it has one, otherwise the dashes of its relationship type. */
+export function connectorDashPattern(connector: ConnectorObject, width = connector.strokeWidth): number[] {
+  if (connector.dash === 'solid') return []
+  if (connector.dash) return dashPattern(connector.dash, width)
+  return getConnectorRenderSpec(connector).lineStyle === 'dashed' ? dashPattern('dashed', width) : []
+}
+
+/** The arrowheads a line or arrow stroke shows: its own choice, or the default of its shape (arrow: end, line: none). */
+export function strokeArrowheads(stroke: Stroke): Arrowheads {
+  return stroke.arrowheads ?? (stroke.shape === 'arrow' ? 'end' : 'none')
+}
+
+export type ArrowheadGeometry = { tip: Point; wingA: Point; wingB: Point }
+
+/** The head(s) of an arrow/line stroke: tip and the two wing ends (wingA is turned -30 degrees, wingB +30), start head first. */
+export function strokeHeadGeometry(stroke: Stroke): ArrowheadGeometry[] {
+  if ((stroke.shape !== 'arrow' && stroke.shape !== 'line') || stroke.points.length < 2) return []
+  const heads = strokeArrowheads(stroke)
+  if (heads === 'none') return []
+  // A bent arrow (3+ points, from Excalidraw import) keeps its heads on the first and last segments.
+  const count = stroke.points.length
+  const start = stroke.points[0]
+  const end = stroke.points[count - 1]
+  const afterStart = stroke.shape === 'arrow' ? stroke.points[1] : end
+  const beforeEnd = stroke.shape === 'arrow' ? stroke.points[count - 2] : start
+  const length = Math.max(12, stroke.width * 3.5)
+  const make = (tip: Point, from: Point): ArrowheadGeometry => {
+    const angle = Math.atan2(tip.y - from.y, tip.x - from.x)
+    const wing = (turn: number): Point => ({ x: tip.x - length * Math.cos(angle + turn), y: tip.y - length * Math.sin(angle + turn), pressure: tip.pressure })
+    return { tip, wingA: wing(-Math.PI / 6), wingB: wing(Math.PI / 6) }
+  }
+  const result: ArrowheadGeometry[] = []
+  if (heads === 'start' || heads === 'both') result.push(make(start, afterStart))
+  if (heads === 'end' || heads === 'both') result.push(make(end, beforeEnd))
+  return result
+}
+
+/** The end that carries the extra arrowhead of a two-way arrow connector (the end opposite the main head), or null. */
+export function connectorSecondEndpoint(connector: ConnectorObject): 'start' | 'end' | null {
+  if (connector.twoWay !== true || connector.relationshipType !== 'directed-association') return null
+  return connector.reversed ? 'end' : 'start'
+}
+
 export type ConnectorSymbolGeometry = {
   tip: Point
   other: Point
@@ -111,13 +189,28 @@ export function connectorPoints(connector: ConnectorObject): Point[] {
   return connector.routedPath && connector.routedPath.length >= 2 ? connector.routedPath : [connector.start, connector.end]
 }
 
-export function getConnectorSymbolGeometry(connector: ConnectorObject, width = connector.strokeWidth): ConnectorSymbolGeometry | null {
+/** The arrowhead at the opposite end of a two-way arrow connector, or null for any other connector. */
+export function getConnectorSecondSymbolGeometry(connector: ConnectorObject, width = connector.strokeWidth): ConnectorSymbolGeometry | null {
+  const endpoint = connectorSecondEndpoint(connector)
+  return endpoint ? getConnectorSymbolGeometry(connector, width, endpoint) : null
+}
+
+export function getConnectorSymbolGeometry(connector: ConnectorObject, width = connector.strokeWidth, endpointOverride?: 'start' | 'end'): ConnectorSymbolGeometry | null {
   const spec = getConnectorRenderSpec(connector)
-  if (!spec.endpoint || spec.symbol === 'none') return null
+  const endpoint = endpointOverride ?? spec.endpoint
+  if (!endpoint || spec.symbol === 'none') return null
   const path = connectorPoints(connector)
-  const atStart = spec.endpoint === 'start'
+  const atStart = endpoint === 'start'
   const tip = atStart ? path[0] : path[path.length - 1]
-  const neighbour = atStart ? path[1] : path[path.length - 2]
+  let neighbour = atStart ? path[1] : path[path.length - 2]
+  if (connector.routing === 'curved') {
+    // A curve is a dense polyline whose last segment is tiny: take the first sampled point CURVE_SYMBOL_REACH away, so the symbol has room and points along the end of the curve.
+    for (let index = 1; index < path.length; index += 1) {
+      const candidate = atStart ? path[index] : path[path.length - 1 - index]
+      neighbour = candidate
+      if (Math.hypot(candidate.x - tip.x, candidate.y - tip.y) >= CURVE_SYMBOL_REACH) break
+    }
+  }
   const other = atStart ? path[path.length - 1] : path[0]
   // The symbol sits on the last straight piece of the line at that end, so on a bent line it follows the bend.
   const dx = neighbour.x - tip.x
@@ -140,28 +233,119 @@ export function getConnectorSymbolGeometry(connector: ConnectorObject, width = c
   }
 }
 
+/** True for an item the Desktop lock has frozen (never selected, edited or erased). */
+export function isItemLocked(item: CanvasItem): boolean {
+  return item.kind !== 'opaque' && item.locked === true
+}
+
+/**
+ * Items with the Desktop lock set or cleared. `keys` null = every item (used to unlock all). Eraser marks and unknown items are never locked.
+ * Returns the same array when nothing changes; items that do not change are reused.
+ */
+export function setItemsLocked(items: CanvasItem[], keys: ReadonlySet<string> | null, locked: boolean): CanvasItem[] {
+  let changed = false
+  const next = items.map((item): CanvasItem => {
+    if (item.kind === 'opaque' || (item.kind === 'stroke' && item.erase)) return item
+    if (keys && !keys.has(canvasItemKey(item))) return item
+    if ((item.locked === true) === locked) return item
+    changed = true
+    if (locked) return { ...item, locked: true }
+    const { locked: _locked, ...rest } = item
+    void _locked
+    return rest as CanvasItem
+  })
+  return changed ? next : items
+}
+
+/** The drawn bounds of one item (eraser strokes included: their points widened by half the brush). Null when it has none. */
+function paintBounds(item: CanvasItem): RectangleBounds | null {
+  if (item.kind === 'stroke' && item.erase) {
+    if (item.points.length === 0) return null
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const point of item.points) {
+      minX = Math.min(minX, point.x); minY = Math.min(minY, point.y)
+      maxX = Math.max(maxX, point.x); maxY = Math.max(maxY, point.y)
+    }
+    const half = item.width / 2
+    return { x: minX - half, y: minY - half, width: maxX - minX + item.width, height: maxY - minY + item.width }
+  }
+  return getCanvasSelectionBounds([item], new Set([canvasItemKey(item)]))
+}
+
+const boundsOverlap = (a: RectangleBounds, b: RectangleBounds) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+
+/**
+ * What is drawn again after the eraser run items[runStart..runEnd]: the locked items (other than connectors, which are redrawn
+ * anyway) painted before the run whose bounds overlap it, each followed again by the later non-eraser items that overlap it, in
+ * array order, so locked items are never erased but stay under what was in front of them. Empty when nothing is locked.
+ * Shared by the canvas renderer and the SVG/PNG export.
+ */
+export function lockedRedrawsAfterEraserRun(items: readonly CanvasItem[], runStart: number, runEnd: number): CanvasItem[] {
+  let any = false
+  for (let index = 0; index < runStart; index += 1) {
+    const item = items[index]
+    if (item.kind !== 'opaque' && item.locked === true && item.kind !== 'connector' && !(item.kind === 'stroke' && item.erase)) { any = true; break }
+  }
+  if (!any) return []
+  let run: RectangleBounds | null = null
+  for (let index = runStart; index <= runEnd; index += 1) {
+    const box = paintBounds(items[index])
+    if (!box) continue
+    run = run ? { x: Math.min(run.x, box.x), y: Math.min(run.y, box.y), width: Math.max(run.x + run.width, box.x + box.width) - Math.min(run.x, box.x), height: Math.max(run.y + run.height, box.y + box.height) - Math.min(run.y, box.y) } : box
+  }
+  if (!run) return []
+  const result: CanvasItem[] = []
+  const seen = new Set<CanvasItem>()
+  const add = (item: CanvasItem) => { if (!seen.has(item)) { seen.add(item); result.push(item) } }
+  for (let index = 0; index < runStart; index += 1) {
+    const item = items[index]
+    if (item.kind === 'opaque' || item.locked !== true || item.kind === 'connector' || (item.kind === 'stroke' && item.erase)) continue
+    const box = paintBounds(item)
+    if (!box || !boundsOverlap(box, run)) continue
+    add(item)
+    for (let later = index + 1; later < runStart; later += 1) {
+      const other = items[later]
+      if (other.kind === 'opaque' || (other.kind === 'stroke' && other.erase)) continue
+      const otherBox = paintBounds(other)
+      if (otherBox && boundsOverlap(box, otherBox)) add(other)
+    }
+  }
+  return result
+}
+
+/** The rectangles a connector is attached to, in array order (so the one that is higher in the layer order is drawn last). */
+function attachedRectanglesInOrder(connector: ConnectorObject, rectangles: ReadonlyMap<number, { rectangle: RectangleObject; index: number }>): RectangleObject[] {
+  const found: Array<{ rectangle: RectangleObject; index: number }> = []
+  for (const rectangleId of new Set([connector.startAttachment?.rectangleId, connector.endAttachment?.rectangleId])) {
+    const entry = rectangleId === undefined ? undefined : rectangles.get(rectangleId)
+    if (entry) found.push(entry)
+  }
+  return found.sort((a, b) => a.index - b.index).map((entry) => entry.rectangle)
+}
+
 export function canvasItemsForRendering(items: CanvasItem[]): CanvasItem[] {
-  const rectangles = new Map(items
-    .filter((item): item is RectangleObject => item.kind === 'rectangle')
-    .map((rectangle) => [rectangle.id, rectangle]))
+  const rectangles = new Map<number, { rectangle: RectangleObject; index: number }>()
+  items.forEach((item, index) => { if (item.kind === 'rectangle') rectangles.set(item.id, { rectangle: item, index }) })
   const renderItems: CanvasItem[] = []
   // The stroke eraser only cuts ink: connectors are drawn again after each run of eraser strokes, so it never leaves a gap in one.
   const connectorsSoFar: ConnectorObject[] = []
+  let runStart = -1
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index]
     renderItems.push(item)
     if (item.kind === 'stroke' && item.erase) {
+      if (runStart < 0) runStart = index
       const next = items[index + 1]
-      if (!(next && next.kind === 'stroke' && next.erase)) renderItems.push(...connectorsSoFar)
+      if (!(next && next.kind === 'stroke' && next.erase)) {
+        // Locked items are never erased: they are drawn again over the eraser run (only when something is locked).
+        renderItems.push(...connectorsSoFar, ...lockedRedrawsAfterEraserRun(items, runStart, index))
+        runStart = -1
+      }
       continue
     }
     if (item.kind !== 'connector') continue
     connectorsSoFar.push(item)
-    const attachedRectangleIds = new Set([item.startAttachment?.rectangleId, item.endAttachment?.rectangleId])
-    for (const rectangleId of attachedRectangleIds) {
-      const rectangle = rectangleId === undefined ? undefined : rectangles.get(rectangleId)
-      if (rectangle) renderItems.push(rectangle)
-    }
+    renderItems.push(...attachedRectanglesInOrder(item, rectangles))
   }
   return renderItems
 }
@@ -174,29 +358,68 @@ export function canvasItemsForRendering(items: CanvasItem[]): CanvasItem[] {
 export function appendedItemsForRendering(items: CanvasItem[]): CanvasItem[] {
   const last = items[items.length - 1]
   if (!last) return []
-  if (last.kind === 'stroke' && last.erase) return [last, ...items.filter((item): item is ConnectorObject => item.kind === 'connector')]
-  if (last.kind !== 'connector') return [last]
-  const result: CanvasItem[] = [last]
-  for (const rectangleId of new Set([last.startAttachment?.rectangleId, last.endAttachment?.rectangleId])) {
-    if (rectangleId === undefined) continue
-    let rectangle: RectangleObject | undefined
-    for (const item of items) if (item.kind === 'rectangle' && item.id === rectangleId) rectangle = item
-    if (rectangle) result.push(rectangle)
+  if (last.kind === 'stroke' && last.erase) {
+    let runStart = items.length - 1
+    while (runStart > 0) {
+      const before = items[runStart - 1]
+      if (before.kind === 'stroke' && before.erase) runStart -= 1
+      else break
+    }
+    return [last, ...items.filter((item): item is ConnectorObject => item.kind === 'connector'), ...lockedRedrawsAfterEraserRun(items, runStart, items.length - 1)]
   }
-  return result
+  if (last.kind !== 'connector') return [last]
+  const rectangles = new Map<number, { rectangle: RectangleObject; index: number }>()
+  items.forEach((item, index) => { if (item.kind === 'rectangle') rectangles.set(item.id, { rectangle: item, index }) })
+  return [last, ...attachedRectanglesInOrder(last, rectangles)]
 }
 
 export function updateConnectorRelationship(items: CanvasItem[], connectorId: number, relationshipType: ConnectorRelationshipType): CanvasItem[] {
   return items.map((item) => item.kind === 'connector' && item.id === connectorId && item.relationshipType !== relationshipType
-    ? { ...item, relationshipType, reversed: relationshipType === 'association' ? false : item.reversed }
+    ? withoutTwoWay({ ...item, relationshipType, reversed: relationshipType === 'association' ? false : item.reversed })
     : item)
+}
+
+function withoutTwoWay(connector: ConnectorObject): ConnectorObject {
+  if (connector.relationshipType === 'directed-association' || connector.twoWay === undefined) return connector
+  const { twoWay: _twoWay, ...rest } = connector
+  return rest
+}
+
+/** Sets or clears the arrowhead at both ends; only an unlocked directed association can have it, anything else is returned unchanged. */
+export function updateConnectorTwoWay(items: CanvasItem[], connectorId: number, twoWay: boolean): CanvasItem[] {
+  return items.map((item) => {
+    if (item.kind !== 'connector' || item.id !== connectorId || item.locked || item.relationshipType !== 'directed-association' || (item.twoWay === true) === twoWay) return item
+    if (twoWay) return { ...item, twoWay: true as const }
+    const { twoWay: _old, ...rest } = item
+    return rest
+  })
+}
+
+/** Sets or clears both-ends on every selected unlocked arrow connector (directed association). Returns the same array when nothing changes. */
+export function setSelectedArrowsTwoWay(items: CanvasItem[], keys: ReadonlySet<string>, twoWay: boolean): CanvasItem[] {
+  let changed = false
+  const next = items.map((item) => {
+    if (item.kind !== 'connector' || !keys.has(canvasItemKey(item))) return item
+    const [updated] = updateConnectorTwoWay([item], item.id, twoWay)
+    if (updated !== item) changed = true
+    return updated
+  })
+  return changed ? next : items
+}
+
+/** What the menu should offer for the selected unlocked arrow connectors: 'both' when any is one-way, 'one' when all are two-way, null when none is selected. */
+export function arrowEndsChoice(items: readonly CanvasItem[], keys: ReadonlySet<string>): 'both' | 'one' | null {
+  const arrows = items.filter((item): item is ConnectorObject => item.kind === 'connector' && !item.locked && item.relationshipType === 'directed-association' && keys.has(canvasItemKey(item)))
+  if (arrows.length === 0) return null
+  return arrows.every((arrow) => arrow.twoWay === true) ? 'one' : 'both'
 }
 
 export function updateConnectorRouting(items: CanvasItem[], connectorId: number, routing: ConnectorRouting): CanvasItem[] {
   return items.map((item) => {
     if (item.kind !== 'connector' || item.id !== connectorId || (item.routing ?? 'straight') === routing) return item
-    const { routing: _old, routedPath: _path, ...rest } = item
-    return routing === 'elbow' ? { ...rest, routing } : rest
+    // The bend belongs to the elbow / curved route: dropped on every switch so a later re-toggle starts clean.
+    const { routing: _old, routedPath: _path, bend: _bend, ...rest } = item
+    return routing === 'straight' ? rest : { ...rest, routing }
   })
 }
 
@@ -216,7 +439,7 @@ function closestPointOnSegment(point: Point, a: Point, b: Point): Point {
   return { x: a.x + t * dx, y: a.y + t * dy, pressure: point.pressure }
 }
 
-function nearestRectangleBoundaryPoint(rectangle: RectangleObject, point: Point): Point {
+export function nearestRectangleBoundaryPoint(rectangle: RectangleObject, point: Point): Point {
   const left = rectangle.x
   const right = rectangle.x + rectangle.width
   const top = rectangle.y
@@ -234,6 +457,32 @@ function nearestRectangleBoundaryPoint(rectangle: RectangleObject, point: Point)
   ))
 }
 
+/** How close (canvas units) to a side's middle an outline point snaps to that middle: 14, but never more than 20% of the side. */
+export const CONNECTOR_MIDPOINT_MAGNET = 14
+export const CONNECTOR_MIDPOINT_MAGNET_RATIO = 0.2
+
+/** The four side midpoints of a box (left, right, top, bottom), each with the length of its side. */
+export function rectangleSideMidpoints(rectangle: Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>, pressure = 1): Array<{ point: Point; sideLength: number }> {
+  const { x, y, width, height } = rectangle
+  return [
+    { point: { x, y: y + height / 2, pressure }, sideLength: height },
+    { point: { x: x + width, y: y + height / 2, pressure }, sideLength: height },
+    { point: { x: x + width / 2, y, pressure }, sideLength: width },
+    { point: { x: x + width / 2, y: y + height, pressure }, sideLength: width },
+  ]
+}
+
+/** The outline point `candidate`, or the exact middle of the side it is within the magnet distance of. */
+function snapToSideMidpoint(rectangle: RectangleObject, candidate: Point): Point {
+  let best: Point | null = null
+  let bestDistance = Infinity
+  for (const { point: mid, sideLength } of rectangleSideMidpoints(rectangle, candidate.pressure)) {
+    const distance = Math.hypot(candidate.x - mid.x, candidate.y - mid.y)
+    if (distance <= Math.min(CONNECTOR_MIDPOINT_MAGNET, sideLength * CONNECTOR_MIDPOINT_MAGNET_RATIO) && distance < bestDistance) { best = mid; bestDistance = distance }
+  }
+  return best ?? candidate
+}
+
 export function snapConnectorEndpoint(
   point: Point,
   items: CanvasItem[],
@@ -245,7 +494,7 @@ export function snapConnectorEndpoint(
     for (let index = items.length - 1; index >= 0; index -= 1) {
       const item = items[index]
       if (item.kind !== 'rectangle' || itemAngle(item) !== 0 || point.x < item.x || point.x > item.x + item.width || point.y < item.y || point.y > item.y + item.height) continue
-      const candidate = nearestRectangleBoundaryPoint(item, point)
+      const candidate = snapToSideMidpoint(item, nearestRectangleBoundaryPoint(item, point))
       return { point: candidate, attachment: { rectangleId: item.id, offsetX: candidate.x - item.x, offsetY: candidate.y - item.y } }
     }
   }
@@ -253,9 +502,10 @@ export function snapConnectorEndpoint(
   let closestDistance = tolerance
   for (const item of items) {
     if (item.kind !== 'rectangle' || itemAngle(item) !== 0) continue
-    const candidate = nearestRectangleBoundaryPoint(item, point)
-    const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y)
+    const outline = nearestRectangleBoundaryPoint(item, point)
+    const distance = Math.hypot(point.x - outline.x, point.y - outline.y)
     if (distance <= closestDistance) {
+      const candidate = snapToSideMidpoint(item, outline)
       closestDistance = distance
       closest = {
         point: candidate,
@@ -334,7 +584,7 @@ export function canvasItemKey(item: CanvasItem): string {
 
 /** The keys of every item on the page (select all). */
 export function allCanvasItemKeys(items: readonly CanvasItem[]): string[] {
-  return items.filter((item) => item.kind !== 'opaque').map(canvasItemKey)
+  return items.filter((item) => item.kind !== 'opaque' && item.locked !== true).map(canvasItemKey)
 }
 
 /**
@@ -475,6 +725,11 @@ export function getCanvasSelectionBounds(items: CanvasItem[], selectedKeys: Read
         include(geometry.sideB.x, geometry.sideB.y, item.strokeWidth / 2)
         include(geometry.far.x, geometry.far.y, item.strokeWidth / 2)
       }
+      const second = getConnectorSecondSymbolGeometry(item)
+      if (second) {
+        include(second.sideA.x, second.sideA.y, item.strokeWidth / 2)
+        include(second.sideB.x, second.sideB.y, item.strokeWidth / 2)
+      }
     } else if (item.kind === 'text') {
       const box = rotatedItemBounds(item)
       include(box.x, box.y)
@@ -489,12 +744,9 @@ export function getCanvasSelectionBounds(items: CanvasItem[], selectedKeys: Read
       }
     } else if (!item.erase) {
       for (const point of item.points) include(point.x, point.y, item.width / 2)
-      if (item.shape === 'arrow' && item.points.length >= 2) {
-        const [start, end] = item.points
-        const angle = Math.atan2(end.y - start.y, end.x - start.x)
-        const headLength = Math.max(12, item.width * 3.5)
-        include(end.x - headLength * Math.cos(angle - Math.PI / 6), end.y - headLength * Math.sin(angle - Math.PI / 6), item.width / 2)
-        include(end.x - headLength * Math.cos(angle + Math.PI / 6), end.y - headLength * Math.sin(angle + Math.PI / 6), item.width / 2)
+      for (const head of strokeHeadGeometry(item)) {
+        include(head.wingA.x, head.wingA.y, item.width / 2)
+        include(head.wingB.x, head.wingB.y, item.width / 2)
       }
     }
   }
@@ -1027,4 +1279,197 @@ export function constrainInkBoxBounds(rectangle: RectangleObject, bounds: Rectan
   if (width < min.width) width = min.width
   if (height < min.height) height = min.height
   return coverInkBounds({ x, y, width, height }, box)
+}
+
+// ---- Desktop: line style of a selection (width, dash, arrowheads) and layer order ----
+
+/** Widest outline the panel offers (same number as MAX_STROKE_WIDTH in app/appConfig.ts). */
+const MAX_OUTLINE_WIDTH = 24
+
+/** A plain or HLD shape: not a class box and not an ink class box (a rectangle with ink but no HLD shape). */
+function isStyleableBox(item: RectangleObject): boolean {
+  return !item.classBox && (!item.inkBox || item.hldShape !== undefined)
+}
+
+/** True when the item has an outline width the panel may change: pen/shape strokes (not eraser), plain and HLD shapes, connectors. */
+export function hasOutlineWidth(item: CanvasItem): boolean {
+  if (item.kind === 'stroke') return !item.erase
+  if (item.kind === 'rectangle') return isStyleableBox(item)
+  return item.kind === 'connector'
+}
+
+/** True when the item can carry a dash: arrow/line strokes, plain and HLD shapes, connectors. */
+export function hasLineDash(item: CanvasItem): boolean {
+  if (item.kind === 'stroke') return !item.erase && (item.shape === 'arrow' || item.shape === 'line')
+  if (item.kind === 'rectangle') return isStyleableBox(item)
+  return item.kind === 'connector'
+}
+
+const outlineWidthOf = (item: CanvasItem): number => (item.kind === 'stroke' ? item.width : item.kind === 'rectangle' || item.kind === 'connector' ? item.strokeWidth : 0)
+
+/** The width shared by every selected item that has one, or null when they differ or none has one. */
+export function selectionStrokeWidth(items: readonly CanvasItem[], keys: ReadonlySet<string>): number | null {
+  let found: number | null = null
+  for (const item of items) {
+    if (!keys.has(canvasItemKey(item)) || !hasOutlineWidth(item)) continue
+    const width = outlineWidthOf(item)
+    if (found === null) found = width
+    else if (found !== width) return null
+  }
+  return found
+}
+
+/** True when the selection holds at least one item whose width can change. */
+export function selectionHasOutlineWidth(items: readonly CanvasItem[], keys: ReadonlySet<string>): boolean {
+  return items.some((item) => keys.has(canvasItemKey(item)) && hasOutlineWidth(item))
+}
+
+/**
+ * Items with the outline width of the selected strokes, plain/HLD shapes and connectors set to `width` (1 to 24).
+ * Text, code, class boxes and unknown items are left alone. Returns the same array when nothing changes.
+ */
+export function restrokeItems(items: CanvasItem[], keys: ReadonlySet<string>, width: number): CanvasItem[] {
+  if (keys.size === 0 || !Number.isFinite(width)) return items
+  const next = Math.min(MAX_OUTLINE_WIDTH, Math.max(1, Math.round(width)))
+  let changed = false
+  const result = items.map((item): CanvasItem => {
+    if (!keys.has(canvasItemKey(item)) || !hasOutlineWidth(item) || outlineWidthOf(item) === next) return item
+    changed = true
+    return item.kind === 'stroke' ? { ...item, width: next } : { ...(item as RectangleObject | ConnectorObject), strokeWidth: next }
+  })
+  return changed ? result : items
+}
+
+/** The line style the selection shares ('solid' when none is set), or null when it is mixed or nothing in it can be dashed. A connector with the dash of its relationship type counts as dashed. */
+export function selectionDash(items: readonly CanvasItem[], keys: ReadonlySet<string>): LineDash | 'solid' | null {
+  let found: LineDash | 'solid' | null | undefined
+  for (const item of items) {
+    if (!keys.has(canvasItemKey(item)) || !hasLineDash(item)) continue
+    const dash: LineDash | 'solid' = item.kind === 'connector'
+      ? (item.dash ?? (getConnectorRenderSpec(item).lineStyle === 'dashed' ? 'dashed' : 'solid'))
+      : (item as Stroke | RectangleObject).dash ?? 'solid'
+    if (found === undefined) found = dash
+    else if (found !== dash) return null
+  }
+  return found ?? null
+}
+
+/** Sets the line style (null = solid) of the selected arrow/line strokes, plain/HLD shapes and connectors. Same array when nothing changes. */
+export function setLineDash(items: CanvasItem[], keys: ReadonlySet<string>, dash: LineDash | null): CanvasItem[] {
+  if (keys.size === 0) return items
+  let changed = false
+  const result = items.map((item): CanvasItem => {
+    if (!keys.has(canvasItemKey(item)) || !hasLineDash(item)) return item
+    if (item.kind === 'connector') {
+      // A connector whose relationship type is dashed keeps drawing dashed when its own dash is removed, so Solid is stored as an override there.
+      const wanted: LineDash | 'solid' | undefined = dash ?? (getConnectorRenderSpec(item).lineStyle === 'dashed' ? 'solid' : undefined)
+      if (item.dash === wanted) return item
+      changed = true
+      const { dash: _old, ...rest } = item as ConnectorObject
+      return wanted ? { ...rest, dash: wanted } : rest
+    }
+    const current = (item as Stroke | RectangleObject).dash
+    if (current === (dash ?? undefined)) return item
+    changed = true
+    const { dash: _old, ...rest } = item as Stroke | RectangleObject
+    return (dash ? { ...rest, dash } : rest) as CanvasItem
+  })
+  return changed ? result : items
+}
+
+/** True for a selected arrow/line stroke (the only items that have arrowheads to choose). */
+export function selectionHasArrowheads(items: readonly CanvasItem[], keys: ReadonlySet<string>): boolean {
+  return items.some((item) => item.kind === 'stroke' && !item.erase && keys.has(canvasItemKey(item)) && (item.shape === 'arrow' || item.shape === 'line'))
+}
+
+/** The arrowheads the selected arrow/line strokes share, or null when they differ or there are none. */
+export function selectionArrowheads(items: readonly CanvasItem[], keys: ReadonlySet<string>): Arrowheads | null {
+  let found: Arrowheads | null = null
+  for (const item of items) {
+    if (item.kind !== 'stroke' || item.erase || !keys.has(canvasItemKey(item)) || (item.shape !== 'arrow' && item.shape !== 'line')) continue
+    const heads = strokeArrowheads(item)
+    if (found === null) found = heads
+    else if (found !== heads) return null
+  }
+  return found
+}
+
+/** Sets the arrowheads of the selected arrow/line strokes. A choice equal to the shape's default is stored as "missing", so old files and defaults stay identical. */
+export function setArrowheads(items: CanvasItem[], keys: ReadonlySet<string>, heads: Arrowheads): CanvasItem[] {
+  if (keys.size === 0) return items
+  let changed = false
+  const result = items.map((item): CanvasItem => {
+    if (item.kind !== 'stroke' || item.erase || !keys.has(canvasItemKey(item)) || (item.shape !== 'arrow' && item.shape !== 'line')) return item
+    if (strokeArrowheads(item) === heads) return item
+    changed = true
+    const { arrowheads: _old, ...rest } = item
+    const isDefault = heads === (item.shape === 'arrow' ? 'end' : 'none')
+    return isDefault ? rest : { ...rest, arrowheads: heads }
+  })
+  return changed ? result : items
+}
+
+export type LayerMove = 'forward' | 'backward' | 'front' | 'back'
+
+/**
+ * Paint order is array order, so layer order is the order of the array. Moves the items whose keys are given
+ * one step toward the front (forward: each passes the next item that is not selected), one step toward the back,
+ * or all the way to the front/back. The selected items keep their order among themselves. Opaque items never move.
+ * An eraser stroke whose bounds overlap a moving item is a barrier: the item never passes it (it would change what the eraser cut).
+ * A box moves together with the connectors attached to it, which stay right after it. Returns the same array when nothing changes.
+ */
+export function reorderItems(items: CanvasItem[], keys: ReadonlySet<string>, move: LayerMove): CanvasItem[] {
+  if (keys.size === 0) return items
+  const selectedBoxIds = new Set<number>()
+  for (const item of items) if (item.kind === 'rectangle' && keys.has(canvasItemKey(item))) selectedBoxIds.add(item.id)
+  const attachedTo = (item: CanvasItem): number[] => item.kind === 'connector'
+    ? [item.startAttachment?.rectangleId, item.endAttachment?.rectangleId].filter((id): id is number => id !== undefined && selectedBoxIds.has(id))
+    : []
+  const moving = (item: CanvasItem) => item.kind !== 'opaque' && (keys.has(canvasItemKey(item)) || attachedTo(item).length > 0)
+  const boundsCache = new Map<CanvasItem, RectangleBounds | null>()
+  const boundsOf = (item: CanvasItem) => {
+    if (!boundsCache.has(item)) boundsCache.set(item, paintBounds(item))
+    return boundsCache.get(item) ?? null
+  }
+  const blocks = (mover: CanvasItem, other: CanvasItem): boolean => {
+    if (other.kind !== 'stroke' || !other.erase || mover.kind === 'connector') return false
+    const a = boundsOf(mover)
+    const b = boundsOf(other)
+    return a !== null && b !== null && boundsOverlap(a, b)
+  }
+  const result = items.slice()
+  const whole = move === 'front' || move === 'back'
+  // Slides one item toward the front (+1) or back (-1): one step, or as far as it can go.
+  const slide = (from: number, direction: 1 | -1) => {
+    let index = from
+    for (;;) {
+      const next = index + direction
+      if (next < 0 || next >= result.length) return
+      const other = result[next]
+      if (moving(other) || (!whole && other.kind === 'opaque') || blocks(result[index], other)) return
+      ;[result[index], result[next]] = [result[next], result[index]]
+      index = next
+      if (!whole) return
+    }
+  }
+  if (move === 'forward' || move === 'front') {
+    for (let index = result.length - 1; index >= 0; index -= 1) if (moving(result[index])) slide(index, 1)
+  } else {
+    for (let index = 0; index < result.length; index += 1) if (moving(result[index])) slide(index, -1)
+  }
+  if (selectedBoxIds.size > 0) {
+    // Keep each attached connector right after the box it belongs to (after the later box when it joins two moving boxes).
+    const connectors = result.filter((item) => attachedTo(item).length > 0)
+    const pulled = new Set<CanvasItem>(connectors)
+    const rest = result.filter((item) => !pulled.has(item))
+    const anchorIndex = (connector: CanvasItem) => Math.max(...attachedTo(connector).map((id) => rest.findIndex((item) => item.kind === 'rectangle' && item.id === id)))
+    const after = new Map<number, CanvasItem[]>()
+    for (const connector of connectors) {
+      const at = anchorIndex(connector)
+      after.set(at, [...(after.get(at) ?? []), connector])
+    }
+    result.length = 0
+    rest.forEach((item, index) => { result.push(item, ...(after.get(index) ?? [])) })
+  }
+  return result.every((item, index) => item === items[index]) ? items : result
 }

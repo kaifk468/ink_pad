@@ -206,7 +206,7 @@ export function compactAfterErase(items: CanvasItem[], nextId: () => number): Ca
       next.push(item)
       continue
     }
-    if (item.kind !== 'stroke' || item.shape || !boundsOverlap(strokeBounds(item), bounds)) {
+    if (item.kind !== 'stroke' || item.shape || item.locked || !boundsOverlap(strokeBounds(item), bounds)) {
       next.push(item)
       continue
     }

@@ -240,7 +240,7 @@ test('wiring: a Tidy button next to Undo/Redo that is one undo step and does not
   assert.match(more, /aria-label="More"/)
   assert.match(more, /onTidy\(\)/)
   const dock = await readFile(new URL('../src/app/ToolDock.tsx', import.meta.url), 'utf8')
-  assert.match(dock, /<InsertTray[\s\S]*?\/>\s*<MoreTray tidyLabel=\{props\.tidyLabel\} onTidy=\{props\.onTidy\} \/>/, 'More sits right after Insert')
+  assert.match(dock, /<InsertTray[\s\S]*?\/>\s*<MoreTray tidyLabel=\{props\.tidyLabel\} onTidy=\{props\.onTidy\}[^>]*\/>/, 'More sits right after Insert')
   const history = await readFile(new URL('../src/app/HistoryBar.tsx', import.meta.url), 'utf8')
   assert.doesNotMatch(history, /Tidy/, 'Tidy is no longer beside Undo/Redo')
 })
@@ -266,4 +266,23 @@ test('Tidy makes the connectors between the arranged boxes Elbow, and only those
   assert.equal(tidyAgain.find((i) => i.kind === 'connector').routing, 'elbow')
   // After that, Tidy changes nothing.
   assert.equal(tidy.tidyItems(tidyAgain, null), tidyAgain)
+})
+
+test('round 10 review: Tidy keeps curved connectors curved (routing and bend) and gives converted ones no stale bend', () => {
+  const a = box(1, 0, 0)
+  const b = box(2, 10, 10)
+  const curved = { ...link(5, a, b), routing: 'curved', bend: 40 }
+  const straightWithBend = { ...link(6, a, b), bend: 25, routedPath: [p(0, 0), p(5, 5)] }
+  const out = tidy.tidyItems([a, b, curved, straightWithBend], null)
+  const c = out.find((i) => i.id === 5 && i.kind === 'connector')
+  assert.equal(c.routing, 'curved')
+  // (a bend is only dropped by reattachConnectorSides when the connector moves to other box sides)
+  const s = out.find((i) => i.id === 6 && i.kind === 'connector')
+  assert.equal(s.routing, 'elbow')
+  assert.equal(s.bend, undefined)
+  assert.equal(s.routedPath, undefined)
+  // Only curved connectors: nothing is converted.
+  const placed = tidy.tidyItems([a, b], null)
+  const onlyCurved = [...placed, { ...link(9, placed.find((i) => i.id === 1), placed.find((i) => i.id === 2)), routing: 'curved' }]
+  assert.equal(tidy.tidyItems(onlyCurved, null).find((i) => i.kind === 'connector').routing, 'curved')
 })

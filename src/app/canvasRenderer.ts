@@ -1,15 +1,22 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, itemAngle, rotatedItemBounds } from '../canvasModel'
+import { canvasItemKey, rectangleSideMidpoints, connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, strokeHeadGeometry, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, itemAngle, rotatedItemBounds } from '../canvasModel'
 import { hldOutlinePath } from '../hldShapes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextFontId, TextObject } from '../canvasModel'
 import { filterDisplayPoints } from '../oneEuroFilter'
 import { buildInterpolatingCurve, buildMidpointCurve, type InterpolatingStrokeSegment } from '../strokeCurves'
 import type { StrokeDisplayMode } from '../strokeDisplayMode'
 import { classBoxFont, getClassBoxGeometry, type ClassBoxCompartment, type FontMeasure } from '../classBoxLayout'
-import { getCachedTextMeasure, getTextBaselines, labelLines, textFont, type TextMeasure } from '../textLayout'
+import { connectorLabelFontSize, connectorLabelLayout } from '../connectorLabel'
+import { isPlainRectangle, roundedCornerRadius } from '../roundedCorners'
+import { connectorEndLabelFontSize, connectorEndLabelLayouts } from '../connectorEndLabels'
+import { DEFAULT_TEXT_FONT, textLineX, getCachedTextMeasure, getTextBaselines, labelLines, textFont, type TextMeasure } from '../textLayout'
 import type { MinimapGeometry } from '../viewport'
 import { isSketchyRectangle } from '../sketchy'
 import { drawSketchyConnector, fillRectangle, strokeSketchyRectangle, strokeSketchyStroke } from './sketchyRender'
 import { drawCode, drawOpaque } from './codeRenderer'
+import { drawLogo } from './logoRender'
+import { FOCUS_FADE_ALPHA } from '../focusMode'
+import { getBoardFill, resolveItemForBoard } from '../boardColors'
+import type { BoardPalette } from '../boardStyle'
 
 /** Canvas drawing for every item kind. Pure functions of (context, item, settings): no React state. */
 
@@ -126,32 +133,32 @@ export function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, stroke
   ctx.fillStyle = stroke.color
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
+  ctx.setLineDash(dashPattern(stroke.dash, stroke.width))
   if (sketchy && (stroke.shape === 'arrow' || stroke.shape === 'line') && points.length >= 2 && strokeSketchyStroke(ctx, stroke)) {
     ctx.restore()
     return
   }
-  if (stroke.shape === 'arrow' && points.length >= 2) {
-    const [start, end] = points
-    const angle = Math.atan2(end.y - start.y, end.x - start.x)
-    const headLength = Math.max(12, stroke.width * 3.5)
+  if ((stroke.shape === 'arrow' || stroke.shape === 'line') && points.length >= 2) {
     ctx.lineWidth = stroke.width
-    ctx.beginPath()
-    ctx.moveTo(start.x, start.y)
-    ctx.lineTo(end.x, end.y)
-    ctx.moveTo(end.x, end.y)
-    ctx.lineTo(end.x - headLength * Math.cos(angle - Math.PI / 6), end.y - headLength * Math.sin(angle - Math.PI / 6))
-    ctx.moveTo(end.x, end.y)
-    ctx.lineTo(end.x - headLength * Math.cos(angle + Math.PI / 6), end.y - headLength * Math.sin(angle + Math.PI / 6))
-    ctx.stroke()
-    ctx.restore()
-    return
-  }
-  if (stroke.shape === 'line' && points.length >= 2) {
-    ctx.lineWidth = stroke.width
+    ctx.setLineDash(dashPattern(stroke.dash, stroke.width))
     ctx.beginPath()
     ctx.moveTo(points[0].x, points[0].y)
-    ctx.lineTo(points[1].x, points[1].y)
+    // A bent arrow (3+ points) is a polyline; lines and two-point arrows draw their first two points.
+    for (const point of stroke.shape === 'arrow' ? points.slice(1) : [points[1]]) ctx.lineTo(point.x, point.y)
     ctx.stroke()
+    // Arrowheads are always solid, whatever the dash of the shaft.
+    const heads = strokeHeadGeometry({ ...stroke, points })
+    if (heads.length) {
+      ctx.setLineDash([])
+      ctx.beginPath()
+      for (const head of heads) {
+        ctx.moveTo(head.tip.x, head.tip.y)
+        ctx.lineTo(head.wingA.x, head.wingA.y)
+        ctx.moveTo(head.tip.x, head.tip.y)
+        ctx.lineTo(head.wingB.x, head.wingB.y)
+      }
+      ctx.stroke()
+    }
     ctx.restore()
     return
   }
@@ -202,7 +209,7 @@ function drawClassBox(ctx: CanvasRenderingContext2D, rectangle: RectangleObject)
   if (!content) return
   const geometry = getClassBoxGeometry(rectangle, content)
   ctx.save()
-  ctx.fillStyle = '#ffffff'
+  ctx.fillStyle = getBoardFill()
   ctx.fillRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height)
   ctx.save()
   ctx.beginPath()
@@ -284,6 +291,7 @@ export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
   ctx.lineWidth = rectangle.strokeWidth
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
+  ctx.setLineDash(dashPattern(rectangle.dash, rectangle.strokeWidth))
   const angle = itemAngle(rectangle)
   if (angle !== 0) {
     const cx = rectangle.x + rectangle.width / 2
@@ -314,7 +322,12 @@ export function drawRectangle(ctx: CanvasRenderingContext2D, rectangle: Rectangl
     ctx.beginPath()
     ctx.ellipse(rectangle.x + rectangle.width / 2, rectangle.y + rectangle.height / 2, rectangle.width / 2, rectangle.height / 2, 0, 0, Math.PI * 2)
     ctx.stroke()
+  } else if (rectangle.rounded && isPlainRectangle(rectangle)) {
+    ctx.beginPath()
+    ctx.roundRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, roundedCornerRadius(rectangle.width, rectangle.height))
+    ctx.stroke()
   } else ctx.strokeRect(rectangle.x, rectangle.y, rectangle.width, rectangle.height)
+  if (rectangle.logo !== undefined) drawLogo(ctx, rectangle)
   ctx.restore()
 }
 
@@ -324,6 +337,20 @@ function tracePath(ctx: CanvasRenderingContext2D, path: Point[], atStart: boolea
   ctx.beginPath()
   ctx.moveTo(points[0].x, points[0].y)
   for (let index = 1; index < points.length; index += 1) ctx.lineTo(points[index].x, points[index].y)
+}
+
+/** Desktop selection halo: a soft band along the plain connector path only (no arrowhead, which the thick selection stroke used to scale up). */
+export function drawConnectorHalo(ctx: CanvasRenderingContext2D, connector: ConnectorObject, color: string, width: number): void {
+  ctx.save()
+  ctx.globalAlpha = 0.4
+  ctx.strokeStyle = color
+  ctx.lineWidth = width
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.setLineDash([])
+  tracePath(ctx, connectorPoints(connector), false)
+  ctx.stroke()
+  ctx.restore()
 }
 
 export function drawConnector(ctx: CanvasRenderingContext2D, connector: ConnectorObject, color = connector.strokeColor, width = connector.strokeWidth, sketchy = false): void {
@@ -338,7 +365,7 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
   ctx.lineWidth = width
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  ctx.setLineDash(spec.lineStyle === 'dashed' ? [Math.max(6, width * 2.5), Math.max(4, width * 1.8)] : [])
+  ctx.setLineDash(connectorDashPattern(connector, width))
 
   if (sketchy) {
     drawSketchyConnector(ctx, connector, color, width)
@@ -351,7 +378,7 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
     ctx.lineTo(geometry.sideA.x, geometry.sideA.y)
     ctx.lineTo(geometry.sideB.x, geometry.sideB.y)
     ctx.closePath()
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = getBoardFill()
     ctx.fill()
     ctx.stroke()
   } else if (spec.symbol === 'open-arrow' && geometry && tip) {
@@ -363,6 +390,14 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
     ctx.lineTo(tip.x, tip.y)
     ctx.lineTo(geometry.sideB.x, geometry.sideB.y)
     ctx.stroke()
+    const second = getConnectorSecondSymbolGeometry(connector, width)
+    if (second) {
+      ctx.beginPath()
+      ctx.moveTo(second.sideA.x, second.sideA.y)
+      ctx.lineTo(second.tip.x, second.tip.y)
+      ctx.lineTo(second.sideB.x, second.sideB.y)
+      ctx.stroke()
+    }
   } else if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip) {
     tracePath(ctx, path, atStart, geometry.far)
     ctx.stroke()
@@ -373,7 +408,7 @@ export function drawConnector(ctx: CanvasRenderingContext2D, connector: Connecto
     ctx.lineTo(geometry.far.x, geometry.far.y)
     ctx.lineTo(geometry.sideB.x, geometry.sideB.y)
     ctx.closePath()
-    ctx.fillStyle = spec.symbol === 'filled-diamond' ? color : '#ffffff'
+    ctx.fillStyle = spec.symbol === 'filled-diamond' ? color : getBoardFill()
     ctx.fill()
     ctx.stroke()
   } else {
@@ -404,32 +439,83 @@ export function drawText(ctx: CanvasRenderingContext2D, text: TextObject): void 
   ctx.textBaseline = 'alphabetic'
   const lines = labelLines(text)
   const baselines = getTextBaselines(lines.join('\n'), text.fontSize)
-  lines.forEach((line, index) => ctx.fillText(line, text.x, text.y + baselines[index]))
+  const measureLine = text.align ? getCachedTextMeasure(text.fontSize, text.fontFamily) : undefined
+  lines.forEach((line, index) => ctx.fillText(line, text.align ? textLineX(text, (measureLine ?? ((value: string) => ctx.measureText(value).width))(line)) : text.x, text.y + baselines[index]))
   ctx.restore()
 }
 
-export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, strokeDisplayMode: StrokeDisplayMode, sketchy = false): void {
+let connectorLabelBackground = '#ffffff'
+/** The sheet colour that the pad behind a connector label is filled with (set by the app when the page background changes). */
+export function setConnectorLabelBackground(color: string): void { connectorLabelBackground = color }
+
+/** A connector's label: text centred on the middle of the drawn path over a pad that hides the line. Same for plain and sketchy. */
+export function drawConnectorLabel(ctx: CanvasRenderingContext2D, connector: ConnectorObject): void {
+  if (!connector.label) return
+  const layout = connectorLabelLayout(connector, createTextMeasure(connectorLabelFontSize(connector), DEFAULT_TEXT_FONT))
+  if (!layout) return
+  ctx.save()
+  ctx.fillStyle = connectorLabelBackground
+  ctx.fillRect(layout.box.x, layout.box.y, layout.box.width, layout.box.height)
+  ctx.font = textFont(layout.fontSize, DEFAULT_TEXT_FONT)
+  ctx.fillStyle = connector.strokeColor
+  ctx.textBaseline = 'alphabetic'
+  layout.lines.forEach((line, index) => ctx.fillText(line, layout.lineX[index], layout.baselines[index]))
+  ctx.restore()
+}
+
+/** A connector's start / end labels (multiplicity): small text beside each end of the line, in the connector's colour. Same for plain and sketchy. */
+export function drawConnectorEndLabels(ctx: CanvasRenderingContext2D, connector: ConnectorObject): void {
+  if (!connector.startLabel && !connector.endLabel) return
+  const layouts = connectorEndLabelLayouts(connector, createTextMeasure(connectorEndLabelFontSize(connector), DEFAULT_TEXT_FONT))
+  if (layouts.length === 0) return
+  ctx.save()
+  ctx.fillStyle = connector.strokeColor
+  ctx.textBaseline = 'alphabetic'
+  for (const layout of layouts) {
+    ctx.font = textFont(layout.fontSize, DEFAULT_TEXT_FONT)
+    ctx.fillText(layout.text, layout.x, layout.baseline)
+  }
+  ctx.restore()
+}
+
+/**
+ * Draws one item. `focusFaded` is the focus-mode set of keys to draw faded (null when focus is off, the normal case: nothing extra happens).
+ * Ink added after focus started is not in it, so a live or new stroke is never faded.
+ */
+export function drawItem(ctx: CanvasRenderingContext2D, item: CanvasItem, strokeDisplayMode: StrokeDisplayMode, sketchy = false, focusFaded: ReadonlySet<string> | null = null): void {
+  if (focusFaded !== null && focusFaded.has(canvasItemKey(item))) {
+    ctx.save()
+    ctx.globalAlpha *= FOCUS_FADE_ALPHA
+    drawItem(ctx, item, strokeDisplayMode, sketchy)
+    ctx.restore()
+    return
+  }
   if (item.kind === 'rectangle') drawRectangle(ctx, item, strokeDisplayMode, sketchy)
   else if (item.kind === 'text') drawText(ctx, item)
-  else if (item.kind === 'connector') drawConnector(ctx, item, item.strokeColor, item.strokeWidth, sketchy)
+  else if (item.kind === 'connector') { drawConnector(ctx, item, item.strokeColor, item.strokeWidth, sketchy); drawConnectorLabel(ctx, item); drawConnectorEndLabels(ctx, item) }
   else if (item.kind === 'code') drawCode(ctx, item)
   else if (item.kind === 'opaque') drawOpaque(ctx, item)
   else drawStroke(ctx, item, strokeDisplayMode, sketchy)
 }
 
-export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasItem[], geometry: MinimapGeometry): void {
+/** `focusFaded` (focus mode, null = off and nothing extra happens) lists the keys drawn faded, as the canvas does. */
+export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasItem[], geometry: MinimapGeometry, focusFaded: ReadonlySet<string> | null = null, palette?: BoardPalette): void {
   const toMiniX = (x: number) => x * geometry.scale + geometry.offsetX
   const toMiniY = (y: number) => y * geometry.scale + geometry.offsetY
   ctx.save()
-  for (const item of items) {
+  for (const original of items) {
+    // Dark boards: the default ink draws as the board's ink (cached copy; the light board returns the item itself).
+    const item = palette ? resolveItemForBoard(original, palette, items) : original
+    const fade = focusFaded !== null && focusFaded.has(canvasItemKey(item))
+    if (fade) ctx.globalAlpha = FOCUS_FADE_ALPHA
     if (item.kind === 'text') {
       // Text is unreadable at minimap size: show where it sits as a faint block.
       ctx.globalCompositeOperation = 'source-over'
-      ctx.globalAlpha = 0.4
+      ctx.globalAlpha = fade ? FOCUS_FADE_ALPHA * 0.4 : 0.4
       ctx.fillStyle = item.color
       const box = rotatedItemBounds(item)
       ctx.fillRect(toMiniX(box.x), toMiniY(box.y), Math.max(1, box.width * geometry.scale), Math.max(1, box.height * geometry.scale))
-      ctx.globalAlpha = 1
+      ctx.globalAlpha = fade ? FOCUS_FADE_ALPHA : 1
     } else if (item.kind === 'code' || item.kind === 'opaque') {
       // A simple box: the block's own background (grey for an unknown item).
       const box = item.kind === 'code' ? item : item.box
@@ -481,6 +567,19 @@ export function drawMinimapItems(ctx: CanvasRenderingContext2D, items: CanvasIte
         ctx.fill()
       } else ctx.stroke()
     }
+    if (fade) ctx.globalAlpha = 1
+  }
+  ctx.restore()
+}
+
+/** Transient overlay: the four side midpoints of the box a connector end would snap to, as small constant-screen-size dots. Never an item. */
+export function drawSideMidpointDots(ctx: CanvasRenderingContext2D, box: Pick<RectangleObject, 'x' | 'y' | 'width' | 'height'>, scale: number): void {
+  ctx.save()
+  ctx.fillStyle = '#5269df'
+  for (const { point } of rectangleSideMidpoints(box)) {
+    ctx.beginPath()
+    ctx.arc(point.x, point.y, 3.5 / scale, 0, Math.PI * 2)
+    ctx.fill()
   }
   ctx.restore()
 }

@@ -7,9 +7,12 @@
  * per-device preference, like the navigation settings.
  */
 
-import { canvasItemKey, getCanvasSelectionBounds, toItemFrame, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
+import { canvasItemKey, getCanvasSelectionBounds, isItemLocked, toItemFrame, type CanvasItem, type Point, type RectangleBounds, type RectangleObject } from './canvasModel'
+import { isContainerBox } from './boundary'
 import { hitInkBoxDivider, hitInkBoxMoveGrip } from './inkClassBox'
 import { itemHitTest } from './lassoSelection'
+import { connectorLabelFontSize, pointOnConnectorLabel } from './connectorLabel'
+import { DEFAULT_TEXT_FONT, getCachedTextMeasure } from './textLayout'
 import { MAX_ZOOM, MIN_ZOOM, panViewport, zoomViewportAt, type Viewport } from './viewport'
 
 export type InputMode = 'tablet' | 'desktop'
@@ -18,19 +21,116 @@ export const DEFAULT_INPUT_MODE: InputMode = 'tablet'
 
 const INPUT_MODE_KEY = 'inkpad.inputMode'
 
-export function loadInputMode(storage?: Pick<Storage, 'getItem'>): InputMode {
+/** What the device looks like, for the first-visit default (no stored choice yet). */
+export interface InputDeviceHints {
+  maxTouchPoints: number
+  finePointer: boolean
+  canHover: boolean
+}
+
+function readDeviceHints(): InputDeviceHints | null {
+  try {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return null
+    return {
+      maxTouchPoints: typeof navigator !== 'undefined' ? navigator.maxTouchPoints ?? 0 : 0,
+      finePointer: window.matchMedia('(pointer: fine)').matches,
+      canHover: window.matchMedia('(hover: hover)').matches,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * First-visit default: a mouse-only computer (no touch points, fine pointer, hover) starts in Desktop mode.
+ * Anything with touch (tablets, phones, touch laptops) keeps the Tablet default, so pen devices are unchanged.
+ */
+export function defaultInputModeFor(hints: InputDeviceHints | null): InputMode {
+  if (!hints) return DEFAULT_INPUT_MODE
+  return hints.maxTouchPoints === 0 && hints.finePointer && hints.canHover ? 'desktop' : DEFAULT_INPUT_MODE
+}
+
+/**
+ * True only on a genuine first visit: the storage holds no 'inkpad.*' key at all. Every first-party localStorage key
+ * (current document ids, drive profile, safety copy, settings) starts with 'inkpad.'. Diagrams themselves live in IndexedDB
+ * (databases 'inkpad' and 'inkpad-recovery'), but a user who has saved a diagram always has 'inkpad.currentDocument*' in
+ * localStorage too, so the localStorage scan is enough. A storage that cannot be enumerated counts as "not first visit" (Tablet).
+ */
+function isFirstVisit(storage: Partial<Storage>): boolean {
+  if (typeof storage.length !== 'number' || typeof storage.key !== 'function') return false
+  for (let i = 0; i < storage.length; i += 1) {
+    const key = storage.key(i)
+    if (key !== null && key.startsWith('inkpad.')) return false
+  }
+  return true
+}
+
+/**
+ * The stored choice wins. With none, the device-based default applies only on a true first visit (existing users who never
+ * touched the switch keep Tablet). A first-visit Desktop decision is saved so it stays stable on the next visit.
+ */
+export function loadInputMode(storage?: Pick<Storage, 'getItem'> & Partial<Pick<Storage, 'length' | 'key' | 'setItem'>>, hints?: InputDeviceHints | null): InputMode {
   try {
     const source = storage ?? window.localStorage
-    return source.getItem(INPUT_MODE_KEY) === 'desktop' ? 'desktop' : DEFAULT_INPUT_MODE
+    const stored = source.getItem(INPUT_MODE_KEY)
+    if (stored === 'desktop' || stored === 'tablet') return stored
+    if (!isFirstVisit(source)) return DEFAULT_INPUT_MODE
+    const mode = defaultInputModeFor(hints === undefined ? readDeviceHints() : hints)
+    if (mode === 'desktop' && source.setItem) saveInputMode(mode, { setItem: source.setItem.bind(source) })
+    return mode
   } catch {
     return DEFAULT_INPUT_MODE
   }
+}
+
+/** Desktop sessions start on the Select tool; Tablet keeps the Pen start. */
+export function initialSelectionMode(mode: InputMode): boolean {
+  return mode === 'desktop'
 }
 
 export function saveInputMode(mode: InputMode, storage?: Pick<Storage, 'setItem'>): void {
   try {
     const target = storage ?? window.localStorage
     target.setItem(INPUT_MODE_KEY, mode)
+  } catch {
+    /* storage unavailable: the choice lasts for this session only */
+  }
+}
+
+const LINE_DASH_KEY = 'inkpad.lineDash'
+
+/** The line style new shapes, lines and arrows get from the Desktop shape tools ('solid' when never chosen). */
+export function loadLineDashDefault(storage?: Pick<Storage, 'getItem'>): 'solid' | 'dashed' | 'dotted' {
+  try {
+    const value = (storage ?? window.localStorage).getItem(LINE_DASH_KEY)
+    return value === 'dashed' || value === 'dotted' ? value : 'solid'
+  } catch {
+    return 'solid'
+  }
+}
+
+export const TOOL_LOCK_KEY = 'inkpad.toolLock'
+
+/** Tool lock: keep the shape/arrow/line tool after drawing one (off by default; remembered on this device). */
+export function loadToolLock(storage?: Pick<Storage, 'getItem'>): boolean {
+  try {
+    return (storage ?? window.localStorage).getItem(TOOL_LOCK_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function saveToolLock(value: boolean, storage?: Pick<Storage, 'setItem'>): void {
+  try {
+    (storage ?? window.localStorage).setItem(TOOL_LOCK_KEY, value ? '1' : '0')
+  } catch {
+    /* storage unavailable: the choice lasts for this session only */
+  }
+}
+
+export function saveLineDashDefault(value: 'solid' | 'dashed' | 'dotted', storage?: Pick<Storage, 'setItem'>): void {
+  try {
+    (storage ?? window.localStorage).setItem(LINE_DASH_KEY, value)
   } catch {
     /* storage unavailable: the choice lasts for this session only */
   }
@@ -134,19 +234,35 @@ export function spaceIsPanKey(key: string, targetTag: string, isEditable: boolea
 /**
  * Step 4: keyboard shortcuts (Desktop mode only).
  * - Ctrl/Cmd + Z undoes; Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y redoes.
- * - Ctrl/Cmd + "+" / "-" / 0 zoom in, zoom out and reset the view.
+ * - Ctrl/Cmd + "+" / "-" / 0 zoom in, zoom out and go to 100%; Shift+1 fits the drawing, Shift+2 the selection; PageUp/PageDown change page; "?" opens the shortcut help.
  * - Escape deselects (it never cancels a stroke or closes anything).
  * - Delete or Backspace deletes the selection; Ctrl/Cmd + A selects everything on the page (step 5).
  * - A plain letter picks a tool, and picking the tool already active leaves it active ("set", not "toggle"):
  *   P pen, V select, E eraser, T text, L lasso, C connector, B class box, and the shapes R rectangle, D diamond, O ellipse, A arrow, I line.
  */
-export type KeyTool = 'pen' | 'select' | 'eraser' | 'text' | 'code' | 'lasso' | 'connector' | 'classBox' | 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line'
+export type KeyTool = 'pen' | 'select' | 'eraser' | 'text' | 'code' | 'sticky' | 'lasso' | 'connector' | 'classBox' | 'rectangle' | 'diamond' | 'ellipse' | 'arrow' | 'line' | 'laser'
 export type KeyCommand =
   | { kind: 'undo' }
   | { kind: 'redo' }
+  | { kind: 'library' }
+  | { kind: 'saveNow' }
+  /** Ctrl+S held down: only keeps the browser's Save page dialog away, never saves again. */
+  | { kind: 'saveNowRepeat' }
+  | { kind: 'palette' }
+  | { kind: 'find' }
+  | { kind: 'findReplace' }
   | { kind: 'zoomIn' }
   | { kind: 'zoomOut' }
   | { kind: 'zoomReset' }
+  | { kind: 'zoomFit' }
+  | { kind: 'zoomSelection' }
+  | { kind: 'focus' }
+  | { kind: 'flip'; axis: 'horizontal' | 'vertical' }
+  | { kind: 'pagePrev' }
+  | { kind: 'pageNext' }
+  | { kind: 'help' }
+  | { kind: 'presentMode' }
+  | { kind: 'gridSnap' }
   | { kind: 'deselect' }
   | { kind: 'deleteSelection' }
   | { kind: 'selectAll' }
@@ -155,26 +271,86 @@ export type KeyCommand =
   | { kind: 'cut' }
   | { kind: 'paste' }
   | { kind: 'duplicate' }
+  | { kind: 'copyPng' }
+  | { kind: 'copyStyle' }
+  | { kind: 'pasteStyle' }
+  | { kind: 'lock' }
+  | { kind: 'group' }
+  | { kind: 'ungroup' }
   | { kind: 'edit' }
+  | { kind: 'quickCreate'; direction: 'right' | 'left' | 'up' | 'down' }
+  | { kind: 'layer'; move: 'forward' | 'backward' | 'front' | 'back' }
+  | { kind: 'toolLock' }
+  | { kind: 'walk'; step: 1 | -1 }
+  | { kind: 'walkLinked'; direction: 'right' | 'left' | 'up' | 'down' }
+  | { kind: 'fontSize'; direction: 1 | -1 }
   | { kind: 'tool'; tool: KeyTool }
 
-export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', k: 'code', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
+export const TOOL_KEYS: Record<string, KeyTool> = { p: 'pen', v: 'select', e: 'eraser', t: 'text', k: 'code', n: 'sticky', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line', x: 'laser' }
 
+/** Excalidraw-style number keys (bare digits, also on the numpad). Lasso, HLD shapes, class box and code keep letters only. */
+export const NUMBER_TOOL_KEYS: Record<string, KeyTool> = { '1': 'select', '2': 'rectangle', '3': 'diamond', '4': 'ellipse', '5': 'arrow', '6': 'line', '7': 'pen', '8': 'text', '9': 'connector', '0': 'eraser' }
+
+const QUICK_CREATE_KEYS: Record<string, 'right' | 'left' | 'up' | 'down'> = { ArrowRight: 'right', ArrowLeft: 'left', ArrowUp: 'up', ArrowDown: 'down' }
 const ARROW_KEYS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
 
-export type KeyInput = { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; repeat: boolean }
+/** Alt held with a mouse in Desktop mode: dragging, resizing and drawing place freely (no grid, smart guides or equal gaps). Read per pointer move, so pressing or releasing Alt mid-drag takes effect on the next move. Pen and touch never suspend. */
+export function snappingSuspended(event: { altKey?: boolean; pointerType?: string }, mode: string): boolean {
+  return mode === 'desktop' && event.pointerType === 'mouse' && event.altKey === true
+}
+
+export type KeyInput = { key: string; /** Physical key (KeyboardEvent.code); Shift+1 and Shift+2 use it because their `key` depends on the layout. */ code?: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; repeat: boolean }
 
 export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null {
   if (mode !== 'desktop') return null
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
   const command = event.ctrlKey || event.metaKey
+  // Ctrl/Cmd+Alt+C copies the style of the selected item, Ctrl/Cmd+Alt+V pastes it (Excalidraw's bindings). The physical key decides: Alt changes `key` on a Mac,
+  // and AltGr sends ctrl+alt on some layouts, so only the matching `code` counts (and never with Shift).
+  if (command && event.altKey && !event.shiftKey && (event.code === 'KeyC' || event.code === 'KeyV')) {
+    if (event.repeat) return null
+    return { kind: event.code === 'KeyC' ? 'copyStyle' : 'pasteStyle' }
+  }
   if (command && !event.altKey) {
+    // Layer order: Ctrl+] / Ctrl+[ one step, with Shift all the way. The physical key decides (Shift changes `key` to } or {).
+    // Zoom keys are checked by `key` first: on a German layout Ctrl+'+' is the physical BracketRight key. The bracket `code` counts only when `key` is a bracket or not a single printable character.
+    const zoomKey = key === '=' || key === '+' || key === '-' || key === '_'
+    const bracketKey = event.key === '[' || event.key === ']' || event.key === '{' || event.key === '}' || event.key.length !== 1
+    if (!zoomKey && bracketKey && (event.code === 'BracketRight' || event.code === 'BracketLeft')) {
+      if (event.repeat) return null
+      const forward = event.code === 'BracketRight'
+      return { kind: 'layer', move: event.shiftKey ? (forward ? 'front' : 'back') : (forward ? 'forward' : 'backward') }
+    }
+    // Ctrl+Arrow: a new connected shape next to the selected shape (Ctrl+Shift+Arrow and held repeats do nothing).
+    const flow = QUICK_CREATE_KEYS[key]
+    if (flow) return event.shiftKey || event.repeat ? null : { kind: 'quickCreate', direction: flow }
     if (key === 'z') return event.shiftKey ? { kind: 'redo' } : { kind: 'undo' }
     if (key === 'y' && !event.shiftKey) return { kind: 'redo' }
     if (key === '=' || key === '+') return { kind: 'zoomIn' }
     if (key === '-' || key === '_') return { kind: 'zoomOut' }
     if (key === '0') return { kind: 'zoomReset' }
     if (key === 'a' && !event.shiftKey) return { kind: 'selectAll' }
+    // Ctrl+G groups the selection, Ctrl+Shift+G ungroups it (the physical key decides, as Shift changes `key`).
+    if (event.shiftKey ? event.code === 'KeyG' : (event.code ? event.code === 'KeyG' : key === 'g')) return event.repeat ? null : { kind: event.shiftKey ? 'ungroup' : 'group' }
+    // Ctrl/Cmd+Shift+. makes the selected label's text one step larger, Ctrl/Cmd+Shift+, one step smaller (the key is > and < on a US layout; the physical key covers the others).
+    if (event.shiftKey && (key === '.' || key === '>' || key === ',' || key === '<' || event.code === 'Period' || event.code === 'Comma')) {
+      if (event.repeat) return null
+      const larger = key === '.' || key === '>' ? true : key === ',' || key === '<' ? false : event.code === 'Period'
+      return { kind: 'fontSize', direction: larger ? 1 : -1 }
+    }
+    // Ctrl+Shift+L locks the selection. The physical key decides, as Shift changes `key`.
+    if (event.code === 'KeyL' && event.shiftKey) return event.repeat ? null : { kind: 'lock' }
+    // Ctrl/Cmd+' toggles snap to grid. The physical key (Quote) or the character decides.
+    if ((event.code === 'Quote' || key === "'") && !event.shiftKey) return event.repeat ? null : { kind: 'gridSnap' }
+    if (key === 'o' && !event.shiftKey && !event.repeat) return { kind: 'library' }
+    // Ctrl/Cmd+S saves now (Chrome would open its Save page dialog).
+    if (key === 's' && !event.shiftKey) return { kind: event.repeat ? 'saveNowRepeat' : 'saveNow' }
+    // Ctrl/Cmd+K opens the command palette (Chrome would focus its search bar).
+    if (key === 'k' && !event.shiftKey && !event.repeat) return { kind: 'palette' }
+    // Ctrl/Cmd+F opens the find bar (never Chrome's own).
+    if (key === 'f' && !event.shiftKey && !event.repeat) return { kind: 'find' }
+    // Ctrl/Cmd+H opens find with the replace row (Chrome would open its History).
+    if (key === 'h' && !event.shiftKey && !event.repeat) return { kind: 'findReplace' }
     if (!event.shiftKey && !event.repeat) {
       if (key === 'c') return { kind: 'copy' }
       if (key === 'x') return { kind: 'cut' }
@@ -183,6 +359,26 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
     }
     return null
   }
+  // Shift+Alt+C copies the selection (or the page) as a PNG (Excalidraw's binding; Ctrl+Shift+C is Chrome's inspector). The physical key decides: Alt changes `key` on a Mac.
+  if (event.shiftKey && event.altKey && !event.ctrlKey && !event.metaKey && event.code === 'KeyC') return event.repeat ? null : { kind: 'copyPng' }
+  // Shift+1 fits the drawing, Shift+2 zooms to the selection. `key` is "!" or "@" on a US layout and something else elsewhere, so the physical key decides.
+  if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    if (event.code === 'Digit1' || event.code === 'Numpad1') return event.repeat ? null : { kind: 'zoomFit' }
+    if (event.code === 'Digit2' || event.code === 'Numpad2') return event.repeat ? null : { kind: 'zoomSelection' }
+    // Shift+F fades everything not linked to the selection (focus mode).
+    if (event.code === 'KeyF') return event.repeat ? null : { kind: 'focus' }
+    // Shift+H / Shift+V flip the selection (plain h / v are not tool keys; Ctrl+H is find and replace, which has its own branch above).
+    if (event.code === 'KeyH') return event.repeat ? null : { kind: 'flip', axis: 'horizontal' }
+    if (event.code === 'KeyV') return event.repeat ? null : { kind: 'flip', axis: 'vertical' }
+  }
+  // Alt+Z hides or shows the toolbars (present mode). The physical key decides: Alt changes `key` on a Mac.
+  if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.code === 'KeyZ' || (!event.code && key === 'z'))) return event.repeat ? null : { kind: 'presentMode' }
+  // "?" opens the shortcut help (Shift + / on most layouts; some keyboards send "?" without Shift).
+  if (key === '?' && !event.ctrlKey && !event.metaKey && !event.altKey) return event.repeat ? null : { kind: 'help' }
+  // Keyboard walk (Select tool, checked by the App): Tab / Shift+Tab step through the items, Alt+Arrow goes to the linked box in that direction.
+  if (key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) return { kind: 'walk', step: event.shiftKey ? -1 : 1 }
+  const walkDirection = QUICK_CREATE_KEYS[key]
+  if (walkDirection && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) return event.repeat ? null : { kind: 'walkLinked', direction: walkDirection }
   // Arrow keys nudge the selection (Shift = 10 units); holding the key repeats on purpose. Other modifiers belong to the browser.
   const arrow = ARROW_KEYS[key]
   if (arrow && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -194,8 +390,11 @@ export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null 
   if (key === 'Escape') return event.repeat ? null : { kind: 'deselect' }
   if (key === 'Delete' || key === 'Backspace') return event.repeat ? null : { kind: 'deleteSelection' }
   if (key === 'Enter') return event.repeat ? null : { kind: 'edit' }
+  if (key === 'PageUp') return event.repeat ? null : { kind: 'pagePrev' }
+  if (key === 'PageDown') return event.repeat ? null : { kind: 'pageNext' }
   if (event.repeat) return null
-  const tool = TOOL_KEYS[key]
+  if (key === 'q') return { kind: 'toolLock' }
+  const tool = TOOL_KEYS[key] ?? NUMBER_TOOL_KEYS[key]
   return tool ? { kind: 'tool', tool } : null
 }
 
@@ -213,26 +412,35 @@ export function isTypingTarget(tag: string, isEditable: boolean): boolean {
 export type HitTarget = { key: string; kind: 'rectangle' | 'connector' | 'text' | 'code' | 'stroke'; id: number }
 
 /** `skipCode`: look through code blocks (Alt + click reaches what lies under a block). */
-export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scale: number, skipCode = false): HitTarget | null {
+export function hitTarget(routedItems: readonly CanvasItem[], point: Point, scale: number, skipCode = false, includeLocked = false): HitTarget | null {
   const pick = (kind: 'rectangle' | 'connector' | 'text' | 'code', test: (item: CanvasItem) => boolean): HitTarget | null => {
     for (let index = routedItems.length - 1; index >= 0; index -= 1) {
       const item = routedItems[index]
+      if (!includeLocked && isItemLocked(item)) continue // locked items are drawn but never picked (the right-click menu looks through the lock)
       if (item.kind === kind && test(item)) return { key: canvasItemKey(item), kind, id: item.id }
     }
     return null
   }
   return pick('text', (item) => itemHitTest(item, point, 8 / scale))
     ?? (skipCode ? null : pick('code', (item) => itemHitTest(item, point, 8 / scale)))
-    ?? pick('rectangle', (item) => {
-      if (item.kind !== 'rectangle') return false
-      const pad = Math.max(8 / scale, item.strokeWidth * 2)
-      const local = toItemFrame(item, point)
-      return local.x >= item.x - pad && local.x <= item.x + item.width + pad && local.y >= item.y - pad && local.y <= item.y + item.height + pad
-    })
-    ?? pick('connector', (item) => item.kind === 'connector' && itemHitTest(item, point, Math.max(12 / scale, item.strokeWidth * 2)))
+    ?? pick('rectangle', (item) => item.kind === 'rectangle' && rectanglePicked(routedItems, item, point, scale))
+    ?? pick('connector', (item) => item.kind === 'connector' && (itemHitTest(item, point, Math.max(12 / scale, item.strokeWidth * 2)) || pointOnConnectorLabel(item, point, getCachedTextMeasure(connectorLabelFontSize(item), DEFAULT_TEXT_FONT))))
 }
 
-export type ClickTool = 'pen' | 'shape' | 'shapeDraw' | 'text' | 'connector' | 'lasso' | 'classBox' | 'select' | 'eraser'
+/**
+ * True when the point picks this box: inside its padded bounds, except that a container (an unfilled plain rectangle holding other
+ * items, e.g. a boundary) is picked only by its edge band; its interior falls through to what lies below and to the marquee.
+ * The container check runs only for a box under the point.
+ */
+export function rectanglePicked(items: readonly CanvasItem[], item: RectangleObject, point: Point, scale: number): boolean {
+  const pad = Math.max(8 / scale, item.strokeWidth * 2)
+  const local = toItemFrame(item, point)
+  if (!(local.x >= item.x - pad && local.x <= item.x + item.width + pad && local.y >= item.y - pad && local.y <= item.y + item.height + pad)) return false
+  if (pointInEdgeBand(item, local, Math.max(EDGE_BAND_PX / scale, pad))) return true
+  return !isContainerBox(items, item)
+}
+
+export type ClickTool = 'laser' | 'pen' | 'shape' | 'shapeDraw' | 'text' | 'connector' | 'lasso' | 'classBox' | 'select' | 'eraser'
 
 /**
  * What a mouse press selects and drags, before the active tool sees it. Any tool except the eraser; the select tool
@@ -337,7 +545,7 @@ export function shiftClickTarget(routedItems: readonly CanvasItem[], point: Poin
   if (target) return target
   for (let index = routedItems.length - 1; index >= 0; index -= 1) {
     const item = routedItems[index]
-    if (item.kind === 'stroke' && !item.erase && itemHitTest(item, point, 12 / scale)) return { key: canvasItemKey(item), kind: 'stroke', id: item.id }
+    if (item.kind === 'stroke' && !item.erase && !item.locked && itemHitTest(item, point, 12 / scale)) return { key: canvasItemKey(item), kind: 'stroke', id: item.id }
   }
   return null
 }
@@ -350,7 +558,7 @@ export function rectFromPoints(a: Point, b: Point): RectangleBounds {
 export function marqueeKeys(routedItems: readonly CanvasItem[], rect: RectangleBounds): string[] {
   const keys: string[] = []
   for (const item of routedItems) {
-    if (item.kind === 'opaque') continue // unknown items are never selected
+    if (item.kind === 'opaque' || isItemLocked(item)) continue // unknown and locked items are never selected
     const key = canvasItemKey(item)
     const bounds = getCanvasSelectionBounds([item], new Set([key]))
     if (!bounds) continue
@@ -392,13 +600,13 @@ export function escapeAction(state: { cancelableGesture: boolean; anyGesture: bo
 /**
  * Step 11: right-click menu, double-click and Enter to edit, and the cursor per tool (Desktop mode only).
  */
-export type EditTarget = { kind: 'text' | 'classBox' | 'code'; id: number }
+export type EditTarget = { kind: 'text' | 'classBox' | 'code' | 'connector'; id: number }
 
 /** What a double-click on the target edits: a text label, or a class box (not an ink box, which is written in, nor an oval). */
 export function doubleClickTarget(routedItems: readonly CanvasItem[], point: Point, scale: number): EditTarget | null {
   const target = hitTarget(routedItems, point, scale)
   if (!target) return null
-  if (target.kind === 'text' || target.kind === 'code') return { kind: target.kind, id: target.id }
+  if (target.kind === 'text' || target.kind === 'code' || target.kind === 'connector') return { kind: target.kind, id: target.id }
   if (target.kind !== 'rectangle') return null
   const box = routedItems.find((item): item is RectangleObject => item.kind === 'rectangle' && item.id === target.id)
   return box?.classBox && !box.inkBox && !box.ellipse && !box.diamond ? { kind: 'classBox', id: box.id } : null
@@ -412,28 +620,265 @@ export function editTargetForSelection(items: readonly CanvasItem[], keys: Reado
   const [key] = [...all]
   const item = items.find((candidate) => canvasItemKey(candidate) === key)
   if (!item) return null
-  if (item.kind === 'text' || item.kind === 'code') return { kind: item.kind, id: item.id }
+  if (item.kind === 'text' || item.kind === 'code' || item.kind === 'connector') return { kind: item.kind, id: item.id }
   return item.kind === 'rectangle' && item.classBox && !item.inkBox && !item.ellipse && !item.diamond ? { kind: 'classBox', id: item.id } : null
 }
 
-export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll'
-export type ContextMenuEntry = { action: ContextMenuAction; label: string; enabled: boolean }
+export type ContextMenuAction = 'cut' | 'copy' | 'paste' | 'duplicate' | 'delete' | 'selectAll' | 'bringToFront' | 'sendToBack' | 'copyPng' | 'copyStyle' | 'pasteStyle' | 'useAsDefaultStyle' | 'exportPng' | 'exportSvg'
+  | 'editText' | 'zoomSelection' | 'focus' | 'lock' | 'unlock' | 'unlockAll' | 'group' | 'ungroup' | 'selectSimilar' | 'numberSteps' | 'clearSteps' | 'saveTemplate'
+  | 'sameWidth' | 'sameHeight' | 'sameSize' | 'swapPositions' | 'insertBox' | 'flipHorizontal' | 'flipVertical' | 'addBoundary' | 'selectConnected' | 'arrowBothEnds' | 'arrowOneEnd' | 'lineStraight' | 'lineElbow' | 'lineCurved' | 'cornersRound' | 'cornersSharp' | 'shapesMore'
+  | `shape:${string}` | `movePage:${string}`
+export type ContextMenuSection = 'clipboard' | 'text' | 'style' | 'shape' | 'arrange' | 'view' | 'lock' | 'export' | 'select' | 'flow'
+/** One row of the right-click menu. `hint` is the shortcut shown right-aligned ('' for none); a disabled row is greyed, not hidden. */
+export type ContextMenuEntry = { action: ContextMenuAction; label: string; hint: string; section: ContextMenuSection; disabled: boolean; /** Chip entries only: the short text of the chip (the label is its tooltip and aria-label). */ chip?: string; /** Chip entries only: the caption over the chip block; consecutive chips with the same caption share one block. */ chipGroup?: string }
 
-/** The right-click menu: entries that do not apply are disabled, never hidden. */
-export function contextMenuEntries(hasSelection: boolean, clipboardHasItems: boolean, pageHasItems: boolean): ContextMenuEntry[] {
+/** Short chip text for a shape name (the full name stays in the tooltip). */
+export function shortShapeLabel(label: string): string {
+  return label === 'Rectangle' ? 'Rect' : label === 'Load balancer' ? 'Load bal.' : label === 'API gateway' ? 'Gateway' : label === 'Object storage' ? 'Storage' : label
+}
+
+/** Estimated pixel width of a chip (shared by the chip block layout and the Change shape one-line cut). */
+/** Estimated width of a menu chip: 12px DM Sans 500 text plus the chip's 6px side padding. */
+function layoutChipWidth(text: string): number { return Math.ceil(text.length * 6.8) + 12 }
+
+/** Most Change shape chips shown before More… (about six); fewer when six would not fit one line next to More…. */
+export const CHANGE_SHAPE_CHIP_LIMIT = 6
+
+/**
+ * Change shape chips for the menu: all of them when they fit one line (the three plain shapes) or when expanded; else the first few
+ * that fit one line (at most CHANGE_SHAPE_CHIP_LIMIT) next to the More… chip, which expands the rest in place.
+ */
+export function compactChangeShapes<T extends { label: string }>(choices: readonly T[], expanded: boolean): T[] {
+  const width = (choice: T) => layoutChipWidth(shortShapeLabel(choice.label))
+  // The chips column is narrow (the caption has its own column), so the collapsed block is allowed two chip lines.
+  const budget = 2 * CHIP_AREA_WIDTH - 16 // slack for a chip that wraps early
+  const total = choices.reduce((sum, choice, index) => sum + width(choice) + (index > 0 ? CHIP_GAP : 0), 0)
+  if (expanded || (choices.length <= 4 && total <= budget)) return [...choices]
+  const kept: T[] = []
+  let used = layoutChipWidth('More…')
+  for (const choice of choices) {
+    if (kept.length >= CHANGE_SHAPE_CHIP_LIMIT || used + CHIP_GAP + width(choice) > budget) break
+    kept.push(choice)
+    used += CHIP_GAP + width(choice)
+  }
+  return kept
+}
+
+/** What the menu needs to know about the page when it opens. */
+export type ContextMenuState = {
+  hasSelection: boolean
+  clipboardHasItems: boolean
+  pageHasItems: boolean
+  /** Exactly one item is selected and it has a style to copy. */
+  canCopyStyle?: boolean
+  /** A style is stored and something is selected. */
+  canPasteStyle?: boolean
+  /** Exactly one plain or HLD shape is selected: "Use as default for new shapes" is offered. */
+  canSetDefaultStyle?: boolean
+  /** Exactly one text label, code block or class box is selected (Enter would edit it). */
+  canEditText: boolean
+  /** The right-click landed on a locked item (it cannot be selected, so the menu offers Unlock for it). */
+  lockedTarget: boolean
+  /** Some item on the page is locked. */
+  anyLocked: boolean
+  /** Two or more items are selected (Group is offered). */
+  canGroup?: boolean
+  /** A selected item belongs to a group (Ungroup is offered). */
+  canUngroup?: boolean
+  /** Exactly one selectable item is selected (Select similar is offered). */
+  canSelectSimilar?: boolean
+  /** Change shape: the shapes the selected boxes can change to (id is the shape name; the action is `shape:<id>`). */
+  changeShapes?: ReadonlyArray<{ id: string; label: string }>
+  /** The More… chip was clicked: every Change shape chip is shown instead of one line of them. */
+  changeShapesExpanded?: boolean
+  /** The selection holds connectors (or boxes joined by them): Number steps / Clear step numbers are offered. */
+  canNumberSteps?: boolean
+  /** Two or more unlocked boxes Same size can change are selected (the Same size chips are offered). */
+  canSameSize?: boolean
+  /** Exactly two unlocked, ungrouped boxes are selected (the Swap chip is offered). */
+  canSwap?: boolean
+  /** Exactly one unlocked connector is selected (the Insert box row is offered). */
+  canInsertBox?: boolean
+  /** Two or more unlocked items, or one stroke or connector, are selected (the Flip chips are offered). */
+  canFlip?: boolean
+  /** One selected box has connectors attached (the Connected chip is offered). */
+  canSelectConnected?: boolean
+  /** Exactly one connector is selected: its line shape; Straight / Elbow / Curved chips are offered (the current one is disabled). */
+  lineShape?: 'straight' | 'elbow' | 'curved' | null
+  /** The selection holds unlocked arrow connectors: 'both' offers Both ends (some are one-way), 'one' offers One end (all are two-way). Shown as a chip in the Style block. */
+  arrowEnds?: 'both' | 'one' | null
+  /** The selection holds unlocked plain rectangles: 'round' offers Round (some are sharp), 'sharp' offers Sharp (all are rounded). Shown as a chip in the Style block. */
+  corners?: 'round' | 'sharp' | null
+  /** Move to page: one chip per other page and a New page chip (action `movePage:<index>` / `movePage:new`); offered with a selection. */
+  movePages?: ReadonlyArray<{ action: `movePage:${string}`; chip: string; label: string }>
+}
+
+/**
+ * The right-click menu as data, in display order; entries of one section are shown together with a separator between sections.
+ * Entries that do not apply are disabled, never hidden, except: Edit text (only for one label), Lock / Unlock / Unlock all (only when they apply:
+ * Lock with a selection, Unlock on a locked item, Unlock all on empty canvas when something is locked) and the export entries (selection only).
+ */
+export function contextMenuEntries(state: ContextMenuState): ContextMenuEntry[] {
+  const { canCopyStyle = false, canPasteStyle = false, canSetDefaultStyle = false, hasSelection, clipboardHasItems, pageHasItems, canEditText, lockedTarget, anyLocked, canGroup = false, canUngroup = false, canSelectSimilar = false, changeShapes = [], changeShapesExpanded = false, canNumberSteps = false, canSameSize = false, canSwap = false, canInsertBox = false, canFlip = false, canSelectConnected = false, arrowEnds = null, lineShape = null, corners = null, movePages = [] } = state
+  const entry = (action: ContextMenuAction, label: string, hint: string, section: ContextMenuSection, enabled: boolean, chip?: string, chipGroup?: string): ContextMenuEntry => ({ action, label, hint, section, disabled: !enabled, ...(chip !== undefined ? { chip, chipGroup: chipGroup ?? 'Change shape' } : {}) })
   return [
-    { action: 'cut', label: 'Cut', enabled: hasSelection },
-    { action: 'copy', label: 'Copy', enabled: hasSelection },
-    { action: 'paste', label: 'Paste', enabled: clipboardHasItems },
-    { action: 'duplicate', label: 'Duplicate', enabled: hasSelection },
-    { action: 'delete', label: 'Delete', enabled: hasSelection },
-    { action: 'selectAll', label: 'Select all', enabled: pageHasItems },
+    entry('cut', 'Cut', 'Ctrl+X', 'clipboard', hasSelection),
+    entry('copy', 'Copy', 'Ctrl+C', 'clipboard', hasSelection),
+    entry('paste', 'Paste', 'Ctrl+V', 'clipboard', clipboardHasItems),
+    entry('duplicate', 'Duplicate', 'Ctrl+D', 'clipboard', hasSelection),
+    entry('delete', 'Delete', 'Del', 'clipboard', hasSelection),
+    ...(canEditText ? [entry('editText', 'Edit text', 'Enter', 'text', true)] : []),
+    entry('copyStyle', 'Copy style', 'Ctrl+Alt+C', 'shape', canCopyStyle, 'Copy', 'Style'),
+    entry('pasteStyle', 'Paste style', 'Ctrl+Alt+V', 'shape', canPasteStyle, 'Paste', 'Style'),
+    ...(canSetDefaultStyle ? [entry('useAsDefaultStyle', 'Use as default for new shapes', '', 'shape', true, 'Default', 'Style')] : []),
+    ...(corners === 'round' ? [entry('cornersRound', 'Corners: round', '', 'shape', true, 'Round', 'Corners')] : corners === 'sharp' ? [entry('cornersSharp', 'Corners: sharp', '', 'shape', true, 'Sharp', 'Corners')] : []),
+    ...(lineShape !== null ? [
+      entry('lineStraight', 'Line: straight', '', 'shape', lineShape !== 'straight', 'Straight', 'Line'),
+      entry('lineElbow', 'Line: elbow', '', 'shape', lineShape !== 'elbow', 'Elbow', 'Line'),
+      entry('lineCurved', 'Line: curved', '', 'shape', lineShape !== 'curved', 'Curved', 'Line'),
+    ] : []),
+    ...(arrowEnds === 'both' ? [entry('arrowBothEnds', 'Arrow: both ends', '', 'shape', true, 'Two-way', 'Arrowheads')] : arrowEnds === 'one' ? [entry('arrowOneEnd', 'Arrow: one end', '', 'shape', true, 'One-way', 'Arrowheads')] : []),
+    ...compactChangeShapes(changeShapes, changeShapesExpanded).map((choice) => entry(`shape:${choice.id}`, `Change shape to ${choice.label}`, '', 'shape', true, shortShapeLabel(choice.label))),
+    ...(!changeShapesExpanded && compactChangeShapes(changeShapes, false).length < changeShapes.length ? [entry('shapesMore', 'More shapes', '', 'shape', true, 'More…')] : []),
+    ...(canNumberSteps ? [entry('numberSteps', 'Number steps', '', 'shape', true, 'Number', 'Step numbers'), entry('clearSteps', 'Clear step numbers', '', 'shape', true, 'Clear', 'Step numbers')] : []),
+    entry('bringToFront', 'Bring to front', 'Ctrl+Shift+]', 'arrange', hasSelection, 'Front', 'Order'),
+    entry('sendToBack', 'Send to back', 'Ctrl+Shift+[', 'arrange', hasSelection, 'Back', 'Order'),
+    ...(hasSelection ? [entry('addBoundary', 'Add boundary', '', 'arrange', true, 'Boundary', 'Order')] : []),
+    ...(canSameSize ? [entry('sameWidth', 'Same width', '', 'arrange', true, 'Width', 'Size'), entry('sameHeight', 'Same height', '', 'arrange', true, 'Height', 'Size'), entry('sameSize', 'Same width and height', '', 'arrange', true, 'Both', 'Size')] : []),
+    ...(canSwap ? [entry('swapPositions', 'Swap positions', '', 'arrange', true, 'Swap', 'Position')] : []),
+    ...(canInsertBox ? [entry('insertBox', 'Insert box', '', 'arrange', true)] : []),
+    ...(canFlip ? [entry('flipHorizontal', 'Flip horizontal', 'Shift+H', 'arrange', true, 'Flip ↔', 'Position'), entry('flipVertical', 'Flip vertical', 'Shift+V', 'arrange', true, 'Flip ↕', 'Position')] : []),
+    // Group, Ungroup, Zoom and Lock share one chip block (one row of chips instead of four rows); Unlock stays a row.
+    ...(canGroup ? [entry('group', 'Group', 'Ctrl+G', 'arrange', true, 'Group', 'Selection')] : []),
+    ...(canUngroup ? [entry('ungroup', 'Ungroup', 'Ctrl+Shift+G', 'arrange', true, 'Ungroup', 'Selection')] : []),
+    entry('zoomSelection', 'Zoom to selection', 'Shift+2', 'arrange', hasSelection, 'Zoom', 'Selection'),
+    entry('focus', 'Focus on selection (fade the rest)', 'Shift+F', 'arrange', hasSelection, 'Focus', 'Selection'),
+    ...(hasSelection && !lockedTarget ? [entry('lock', 'Lock', 'Ctrl+Shift+L', 'arrange', true, 'Lock', 'Selection')] : []),
+    ...(lockedTarget ? [entry('unlock', 'Unlock', '', 'arrange', true)] : []),
+    ...(!hasSelection && !lockedTarget && anyLocked ? [entry('unlockAll', 'Unlock all', '', 'arrange', true)] : []),
+    ...(hasSelection ? movePages.map((page) => entry(page.action, page.label, '', 'arrange', true, page.chip, 'Move to page')) : []),
+    entry('copyPng', 'Copy as PNG', 'Shift+Alt+C', 'export', hasSelection || pageHasItems),
+    // Only offered when something is selected.
+    ...(hasSelection ? [entry('exportPng', 'Export selection as PNG', '', 'export', true, 'PNG', 'Save as'), entry('exportSvg', 'Export selection as SVG', '', 'export', true, 'SVG', 'Save as'), entry('saveTemplate', 'Save selection as template…', '', 'export', true, 'Template…', 'Save as')] : []),
+    ...(canSelectSimilar ? [entry('selectSimilar', 'Select similar', '', 'select', true, 'Similar', 'Select')] : []),
+    ...(canSelectConnected ? [entry('selectConnected', 'Select connected', '', 'select', true, 'Connected', 'Select')] : []),
+    entry('selectAll', 'Select all', 'Ctrl+A', 'select', pageHasItems, 'All', 'Select'),
   ]
 }
 
-/** Keeps the menu fully on screen: opens at the pointer, shifted back when it would run past the right or bottom edge. */
-export function clampMenuPosition(x: number, y: number, width: number, height: number, viewWidth: number, viewHeight: number): { x: number; y: number } {
-  return { x: Math.max(0, Math.min(x, viewWidth - width)), y: Math.max(0, Math.min(y, viewHeight - height)) }
+/** The menu rows with a separator wherever the section changes; the rendered menu maps this one list. Change shape choices form ONE `chips` row. */
+export type ContextMenuRow = { separator: true } | { separator?: false; entry: ContextMenuEntry; chips?: undefined } | { separator?: false; chips: ContextMenuEntry[]; entry?: undefined }
+
+export function contextMenuRows(entries: readonly ContextMenuEntry[]): ContextMenuRow[] {
+  const rows: ContextMenuRow[] = []
+  let chips: ContextMenuEntry[] | null = null
+  entries.forEach((entry, index) => {
+    if (index > 0 && entries[index - 1].section !== entry.section) rows.push({ separator: true })
+    if (entry.chip !== undefined) {
+      if (chips === null || chips[0].chipGroup !== entry.chipGroup) { chips = []; rows.push({ chips }) }
+      chips.push(entry)
+      return
+    }
+    chips = null
+    rows.push({ entry })
+  })
+  return rows
+}
+
+/** Menu geometry in px; the stylesheet uses the same numbers (.canvas-context-menu). */
+export const CONTEXT_MENU_WIDTH = 296
+/** Desktop: the right-click menu stays this far above the bottom edge so it never covers the tool dock. */
+export const CONTEXT_MENU_BOTTOM_CLEARANCE = 100
+/** Clearance to keep under a menu opened at menuX: only needed when the menu's horizontal range overlaps the dock (null rect: unknown, so apply it). */
+export function menuBottomClearance(menuX: number, menuWidth: number, dock: { left: number; right: number } | null): number {
+  if (!dock) return CONTEXT_MENU_BOTTOM_CLEARANCE
+  return menuX < dock.right && menuX + menuWidth > dock.left ? CONTEXT_MENU_BOTTOM_CLEARANCE : 0
+}
+/** Desktop label editor: Esc commits what was typed, except that blanking an EXISTING label never deletes it (Esc cancels and restores). */
+export function labelEscapeAction(editingExisting: boolean, value: string): 'commit' | 'cancel' {
+  return editingExisting && value.trim() === '' ? 'cancel' : 'commit'
+}
+const MENU_PADDING = 6 + 1 // vertical padding plus border, per side
+const MENU_ENTRY_HEIGHT = 32
+const MENU_GAP = 4
+const MENU_SEPARATOR_HEIGHT = 1 + 4 + 4 // line plus its vertical margin
+const CHIP_HEIGHT = 28
+const CHIP_GAP = 4
+/** Fixed caption column of a chip block and the gap after it; chips always start at the same x. */
+export const CHIP_CAPTION_COLUMN = 84
+const CHIP_CAPTION_GAP = 8
+const CHIP_BLOCK_SIDE_PADDING = 10 // matches the entry rows' side padding so captions line up with the labels above
+const CHIP_AREA_WIDTH = CONTEXT_MENU_WIDTH - 2 * MENU_PADDING - 2 * CHIP_BLOCK_SIDE_PADDING - CHIP_CAPTION_COLUMN - CHIP_CAPTION_GAP // chips column
+
+/** Chip block layout: the caption has its own fixed column, so the chips only flow in what is left; `inline` means they all fit one line. */
+export function chipBlockLayout(chips: readonly ContextMenuEntry[]): { inline: boolean; lines: number } {
+  let lines = 1
+  let used = 0
+  for (const chip of chips) {
+    const width = layoutChipWidth(chip.chip ?? chip.label)
+    if (used > 0 && used + CHIP_GAP + width > CHIP_AREA_WIDTH) { lines += 1; used = width } else used += (used > 0 ? CHIP_GAP : 0) + width
+  }
+  return { inline: lines === 1, lines }
+}
+
+/** Height of a chip block: as many 28px chip lines as the (slightly overestimated) chip widths need. */
+export function chipBlockHeight(chips: readonly ContextMenuEntry[]): number {
+  const { lines } = chipBlockLayout(chips)
+  return lines * CHIP_HEIGHT + (lines - 1) * CHIP_GAP
+}
+
+/** Height of the right-click menu, worked out from its rows (entries, the chip block and separators), for clampMenuPosition. */
+export function contextMenuHeight(entries: readonly ContextMenuEntry[]): number {
+  const rows = contextMenuRows(entries)
+  let height = MENU_PADDING * 2 + Math.max(0, rows.length - 1) * MENU_GAP
+  for (const row of rows) height += row.separator ? MENU_SEPARATOR_HEIGHT : row.chips ? chipBlockHeight(row.chips) : MENU_ENTRY_HEIGHT
+  return height
+}
+
+/** Desktop: the right-click menu keeps its top at least this far below the window top (clear of the top bar and the save pill) when it fits there. */
+export const CONTEXT_MENU_TOP_CLEARANCE = 68
+
+/**
+ * Keeps the menu fully on screen: opens at the pointer, shifted back when it would run past the right or bottom edge.
+ * minTop (Desktop passes CONTEXT_MENU_TOP_CLEARANCE) keeps the top that far down when the menu fits below it; otherwise the old rules apply.
+ */
+export function clampMenuPosition(x: number, y: number, width: number, height: number, viewWidth: number, viewHeight: number, minTop = 0): { x: number; y: number } {
+  const clampedX = Math.max(0, Math.min(x, viewWidth - width))
+  // Desktop (minTop > 0): the top is never above minTop; a menu that does not fit below it sits at minTop and scrolls (see contextMenuMaxHeight).
+  if (minTop > 0) return { x: clampedX, y: height <= viewHeight - minTop ? Math.max(minTop, Math.min(y, viewHeight - height)) : minTop }
+  // A menu taller than the window (the CSS caps it to the window minus 8px each side and scrolls) sits at the top margin.
+  if (height > viewHeight - 16) return { x: clampedX, y: 8 }
+  return { x: clampedX, y: Math.max(0, Math.min(y, viewHeight - height)) }
+}
+
+/** Smallest height the menu scrolls down to in a very short window. */
+const CONTEXT_MENU_MIN_HEIGHT = 120
+/**
+ * Desktop: inline max-height of the right-click menu so it ends above the dock (bottomClearance, 0 when the dock is not under it) and
+ * scrolls instead of being cut. Always leaves at least the 8px window margin below.
+ */
+export function contextMenuMaxHeight(top: number, windowHeight: number, bottomClearance: number): number {
+  return Math.max(CONTEXT_MENU_MIN_HEIGHT, Math.floor(windowHeight - top - Math.max(8, bottomClearance)))
+}
+
+/** Estimated number of lines a chip-block caption needs in the fixed caption column (11px uppercase, .06em tracking is about 7.6px per letter; wraps by word). */
+export function captionLineCount(caption: string): number {
+  const perLetter = 7.6
+  let lines = 1
+  let used = 0
+  for (const word of caption.split(' ')) {
+    const width = Math.ceil(word.length * perLetter)
+    const space = used > 0 ? 4 : 0
+    if (used > 0 && used + space + width > CHIP_CAPTION_COLUMN) { lines += 1; used = width } else used += space + width
+    while (used > CHIP_CAPTION_COLUMN) { lines += 1; used -= CHIP_CAPTION_COLUMN } // a single over-long word breaks anywhere
+  }
+  return lines
+}
+
+/** Commands whose browser default (Chrome's find bar for Ctrl+G, the open-file dialog, Ctrl+Alt shortcuts) is always cancelled in Desktop mode, even when the action does nothing. */
+export const ALWAYS_PREVENT_DEFAULT_COMMANDS: ReadonlySet<KeyCommand['kind']> = new Set(['group', 'ungroup', 'library', 'saveNow', 'saveNowRepeat', 'palette', 'find', 'findReplace', 'copyStyle', 'pasteStyle', 'walkLinked'])
+export function alwaysPreventsDefault(command: KeyCommand, mode: InputMode): boolean {
+  return mode === 'desktop' && ALWAYS_PREVENT_DEFAULT_COMMANDS.has(command.kind)
 }
 
 export type CursorState = { mode: InputMode; tool: ClickTool; hover: 'none' | 'item' | 'selected'; panning: boolean; spaceHeld: boolean }
@@ -448,6 +893,7 @@ export function canvasCursor(state: CursorState): string {
   if (state.panning) return 'grabbing'
   if (state.spaceHeld) return 'grab'
   if (state.tool === 'eraser') return 'none'
+  if (state.tool === 'laser') return 'crosshair'
   if (state.hover === 'selected') return 'move'
   if (state.hover === 'item') return 'pointer'
   if (state.tool === 'text') return 'text'
@@ -558,4 +1004,25 @@ export function labelDoubleClickDecision(input: {
   // The eraser really erased something: the user was erasing, not asking for a label.
   if (input.tool === 'eraser' && input.itemsChanged) return { create: false }
   return { create: true, revert: input.itemsChanged }
+}
+
+/** Desktop toast after an export from the export dialog: the error text when the export failed, else "PNG downloaded" / "SVG downloaded". */
+export function exportToastText(kind: 'PNG' | 'SVG', error: string | null): string {
+  return error ?? `${kind} downloaded`
+}
+
+/**
+ * The one-time Keep tool hint: on Desktop, after a drawing tool switched back to Select by itself (Keep tool off),
+ * show the tip once per page session. `alreadyShown` is session memory only (nothing is stored).
+ */
+export const KEEP_TOOL_TIP = 'Tip: press Q (Keep tool) to draw several in a row'
+export function shouldShowKeepToolTip(alreadyShown: boolean, toolLock: boolean, mode: InputMode): boolean {
+  return mode === 'desktop' && !toolLock && !alreadyShown
+}
+
+/** The toast after Ctrl+S: "Saved" only when the save really ended saved. */
+export function saveToastText(status: string, label: string): string {
+  if (status === 'saved') return 'Saved'
+  if (status === 'idle') return 'Nothing to save yet'
+  return label
 }

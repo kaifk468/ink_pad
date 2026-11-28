@@ -1,4 +1,4 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, toItemFrame } from './canvasModel'
+import { connectorPoints, getConnectorRenderSpec, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, toItemFrame } from './canvasModel'
 import type { CanvasItem, Point, Stroke } from './canvasModel'
 
 const SAMPLE_SPACING = 4
@@ -32,12 +32,13 @@ export function pointInLasso(point: Point, polygon: Point[]): boolean {
 
 function arrowSegments(stroke: Stroke): Array<[Point, Point]> {
   if (stroke.points.length < 2) return []
-  const [start, end] = stroke.points
-  const angle = Math.atan2(end.y - start.y, end.x - start.x)
+  const end = stroke.points[stroke.points.length - 1]
+  const before = stroke.points[stroke.points.length - 2]
+  const angle = Math.atan2(end.y - before.y, end.x - before.x)
   const headLength = Math.max(12, stroke.width * 3.5)
   const left = { x: end.x - headLength * Math.cos(angle - Math.PI / 6), y: end.y - headLength * Math.sin(angle - Math.PI / 6), pressure: 1 }
   const right = { x: end.x - headLength * Math.cos(angle + Math.PI / 6), y: end.y - headLength * Math.sin(angle + Math.PI / 6), pressure: 1 }
-  return [[start, end], [end, left], [end, right]]
+  return [...stroke.points.slice(1).map((p, i): [Point, Point] => [stroke.points[i], p]), [end, left], [end, right]]
 }
 
 function strokeSegments(stroke: Stroke): Array<[Point, Point]> {
@@ -84,7 +85,9 @@ function connectorSymbolHitTest(item: Extract<CanvasItem, { kind: 'connector' }>
     return pointInPolygon(point, triangle) || triangle.some((vertex, index) => distanceToSegment(point, vertex, triangle[(index + 1) % triangle.length]) <= reach)
   }
   if (spec.symbol === 'open-arrow') {
+    const second = getConnectorSecondSymbolGeometry(item)
     return distanceToSegment(point, tip, sideA) <= reach || distanceToSegment(point, tip, sideB) <= reach
+      || (second !== null && (distanceToSegment(point, second.tip, second.sideA) <= reach || distanceToSegment(point, second.tip, second.sideB) <= reach))
   }
   const diamond = [tip, sideA, far, sideB]
   return pointInPolygon(point, diamond) || diamond.some((vertex, index) => distanceToSegment(point, vertex, diamond[(index + 1) % diamond.length]) <= reach)
@@ -138,6 +141,7 @@ export function selectItemsByLasso(items: CanvasItem[], polygon: Point[]): strin
   if (polygon.length < 3) return []
   const selected: string[] = []
   for (const item of items) {
+    if (item.kind !== 'opaque' && item.locked === true) continue // locked items are never lasso-selected
     if (item.kind === 'connector') {
       // Connectors are atomic and must be almost entirely enclosed. This avoids selecting
       // a relationship just because a lasso loop crosses its path.

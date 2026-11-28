@@ -45,5 +45,5 @@ test('Align to line also follows a straight line or arrow stroke, not only conne
   assert.ok(Math.abs(model.nearestConnectorAngle([line], pt(50, 70)) - Math.PI / 4) < 1e-9)
   const free = { ...line, shape: undefined }
   assert.equal(model.nearestConnectorAngle([free], pt(50, 70)), null, 'a freehand stroke is not a line')
-  assert.match(app, /renderNavigator, selectionMode, lassoMode, strokeDisplayMode, width\]\)/)
+  assert.match(app, /renderNavigator, theme, palette, selectionMode, lassoMode, strokeDisplayMode, width\]\)/)
 })

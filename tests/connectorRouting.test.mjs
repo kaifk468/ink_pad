@@ -373,6 +373,6 @@ test('after switching sides the elbow path still routes cleanly (orthogonal, att
 
 test('the app switches sides at the end of a box drag in Select and Lasso', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /if \(drag\.moved\) switchConnectorSides\(new Set\(\[drag\.itemKey\]\)\)/)
-  assert.match(app, /if \(lassoDrag\.moved\) switchConnectorSides\(lassoDrag\.keys\)/)
+  assert.match(app, /if \(drag\.moved\) switchConnectorSides\(drag\.dup \? drag\.dup\.copyKeys : new Set\(\[drag\.itemKey\]\)\)/)
+  assert.match(app, /if \(lassoDrag\.moved\) switchConnectorSides\(lassoDrag\.dup \? lassoDrag\.dup\.copyKeys : lassoDrag\.keys\)/)
 })

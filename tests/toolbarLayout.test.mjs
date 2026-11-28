@@ -67,7 +67,7 @@ test('the Insert tray holds Text label, Shapes, Typed class box and the three HL
   for (const shape of ['database', 'queue', 'service']) assert.match(tray, new RegExp(`shape: '${shape}'`))
   assert.match(tray, /onHldShape\(shape\)/)
   assert.doesNotMatch(tray, /soon-badge/)
-  assert.match(tray, /key === 'Escape'/)
+  assert.match(tray, /key !== 'Escape'/)
   assert.match(tray, /rootRef\.current\.contains/)
   assert.match(tray, /aria-expanded=\{open\}/)
 })
@@ -150,8 +150,23 @@ test('corner panels move above the dock on narrow tablets so they never overlap 
   assert.match(body, /\.zoom-controls\s*\{[^}]*bottom:\s*calc\(max\(16px,\s*env\(safe-area-inset-bottom\)\)\s*\+\s*84px\)/)
 })
 
+test('desktop 1101-1700px: the minimap sits above the wide dock, the base tablet rule is unchanged', () => {
+  const body = mediaBody('@media (min-width: 1101px) and (max-width: 1700px)')
+  assert.match(body, /\.app-shell:has\(\.desktop-dock\) \.viewport-navigator\s*\{[^}]*bottom:\s*calc\(max\(16px,\s*env\(safe-area-inset-bottom\)\)\s*\+\s*84px\)/)
+  assert.match(ruleBody(styles, '.viewport-navigator {'), /bottom:\s*max\(16px,\s*env\(safe-area-inset-bottom\)\)/)
+})
+
+test('the selection panel headings the text size and text alignment buttons', () => {
+  assert.match(context, /<span className="panel-label">Text size<\/span>\}\s*\{\(props\.showTextSizes \|\| props\.textFit\) && <div className="tool-group text-size-group"/)
+  assert.match(context, /<span className="panel-label">Text align<\/span>\}\s*\{props\.textAlign && <div className="tool-group text-align-group"/)
+})
+
 test('the sheet layer and canvas stacking are unchanged', () => {
   assert.match(ruleBody(styles, '.sheet-layer {'), /position:\s*absolute;[\s\S]*pointer-events:\s*none/)
   assert.match(ruleBody(styles, '.drawing-canvas {'), /position:\s*absolute;\s*inset:\s*0/)
   assert.ok(app.indexOf('className="sheet-layer"') < app.indexOf('className={`drawing-canvas'))
+})
+
+test('a long desktop panel scrolls instead of squashing its buttons', () => {
+  assert.match(styles, /\.context-panel\.desktop-left > \* \{ flex-shrink: 0; \}/)
 })

@@ -1,0 +1,88 @@
+/* Desktop dock styles (UI round 2). Every selector is scoped to .app-shell[data-input-mode="desktop"]; tablet never reads this file. */
+
+/* Icon-only floating dock: 40px buttons in a calm surface; groups are split by a short tick, not a full-height rule. */
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock {
+  gap: 2px;
+  min-height: 0;
+  padding: 6px;
+  border: 1px solid var(--ip-line);
+  border-radius: 14px;
+  background: var(--ip-surface);
+  box-shadow: var(--ip-shadow-2);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: visible;
+}
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-divider { width: 1px; height: 20px; margin: 0 4px; background: var(--ip-line); }
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button {
+  position: relative;
+  box-sizing: border-box;
+  width: 40px; min-width: 40px; height: 40px;
+  padding: 0;
+  border-radius: 10px;
+  color: var(--ip-muted);
+  transition: background var(--ip-dur-fast) var(--ip-ease-out), color var(--ip-dur-fast) var(--ip-ease-out), transform var(--ip-dur-fast) var(--ip-ease-out);
+}
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button svg { width: 20px; height: 20px; }
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button:hover { background: var(--ip-surface-2); color: var(--ip-text); }
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button.selected,
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button.selected:hover { background: var(--ip-accent-soft); color: var(--ip-accent); box-shadow: none; }
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button:active { transform: scale(.94); }
+
+/* Tooltip: a dark pill above the button with the tool name and shortcut chips. Shown after 400ms of hover, at once on keyboard focus. */
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-tip {
+  position: absolute; left: 50%; bottom: calc(100% + 14px); z-index: 6;
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 5px 8px; border-radius: 8px;
+  background: var(--ip-text); color: #fff;
+  font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap;
+  opacity: 0; transform: translate(-50%, 4px); pointer-events: none;
+  transition: opacity var(--ip-dur-fast) var(--ip-ease-out), transform var(--ip-dur-fast) var(--ip-ease-out);
+}
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-tip kbd {
+  padding: 2px 5px; border-radius: 4px; background: rgba(255, 255, 255, .18);
+  font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1;
+}
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-tip .dock-tip-hint { flex: 1 0 100%; color: rgba(255, 255, 255, .65); font-size: 11px; font-weight: 500; line-height: 1.2; }
+@media (hover: hover) {
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button:hover .dock-tip { opacity: 1; transform: translate(-50%, 0); transition-delay: 400ms; }
+}
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button:focus-visible .dock-tip { opacity: 1; transform: translate(-50%, 0); transition-delay: 0s; }
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button:active .dock-tip,
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button[aria-expanded="true"] .dock-tip { opacity: 0; transition-delay: 0s; }
+
+/* Trays open above their button, clear of the shorter dock. */
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .insert-tray { bottom: calc(100% + 14px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button:active { transform: none; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-tip { transform: translate(-50%, 0); }
+}
+
+/* System shapes group: layout-neutral wrapper (the buttons stay direct flex items of the dock). */
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-system-group { display: contents; }
+.app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .more-tray-system { display: none; }
+
+/* Compact dock (windows narrower than 900px): 36px buttons, tighter gaps. The dock is 50px tall here, so zoom controls lift 58px and never overlap it. */
+@media (max-width: 899px) {
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock { gap: 1px; padding: 6px 5px; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-divider { margin: 0 2px; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button { width: 36px; min-width: 36px; height: 36px; border-radius: 9px; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button svg { width: 18px; height: 18px; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .insert-tray,
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-tip { bottom: calc(100% + 12px); }
+  .app-shell[data-input-mode="desktop"] .zoom-controls { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 58px); }
+}
+
+/* Still too wide for the dock (below 740px): the System shapes group leaves the dock and lives in the More tray. */
+@media (max-width: 739px) {
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .dock-system-group { display: none; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .more-tray { max-height: calc(100dvh - 140px); overflow-y: auto; }
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .more-tray-system { display: block; }
+}
+
+/* Below 740px the System shapes group is inside the More tray, so an active system shape shows on the More button. */
+@media (max-width: 739px) {
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button.more-button.hld-active,
+  .app-shell[data-input-mode="desktop"] .tool-dock.desktop-dock .tool-button.more-button.hld-active:hover { background: var(--ip-accent-soft); color: var(--ip-accent); box-shadow: none; }
+}

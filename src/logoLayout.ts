@@ -1,0 +1,154 @@
+import { canvasItemKey, isItemLocked } from './canvasModel'
+import type { CanvasItem, RectangleObject, TextObject } from './canvasModel'
+import { CLASS_BOX_DEFAULT_STROKE_WIDTH } from './classBoxLayout'
+import { colorLuma } from './boardColors'
+import { createTextObject } from './textLayout'
+import type { TechLogo } from './techLogoSearch'
+
+/**
+ * Tech logo boxes. A logo box is a plain rounded RectangleObject with `logo` (a Simple Icons slug) and optionally `logoColor: 'brand'`.
+ * The logo is drawn inside the box (never a separate item); the brand name is an ordinary text label item sitting in the bottom band, as for templates.
+ * Everything here is pure, so the canvas, the SVG export and the tests share one geometry.
+ */
+
+export const LOGO_BOX_SIZE = 150
+export const LOGO_LABEL_FONT_SIZE = 20
+
+export type LogoPlacement = { x: number; y: number; size: number }
+
+/** Where the logo square sits in a logo box: inside a padding, above a bottom band that holds the name label, centred. */
+export function logoPlacement(rectangle: { x: number; y: number; width: number; height: number }): LogoPlacement {
+  const pad = Math.min(rectangle.width, rectangle.height) * 0.12
+  const band = Math.min(rectangle.height * 0.22, 40)
+  const areaWidth = Math.max(0, rectangle.width - pad * 2)
+  const areaHeight = Math.max(0, rectangle.height - pad * 2 - band)
+  const size = Math.min(areaWidth, areaHeight)
+  return { x: rectangle.x + pad + (areaWidth - size) / 2, y: rectangle.y + pad + (areaHeight - size) / 2, size }
+}
+
+/** A brand colour darker than this (perceived brightness 0..1) would vanish on a dark board. */
+const DARK_BRAND_LUMA = 0.2
+
+/**
+ * Fill colour of a logo: its brand colour for `logoColor: 'brand'` (and a known logo), else the box's own line colour.
+ * `boardInk` (draw time, dark boards only; null / missing on the light board): a very dark brand colour (GitHub #181717) draws in the board ink instead.
+ * The box's own line colour is resolved by the caller, as for every other item.
+ */
+export function logoFillColor(rectangle: Pick<RectangleObject, 'strokeColor' | 'logoColor'>, logo: Pick<TechLogo, 'hex'> | undefined, boardInk?: string | null): string {
+  if (rectangle.logoColor === 'brand' && logo) return boardInk && colorLuma(logo.hex) < DARK_BRAND_LUMA ? boardInk : logo.hex
+  return rectangle.strokeColor
+}
+
+/** SVG `transform` that maps the 24 x 24 logo path onto its placement. */
+export function logoSvgTransform(placement: LogoPlacement): string {
+  const round = (value: number) => Math.round(value * 100) / 100
+  return `translate(${round(placement.x)} ${round(placement.y)}) scale(${round(placement.size / 24 * 1000) / 1000})`
+}
+
+/** The neutral stand-in for a logo this build does not have (or has not loaded yet): a rounded square with a question mark. */
+export function logoPlaceholderGeometry(placement: LogoPlacement): { x: number; y: number; size: number; radius: number; fontSize: number } {
+  return { ...placement, radius: placement.size * 0.2, fontSize: placement.size * 0.62 }
+}
+
+/**
+ * Builds the items for one inserted logo, with local ids starting at 1 and the top-left at (0, 0), ready for the paste path
+ * (which assigns real ids and centres them): the box and, when `showName`, its brand name label centred in the bottom band.
+ */
+export function buildLogoItems(logo: Pick<TechLogo, 'slug' | 'title'>, strokeColor: string, showName: boolean, size = LOGO_BOX_SIZE): Array<RectangleObject | TextObject> {
+  const box: RectangleObject = { kind: 'rectangle', id: 1, x: 0, y: 0, width: size, height: size, strokeColor, strokeWidth: CLASS_BOX_DEFAULT_STROKE_WIDTH, rounded: true, logo: logo.slug }
+  if (!showName) return [box]
+  return [box, logoNameLabel(box, logo, 1)]
+}
+
+/**
+ * The brand name label of a logo box, centred in the box's bottom band at the box's current position and size (the same label as at insert).
+ * The text is shrunk to fit the box width; it takes the box's line colour and group.
+ */
+export function logoNameLabel(box: Pick<RectangleObject, 'x' | 'y' | 'width' | 'height' | 'strokeColor' | 'group'>, logo: Pick<TechLogo, 'title'>, id: number): TextObject {
+  let made = createTextObject(id, 0, 0, logo.title, box.strokeColor, LOGO_LABEL_FONT_SIZE)
+  const room = box.width - 12
+  if (made.width > room && room > 0) made = createTextObject(id, 0, 0, logo.title, box.strokeColor, Math.max(12, Math.floor(LOGO_LABEL_FONT_SIZE * room / made.width)))
+  const pad = Math.min(box.width, box.height) * 0.12
+  const band = Math.min(box.height * 0.22, 40)
+  return { ...made, align: 'center', x: box.x + box.width / 2 - made.width / 2, y: box.y + box.height - pad - band / 2 - made.height / 2, ...(box.group !== undefined ? { group: box.group } : {}) }
+}
+
+const sameName = (text: string, logo: Pick<TechLogo, 'title'>): boolean => text.trim().toLowerCase() === logo.title.trim().toLowerCase()
+
+/**
+ * The text items that are the name label of `box`: the text equals the brand name and either its centre lies inside the box
+ * (where insert puts it, in the bottom band) or it shares the box's group. Robust to a box moved, resized or regrouped since insert.
+ */
+export function findLogoNameLabels(items: readonly CanvasItem[], box: Pick<RectangleObject, 'x' | 'y' | 'width' | 'height' | 'group'>, logo: Pick<TechLogo, 'title'>): TextObject[] {
+  return items.filter((item): item is TextObject => {
+    if (item.kind !== 'text' || !sameName(item.text, logo)) return false
+    const cx = item.x + item.width / 2
+    const cy = item.y + item.height / 2
+    const inside = cx >= box.x && cx <= box.x + box.width && cy >= box.y && cy <= box.y + box.height
+    return inside || (box.group !== undefined && item.group === box.group)
+  })
+}
+
+/** The one logo box the panel's Name row applies to: exactly one rectangle is selected, it is an unlocked logo box of a known logo; its own name labels may be selected with it (as a group). */
+export function selectedLogoBox(items: readonly CanvasItem[], keys: ReadonlySet<string>, knownLogo: (slug: string) => Pick<TechLogo, 'title'> | undefined): { box: RectangleObject; logo: Pick<TechLogo, 'title'> } | null {
+  const selected = items.filter((item) => keys.has(canvasItemKey(item)))
+  const rectangles = selected.filter((item): item is RectangleObject => item.kind === 'rectangle')
+  if (rectangles.length !== 1) return null
+  const box = rectangles[0]
+  if (box.logo === undefined || isItemLocked(box)) return null
+  const logo = knownLogo(box.logo)
+  if (!logo) return null
+  const own = new Set(findLogoNameLabels(items, box, logo).map(canvasItemKey))
+  return selected.every((item) => item === box || own.has(canvasItemKey(item))) ? { box, logo } : null
+}
+
+/**
+ * Shows or hides the name label of `box`. Hide removes every label found (so Show and Hide stay a clean pair); Show adds one fresh label with id `textId`
+ * unless one is already there. Returns the same array when nothing changes. Locked labels are left alone (and still count as shown).
+ */
+export function setLogoNameShown(items: CanvasItem[], box: RectangleObject, logo: Pick<TechLogo, 'title'>, show: boolean, textId: number): CanvasItem[] {
+  const labels = findLogoNameLabels(items, box, logo)
+  if (show) return labels.length > 0 ? items : [...items, logoNameLabel(box, logo, textId)]
+  const doomed = new Set(labels.filter((label) => !isItemLocked(label)).map(canvasItemKey))
+  return doomed.size === 0 ? items : items.filter((item) => !doomed.has(canvasItemKey(item)))
+}
+
+/** A cache of one built object per key (used for Path2D, built once per slug and never per frame). `make` is injected so tests can count constructions. */
+export function createPathCache<T>(make: (path: string) => T): { get(slug: string, path: string): T; readonly size: number } {
+  const cache = new Map<string, T>()
+  return {
+    get(slug, path) {
+      let built = cache.get(slug)
+      if (built === undefined) { built = make(path); cache.set(slug, built) }
+      return built
+    },
+    get size() { return cache.size },
+  }
+}
+
+/** The selected unlocked rectangles when every selected rectangle is a logo box (otherwise the panel row is not offered); empty when there are none. */
+function selectedLogoBoxes(items: readonly CanvasItem[], keys: ReadonlySet<string>): RectangleObject[] {
+  const rectangles = items.filter((item): item is RectangleObject => item.kind === 'rectangle' && keys.has(canvasItemKey(item)))
+  return rectangles.length > 0 && rectangles.every((box) => box.logo !== undefined && !isItemLocked(box)) ? rectangles : []
+}
+
+/** 'brand' when every selected logo box is brand-coloured, 'flat' when any is flat, null when the selection is not only logo boxes. */
+export function logoColorChoice(items: readonly CanvasItem[], keys: ReadonlySet<string>): 'flat' | 'brand' | null {
+  const boxes = selectedLogoBoxes(items, keys)
+  if (boxes.length === 0) return null
+  return boxes.every((box) => box.logoColor === 'brand') ? 'brand' : 'flat'
+}
+
+/** Sets the logo colour of the selected logo boxes: Brand writes `logoColor: 'brand'`, Flat removes it. Returns the same array when nothing changes. */
+export function setLogoColor(items: CanvasItem[], keys: ReadonlySet<string>, brand: boolean): CanvasItem[] {
+  const targets = new Set(selectedLogoBoxes(items, keys).map(canvasItemKey))
+  let changed = false
+  const next = items.map((item) => {
+    if (item.kind !== 'rectangle' || !targets.has(canvasItemKey(item)) || (item.logoColor === 'brand') === brand) return item
+    changed = true
+    if (brand) return { ...item, logoColor: 'brand' as const }
+    const { logoColor: _flat, ...rest } = item
+    return rest
+  })
+  return changed ? next : items
+}

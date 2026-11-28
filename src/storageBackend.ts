@@ -1,6 +1,6 @@
 import type { InkPadDocument } from './documentFormat'
 import { createDocumentId, createFolderId, deleteFolderRecord, deleteStoredDocument, listFolders, listStoredDocuments, loadStoredDocument, saveFolder, saveStoredDocument, setDocumentFolder, type DocumentSummary, type FolderRecord } from './documentStore'
-import { cleanFolderName, folderAndDescendantIds } from './folderTree'
+import { canMoveFolder, cleanFolderName, folderAndDescendantIds, folderMoveRefusalText } from './folderTree'
 
 /**
  * Layering: the safety copy (safetyCopy.ts, a separate IndexedDB database in this browser) sits UNDER every StorageBackend
@@ -19,6 +19,8 @@ export type StorageBackend = {
    * check for a newer version in the background; if there is one it calls onFresher with it (return false when it was not used).
    */
   load(id: string, onFresher?: (document: InkPadDocument) => boolean | void): Promise<InkPadDocument | null>
+  /** Only on backends that answer load() from a browser copy (Google Drive): loads the current stored version, never the copy. */
+  loadFresh?(id: string): Promise<InkPadDocument | null>
   /** The folder and diagram list from the last time it was fetched, for showing something instantly while the new one loads. */
   listCached?(): Promise<{ documents: DocumentSummary[]; folders: FolderRecord[] } | null>
   /** Saves a diagram. id null = new diagram in folderId. Returns the id, which can change when the title or location changes. */
@@ -30,6 +32,13 @@ export type StorageBackend = {
   createFolder(name: string, parentId: string | null, reuse?: boolean): Promise<string>
   /** Renames a folder. Returns the old and new id when ids change (device folders), otherwise null. */
   renameFolder(id: string, name: string): Promise<{ from: string; to: string } | null>
+  /**
+   * Moves a folder, with everything inside it, under another folder (null = top level). The folder keeps its id; nothing is copied or deleted.
+   * Throws (with a sentence for the person) when the target is the folder itself or inside it, or already holds a folder of that name.
+   * Resolves 'noop' when the folder is already under that parent (nothing changed).
+   * Not on device-folder storage (moving a directory is not reliable there).
+   */
+  moveFolder?(id: string, parentId: string | null): Promise<void | 'noop'>
   /** Deletes a folder, its subfolders and every diagram inside. Returns the ids of the deleted diagrams. */
   deleteFolder(id: string): Promise<string[]>
   /** Only on storage that keeps stars with the file (Google Drive): stars or unstars a diagram without touching its contents. */
@@ -112,6 +121,16 @@ export function createBrowserBackend(): StorageBackend {
       const existing = (await listFolders()).find((folder) => folder.id === id)
       if (existing) await saveFolder({ ...existing, name: cleanFolderName(name) })
       return null
+    },
+    async moveFolder(id, parentId) {
+      const folders = await listFolders()
+      const decision = canMoveFolder(folders, id, parentId)
+      const existing = folders.find((folder) => folder.id === id)
+      if (!decision.ok) {
+        if (decision.reason === 'same-parent') return 'noop'
+        throw new Error(folderMoveRefusalText(decision.reason, existing?.name ?? ''))
+      }
+      if (existing) await saveFolder({ ...existing, parentId })
     },
     async deleteFolder(id) {
       const [documents, folders] = await Promise.all([listStoredDocuments(), listFolders()])

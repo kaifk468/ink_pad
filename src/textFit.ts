@@ -1,5 +1,6 @@
 import { toItemFrame } from './canvasModel'
 import type { CanvasItem, RectangleObject, TextFontId, TextObject } from './canvasModel'
+import { balancerMark, browserBar, cacheBolt, hldIconInsets, hldMobileMargins } from './hldShapes'
 import { getTextLineHeight, measureTextSize, updateTextObject, wrapTextLines, type TextMeasure } from './textLayout'
 
 /**
@@ -32,17 +33,29 @@ export function shapeInnerArea(shape: RectangleObject): FitArea {
   } else if (shape.hldShape === 'service') {
     const inset = Math.min(Math.min(w, h) * 0.28, 44) * 0.3
     area = { width: w - 2 * inset, height: h - 2 * inset }
-  } else area = { width: w, height: h }
+  } else if (shape.hldShape === 'user') area = { width: w * 0.84, height: h * 0.44 }
+  else if (shape.hldShape === 'browser') area = { width: w, height: h - browserBar(h) }
+  else if (shape.hldShape === 'mobile') area = { width: w, height: h - hldMobileMargins.top - hldMobileMargins.bottom }
+  else if (shape.hldShape === 'cache') area = { width: w, height: h - cacheBolt(w, h) - 12 }
+  else if (shape.hldShape === 'loadBalancer') area = { width: w, height: h - balancerMark(h) - 16 }
+  else if (shape.hldShape === 'external') area = { width: w * 0.56, height: h * 0.34 }
+  else if (shape.hldShape === 'cdn') area = { width: w * 0.6, height: h * 0.45 }
+  else if (shape.hldShape) {
+    // apiGateway, server, objectStorage, stream, worker: keep the label out of the icon.
+    const inset = hldIconInsets(shape.hldShape, w, h)
+    area = { width: w - inset.left - inset.right, height: h - inset.top - inset.bottom }
+  }
+  else area = { width: w, height: h }
   return { width: Math.max(0, area.width - PAD * 2), height: Math.max(0, area.height - PAD * 2) }
 }
 
-function isFitShape(item: CanvasItem): item is RectangleObject {
+export function isFitShape(item: CanvasItem): item is RectangleObject {
   if (item.kind !== 'rectangle' || item.classBox) return false
   if (item.hldShape) return !!item.inkBox
   return !item.inkBox
 }
 
-function contains(shape: RectangleObject, point: { x: number; y: number }): boolean {
+export function contains(shape: RectangleObject, point: { x: number; y: number }): boolean {
   const local = toItemFrame(shape, { ...point, pressure: 1 })
   const w = shape.width
   const h = shape.height
@@ -135,4 +148,20 @@ export function buildEditedLabel(base: TextObject, value: string, editor: FitEdi
   const updated = updateTextObject(plain, value, size, measureFor(size, editor.fontFamily))
   if (fit) return { ...updated, width: fit.width, height: fit.height, ...(fit.wrap ? { fit: 'wrap' as const } : {}) }
   return editor.fitOff ? { ...updated, fit: 'off' as const } : updated
+}
+
+/**
+ * A label inside a shape that was just resized: when it no longer fits the shape's inner area it is refitted (shrunk step by step, then
+ * wrapped at the minimum size) exactly as typing would. The label's current size is the upper bound, so growing the shape never enlarges
+ * text; a label with auto-fit turned off (`fit: 'off'`) is the user's choice and stays as it is. Returns the same label when it still fits.
+ */
+export function refitLabelToShape(label: TextObject, shape: RectangleObject, measureFor: MeasureFor): TextObject {
+  if (label.fit === 'off' || label.text.trim().length === 0) return label
+  const area = shapeInnerArea(shape)
+  if (label.width <= area.width && label.height <= area.height) return label
+  const fit = fitText(label.text, label.fontSize, area, label.fontFamily, measureFor)
+  const { fit: _old, ...plain } = label
+  void _old
+  const updated = updateTextObject(plain, label.text, fit.fontSize, measureFor(fit.fontSize, label.fontFamily))
+  return { ...updated, width: fit.width, height: fit.height, ...(fit.wrap ? { fit: 'wrap' as const } : {}) }
 }

@@ -1,5 +1,6 @@
 import type { CanvasItem } from './canvasModel'
 import { buildPdf, type PdfPageImage } from './pdfExport'
+import { ensureTechLogosFor } from './techLogos'
 import { buildSheetSvg, cropSvg, getContentBounds, svgToImageBlob } from './sheetExport'
 import { SHEET_WIDTH } from './viewport'
 
@@ -20,10 +21,12 @@ export function exportPixelRatio(width: number, height: number): number {
  * Browser only (it draws on a canvas).
  */
 export async function renderDiagramPdf(pageItems: CanvasItem[][], sheetHeight: number, sketchy = false): Promise<{ pdf: Uint8Array; pageCount: number } | null> {
+  await ensureTechLogosFor(pageItems.flat())
   const pages: PdfPageImage[] = []
   for (const items of pageItems) {
     const bounds = getContentBounds(items, { width: SHEET_WIDTH, height: sheetHeight })
     if (!bounds) continue
+    // No `board` on purpose: this PDF is made for NotebookLM / Drive readers, which want dark ink on plain white whatever board the diagram uses.
     const svg = cropSvg(buildSheetSvg(items, { width: SHEET_WIDTH, height: sheetHeight, template: 'blank', backgroundColor: '#ffffff', ...(sketchy ? { sketchy: true } : {}) }), bounds)
     const ratio = exportPixelRatio(bounds.width, bounds.height)
     const blob = await svgToImageBlob(svg, bounds.width, bounds.height, ratio, 'image/jpeg', EXPORT_JPEG_QUALITY)

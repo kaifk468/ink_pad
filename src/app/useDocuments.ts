@@ -1,22 +1,30 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { NewDiagramOptions } from '../newDiagramChoice'
 import type { CanvasItem } from '../canvasModel'
-import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
-import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
-import { THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
+import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, isLossyParse, parseDocument, sameSignature, stringifyDocument, type DocumentLanes, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
+import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadStoredDocument, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
+import { shouldRefreshLibrary } from '../libraryRefresh'
+import { copyStoredDiagram as copyDiagramOnBackend } from '../libraryCopy'
+import { PAGE_PREVIEW_TOO_LARGE, THUMBNAIL_MAX_SVG_CHARS, thumbnailSize } from '../thumbnail'
 import { moveStarred, readStarred, starsToUpload, toggleStarred, writeStarred } from '../starred'
 import { STORAGE_MODE_KEY, createDeviceBackend, isDeviceFolderSupported, loadDeviceHandle, pickDeviceFolder, queryDevicePermission, requestDevicePermission, saveDeviceHandle, type DirHandle } from '../deviceStore'
-import { folderAndDescendantIds } from '../folderTree'
+import { diagramsInFolder, folderAndDescendantIds } from '../folderTree'
 import { DriveAuthError, DriveHttpError, createDriveBackend, fetchDriveProfile, type DriveEnv } from '../googleDrive'
 import { createIndexedDbDriveCache, type DriveCache } from '../driveCache'
+import { loadLocalCopyForSearch } from '../librarySearchLoad'
 import { readStoredProfile, writeStoredProfile, type DriveProfile } from '../driveProfile'
 import { REFRESH_WINDOW_MS, driveAuth, driveExportAuth } from '../googleAuth'
 import { uploadDiagramPdf } from '../driveExport'
+import { effectiveCanvasType } from '../canvasTypes'
 import { renderDiagramPdf } from '../notebookExport'
+import { ensureTechLogosFor } from '../techLogos'
 import { copyAllBetweenBackends, createBrowserBackend, type StorageBackend } from '../storageBackend'
 import type { SaveStatus } from '../FilePanel'
 import { PAGE_BACKGROUND_COLORS } from '../pageBackground'
 import { buildSheetSvg, cropSvg, getContentBounds, svgToPngBlob } from '../sheetExport'
 import { SHEET_HEIGHT, SHEET_WIDTH } from '../viewport'
+import { COPY_IMAGE_FAILED, exportBaseName, isSelectionExport, itemsForExport, readTransparentExport, usesExcalifont, writeTransparentExport } from '../exportOptions'
+import { loadExcalifontCss } from '../fontEmbed'
 import { readLastPage } from '../pages'
 import { acquireTabLock, createIndexedDbSafetyStore, createLocalStorageEmergency, createLocalStoragePointer, createSafetyKeeper, type RestoredCopy, type SafetyKeeper } from '../safetyCopy'
 
@@ -29,7 +37,11 @@ export type DocumentHost = {
   getItems: () => CanvasItem[]
   /** The items of every page in order (page 1 first), including the live items of the page on screen. */
   getPageItems: () => CanvasItem[][]
-  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean }
+  /** The name of every page in order ('' = unnamed), same length as getPageItems. */
+  getPageNames: () => string[]
+  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; board?: string; canvas?: string; marks?: string; lanes?: DocumentLanes }
+  /** The input mode (Desktop pictures embed Excalifont; Tablet ones stay as they were). */
+  getInputMode?: () => 'tablet' | 'desktop'
   /** True while a pen/touch stroke or gesture is in progress; autosave waits for it to end. */
   isInputActive: () => boolean
   /** Replace the sheet contents and page settings, reset undo history, id counters and selection, and redraw. */
@@ -93,7 +105,9 @@ export function useDocuments(host: DocumentHost) {
   const [filePanelOpen, setFilePanelOpen] = useState(false)
   const [storagePanelOpen, setStoragePanelOpen] = useState(false)
   const [docTitle, setDocTitle] = useState(DEFAULT_DOCUMENT_TITLE)
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const [saveStatus, setSaveStatusState] = useState<SaveStatus>('idle')
+  const saveStatusRef = useRef<SaveStatus>('idle')
+  const setSaveStatus = (next: SaveStatus) => { saveStatusRef.current = next; setSaveStatusState(next) }
   const [fileNotice, setFileNotice] = useState<string | null>(null)
   const [exportBusy, setExportBusy] = useState(false)
   const [library, setLibrary] = useState<DocumentSummary[]>([])
@@ -127,6 +141,8 @@ export function useDocuments(host: DocumentHost) {
   const readyRef = useRef(false)
   const filePanelOpenRef = useRef(false)
   const autosaveTimerRef = useRef<number | null>(null)
+  // True only while the autosave timer is scheduled (the Desktop pill says "Saving soon" only then). Flips on schedule/clear transitions, never per stroke point.
+  const [autosavePending, setAutosavePending] = useState(false)
   filePanelOpenRef.current = filePanelOpen
 
   const readCurrentId = () => {
@@ -156,8 +172,13 @@ export function useDocuments(host: DocumentHost) {
       spacing: page.spacing,
       sheetHeight: page.sheetHeight,
       sketchy: page.sketchy,
+      board: page.board,
+      canvas: page.canvas,
+      marks: page.marks,
+      lanes: page.lanes,
       items: hostRef.current.getPageItems()[0] ?? [],
       extraPages: hostRef.current.getPageItems().slice(1),
+      pageNames: hostRef.current.getPageNames(),
       shareStrokes: true,
     })
   }
@@ -170,7 +191,7 @@ export function useDocuments(host: DocumentHost) {
    */
   const currentSignature = (): DocumentSignature => {
     const page = hostRef.current.getPage()
-    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, sketchy: page.sketchy, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()) }
+    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, sketchy: page.sketchy, board: page.board, canvas: page.canvas, marks: page.marks, lanes: page.lanes, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()), pageNames: hostRef.current.getPageNames() }
   }
 
   /**
@@ -215,8 +236,16 @@ export function useDocuments(host: DocumentHost) {
   /** A diagram came back from the safety copy at startup; the storage's own copy must not replace it. */
   const restoredRef = useRef(false)
 
+  /** When the library list last came from the storage; every in-app change (save, create, rename, move, delete) calls refreshLibrary, which renews it. */
+  const libraryListedAtRef = useRef<number | null>(null)
+  /** For the command palette: reuses a list fetched in the last 30 s. */
+  const refreshLibraryIfStale = async () => {
+    if (shouldRefreshLibrary(libraryListedAtRef.current, Date.now())) await refreshLibrary()
+  }
+
   const refreshLibrary = async () => {
     const backend = backendRef.current
+    libraryListedAtRef.current = null
     if (backend.listCached) {
       // show the last known list at once; the fresh one replaces it when it arrives
       try {
@@ -229,10 +258,10 @@ export function useDocuments(host: DocumentHost) {
       if (backendRef.current !== backend) return
       setLibrary(listed.documents)
       setFolders(listed.folders)
+      libraryListedAtRef.current = Date.now()
       void uploadLocalStars(backend, listed.documents)
     } catch {
-      setLibrary([])
-      setFolders([])
+      // Keep the list already shown (Drive offline, a failed refresh); the Library's own notice and status say why it could not refresh.
     }
   }
 
@@ -290,12 +319,17 @@ export function useDocuments(host: DocumentHost) {
 
   const starredIds = new Set([...library.filter((entry) => entry.starred).map((entry) => entry.id), ...localStars])
 
-  const doPersist = async () => {
-    if (!readyRef.current) return
+  const clearAutosaveTimer = () => {
     if (autosaveTimerRef.current !== null) {
       window.clearTimeout(autosaveTimerRef.current)
       autosaveTimerRef.current = null
     }
+    setAutosavePending(false)
+  }
+
+  const doPersist = async () => {
+    if (!readyRef.current) return
+    clearAutosaveTimer()
     // Never create an empty entry for a diagram that was never drawn on.
     if (!docIdRef.current && !hasAnyItems() && !forceSaveRef.current) return
     const forced = forceSaveRef.current
@@ -349,12 +383,20 @@ export function useDocuments(host: DocumentHost) {
     return run
   }
 
+  /** Save right now (Desktop Ctrl+S). Resolves to the status the save ended in. */
+  const saveNow = async (): Promise<SaveStatus> => {
+    await persistNow()
+    return saveStatusRef.current
+  }
+
   const scheduleAutosave = () => {
     keeper.noteChange() // the safety copy is kept even when the storage is locked
     if (!readyRef.current) return
     if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current)
+    setAutosavePending(true)
     autosaveTimerRef.current = window.setTimeout(() => {
       autosaveTimerRef.current = null
+      setAutosavePending(false)
       // Wait until the pen is up so a half-drawn stroke is never the saved state.
       if (hostRef.current.isInputActive()) {
         scheduleAutosave()
@@ -365,10 +407,7 @@ export function useDocuments(host: DocumentHost) {
   }
 
   const applyDocument = (id: string | null, loaded: InkPadDocument) => {
-    if (autosaveTimerRef.current !== null) {
-      window.clearTimeout(autosaveTimerRef.current)
-      autosaveTimerRef.current = null
-    }
+    clearAutosaveTimer()
     pendingFolderRef.current = null
     forceSaveRef.current = false
     hostRef.current.loadDocument(loaded, id ? readLastPage(id) : 0)
@@ -383,10 +422,7 @@ export function useDocuments(host: DocumentHost) {
 
   /** Shows a diagram from the safety copy. It counts as unsaved, so it is written to the storage as soon as that is ready. */
   const applyLocalCopy = ({ record, document: loaded }: RestoredCopy) => {
-    if (autosaveTimerRef.current !== null) {
-      window.clearTimeout(autosaveTimerRef.current)
-      autosaveTimerRef.current = null
-    }
+    clearAutosaveTimer()
     hostRef.current.loadDocument(loaded, record.docId ? readLastPage(record.docId) : 0)
     docIdRef.current = record.docId
     docMetaRef.current = { title: loaded.title, createdAt: loaded.createdAt }
@@ -408,16 +444,17 @@ export function useDocuments(host: DocumentHost) {
     return true
   }
 
-  const blankDocument = (template?: DocumentPageTemplate) => {
+  const blankDocument = (template?: DocumentPageTemplate, options?: NewDiagramOptions) => {
     const page = hostRef.current.getPage()
-    return createDocument({ template: template ?? page.template, background: page.background, spacing: page.spacing, items: [] })
+    if (options) return createDocument({ template: options.template, background: page.background, spacing: page.spacing, canvas: options.canvas, board: options.board, sketchy: options.sketchy, items: [] })
+    return createDocument({ template: template ?? page.template, background: page.background, spacing: page.spacing, ...(template === undefined ? { canvas: page.canvas, lanes: page.lanes } : {}), items: [] })
   }
 
-  const newDiagram = async (template?: DocumentPageTemplate) => {
+  const newDiagram = async (template?: DocumentPageTemplate, options?: NewDiagramOptions) => {
     await persistNow()
     await flushCopy()
     setFileNotice(null)
-    applyDocument(null, blankDocument(template))
+    applyDocument(null, blankDocument(template, options))
     void keeper.switchTo(null)
     writeCurrentId(null)
     void refreshLibrary()
@@ -469,38 +506,54 @@ export function useDocuments(host: DocumentHost) {
     }
   }
 
-  const deleteStoredDiagram = async (id: string) => {
-    try {
-      await backendRef.current.remove(id)
-      void keeper.forget(backendRef.current.kind, id)
-      if (docIdRef.current === id) forgetCurrentDiagram(true)
-      void deleteThumbnail(id).catch(() => undefined)
-      if (localStarsRef.current.includes(id)) changeLocalStars((ids) => ids.filter((item) => item !== id))
-      setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
-    } catch {
-      setFileNotice('Could not delete that diagram.')
-    }
-    void refreshLibrary()
+  /** Runs a store delete in the save chain, so it never overlaps a save, rename or move. */
+  const inSaveChain = async <T,>(body: () => Promise<T>): Promise<T> => {
+    const run = saveChainRef.current.then(body, body)
+    saveChainRef.current = run.then(() => undefined, () => undefined)
+    return run
+  }
+
+  const deleteStoredDiagram = async (id: string): Promise<boolean> => {
+    const ok = await inSaveChain(async () => {
+      try {
+        await backendRef.current.remove(id)
+        void keeper.forget(backendRef.current.kind, id)
+        if (docIdRef.current === id) forgetCurrentDiagram(true)
+        void deleteThumbnail(id).catch(() => undefined)
+        if (localStarsRef.current.includes(id)) changeLocalStars((ids) => ids.filter((item) => item !== id))
+        setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
+        return true
+      } catch {
+        setFileNotice('Could not delete that diagram.')
+        return false
+      }
+    })
+    await refreshLibrary()
+    return ok
   }
 
   /** Start a blank diagram that will be saved inside the given folder (null = top level). */
-  const newDiagramIn = async (folderId: string | null, template?: DocumentPageTemplate) => {
-    await newDiagram(template)
+  const newDiagramIn = async (folderId: string | null, template?: DocumentPageTemplate, options?: NewDiagramOptions) => {
+    await newDiagram(template, options)
     pendingFolderRef.current = folderId
   }
 
-  const createFolder = async (name: string, parentId: string | null) => {
+  const createFolder = async (name: string, parentId: string | null): Promise<boolean> => {
     setFileNotice(null)
+    let ok = true
     try {
       await backendRef.current.createFolder(name, parentId)
     } catch (error) {
       setFileNotice(errorText(error, 'Could not create that folder.'))
+      ok = false
     }
     void refreshLibrary()
+    return ok
   }
 
-  const renameFolder = async (id: string, name: string) => {
+  const renameFolder = async (id: string, name: string): Promise<boolean> => {
     setFileNotice(null)
+    let ok = true
     try {
       const moved = await backendRef.current.renameFolder(id, name)
       if (moved) {
@@ -516,27 +569,54 @@ export function useDocuments(host: DocumentHost) {
       }
     } catch (error) {
       setFileNotice(errorText(error, 'Could not rename that folder.'))
+      ok = false
     }
     void refreshLibrary()
+    return ok
   }
 
-  /** Deletes the folder, its subfolders and every diagram inside them. The UI asks for confirmation first. */
-  const deleteFolder = async (id: string) => {
-    setFileNotice(null)
-    try {
-      const ids = new Set(folderAndDescendantIds(folders, id))
-      const deleted = await backendRef.current.deleteFolder(id)
-      for (const gone of deleted) void keeper.forget(backendRef.current.kind, gone)
-      if (docIdRef.current && deleted.includes(docIdRef.current)) forgetCurrentDiagram(true)
-      if (pendingFolderRef.current && ids.has(pendingFolderRef.current)) pendingFolderRef.current = null
-    } catch (error) {
-      setFileNotice(errorText(error, 'Could not delete that folder.'))
-    }
-    void refreshLibrary()
+  /** A folder is about to be deleted: new saves must not land in it any more. */
+  const releaseFolderTarget = (id: string) => {
+    const target = pendingFolderRef.current
+    if (target && new Set(folderAndDescendantIds(folders, id)).has(target)) pendingFolderRef.current = null
   }
 
-  const moveDiagram = async (docId: string, folderId: string | null) => {
+  /**
+   * Deletes the folder, its subfolders and every diagram inside them. The UI asks for confirmation first and passes the diagram ids
+   * the person saw; if the folder holds any other diagram by now (a save or copy landed in it), nothing is deleted.
+   */
+  const deleteFolder = async (id: string, confirmedDiagramIds?: readonly string[]): Promise<boolean> => {
     setFileNotice(null)
+    const ok = await inSaveChain(async () => {
+      try {
+        const listed = await backendRef.current.list()
+        const ids = new Set(folderAndDescendantIds(listed.folders, id))
+        if (confirmedDiagramIds) {
+          const confirmed = new Set(confirmedDiagramIds)
+          const inside = [...ids].flatMap((folderId) => diagramsInFolder(listed.documents, folderId, listed.folders))
+          if (inside.some((entry) => !confirmed.has(entry.id))) {
+            const name = listed.folders.find((folder) => folder.id === id)?.name ?? 'The folder'
+            setFileNotice(`“${name}” was not deleted: it has new diagrams.`)
+            return false
+          }
+        }
+        const deleted = await backendRef.current.deleteFolder(id)
+        for (const gone of deleted) void keeper.forget(backendRef.current.kind, gone)
+        if (docIdRef.current && deleted.includes(docIdRef.current)) forgetCurrentDiagram(true)
+        if (pendingFolderRef.current && ids.has(pendingFolderRef.current)) pendingFolderRef.current = null
+        return true
+      } catch (error) {
+        setFileNotice(errorText(error, 'Could not delete that folder.'))
+        return false
+      }
+    })
+    await refreshLibrary()
+    return ok
+  }
+
+  const moveDiagram = async (docId: string, folderId: string | null): Promise<boolean> => {
+    setFileNotice(null)
+    let ok = true
     try {
       await persistNow()
       const newId = await backendRef.current.move(docId, folderId)
@@ -548,15 +628,133 @@ export function useDocuments(host: DocumentHost) {
       }
     } catch (error) {
       setFileNotice(errorText(error, 'Could not move that diagram.'))
+      ok = false
     }
     void refreshLibrary()
+    return ok
   }
 
-  const renameDiagram = (title: string) => {
+  /** Moves a folder (with everything in it, same ids) under another folder; false with a notice when refused or unsupported (device folders). */
+  const moveFolder = async (id: string, parentId: string | null): Promise<boolean | 'noop'> => {
+    setFileNotice(null)
+    // Inside the save chain like deleteFolder, so it never overlaps an autosave, rename or delete. 'noop' = already under that parent.
+    const outcome = await inSaveChain(async (): Promise<boolean | 'noop'> => {
+      const move = backendRef.current.moveFolder
+      try {
+        if (!move) throw new Error('Moving folders is not available for this storage.')
+        return (await move.call(backendRef.current, id, parentId)) === 'noop' ? 'noop' : true
+      } catch (error) {
+        setFileNotice(errorText(error, 'Could not move that folder.'))
+        return false
+      }
+    })
+    void refreshLibrary()
+    return outcome
+  }
+
+  /**
+   * Renames a diagram from the Library. The open diagram uses the same path as the in-canvas title edit. Any other diagram is loaded
+   * (fresh from the storage where it keeps a browser copy), given the new title and saved through the storage's own save (the same call
+   * autosave makes). The whole thing runs inside the save chain so it can never overlap an autosave or another rename, and it checks again
+   * inside the chain whether the diagram has meanwhile become the open one. A diagram whose file has damaged items or fields this version
+   * does not know is not rewritten (open it first). Returns false (with a notice) when it could not be done, 'unchanged' when the storage
+   * kept the old name.
+   */
+  const renameStoredDiagram = async (id: string, title: string): Promise<boolean | 'unchanged'> => {
+    setFileNotice(null)
+    const cleaned = cleanTitle(title)
+    const renameOpen = async (): Promise<boolean> => {
+      await renameDiagram(title)
+      await refreshLibrary()
+      return true
+    }
+    if (docIdRef.current === id) return renameOpen()
+    let outcome = true as boolean | 'unchanged' | 'open'
+    const body = async () => {
+      try {
+        if (docIdRef.current === id) { outcome = 'open'; return }
+        const backend = backendRef.current
+        if (await keeper.recordFor(backend.kind, id)) throw new Error('That diagram has changes that are not saved yet. Open it first, then rename it.')
+        const stored = await (backend.loadFresh ? backend.loadFresh(id) : backend.load(id))
+        if (!stored) throw new Error('That diagram no longer exists.')
+        if (isLossyParse(stored)) throw new Error('Open this diagram first, then rename it.')
+        if (docIdRef.current === id) { outcome = 'open'; return }
+        const newId = await backend.save(id, { ...stored, title: cleaned }, null)
+        if (backendRef.current === backend && newId !== id) {
+          void keeper.rekey(backend.kind, id, newId)
+          changeLocalStars((ids) => moveStarred(ids, id, newId))
+          void deleteThumbnail(id).catch(() => undefined)
+          setThumbnails((current) => { if (!(id in current)) return current; const { [id]: _gone, ...rest } = current; return rest })
+        } else if (backend.kind === 'device' && newId === id && stored.title !== cleaned) {
+          // the file name already stands for this title (copy suffix rule, "X (2)" and "X"): nothing changed
+          outcome = 'unchanged'
+          setFileNotice(`The name stays “${stored.title}” because this folder already has another “${cleaned}”.`)
+        }
+      } catch (error) {
+        setFileNotice(errorText(error, 'Could not rename that diagram.'))
+        outcome = false
+      }
+    }
+    const run = saveChainRef.current.then(body, body)
+    saveChainRef.current = run
+    await run
+    if (outcome === 'open') return renameOpen()
+    await refreshLibrary()
+    return outcome
+  }
+
+  /**
+   * Makes a copy of a diagram from the Library: "<title> (copy)" in the same folder, all pages and items, never starred, and the
+   * original is only read. For the open diagram the pending edits are saved first. It runs inside the save chain, so it can never
+   * overlap an autosave, a rename or another copy, and it reads the stored version fresh (not a browser copy). A diagram with changes
+   * the storage has not accepted yet, or a file this version only partly understands, is refused with a message instead of a lossy copy.
+   * The copy is not opened. Returns false (with a notice) on failure.
+   */
+  const copyStoredDiagram = async (id: string): Promise<string | false> => {
+    setFileNotice(null)
+    const wasOpen = docIdRef.current === id
+    if (wasOpen) await persistNow()
+    let ok = true
+    let madeTitle = ''
+    const body = async () => {
+      try {
+        const backend = backendRef.current
+        // The open diagram is judged by what this editor knows (its saved signature); a device rename on save changes its id, so the copy reads the current id.
+        let sourceId = id
+        if (wasOpen && docIdRef.current) {
+          if (!sameSignature(currentSignature(), savedSignatureRef.current)) throw new Error('That diagram has changes that are not saved yet. Wait until it is saved, then copy it.')
+          sourceId = docIdRef.current
+        } else if (await keeper.recordFor(backend.kind, id)) throw new Error('That diagram has changes that are not saved yet. Wait until it is saved, then copy it.')
+        const folderId = library.find((entry) => entry.id === sourceId || entry.id === id)?.folderId ?? null
+        const made = await copyDiagramOnBackend(backend, sourceId, folderId)
+        madeTitle = made.title
+        // the copy starts with the original's picture (stored apart from the diagram, by id)
+        const picture = thumbnails[id]
+        if (picture && backendRef.current === backend) {
+          try {
+            await saveThumbnail(made.id, picture)
+            setThumbnails((current) => ({ ...current, [made.id]: picture }))
+          } catch { /* the card shows an icon until it is opened */ }
+        }
+      } catch (error) {
+        setFileNotice(errorText(error, 'Could not copy that diagram.'))
+        ok = false
+      }
+    }
+    const run = saveChainRef.current.then(body, body)
+    saveChainRef.current = run
+    await run
+    await refreshLibrary()
+    return ok ? madeTitle : false
+  }
+
+  const renameDiagram = (title: string): Promise<void> => {
     const cleaned = cleanTitle(title)
     docMetaRef.current = { ...docMetaRef.current, title: cleaned }
     setDocTitle(cleaned)
-    if (docIdRef.current || hasAnyItems()) void persistNow()
+    if (!docIdRef.current && !hasAnyItems()) return Promise.resolve()
+    // The safety copy must carry the new title too: a copy left dirty with the old one would come back at the next start and replace the rename.
+    return persistNow().then(() => flushCopy())
   }
 
   const exportDocumentFile = () => {
@@ -585,9 +783,20 @@ export function useDocuments(host: DocumentHost) {
     }
   }
 
+  /** "Transparent background" in the export panel (remembered in this browser; off by default). */
+  const [transparentExport, setTransparentExportState] = useState(() => readTransparentExport(typeof localStorage === 'undefined' ? null : localStorage))
+  const transparentExportRef = useRef(transparentExport)
+  transparentExportRef.current = transparentExport
+  const setTransparentExport = (value: boolean) => {
+    setTransparentExportState(value)
+    writeTransparentExport(typeof localStorage === 'undefined' ? null : localStorage, value)
+  }
+
+  type ImageExportOptions = { keys?: ReadonlySet<string> | null; transparent?: boolean; fontCss?: string }
   /** The picture of one page: the one on screen for exports, the first page for the Library picture. */
-  const getImageExport = (which: 'current' | 'first' = 'current') => {
-    const items = which === 'first' ? (hostRef.current.getPageItems()[0] ?? []) : hostRef.current.getItems()
+  const getImageExport = (which: 'current' | 'first' | number = 'current', options: ImageExportOptions = {}) => {
+    const all = which === 'current' ? hostRef.current.getItems() : (hostRef.current.getPageItems()[which === 'first' ? 0 : which] ?? [])
+    const items = itemsForExport(all, options.keys)
     const page = hostRef.current.getPage()
     const sheetHeight = page.sheetHeight ?? SHEET_HEIGHT
     const bounds = getContentBounds(items, { width: SHEET_WIDTH, height: sheetHeight })
@@ -595,12 +804,56 @@ export function useDocuments(host: DocumentHost) {
     const svg = cropSvg(buildSheetSvg(items, {
       width: SHEET_WIDTH,
       height: sheetHeight,
-      template: page.template,
+      template: effectiveCanvasType(page.template, page.canvas),
       spacing: page.spacing,
       backgroundColor: PAGE_BACKGROUND_COLORS[page.background],
       ...(page.sketchy ? { sketchy: true } : {}),
+      // The board follows the page in PNG / SVG / copy / Library pictures (thumbnails use this too); buildSheetSvg ignores it for a transparent export.
+      ...(page.board ? { board: page.board } : {}),
+      ...(page.marks ? { marks: page.marks } : {}),
+      ...(page.lanes ? { lanes: page.lanes } : {}),
+      ...(options.transparent ? { transparent: true } : {}),
+      ...(options.fontCss ? { embeddedFontCss: options.fontCss } : {}),
     }), bounds)
-    return { svg, bounds, baseName: documentFileName(docMetaRef.current.title).replace(/\.inkpad$/, '') }
+    const baseName = exportBaseName(documentFileName(docMetaRef.current.title).replace(/\.inkpad$/, ''), isSelectionExport(options.keys))
+    return { svg, bounds, baseName, usesFont: usesExcalifont(items) }
+  }
+  /** Export for people: honours the transparent choice, and embeds Excalifont when an exported label uses it (never fails because of the font). */
+  const getUserImageExport = async (keys?: ReadonlySet<string> | null) => {
+    await ensureTechLogosFor(hostRef.current.getItems())
+    const options: ImageExportOptions = { keys, transparent: transparentExportRef.current }
+    const probe = getImageExport('current', options)
+    if (!probe || !probe.usesFont) return probe
+    try { return getImageExport('current', { ...options, fontCss: await loadExcalifontCss() }) } catch { return probe }
+  }
+
+  /** Library and overview pictures are drawn from an SVG inside an <img>, which cannot see the page's fonts: embed Excalifont, or its labels fall back to the browser's "cursive" (a serif on many systems). */
+  const getThumbnailExport = async (which: 'first' | number) => {
+    await ensureTechLogosFor(hostRef.current.getPageItems().flat())
+    if (hostRef.current.getInputMode?.() !== 'desktop') return getImageExport(which)
+    const all = which === 'first' ? hostRef.current.getPageItems()[0] : hostRef.current.getPageItems()[which]
+    if (!usesExcalifont(itemsForExport(all ?? [], undefined))) return getImageExport(which)
+    let fontCss: string | undefined
+    try { fontCss = await loadExcalifontCss() } catch { fontCss = undefined }
+    return getImageExport(which, fontCss ? { fontCss } : {})
+  }
+
+  /**
+   * A small picture (PNG data URL) of page `index` for the page overview, null for a blank page, or PAGE_PREVIEW_TOO_LARGE for one too large to draw cheaply.
+   * Called one page at a time, only while the overview is open (never while writing).
+   */
+  const renderPageThumbnail = async (index: number): Promise<string | null> => {
+    const exported = await getThumbnailExport(index)
+    if (!exported) return null
+    if (exported.svg.length > THUMBNAIL_MAX_SVG_CHARS) return PAGE_PREVIEW_TOO_LARGE
+    const size = thumbnailSize(exported.bounds.width, exported.bounds.height)
+    const blob = await svgToPngBlob(exported.svg, size.width, size.height, 1)
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error ?? new Error('Could not read the picture.'))
+      reader.readAsDataURL(blob)
+    })
   }
 
   /**
@@ -614,7 +867,7 @@ export function useDocuments(host: DocumentHost) {
     const signature = currentSignature()
     const last = thumbnailOfRef.current
     if (last && last.id === id && sameSignature(signature, last.signature)) return
-    const exported = getImageExport('first')
+    const exported = await getThumbnailExport('first')
     try {
       if (!exported) {
         thumbnailOfRef.current = { id, signature }
@@ -638,21 +891,48 @@ export function useDocuments(host: DocumentHost) {
     } catch { /* the card keeps its icon or older picture */ }
   }
 
-  const exportSvgFile = () => {
-    const exported = getImageExport()
-    if (!exported) return
+  /** Returns an error message, or null when it worked. `keys`: export only that selection. */
+  const exportSvgFile = async (keys?: ReadonlySet<string> | null): Promise<string | null> => {
+    const exported = await getUserImageExport(keys)
+    if (!exported) return 'Nothing to export'
     downloadBlob(new Blob([exported.svg], { type: 'image/svg+xml' }), `${exported.baseName}.svg`)
+    return null
   }
 
-  const exportPngFile = async (scale: 1 | 2) => {
-    const exported = getImageExport()
-    if (!exported) return
+  const exportPngFile = async (scale: 1 | 2, keys?: ReadonlySet<string> | null, quiet = false): Promise<string | null> => {
+    const exported = await getUserImageExport(keys)
+    if (!exported) return 'Nothing to export'
     try {
       const blob = await svgToPngBlob(exported.svg, exported.bounds.width, exported.bounds.height, scale)
       downloadBlob(blob, `${exported.baseName}${scale === 2 ? '@2x' : ''}.png`)
       setFileNotice(null)
+      return null
     } catch (error) {
-      setFileNotice(error instanceof Error ? error.message : 'PNG export failed.')
+      const message = error instanceof Error ? error.message : 'PNG export failed.'
+      if (!quiet) setFileNotice(message) // quiet: the caller shows the failure as a toast instead
+      return message
+    }
+  }
+
+  /**
+   * Copies the selection (or the whole page) to the system clipboard as a 2x PNG. The clipboard item gets a promise so the
+   * browser keeps the click or key press as the permission gesture while the picture is made. Returns an error message or null.
+   */
+  const copyPngToClipboard = async (keys?: ReadonlySet<string> | null): Promise<string | null> => {
+    const options: ImageExportOptions = { keys, transparent: transparentExportRef.current }
+    if (!getImageExport('current', options)) return 'Nothing to copy'
+    const Item = typeof window === 'undefined' ? undefined : (window as unknown as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem
+    if (!Item || !navigator.clipboard?.write) return COPY_IMAGE_FAILED
+    try {
+      const blobPromise = (async () => {
+        const exported = await getUserImageExport(keys)
+        if (!exported) throw new Error('Nothing to copy')
+        return svgToPngBlob(exported.svg, exported.bounds.width, exported.bounds.height, 2)
+      })()
+      await navigator.clipboard.write([new Item({ 'image/png': blobPromise })])
+      return null
+    } catch {
+      return COPY_IMAGE_FAILED
     }
   }
 
@@ -997,11 +1277,15 @@ export function useDocuments(host: DocumentHost) {
     }
   }, [])
 
+  /** Library search inside diagrams: reads only a local copy (this browser's store, or Drive's browser cache). No network, no device-folder access. */
+  // Stable identity: HomeScreen's search scan depends on it and must not restart on every render.
+  const loadForSearch = useCallback((id: string) => loadLocalCopyForSearch(backendRef.current.kind, id, { browserDocument: loadStoredDocument, driveCached: (docId) => getDriveCache().get(docId) }), [])
+
   return {
-    filePanelOpen, setFilePanelOpen, refreshLibrary, thumbnails, captureThumbnail, starredIds, toggleStar, docTitle, saveStatus, fileNotice, setFileNotice, library, folders, currentDocId,
+    loadForSearch, filePanelOpen, setFilePanelOpen, refreshLibrary, refreshLibraryIfStale, thumbnails, captureThumbnail, renderPageThumbnail, starredIds, toggleStar, docTitle, saveStatus, autosavePending, fileNotice, setFileNotice, library, folders, currentDocId,
     storage, driveProfile, storagePanelOpen, setStoragePanelOpen, chooseDeviceFolder, reconnectDeviceFolder, connectDrive, useBrowserStorage, copyBrowserToDevice,
-    newDiagramIn, createFolder, renameFolder, deleteFolder, moveDiagram,
-    scheduleAutosave, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram,
-    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, exportToNotebookLm, exportBusy,
+    newDiagramIn, createFolder, renameFolder, deleteFolder, releaseFolderTarget, moveDiagram, moveFolder,
+    scheduleAutosave, saveNow, newDiagram, openStoredDiagram, deleteStoredDiagram, renameDiagram, renameStoredDiagram, copyStoredDiagram,
+    exportDocumentFile, importDocumentFile, exportSvgFile, exportPngFile, copyPngToClipboard, transparentExport, setTransparentExport, exportToNotebookLm, exportBusy,
   }
 }

@@ -1,4 +1,4 @@
-import type { TextFontId, TextObject } from './canvasModel'
+import type { CanvasItem, TextAlign, TextFontId, TextObject } from './canvasModel'
 
 /** Shared text geometry: used by the canvas renderer, SVG export, hit-testing and the editor. */
 export const TEXT_FONT_FAMILY = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
@@ -21,6 +21,31 @@ export const TEXT_FONT_SIZES = [18, 24, 32, 48]
 /** Extra small sizes, offered in Desktop mode only (the tablet panel keeps TEXT_FONT_SIZES). 10 is the smallest. */
 export const TEXT_FONT_SIZES_SMALL = [10, 12, 14, 16]
 export const TEXT_FONT_SIZES_DESKTOP = [...TEXT_FONT_SIZES_SMALL, ...TEXT_FONT_SIZES]
+
+/** One step along the Desktop panel sizes (10 .. 48): the next larger (direction 1) or smaller (-1) size than `size`, or null at the end. A size between two steps moves to the nearest step in that direction. */
+export function stepFontSize(size: number, direction: 1 | -1, steps: readonly number[] = TEXT_FONT_SIZES_DESKTOP): number | null {
+  const sorted = [...steps].sort((a, b) => a - b)
+  const next = direction === 1 ? sorted.find((step) => step > size) : [...sorted].reverse().find((step) => step < size)
+  return next ?? null
+}
+/** Beyond the panel presets the size keys step by this much. */
+export const TEXT_SIZE_KEY_STEP = 4
+/** Largest size the size keys reach (the canvas clamp for label sizes). */
+export const MAX_TEXT_KEY_SIZE = 300
+
+/**
+ * The size keys' step: the panel presets (10 .. 48) while a preset lies in that direction, then +/- 4 above 48
+ * (up to MAX_TEXT_KEY_SIZE; coming down it stops on 48, never skipping below it). Null at the smallest preset (10) or at the maximum.
+ */
+export function stepTextSize(size: number, direction: 1 | -1): number | null {
+  const top = TEXT_FONT_SIZES_DESKTOP[TEXT_FONT_SIZES_DESKTOP.length - 1]
+  if (direction === 1) {
+    if (size >= top) return size >= MAX_TEXT_KEY_SIZE ? null : Math.min(MAX_TEXT_KEY_SIZE, size + TEXT_SIZE_KEY_STEP)
+    return stepFontSize(size, 1)
+  }
+  if (size > top) return Math.max(top, size - TEXT_SIZE_KEY_STEP)
+  return stepFontSize(size, -1)
+}
 export const DEFAULT_TEXT_FONT_SIZE = 24
 export const MAX_TEXT_LENGTH = 2000
 export const TEXT_LINE_HEIGHT = 1.3
@@ -166,4 +191,35 @@ export function updateTextObject(item: TextObject, text: string, fontSize: numbe
   if (item.fit === 'wrap') return { ...item, text: clean, fontSize, height: wrappedHeight(clean, fontSize, item.width, measure) }
   const size = measureTextSize(clean, fontSize, measure)
   return { ...item, text: clean, fontSize, width: size.width, height: size.height }
+}
+
+/** Left edge of one line inside a label box: left (undefined) at `x`, centred or right-aligned within `width`. Never left of the box. */
+export function alignedLineX(x: number, width: number, lineWidth: number, align?: TextAlign): number {
+  if (align === 'center') return x + Math.max(0, (width - lineWidth) / 2)
+  if (align === 'right') return x + Math.max(0, width - lineWidth)
+  return x
+}
+
+/** Left edge of a line `lineWidth` wide: its own x for a left label, else alignedLineX (the canvas and the SVG export share this, so a line wider than the box clamps the same way). */
+export function textLineX(text: Pick<TextObject, 'x' | 'width' | 'align'>, lineWidth: number): number {
+  return text.align ? alignedLineX(text.x, text.width, lineWidth, text.align) : text.x
+}
+
+/** An edited label keeps the anchor its alignment promises: a centred label keeps its horizontal centre, a right-aligned one its right edge, a left one its left edge. */
+export function keepAlignAnchor(before: Pick<TextObject, 'x' | 'width' | 'align'>, after: TextObject): TextObject {
+  if (before.align === 'center') return { ...after, x: before.x + before.width / 2 - after.width / 2 }
+  if (before.align === 'right') return { ...after, x: before.x + before.width - after.width }
+  return after
+}
+
+/** The text labels whose key is in `keys` (unlocked only) with their alignment set; 'left' removes it. Same array when nothing changes. */
+export function setTextAlign(items: CanvasItem[], keys: ReadonlySet<string>, align: TextAlign | 'left'): CanvasItem[] {
+  let changed = false
+  const next = items.map((item): CanvasItem => {
+    if (item.kind !== 'text' || item.locked || !keys.has(`text:${item.id}`) || (item.align ?? 'left') === align) return item
+    changed = true
+    const { align: _old, ...rest } = item
+    return align === 'left' ? rest : { ...rest, align }
+  })
+  return changed ? next : items
 }

@@ -1,5 +1,6 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry } from './canvasModel'
+import { connectorPoints, getConnectorRenderSpec, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, strokeHeadGeometry } from './canvasModel'
 import type { ConnectorObject, Point, RectangleObject, Stroke } from './canvasModel'
+import { isPlainRectangle, roundedCornerRadius, roundedRectanglePath } from './roundedCorners'
 
 /**
  * Hand-drawn ("sketchy") style: pure geometry, no canvas and no randomness at draw time.
@@ -198,6 +199,15 @@ export function sketchyRectangleShape(rectangle: RectangleObject): SketchyShape 
     return { outline, fill }
   }
   if (rectangle.ellipse) return roughEllipse(x + w / 2, y + h / 2, w / 2, h / 2, rng)
+  if (rectangle.rounded && isPlainRectangle(rectangle)) {
+    // Four hand-drawn sides joined by small curved corners; the fill is the exact rounded outline.
+    const r = roundedCornerRadius(w, h)
+    const jitter = () => signed(rng) * 0.8
+    let outline = roughLine(x + r, y, x + w - r, y, rng) + roughLine(x + w, y + r, x + w, y + h - r, rng) + roughLine(x + w - r, y + h, x + r, y + h, rng) + roughLine(x, y + h - r, x, y + r, rng)
+    outline += `M${n(x + w - r)} ${n(y)}Q${n(x + w + jitter())} ${n(y + jitter())} ${n(x + w)} ${n(y + r)}M${n(x + w)} ${n(y + h - r)}Q${n(x + w + jitter())} ${n(y + h + jitter())} ${n(x + w - r)} ${n(y + h)}`
+      + `M${n(x + r)} ${n(y + h)}Q${n(x + jitter())} ${n(y + h + jitter())} ${n(x)} ${n(y + h - r)}M${n(x)} ${n(y + r)}Q${n(x + jitter())} ${n(y + jitter())} ${n(x + r)} ${n(y)}`
+    return { outline, fill: roundedRectanglePath(rectangle) }
+  }
   const corners: Array<[number, number]> = rectangle.diamond
     ? [[x + w / 2, y], [x + w, y + h / 2], [x + w / 2, y + h], [x, y + h / 2]]
     : [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
@@ -224,6 +234,7 @@ export function plainFillPath(rectangle: RectangleObject): string {
     return `M${n(x)} ${n(y + ry)}A${n(rx)} ${n(ry)} 0 0 1 ${n(x + w)} ${n(y + ry)}A${n(rx)} ${n(ry)} 0 0 1 ${n(x)} ${n(y + ry)}Z`
   }
   if (rectangle.diamond) return `M${n(x + w / 2)} ${n(y)}L${n(x + w)} ${n(y + h / 2)}L${n(x + w / 2)} ${n(y + h)}L${n(x)} ${n(y + h / 2)}Z`
+  if (rectangle.rounded && isPlainRectangle(rectangle)) return roundedRectanglePath(rectangle)
   return `M${n(x)} ${n(y)}H${n(x + w)}V${n(y + h)}H${n(x)}Z`
 }
 
@@ -248,16 +259,20 @@ function roughClosed(points: Array<{ x: number; y: number }>, rng: Rng): string 
 
 /** Path data of a straight line or arrow stroke, in the hand-drawn style. Null for any other stroke. */
 export function sketchyStrokePath(stroke: Stroke): string | null {
+  const parts = sketchyStrokeParts(stroke)
+  return parts ? parts.line + parts.heads : null
+}
+
+/** The hand-drawn shaft of an arrow/line stroke and, separately, its arrowheads (so a dash can apply to the shaft only). */
+export function sketchyStrokeParts(stroke: Stroke): { line: string; heads: string } | null {
   if ((stroke.shape !== 'arrow' && stroke.shape !== 'line') || stroke.points.length < 2 || stroke.erase) return null
   const rng = mulberry32(seedFromId(`stroke-${stroke.shape}`, stroke.id))
-  const [start, end] = stroke.points
-  let d = roughPolyline([start, end], rng)
-  if (stroke.shape === 'arrow') {
-    const angle = Math.atan2(end.y - start.y, end.x - start.x)
-    const head = Math.max(12, stroke.width * 3.5)
-    for (const turn of [-Math.PI / 6, Math.PI / 6]) d += roughLine(end.x, end.y, end.x - head * Math.cos(angle + turn), end.y - head * Math.sin(angle + turn), rng, 0.5)
+  const line = roughPolyline(stroke.shape === 'arrow' ? stroke.points : stroke.points.slice(0, 2), rng)
+  let heads = ''
+  for (const head of strokeHeadGeometry(stroke)) {
+    for (const wing of [head.wingA, head.wingB]) heads += roughLine(head.tip.x, head.tip.y, wing.x, wing.y, rng, 0.5)
   }
-  return d
+  return { line, heads }
 }
 
 export type SketchyConnector = {
@@ -282,7 +297,9 @@ export function sketchyConnectorShape(connector: ConnectorObject, width = connec
     return { line: roughPolyline(withEnd(geometry.base), rng), head: roughClosed([tip, geometry.sideA, geometry.sideB], rng), headClosed: true, headFill: 'white' }
   }
   if (spec.symbol === 'open-arrow' && geometry && tip) {
-    return { line: roughPolyline(path, rng), head: roughPolyline([geometry.sideA, tip, geometry.sideB], rng), headClosed: false, headFill: null }
+    const second = getConnectorSecondSymbolGeometry(connector, width)
+    const secondHead = second ? roughPolyline([second.sideA, second.tip, second.sideB], rng) : ''
+    return { line: roughPolyline(path, rng), head: roughPolyline([geometry.sideA, tip, geometry.sideB], rng) + secondHead, headClosed: false, headFill: null }
   }
   if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip) {
     return { line: roughPolyline(withEnd(geometry.far), rng), head: roughClosed([tip, geometry.sideA, geometry.far, geometry.sideB], rng), headClosed: true, headFill: spec.symbol === 'filled-diamond' ? 'color' : 'white' }

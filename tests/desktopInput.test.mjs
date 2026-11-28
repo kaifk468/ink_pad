@@ -7,7 +7,13 @@ const input = await loadModule('desktopInput.ts')
 
 const memoryStorage = (initial = {}) => {
   const data = { ...initial }
-  return { getItem: (key) => (key in data ? data[key] : null), setItem: (key, value) => { data[key] = String(value) }, data }
+  return {
+    getItem: (key) => (key in data ? data[key] : null),
+    setItem: (key, value) => { data[key] = String(value) },
+    get length() { return Object.keys(data).length },
+    key: (i) => Object.keys(data)[i] ?? null,
+    data,
+  }
 }
 const brokenStorage = { getItem() { throw new Error('blocked') }, setItem() { throw new Error('blocked') } }
 
@@ -92,7 +98,7 @@ test('App wires the gate through canStartCanvasGesture and keeps the touch block
   assert.match(app, /const \[inputMode, setInputMode\] = useState<InputMode>\(\(\) => loadInputMode\(\)\)/)
   assert.match(app, /const updateInputMode = \(mode: InputMode\) => \{\s*inputModeRef\.current = mode\s*setInputMode\(mode\)\s*saveInputMode\(mode\)\s*\}/)
   // the pen's own gesture check is the original seven gesture refs, in the original order
-  assert.match(app, /const penGestureActive = activePointerRef\.current !== null \|\| activeConnectorRef\.current !== null \|\| activeDragRef\.current !== null \|\| activeResizeRef\.current !== null \|\| activeRotateRef\.current !== null \|\| activeDividerRef\.current !== null \|\| activeLassoRef\.current !== null \|\| lassoDragRef\.current !== null\n/)
+  assert.match(app, /const penGestureActive = activePointerRef\.current !== null \|\| activeConnectorRef\.current !== null \|\| activeDragRef\.current !== null \|\| activeResizeRef\.current !== null \|\| activeRotateRef\.current !== null \|\| activeEndpointRef\.current !== null \|\| activeDividerRef\.current !== null \|\| activeLassoRef\.current !== null \|\| lassoDragRef\.current !== null \|\| activeQuickRef\.current !== null\n/)
   // the wider check adds the taps, the object eraser, and the minimap and UML toolbox drags
   assert.match(app, /const anyGestureActive = penGestureActive \|\| textTapRef\.current !== null \|\| classTapRef\.current !== null \|\| activeObjectEraserRef\.current !== null \|\| minimapDragPointerRef\.current !== null \|\| umlToolboxDragRef\.current !== null \|\| mousePanRef\.current !== null \|\| activeMarqueeRef\.current !== null\n/)
   assert.match(app, /if \(!canStartCanvasGesture\(event\.pointerType, event\.button, inputModeRef\.current, penGestureActive, anyGestureActive, touchNav\.touchCount\(\) > 0\)\) return/)
@@ -270,11 +276,11 @@ test('Ctrl/Cmd + plus, minus and 0 zoom in, out and reset; other Ctrl combinatio
   assert.deepEqual(input.keyCommand(key('+', { ctrlKey: true, shiftKey: true }), 'desktop'), { kind: 'zoomIn' })
   assert.deepEqual(input.keyCommand(key('-', { ctrlKey: true }), 'desktop'), { kind: 'zoomOut' })
   assert.deepEqual(input.keyCommand(key('0', { metaKey: true }), 'desktop'), { kind: 'zoomReset' })
-  for (const k of ['s', 'p', 'r', 'w', 't', 'l']) assert.equal(input.keyCommand(key(k, { ctrlKey: true }), 'desktop'), null, `Ctrl+${k}`)
+  for (const k of ['p', 'r', 'w', 't', 'l']) assert.equal(input.keyCommand(key(k, { ctrlKey: true }), 'desktop'), null, `Ctrl+${k}`)
 })
 
 test('plain letters pick tools (any case), and only with no modifier and no auto-repeat', () => {
-  const tools = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line' }
+  const tools = { p: 'pen', v: 'select', e: 'eraser', t: 'text', l: 'lasso', c: 'connector', b: 'classBox', r: 'rectangle', d: 'diamond', o: 'ellipse', a: 'arrow', i: 'line', x: 'laser' }
   for (const [k, tool] of Object.entries(tools)) {
     assert.deepEqual(input.keyCommand(key(k), 'desktop'), { kind: 'tool', tool })
     assert.deepEqual(input.keyCommand(key(k.toUpperCase()), 'desktop'), { kind: 'tool', tool })
@@ -282,7 +288,33 @@ test('plain letters pick tools (any case), and only with no modifier and no auto
     assert.equal(input.keyCommand(key(k, { altKey: true }), 'desktop'), null)
     assert.equal(input.keyCommand(key(k, { shiftKey: true }), 'desktop') !== null, false, 'Shift+letter is not a tool key')
   }
-  for (const k of ['x', '1', ' ']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
+  for (const k of ['w', ' ']) assert.equal(input.keyCommand(key(k), 'desktop'), null, k)
+})
+
+test('bare number keys pick tools like Excalidraw; Shift+1/2 still zoom; modifiers, repeat and Tablet mode ignore them', async () => {
+  const tools = { 1: 'select', 2: 'rectangle', 3: 'diamond', 4: 'ellipse', 5: 'arrow', 6: 'line', 7: 'pen', 8: 'text', 9: 'connector', 0: 'eraser' }
+  for (const [k, tool] of Object.entries(tools)) {
+    assert.deepEqual(input.keyCommand(key(k, { code: `Digit${k}` }), 'desktop'), { kind: 'tool', tool })
+    assert.deepEqual(input.keyCommand(key(k, { code: `Numpad${k}` }), 'desktop'), { kind: 'tool', tool }, 'numpad digit')
+    assert.equal(input.keyCommand(key(k), 'tablet'), null, 'tablet mode')
+    assert.equal(input.keyCommand(key(k, { repeat: true }), 'desktop'), null)
+    assert.equal(input.keyCommand(key(k, { altKey: true }), 'desktop'), null)
+    assert.equal(input.keyCommand(key(k, { shiftKey: true }), 'desktop') !== null && k !== '1' && k !== '2', false, 'Shift+digit is not a tool key')
+  }
+  assert.deepEqual(input.keyCommand(key('!', { code: 'Digit1', shiftKey: true }), 'desktop'), { kind: 'zoomFit' })
+  assert.deepEqual(input.keyCommand(key('@', { code: 'Digit2', shiftKey: true }), 'desktop'), { kind: 'zoomSelection' })
+  assert.deepEqual(input.keyCommand(key('1', { code: 'Digit1', shiftKey: true }), 'desktop'), { kind: 'zoomFit' })
+  assert.deepEqual(input.keyCommand(key('0', { ctrlKey: true }), 'desktop'), { kind: 'zoomReset' }, 'Ctrl+0 stays zoom reset')
+  assert.equal(input.keyCommand(key('2', { ctrlKey: true }), 'desktop'), null)
+  assert.equal(input.keyCommand(key('2', { metaKey: true }), 'desktop'), null)
+  // the desktop dock names each tool with a hover/focus tooltip carrying its letter and number keys; the help table lists them
+  const dock = await readFile(new URL('../src/app/ToolDock.tsx', import.meta.url), 'utf8')
+  assert.doesNotMatch(dock, /dock-key/)
+  for (const n of ['0', '1', '7', '8', '9']) assert.match(dock, new RegExp(`'${n}'`))
+  assert.match(dock, /keys=\{\[key, num\]\}/)
+  const shortcuts = await readFile(new URL('../src/desktopShortcuts.ts', import.meta.url), 'utf8')
+  assert.match(shortcuts, /keys: 'R or 2'/)
+  assert.match(shortcuts, /keys: 'E or 0'/)
 })
 
 test('Escape only deselects; with a modifier or held down it does nothing', () => {
@@ -305,13 +337,15 @@ test('shortcuts are not taken from text fields, dropdowns or editable text; butt
 
 test('App runs a key only outside panels, dialogs, text editing and gestures, and only after the typing check', async () => {
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /if \(filePanelOpen \|\| storagePanelOpen \|\| libraryOpen \|\| performanceDiagnosticsOpen \|\| textEditor \|\| textEditorRef\.current \|\| classBoxEditor\) return false/)
-  const gesture = app.match(/const gestureActive = ([^\n]+)\n/)[1]
+  assert.match(app, /overlayOpen = \(\): boolean => paletteOpenRef\.current \|\| shortcutHelpOpen \|\| templateChooserOpen \|\| logoDialogOpen \|\| mermaidOpen \|\| pageOverviewOpen \|\| filePanelOpen \|\| storagePanelOpen \|\| libraryOpen \|\| performanceDiagnosticsOpen \|\| Boolean\(textEditor\) \|\| textEditorRef\.current !== null \|\| Boolean\(classBoxEditor\)/)
+  assert.match(app, /if \(editingBlocksCanvas\(\)\) return false/)
+  assert.match(app, /const gestureActive = canvasGestureActive\(\)/)
+  const gesture = app.match(/const canvasGestureActive = \(\): boolean => ([^\n]+)\n/)[1]
   for (const ref of ['activePointerRef', 'activeConnectorRef', 'activeDragRef', 'activeResizeRef', 'activeDividerRef', 'activeLassoRef', 'lassoDragRef', 'textTapRef', 'classTapRef', 'activeObjectEraserRef', 'minimapDragPointerRef', 'umlToolboxDragRef', 'mousePanRef']) assert.ok(gesture.includes(ref + '.current !== null'), ref)
   assert.match(app, /if \(gestureActive \|\| activeMarqueeRef\.current !== null \|\| touchNav\.touchCount\(\) > 0\) return false/)
-  assert.match(app, /const command = keyCommand\(event, inputModeRef\.current\)\n      if \(!command\) return\n      const target = event\.target as HTMLElement \| null\n      if \(isTypingTarget\([^\n]*\)\) return\n(?:      (?:\/\/|if \(command\.kind === 'edit')[^\n]*\n)*      if \(keyActionsRef\.current\(command\)\) event\.preventDefault\(\)/)
+  assert.match(app, /const command = keyCommand\(event, inputModeRef\.current\)\n      if \(!command\) return\n      const target = event\.target as HTMLElement \| null\n      if \(isTypingTarget\([^\n]*\)\) \{\n        if \(command\.kind === 'saveNow'\) \{[^\n]*\n        if \(command\.kind === 'palette' \|\| command\.kind === 'find' \|\| command\.kind === 'findReplace' \|\| command\.kind === 'saveNowRepeat'\) event\.preventDefault\(\)[^\n]*\n        return\n      \}\n(?:      (?:\/\/|if \(command\.kind === 'edit'|if \(\(command\.kind === 'walk')[^\n]*\n)*      const handled = keyActionsRef\.current\(command\)\n(?:      \/\/[^\n]*\n)?      if \(handled \|\| alwaysPreventsDefault\(command, inputModeRef\.current\)\) event\.preventDefault\(\)/)
   // zoom keys respect the zoom lock; Escape only clears a selection and says "not handled" when there is none
-  assert.equal((app.match(/case 'zoom(In|Out|Reset)': if \(!navigationSettingsRef\.current\.zoomLocked\)/g) ?? []).length, 3)
+  assert.equal((app.match(/case 'zoom(In|Out)': if \(!navigationSettingsRef\.current\.zoomLocked\)/g) ?? []).length, 2)
   assert.match(app, /case 'deselect':\n\s*if \(selectedKeysRef\.current\.size === 0 && selectedRectangleIdRef\.current === null\) return false\n\s*clearLassoSelection\(\)/)
 })
 
@@ -355,4 +389,32 @@ test('App deletes the selection as one undo step (keys and the single selected b
   // saved format untouched: deleting only removes items, so no new field or version
   const format = await readFile(new URL('../src/documentFormat.ts', import.meta.url), 'utf8')
   assert.doesNotMatch(format, /deleteSelection|selectAll|canDelete/)
+})
+
+test('first visit on a mouse-only computer starts in Desktop mode; touch devices and stored choices are unchanged', () => {
+  const mouse = { maxTouchPoints: 0, finePointer: true, canHover: true }
+  const tablet = { maxTouchPoints: 10, finePointer: false, canHover: false }
+  const penTablet = { maxTouchPoints: 10, finePointer: true, canHover: true }
+  const touchLaptop = { maxTouchPoints: 10, finePointer: true, canHover: true }
+  assert.equal(input.defaultInputModeFor(mouse), 'desktop')
+  assert.equal(input.defaultInputModeFor(tablet), 'tablet')
+  assert.equal(input.defaultInputModeFor(penTablet), 'tablet')
+  assert.equal(input.defaultInputModeFor(touchLaptop), 'tablet')
+  assert.equal(input.defaultInputModeFor({ maxTouchPoints: 0, finePointer: false, canHover: false }), 'tablet')
+  assert.equal(input.defaultInputModeFor(null), 'tablet')
+  const first = memoryStorage()
+  assert.equal(input.loadInputMode(first, mouse), 'desktop')
+  assert.equal(first.data['inkpad.inputMode'], 'desktop', 'a first-visit Desktop decision is saved so it stays stable')
+  assert.equal(input.loadInputMode(first, tablet), 'desktop')
+  const firstTablet = memoryStorage()
+  assert.equal(input.loadInputMode(firstTablet, tablet), 'tablet')
+  assert.equal(firstTablet.data['inkpad.inputMode'], undefined)
+  // an existing user (any other inkpad.* key) who never chose a mode stays on Tablet
+  assert.equal(input.loadInputMode(memoryStorage({ 'inkpad.currentDocument': 'abc' }), mouse), 'tablet')
+  assert.equal(input.loadInputMode(memoryStorage({ 'unrelated': '1' }), mouse), 'desktop', 'non-inkpad keys do not count')
+  // storage that cannot be enumerated is not a first visit
+  assert.equal(input.loadInputMode({ getItem: () => null }, mouse), 'tablet')
+  assert.equal(input.loadInputMode(memoryStorage({ 'inkpad.inputMode': 'tablet' }), mouse), 'tablet')
+  assert.equal(input.loadInputMode(memoryStorage({ 'inkpad.inputMode': 'desktop' }), tablet), 'desktop')
+  assert.equal(input.loadInputMode(brokenStorage, mouse), 'tablet')
 })

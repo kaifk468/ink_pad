@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+import { DockTip } from './DockTip'
+import { HLD_ENTRIES, MORE_HLD_ENTRIES } from './InsertTray'
+import { HLD_SHAPE_LABELS } from '../hldShapes'
+import type { HldShape } from '../hldShapes'
+import { searchShapes } from '../shapeSearch'
 
 type MoreTrayProps = {
+  /** Desktop dock: icon-only button with a hover/focus tooltip instead of a label and native title. */
+  desktopTip?: boolean
+  /** Desktop only: with onHldShape, the tray also lists the system shapes; CSS shows that section only when the dock is too narrow to hold them (< 740px). */
+  hldActive?: HldShape | null
+  onHldShape?: (shape: HldShape) => void
+  /** Desktop, with onHldShape: the Sticky note tile of the system shapes section (below 740px this is the only place for it). */
+  onSticky?: () => void
   /** "Tidy selected" when two or more class boxes are selected, otherwise "Tidy all". */
   tidyLabel: string
   onTidy: () => void
@@ -9,15 +21,38 @@ type MoreTrayProps = {
   typedClassActive?: boolean
   /** Desktop: adds a code block. */
   onCode?: () => void
+  /** Opens the find bar (both modes). */
+  onFind?: () => void
+  findTitle?: string
+  /** Opens the template chooser. */
+  onTemplates: () => void
+  /** Opens the "Insert from Mermaid…" dialog. */
+  onMermaid?: () => void
+  /** Opens the file picker of "Import Excalidraw file…". */
+  onExcalidraw?: () => void
+  /** Laser pointer (both modes): a transient red trail for presenting; nothing is saved. */
+  onLaser?: () => void
+  laserActive?: boolean
+  /** The key to show in the hint (desktop only). */
+  laserKey?: string
+  /** Hide or show the toolbars (present mode), both modes. */
+  onPresent?: () => void
+  presentActive?: boolean
+  presentKey?: string
+  /** Duplicates the page on screen right after it. */
+  onDuplicatePage?: () => void
+  onPageOverview?: () => void
+  canDuplicatePage?: boolean
 }
 
 /** The More button and the tray that opens upward from the bottom dock (same look as Insert). Home for extra actions such as Tidy. */
-export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, onCode }: MoreTrayProps) {
+export function MoreTray({ tidyLabel, onTidy, desktopTip, hldActive, onHldShape, onSticky, onTypedClass, typedClassActive, onCode, onFind, findTitle, onTemplates, onMermaid, onExcalidraw, onLaser, laserActive, laserKey, onPresent, presentActive, presentKey, onDuplicatePage, onPageOverview, canDuplicatePage = true }: MoreTrayProps) {
   const [open, setOpen] = useState(false)
+  const [shapeQuery, setShapeQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!open) return
+    if (!open) { setShapeQuery(''); return }
     const onPointerDown = (event: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
     }
@@ -30,20 +65,45 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, on
     }
   }, [open])
 
+  const searching = shapeQuery.trim() !== ''
+  const allShapes = [...HLD_ENTRIES, ...MORE_HLD_ENTRIES]
+  const matches = searching ? searchShapes(shapeQuery) : []
+  const shownShapes = allShapes.map((entry) => ({ ...entry, alias: matches.find((match) => match.id === entry.shape)?.alias ?? null, index: searching ? matches.findIndex((match) => match.id === entry.shape) : 0 }))
+    .filter((tile) => tile.index >= 0).sort((a, b) => (searching ? a.index - b.index : 0))
+  const stickyMatch = matches.find((match) => match.id === 'sticky')
+  const firstMatch = matches.find((match) => match.id === 'sticky' ? Boolean(onSticky) : allShapes.some((entry) => entry.shape === match.id))
+  const insertMatch = (id: string) => { if (id === 'sticky') onSticky?.(); else onHldShape?.(id as HldShape); setOpen(false) }
+
   return (
     <div ref={rootRef} className="insert-control more-control">
       <button
-        className={`tool-button more-button${open ? ' selected' : ''}`}
+        className={`tool-button more-button${open || laserActive ? ' selected' : ''}${desktopTip && hldActive ? ' hld-active' : ''}`}
         type="button"
         aria-label="More"
         aria-haspopup="true"
         aria-expanded={open}
-        title="More actions"
+        title={desktopTip ? undefined : laserActive ? `More tools — Laser pointer on${laserKey ? ` (${laserKey})` : ''}` : 'More actions'}
         onClick={() => setOpen((value) => !value)}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg><span>More</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg>{desktopTip ? <DockTip name="More" /> : <span>More</span>}
       </button>
       {open && <div className="insert-tray more-tray" role="group" aria-label="More tray">
+        {desktopTip && onHldShape && <div className="more-tray-system">
+          <div className="insert-tray-heading">System shapes</div>
+          <input className="shape-search-field" type="search" aria-label="Search shapes" placeholder="Search shapes (redis, kafka…)" value={shapeQuery} onChange={(event) => setShapeQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter' && firstMatch) { event.preventDefault(); insertMatch(firstMatch.id) } }} />
+          {searching && matches.length === 0 && <div className="shape-search-empty" role="status">No shape matches</div>}
+          <div className="insert-shape-grid">
+            {shownShapes.map(({ shape, icon, hint, alias }) => (
+              <button className={`insert-entry${hldActive === shape ? ' selected' : ''}`} type="button" key={shape} aria-label={HLD_SHAPE_LABELS[shape]} aria-pressed={hldActive === shape} title={`Click or drag to add ${hint} you write in`} onClick={() => insertMatch(shape)}>
+                {icon}<span>{HLD_SHAPE_LABELS[shape]}{alias && <small className="shape-search-alias">{alias}</small>}</span>
+              </button>
+            ))}
+          </div>
+          {onSticky && (!searching || stickyMatch) && <button className="insert-entry" type="button" aria-label="Sticky note" title="Add a yellow sticky note at the pointer and type in it (N)" onClick={() => insertMatch('sticky')}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v10l-5 5H5z"/><path d="M14 19.5v-5h5"/></svg><span>Sticky note{stickyMatch?.alias && <small className="shape-search-alias">{stickyMatch.alias}</small>}</span>
+          </button>}
+        </div>}
         {onTypedClass && <>
           <div className="insert-tray-heading">LLD</div>
           <button className={`insert-entry${typedClassActive ? ' selected' : ''}`} type="button" aria-label="Typed class box" aria-pressed={typedClassActive} title="Click the sheet to add a typed UML class box; click a box to edit it" onClick={() => { onTypedClass(); setOpen(false) }}>
@@ -54,6 +114,40 @@ export function MoreTray({ tidyLabel, onTidy, onTypedClass, typedClassActive, on
           <div className="insert-tray-heading">Code</div>
           <button className="insert-entry" type="button" aria-label="Code block" title="Add a code block in the middle of the view (K)" onClick={() => { onCode(); setOpen(false) }}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 8-4 4 4 4M15 8l4 4-4 4"/></svg><span>Code block</span>
+          </button>
+        </>}
+        <div className="insert-tray-heading">Templates</div>
+        <button className="insert-entry" type="button" aria-label="Insert template" title="Insert a starter layout in the middle of the view" onClick={() => { onTemplates(); setOpen(false) }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 9h17M9 9v11.5"/></svg><span>Insert template…</span>
+        </button>
+        {onMermaid && <button className="insert-entry" type="button" aria-label="Insert from Mermaid" title="Turn Mermaid flowchart text into boxes and arrows" onClick={() => { onMermaid(); setOpen(false) }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="6" height="5" rx="1.2"/><rect x="14.5" y="15" width="6" height="5" rx="1.2"/><path d="M6.5 9v6h8M12.5 13l2 2-2 2"/></svg><span>Insert from Mermaid…</span>
+        </button>}
+        {onExcalidraw && <button className="insert-entry" type="button" aria-label="Import Excalidraw file" title="Open an Excalidraw (.excalidraw) file as shapes, arrows and text" onClick={() => { onExcalidraw(); setOpen(false) }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11M8 10.5l4 4 4-4M4.5 15.5v4h15v-4"/></svg><span>Import Excalidraw file…</span>
+        </button>}
+        {onFind && <>
+          <div className="insert-tray-heading">Search</div>
+          <button className="insert-entry" type="button" aria-label="Find" title={findTitle ?? 'Find text on the canvas'} onClick={() => { onFind(); setOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></svg><span>Find</span>
+          </button>
+        </>}
+        {onLaser && <>
+          <div className="insert-tray-heading">Present</div>
+          <button className={`insert-entry${laserActive ? ' selected' : ''}`} type="button" aria-label="Laser pointer" aria-pressed={Boolean(laserActive)} title={`Laser pointer: draw a red trail that fades; nothing is saved${laserKey ? ` (${laserKey}; Esc leaves it)` : ''}`} onClick={() => { onLaser(); setOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg><span>Laser pointer</span>
+          </button>
+          {onPresent && <button className={`insert-entry${presentActive ? ' selected' : ''}`} type="button" aria-label="Hide toolbars" aria-pressed={Boolean(presentActive)} title={`Hide the toolbars for presenting; a Show toolbars button brings them back${presentKey ? ` (${presentKey})` : ''}`} onClick={() => { onPresent(); setOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 9h17"/></svg><span>Hide toolbars</span>
+          </button>}
+        </>}
+        {onDuplicatePage && <>
+          <div className="insert-tray-heading">Pages</div>
+          {onPageOverview && <button className="insert-entry" type="button" aria-label="Page overview" title="See every page as a thumbnail; jump to one or move it earlier or later" onClick={() => { onPageOverview(); setOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span>Page overview</span>
+          </button>}
+          <button className="insert-entry" type="button" aria-label="Duplicate page" disabled={!canDuplicatePage} title={canDuplicatePage ? 'Copy this page right after it' : 'Page limit reached'} onClick={() => { onDuplicatePage(); setOpen(false) }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 5H7a2 2 0 0 0-2 2v9"/></svg><span>Duplicate page</span>
           </button>
         </>}
         <div className="insert-tray-heading">Layout</div>

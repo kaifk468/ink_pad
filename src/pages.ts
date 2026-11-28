@@ -1,3 +1,5 @@
+import type { CanvasItem } from './canvasModel'
+import { pasteItems, type IdCounters } from './clipboard'
 /** Rules for the pages of one diagram. A diagram always has at least one page; every page shares the diagram's size, template and colour. */
 export const MAX_PAGES = 50
 
@@ -23,13 +25,47 @@ export function removePageAt<T>(pages: readonly T[], index: number): { pages: T[
   return { pages: next, index: clampPageIndex(at, next.length) }
 }
 
-export const pageLabel = (index: number, count: number): string => `${index + 1} / ${count}`
+/** "2 / 5", or "2 / 5 · API" when the page has a name. */
+/** Characters of a page name the page strip shows before the ellipsis (the tooltip carries the whole name). */
+export const PAGE_STRIP_NAME_CHARS = 12
+export const pageStripName = (name: string): string => { const chars = [...name]; return chars.length > PAGE_STRIP_NAME_CHARS ? `${chars.slice(0, PAGE_STRIP_NAME_CHARS).join('')}…` : name }
+export const pageLabel = (index: number, count: number, name?: string): string => `${index + 1} / ${count}${name ? ` · ${name}` : ''}`
+
+/** The name for a duplicate of a page: "<name> copy" (cut so it stays within 40 characters), or no name when the original has none. */
+export function duplicatedPageName(name: string | undefined): string {
+  if (!name) return ''
+  const suffix = ' copy'
+  return `${name.slice(0, 40 - suffix.length).trimEnd()}${suffix}`
+}
+
+/** "API" for a named page, "Page 2" otherwise (palette rows, headings). */
+export const pageDisplayName = (index: number, name: string | undefined): string => name ? name : `Page ${index + 1}`
 
 /** The pages with `page` put at position `at` (so it ends up at that index). Unchanged at the page limit. */
 export function insertPageAt<T>(pages: readonly T[], at: number, page: T): T[] {
   if (!canAddPage(pages.length)) return pages.slice()
   const position = Math.max(0, Math.min(pages.length, Math.trunc(at) || 0))
   return [...pages.slice(0, position), page, ...pages.slice(position)]
+}
+
+/** The pages with the one at `from` moved to index `to` (both clamped). Pages are moved whole, so a page keeps everything stored with it (drawing, undo history). A no-op returns an unchanged copy. */
+export function movePage<T>(pages: readonly T[], from: number, to: number): T[] {
+  const next = pages.slice()
+  if (next.length < 2) return next
+  const source = clampPageIndex(from, next.length)
+  const target = clampPageIndex(to, next.length)
+  if (source === target) return next
+  const [page] = next.splice(source, 1)
+  next.splice(target, 0, page)
+  return next
+}
+
+/** Where the page that was at `current` is after `movePage(pages, from, to)`: the moved page follows itself, the pages it passed shift by one. */
+export function indexAfterMove(current: number, from: number, to: number): number {
+  if (current === from) return to
+  if (from < to && current > from && current <= to) return current - 1
+  if (from > to && current >= to && current < from) return current + 1
+  return current
 }
 
 /** The page of each diagram you were last on, so reopening a diagram lands where you left it. A view detail, kept on this device only and never inside the diagram. */
@@ -69,4 +105,26 @@ export function writeLastPage(id: string, index: number): void {
     if ((current[id] ?? 0) === (index > 0 ? index : 0)) return
     localStorage.setItem(LAST_PAGE_KEY, JSON.stringify(withLastPage(current, id, index)))
   } catch { /* the page is only a convenience */ }
+}
+
+/** A workspace too large to clamp anything: a duplicated page keeps every coordinate exactly. */
+const UNBOUNDED_WORKSPACE = { x: -1e9, y: -1e9, width: 2e9, height: 2e9 }
+
+/**
+ * The items of a duplicated page: every item cloned at the same position with fresh ids from the shared per-kind counters (ids are global across
+ * pages), connectors re-attached to the copied boxes (never to the original page's boxes), groups renumbered, locks kept. Pure; `items` is not changed.
+ * Returns the counters to continue from.
+ */
+export function duplicatePageItems(items: readonly CanvasItem[], counters: IdCounters): { items: CanvasItem[]; counters: IdCounters; skipped: number } {
+  // Items of a kind this version does not know cannot be given new ids, so they are left out of the copy (never copied with their old ids).
+  const known = items.filter((item) => item.kind !== 'opaque')
+  const skipped = items.length - known.length
+  const pasted = pasteItems(known, counters, 0, UNBOUNDED_WORKSPACE)
+  if (!pasted) return { items: [], counters: { ...counters }, skipped }
+  // Pasting never keeps a lock; a duplicate page does. Order is unchanged, so the items line up one to one.
+  const copy = pasted.items.map((item, index): CanvasItem => {
+    const source = known[index]
+    return item.kind !== 'opaque' && source.locked === true ? ({ ...item, locked: true } as CanvasItem) : item
+  })
+  return { items: copy, counters: pasted.counters, skipped }
 }

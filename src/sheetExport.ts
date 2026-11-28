@@ -1,15 +1,26 @@
-import { connectorPoints, getConnectorRenderSpec, getConnectorSymbolGeometry, itemAngle, itemCenter, rotatedItemBounds } from './canvasModel'
+import { lockedRedrawsAfterEraserRun, connectorDashPattern, connectorPoints, dashPattern, getConnectorRenderSpec, getConnectorSecondSymbolGeometry, getConnectorSymbolGeometry, strokeHeadGeometry, itemAngle, itemCenter, rotatedItemBounds } from './canvasModel'
 import { routeConnectors } from './connectorRoute'
 import { hldOutlinePath } from './hldShapes'
-import { isSketchyRectangle, plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokePath } from './sketchy'
+import { logoFillColor, logoPlaceholderGeometry, logoPlacement, logoSvgTransform } from './logoLayout'
+import { findTechLogo } from './techLogos'
+import { isSketchyRectangle, plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokeParts } from './sketchy'
+import type { CanvasType } from './canvasTypes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 import { getClassBoxGeometry, type ClassBoxCompartment } from './classBoxLayout'
 import { CODE_FONT_FAMILY, codeColors, codeGeometry } from './codeBlock'
 import { getCodeLines } from './codeHighlight'
 import type { CodeObject, OpaqueObject } from './canvasModel'
-import { getTextBaselines, labelLines, TEXT_FONT_FAMILY, textFontFamily } from './textLayout'
+import { getTextBaselines, labelLines, textLineX, TEXT_FONT_FAMILY, textFontFamily, getCachedTextMeasure, DEFAULT_TEXT_FONT } from './textLayout'
+import { connectorLabelFontSize, connectorLabelLayout } from './connectorLabel'
+import { isPlainRectangle, roundedCornerRadius } from './roundedCorners'
+import { connectorEndLabelFontSize, connectorEndLabelLayouts } from './connectorEndLabels'
+import { boardPalette } from './boardStyle'
+import { LANE_BORDER_WIDTH, laneDir, laneLabel, laneRects, type LaneSettings } from './canvasLanes'
+import { NOTEBOOK_HEADER_Y, NOTEBOOK_MARGIN_X, PAGE_MARGIN_COLOR, adjustMarks, colorWithAlpha, markStrength } from './pageTemplates'
+import { resolveItemForBoard } from './boardColors'
 
-export type ExportTemplate = 'blank' | 'lined' | 'dotted'
+/** What the sheet is ruled with: blank, lined, dotted (the template) or grid, isometric, cornell (the canvas types). */
+export type ExportTemplate = CanvasType
 export type SheetExportOptions = {
   width: number
   height: number
@@ -21,19 +32,41 @@ export type SheetExportOptions = {
   transparent?: boolean
   /** Hand-drawn style (the diagram's own setting). */
   sketchy?: boolean
+  /**
+   * The diagram's saved board ('dark' | 'chalk'; missing or unknown = light). Dark boards draw the default ink and the default white fill
+   * as the board does, on the board's sheet colour (backgroundColor is ignored). Ignored when `transparent` is set: transparent exports
+   * keep the STORED colours because they are pasted onto light documents.
+   */
+  board?: string
+  /** Mark strength ('faint' | 'bold'; missing or unknown = normal): dots, lines and lane borders blended toward the sheet or the ink. */
+  marks?: string
+  /** Lane settings of the Lanes canvas (bands, borders and header names are drawn only when `template` is 'lanes'). */
+  lanes?: LaneSettings
+  /** CSS (an @font-face with the font as a data URL) put into the SVG so labels look the same outside the app. Omitted: output is unchanged. */
+  embeddedFontCss?: string
 }
 
 /** Set by buildSheetSvg for the duration of one build. */
 let sketchyExport = false
+let labelBackground = '#ffffff'
+/** Fill of hollow shapes (class box body, hollow arrowheads) for the board being exported. */
+let hollowFill = '#ffffff'
+let exportBoardInk: string | null = null
 
 const SPACING = 32
 const LINE_COLOR = '#aebfd8'
 const DOT_COLOR = '#788392'
+const LINE_STRONG_COLOR = '#8197bb'
+/** Template mark colours of the board being exported (light defaults outside buildSheetSvg). */
+let marks: { dot: string; line: string; lineStrong: string; margin: string } = { dot: DOT_COLOR, line: LINE_COLOR, lineStrong: LINE_STRONG_COLOR, margin: PAGE_MARGIN_COLOR }
 const SPACING_FACTOR = { narrow: 0.8, standard: 1, wide: 1.2 }
 
 const n = (value: number) => String(Math.round(value * 100) / 100)
 const esc = (value: string) => value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string)
 const pressureScale = (pressure: number) => (pressure > 0 ? 0.35 + pressure * 0.9 : 1)
+
+/** The stroke-dasharray attribute (with its leading space) for a dash pattern; empty for solid. */
+const dashAttr = (pattern: number[]) => (pattern.length ? ` stroke-dasharray="${pattern.map(n).join(' ')}"` : '')
 
 function strokeElement(stroke: Stroke): string {
   const color = esc(stroke.color)
@@ -42,17 +75,15 @@ function strokeElement(stroke: Stroke): string {
   if (!points.length) return ''
   if ((stroke.shape === 'line' || stroke.shape === 'arrow') && points.length >= 2) {
     const [start, end] = points
-    const rough = sketchyExport ? sketchyStrokePath(stroke) : null
-    if (rough) return `<path d="${rough}" ${common} stroke-width="${n(stroke.width)}"/>`
-    let d = `M${n(start.x)} ${n(start.y)}L${n(end.x)} ${n(end.y)}`
-    if (stroke.shape === 'arrow') {
-      const angle = Math.atan2(end.y - start.y, end.x - start.x)
-      const head = Math.max(12, stroke.width * 3.5)
-      for (const turn of [-Math.PI / 6, Math.PI / 6]) {
-        d += `M${n(end.x)} ${n(end.y)}L${n(end.x - head * Math.cos(angle + turn))} ${n(end.y - head * Math.sin(angle + turn))}`
-      }
-    }
-    return `<path d="${d}" ${common} stroke-width="${n(stroke.width)}"/>`
+    const path = stroke.shape === 'arrow' ? points : [start, end]
+    const rough = sketchyExport ? sketchyStrokeParts(stroke) : null
+    const dash = dashAttr(dashPattern(stroke.dash, stroke.width))
+    const heads = strokeHeadGeometry(stroke)
+    // Heads are always solid; the dash belongs to the shaft only.
+    const headPath = rough ? rough.heads : heads.map((head) => `M${n(head.tip.x)} ${n(head.tip.y)}L${n(head.wingA.x)} ${n(head.wingA.y)}M${n(head.tip.x)} ${n(head.tip.y)}L${n(head.wingB.x)} ${n(head.wingB.y)}`).join('')
+    const shaft = rough ? rough.line : path.map((p, i) => `${i === 0 ? 'M' : 'L'}${n(p.x)} ${n(p.y)}`).join('')
+    if (!dash) return `<path d="${shaft}${headPath}" ${common} stroke-width="${n(stroke.width)}"/>`
+    return `<path d="${shaft}" ${common} stroke-width="${n(stroke.width)}"${dash}/>` + (headPath ? `<path d="${headPath}" ${common} stroke-width="${n(stroke.width)}"/>` : '')
   }
   if (points.length === 1) {
     return `<circle cx="${n(points[0].x)}" cy="${n(points[0].y)}" r="${n((stroke.width * pressureScale(points[0].pressure)) / 2)}" fill="${color}"/>`
@@ -83,7 +114,7 @@ function classBoxElement(rectangle: RectangleObject): string {
     .map((y) => `M${n(rectangle.x)} ${n(y)}H${n(rectangle.x + rectangle.width)}`)
     .join('')
   const box = `${n(rectangle.x)} ${n(rectangle.y)} ${n(rectangle.width)} ${n(rectangle.height)}`
-  return `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}" fill="#ffffff"/>`
+  return `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}" fill="${hollowFill}"/>`
     + `<svg x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}" viewBox="${box}" overflow="hidden">${texts(geometry.name)}${texts(geometry.attributes)}${texts(geometry.methods)}</svg>`
     + (dividers ? `<path d="${dividers}" fill="none" stroke="${color}" stroke-width="${n(Math.max(1, rectangle.strokeWidth / 2))}"/>` : '')
 }
@@ -117,26 +148,40 @@ function rectangleElement(rectangle: RectangleObject): string {
   const sketchy = sketchyExport && isSketchyRectangle(rectangle)
   const fill = color ? `<path d="${sketchy ? sketchyRectangleShape(rectangle).fill : plainFillPath(rectangle)}" fill="${esc(color)}" stroke="none"/>` : ''
   if (sketchy) {
-    const outline = `<path d="${sketchyRectangleShape(rectangle).outline}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"/>`
-    return fill + (rectangle.inkBox ? inkBoxInkElement(rectangle) : '') + outline
+    const outline = `<path d="${sketchyRectangleShape(rectangle).outline}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
+    return fill + (rectangle.inkBox ? inkBoxInkElement(rectangle) : '') + outline + logoElement(rectangle)
   }
-  return fill + plainRectangleElement(rectangle)
+  return fill + plainRectangleElement(rectangle) + logoElement(rectangle)
+}
+
+/** A logo box's logo as one filled path (the same placement and colour as the canvas); a stand-in rounded square with "?" for an unknown slug. Empty for other boxes. */
+function logoElement(rectangle: RectangleObject): string {
+  if (rectangle.logo === undefined) return ''
+  const placement = logoPlacement(rectangle)
+  if (placement.size <= 0) return ''
+  const logo = findTechLogo(rectangle.logo)
+  if (logo) return `<path d="${logo.path}" transform="${logoSvgTransform(placement)}" fill="${esc(logoFillColor(rectangle, logo, exportBoardInk))}"/>`
+  const stand = logoPlaceholderGeometry(placement)
+  const color = esc(rectangle.strokeColor)
+  return `<rect x="${n(stand.x)}" y="${n(stand.y)}" width="${n(stand.size)}" height="${n(stand.size)}" rx="${n(stand.radius)}" fill="none" stroke="${color}" stroke-width="${n(Math.max(1.5, stand.size * 0.04))}" opacity="0.55"/>`
+    + `<text x="${n(stand.x + stand.size / 2)}" y="${n(stand.y + stand.size / 2 + stand.fontSize * 0.04)}" font-family="sans-serif" font-size="${n(stand.fontSize)}" font-weight="600" text-anchor="middle" dominant-baseline="central" fill="${color}" opacity="0.55">?</text>`
 }
 
 function plainRectangleElement(rectangle: RectangleObject): string {
   if (rectangle.hldShape) {
-    return inkBoxInkElement(rectangle) + `<path d="${hldOutlinePath(rectangle, rectangle.hldShape)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"/>`
+    return inkBoxInkElement(rectangle) + `<path d="${hldOutlinePath(rectangle, rectangle.hldShape)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
   }
   if (rectangle.diamond) {
     const cx = rectangle.x + rectangle.width / 2
     const cy = rectangle.y + rectangle.height / 2
-    return `<polygon points="${n(cx)},${n(rectangle.y)} ${n(rectangle.x + rectangle.width)},${n(cy)} ${n(cx)},${n(rectangle.y + rectangle.height)} ${n(rectangle.x)},${n(cy)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"/>`
+    return `<polygon points="${n(cx)},${n(rectangle.y)} ${n(rectangle.x + rectangle.width)},${n(cy)} ${n(cx)},${n(rectangle.y + rectangle.height)} ${n(rectangle.x)},${n(cy)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
   }
   if (rectangle.ellipse) {
-    return `<ellipse cx="${n(rectangle.x + rectangle.width / 2)}" cy="${n(rectangle.y + rectangle.height / 2)}" rx="${n(rectangle.width / 2)}" ry="${n(rectangle.height / 2)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}"/>`
+    return `<ellipse cx="${n(rectangle.x + rectangle.width / 2)}" cy="${n(rectangle.y + rectangle.height / 2)}" rx="${n(rectangle.width / 2)}" ry="${n(rectangle.height / 2)}" fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
   }
-  const rounded = rectangle.inkBox ? ' rx="14" ry="14"' : ''
-  return classBoxElement(rectangle) + inkBoxInkElement(rectangle) + inkBoxLinesElement(rectangle) + `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}"${rounded} fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"/>`
+  const radius = rectangle.inkBox ? 14 : rectangle.rounded && isPlainRectangle(rectangle) ? roundedCornerRadius(rectangle.width, rectangle.height) : 0
+  const rounded = radius > 0 ? ` rx="${n(radius)}" ry="${n(radius)}"` : ''
+  return classBoxElement(rectangle) + inkBoxInkElement(rectangle) + inkBoxLinesElement(rectangle) + `<rect x="${n(rectangle.x)}" y="${n(rectangle.y)}" width="${n(rectangle.width)}" height="${n(rectangle.height)}"${rounded} fill="none" stroke="${esc(rectangle.strokeColor)}" stroke-width="${n(rectangle.strokeWidth)}" stroke-linejoin="round"${dashAttr(dashPattern(rectangle.dash, rectangle.strokeWidth))}/>`
 }
 
 const pt = (p: Point) => `${n(p.x)} ${n(p.y)}`
@@ -149,35 +194,59 @@ function connectorPathData(connector: ConnectorObject, atStart: boolean, replace
 }
 
 function sketchyConnectorElement(connector: ConnectorObject): string {
-  const spec = getConnectorRenderSpec(connector)
   const shape = sketchyConnectorShape(connector)
   const color = esc(connector.strokeColor)
-  const dash = spec.lineStyle === 'dashed' ? ` stroke-dasharray="${n(Math.max(6, connector.strokeWidth * 2.5))} ${n(Math.max(4, connector.strokeWidth * 1.8))}"` : ''
+  const dash = dashAttr(connectorDashPattern(connector))
   const base = `stroke="${color}" stroke-width="${n(connector.strokeWidth)}" stroke-linecap="round" stroke-linejoin="round"`
-  const head = shape.head ? `<path d="${shape.head}" fill="${shape.headClosed && shape.headFill ? (shape.headFill === 'color' ? color : '#ffffff') : 'none'}" ${base}/>` : ''
+  const head = shape.head ? `<path d="${shape.head}" fill="${shape.headClosed && shape.headFill ? (shape.headFill === 'color' ? color : hollowFill) : 'none'}" ${base}/>` : ''
   return `<path d="${shape.line}" fill="none" ${base}${dash}/>${head}`
 }
 
+function connectorLabelElement(connector: ConnectorObject): string {
+  const layout = connectorLabelLayout(connector, getCachedTextMeasure(connectorLabelFontSize(connector), DEFAULT_TEXT_FONT))
+  if (!layout) return ''
+  const family = esc(textFontFamily(DEFAULT_TEXT_FONT))
+  const pad = `<rect x="${n(layout.box.x)}" y="${n(layout.box.y)}" width="${n(layout.box.width)}" height="${n(layout.box.height)}" fill="${esc(labelBackground)}"/>`
+  const text = layout.lines
+    .map((line, index) => (line.length === 0 ? '' : `<text x="${n(layout.lineX[index])}" y="${n(layout.baselines[index])}" font-family="${family}" font-size="${n(layout.fontSize)}" fill="${esc(connector.strokeColor)}" xml:space="preserve">${esc(line)}</text>`))
+    .join('')
+  return pad + text
+}
+
+function connectorEndLabelElements(connector: ConnectorObject): string {
+  if (!connector.startLabel && !connector.endLabel) return ''
+  const family = esc(textFontFamily(DEFAULT_TEXT_FONT))
+  return connectorEndLabelLayouts(connector, getCachedTextMeasure(connectorEndLabelFontSize(connector), DEFAULT_TEXT_FONT))
+    .map((layout) => `<text x="${n(layout.x)}" y="${n(layout.baseline)}" font-family="${family}" font-size="${n(layout.fontSize)}" fill="${esc(connector.strokeColor)}" xml:space="preserve">${esc(layout.text)}</text>`)
+    .join('')
+}
+
 function connectorElement(connector: ConnectorObject): string {
+  return connectorLineElement(connector) + connectorLabelElement(connector) + connectorEndLabelElements(connector)
+}
+
+function connectorLineElement(connector: ConnectorObject): string {
   if (sketchyExport) return sketchyConnectorElement(connector)
   const spec = getConnectorRenderSpec(connector)
   const geometry = getConnectorSymbolGeometry(connector)
   const color = esc(connector.strokeColor)
   const width = n(connector.strokeWidth)
-  const dash = spec.lineStyle === 'dashed' ? ` stroke-dasharray="${n(Math.max(6, connector.strokeWidth * 2.5))} ${n(Math.max(4, connector.strokeWidth * 1.8))}"` : ''
+  const dash = dashAttr(connectorDashPattern(connector))
   const base = `stroke="${color}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"`
   const parts: string[] = []
   const tip = geometry?.tip
   const atStart = spec.endpoint === 'start'
   if (spec.symbol === 'hollow-triangle' && geometry && tip) {
     parts.push(`<path d="${connectorPathData(connector, atStart, geometry.base)}" fill="none" ${base}${dash}/>`)
-    parts.push(`<path d="M${pt(tip)}L${pt(geometry.sideA)}L${pt(geometry.sideB)}Z" fill="#ffffff" ${base}/>`)
+    parts.push(`<path d="M${pt(tip)}L${pt(geometry.sideA)}L${pt(geometry.sideB)}Z" fill="${hollowFill}" ${base}/>`)
   } else if (spec.symbol === 'open-arrow' && geometry && tip) {
     parts.push(`<path d="${connectorPathData(connector, atStart)}" fill="none" ${base}${dash}/>`)
     parts.push(`<path d="M${pt(geometry.sideA)}L${pt(tip)}L${pt(geometry.sideB)}" fill="none" ${base}/>`)
+    const second = getConnectorSecondSymbolGeometry(connector)
+    if (second) parts.push(`<path d="M${pt(second.sideA)}L${pt(second.tip)}L${pt(second.sideB)}" fill="none" ${base}/>`)
   } else if ((spec.symbol === 'hollow-diamond' || spec.symbol === 'filled-diamond') && geometry && tip) {
     parts.push(`<path d="${connectorPathData(connector, atStart, geometry.far)}" fill="none" ${base}${dash}/>`)
-    parts.push(`<path d="M${pt(tip)}L${pt(geometry.sideA)}L${pt(geometry.far)}L${pt(geometry.sideB)}Z" fill="${spec.symbol === 'filled-diamond' ? color : '#ffffff'}" ${base}/>`)
+    parts.push(`<path d="M${pt(tip)}L${pt(geometry.sideA)}L${pt(geometry.far)}L${pt(geometry.sideB)}Z" fill="${spec.symbol === 'filled-diamond' ? color : hollowFill}" ${base}/>`)
   } else {
     parts.push(`<path d="${connectorPathData(connector, false)}" fill="none" ${base}${dash}/>`)
   }
@@ -188,10 +257,15 @@ function textElement(text: TextObject): string {
   const lines = labelLines(text)
   const baselines = getTextBaselines(lines.join('\n'), text.fontSize)
   const family = esc(textFontFamily(text.fontFamily))
+  // Aligned lines are placed with the same clamped left edge the canvas uses (a line wider than the box stays at the left edge); with no text measure (no DOM) the SVG anchors them instead.
+  const measure = text.align ? getCachedTextMeasure(text.fontSize, text.fontFamily) : undefined
   return lines
-    .map((line, index) => (line.length === 0
-      ? ''
-      : `<text x="${n(text.x)}" y="${n(text.y + baselines[index])}" font-family="${family}" font-size="${n(text.fontSize)}" fill="${esc(text.color)}" xml:space="preserve">${esc(line)}</text>`))
+    .map((line, index) => {
+      if (line.length === 0) return ''
+      const anchored = text.align && !measure
+      const x = measure ? textLineX(text, measure(line)) : text.align === 'center' ? text.x + text.width / 2 : text.align === 'right' ? text.x + text.width : text.x
+      return `<text x="${n(x)}" y="${n(text.y + baselines[index])}"${anchored ? (text.align === 'center' ? ' text-anchor="middle"' : ' text-anchor="end"') : ''} font-family="${family}" font-size="${n(text.fontSize)}" fill="${esc(text.color)}" xml:space="preserve">${esc(line)}</text>`
+    })
     .join('')
 }
 
@@ -249,11 +323,47 @@ function itemElement(item: CanvasItem): string {
  */
 export function buildSheetSvg(rawItems: CanvasItem[], options: SheetExportOptions): string {
   sketchyExport = options.sketchy === true
+  const palette = options.transparent ? boardPalette(undefined) : boardPalette(options.board)
+  // Dark boards: the sheet is the board's colour (the saved tint stays in the file, unused) and the default ink / white fill resolve to the board's.
+  const exportOptions = palette.theme === 'light' ? options : { ...options, backgroundColor: palette.sheet }
+  labelBackground = options.transparent ? '#ffffff' : exportOptions.backgroundColor
+  hollowFill = palette.fill
+  exportBoardInk = palette.theme === 'light' ? null : palette.ink
+  if (palette.theme !== 'light') marks = { dot: palette.dot, line: palette.line, lineStrong: palette.lineStrong, margin: palette.margin }
+  if (markStrength(options.marks) !== 'normal') {
+    const adjusted = adjustMarks(marks, options.marks, exportOptions.backgroundColor, palette.ink)
+    marks = { dot: adjusted.dot, line: adjusted.line, lineStrong: adjusted.lineStrong, margin: adjusted.margin ?? marks.margin }
+  }
   try {
-    return buildSheetSvgInner(rawItems, options)
+    return buildSheetSvgInner(palette.theme === 'light' ? rawItems : rawItems.map((item) => resolveItemForBoard(item, palette, rawItems)), exportOptions)
   } finally {
     sketchyExport = false
+    hollowFill = '#ffffff'
+    exportBoardInk = null
+    marks = { dot: DOT_COLOR, line: LINE_COLOR, lineStrong: LINE_STRONG_COLOR, margin: PAGE_MARGIN_COLOR }
   }
+}
+
+/** Lane header tints, borders and names as SVG, in sheet units (the same geometry as the sheet layer and canvasLanes). */
+function laneMarkup(lanes: LaneSettings | undefined, width: number, height: number): string {
+  const dir = laneDir(lanes)
+  const rects = laneRects(lanes, width, height)
+  const tint = colorWithAlpha(marks.line, 0.22)
+  const b = LANE_BORDER_WIDTH
+  let out = ''
+  for (const { header } of rects) out += `<rect x="${n(header.x)}" y="${n(header.y)}" width="${n(header.width)}" height="${n(header.height)}" fill="${tint}"/>`
+  for (const { lane, header } of rects) {
+    if (dir === 'columns') out += `<rect x="${n(lane.x + lane.width - b)}" y="0" width="${b}" height="${n(height)}" fill="${marks.lineStrong}"/><rect x="${n(lane.x)}" y="${n(header.height)}" width="${n(lane.width)}" height="${b}" fill="${marks.lineStrong}"/>`
+    else out += `<rect x="0" y="${n(lane.y + lane.height - b)}" width="${n(width)}" height="${b}" fill="${marks.lineStrong}"/><rect x="${n(header.width)}" y="${n(lane.y)}" width="${b}" height="${n(lane.height)}" fill="${marks.lineStrong}"/>`
+  }
+  const ink = exportBoardInk ?? '#202124'
+  for (const rect of rects) {
+    const label = laneLabel(rect, dir)
+    if (!label) continue
+    const rotate = label.rotate === 0 ? '' : ` transform="rotate(${label.rotate} ${n(label.x)} ${n(label.y)})"`
+    out += `<text x="${n(label.x)}" y="${n(label.y)}" text-anchor="middle" dominant-baseline="central" font-family="${esc(TEXT_FONT_FAMILY)}" font-size="${label.fontSize}" font-weight="600" fill="${ink}" fill-opacity="0.75"${rotate}>${esc(label.text)}</text>`
+  }
+  return out
 }
 
 function buildSheetSvgInner(rawItems: CanvasItem[], options: SheetExportOptions): string {
@@ -268,42 +378,68 @@ function buildSheetSvgInner(rawItems: CanvasItem[], options: SheetExportOptions)
   // The stroke eraser only cuts ink, never connectors: they are put on top of each eraser mask again.
   const connectorElements: string[] = []
 
-  const flushWithEraser = (erasers: Stroke[]) => {
+  const flushWithEraser = (erasers: Stroke[], runStart: number, runEnd: number) => {
     maskCount += 1
     const id = `erase-${maskCount}`
     const cuts = erasers.map((eraser) => strokeElement({ ...eraser, color: '#000000' })).join('')
     defs.push(`<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#fff"/>${cuts}</mask>`)
-    body = `<g mask="url(#${id})">${body}${pending}</g>${connectorElements.join('')}`
+    body = `<g mask="url(#${id})">${body}${pending}</g>${connectorElements.join('')}${lockedRedrawsAfterEraserRun(items, runStart, runEnd).map(itemElement).join('')}`
     pending = ''
   }
 
   let eraserRun: Stroke[] = []
-  for (const item of items) {
+  for (const [index, item] of items.entries()) {
     if (item.kind === 'stroke' && item.erase) {
       eraserRun.push(item)
       continue
     }
     if (eraserRun.length) {
-      flushWithEraser(eraserRun)
+      flushWithEraser(eraserRun, index - eraserRun.length, index - 1)
       eraserRun = []
     }
     const element = itemElement(item)
     if (item.kind === 'connector') connectorElements.push(element)
     pending += element
   }
-  if (eraserRun.length) flushWithEraser(eraserRun)
+  if (eraserRun.length) flushWithEraser(eraserRun, items.length - eraserRun.length, items.length - 1)
   body += pending
 
   const template = options.transparent ? 'blank' : options.template
-  if (template !== 'blank') {
+  let templateMarks = ''
+  if (template === 'lanes') templateMarks = laneMarkup(options.lanes, width, height)
+  if (template !== 'blank' && template !== 'lanes') {
     const spacing = Math.round(SPACING * SPACING_FACTOR[options.spacing ?? 'standard'] * 100) / 100
-    const mark = template === 'lined'
-      ? `<path d="M0 ${spacing - 0.5}H${spacing}" stroke="${LINE_COLOR}" stroke-width="1.25" fill="none"/>`
-      : `<circle cx="2" cy="2" r="1.65" fill="${DOT_COLOR}"/>`
-    defs.unshift(`<pattern id="template" width="${spacing}" height="${spacing}" patternUnits="userSpaceOnUse">${mark}</pattern>`)
+    const lined = `<path d="M0 ${spacing - 0.5}H${spacing}" stroke="${marks.line}" stroke-width="1.25" fill="none"/>`
+    if (template === 'grid') {
+      // Same look as the sheet's CSS: thin lines every spacing, a stronger line every 5th (tile = 5 spacings).
+      const big = Math.round(spacing * 5 * 100) / 100
+      let thin = ''
+      for (let i = 1; i < 5; i++) thin += `M${Math.round((i * spacing + 0.5) * 100) / 100} 0V${big}M0 ${Math.round((i * spacing + 0.5) * 100) / 100}H${big}`
+      const mark = `<path d="${thin}" stroke="${marks.line}" stroke-width="1" fill="none"/><path d="M0.75 0V${big}M0 0.75H${big}" stroke="${marks.lineStrong}" stroke-width="1.5" fill="none"/>`
+      defs.unshift(`<pattern id="template" width="${big}" height="${big}" patternUnits="userSpaceOnUse">${mark}</pattern>`)
+    } else if (template === 'isometric') {
+      // Dots on a triangular lattice: a point at every (k * spacing, row * rowHeight), odd rows shifted by half a spacing.
+      // The tile is spacing wide and two rows tall and starts 2 units up-left so the dot centres are the lattice points.
+      const rowHeight = Math.round(spacing * Math.sqrt(3) / 2 * 1000) / 1000
+      const half = Math.round((spacing / 2 + 2) * 1000) / 1000
+      const mark = `<circle cx="2" cy="2" r="1.65" fill="${marks.dot}"/><circle cx="${half}" cy="${Math.round((rowHeight + 2) * 1000) / 1000}" r="1.65" fill="${marks.dot}"/>`
+      defs.unshift(`<pattern id="template" x="-2" y="-2" width="${spacing}" height="${Math.round(rowHeight * 2 * 1000) / 1000}" patternUnits="userSpaceOnUse">${mark}</pattern>`)
+    } else {
+      const mark = template === 'dotted' ? `<circle cx="2" cy="2" r="1.65" fill="${marks.dot}"/>` : lined
+      defs.unshift(`<pattern id="template" width="${spacing}" height="${spacing}" patternUnits="userSpaceOnUse">${mark}</pattern>`)
+    }
+    if (template === 'notebook') {
+      // Margin line and header line in sheet units from the top-left (they do not move when the sheet grows); the ruled lines are the pattern.
+      templateMarks = `<rect x="${NOTEBOOK_MARGIN_X}" y="0" width="2" height="${height}" fill="${marks.margin}"/><rect x="0" y="${NOTEBOOK_HEADER_Y}" width="${width}" height="2" fill="${marks.lineStrong}"/>`
+    }
+    if (template === 'cornell') {
+      // Cue column, header band and summary line in sheet units from the top-left (they do not move when the sheet grows).
+      templateMarks = `<rect x="700" y="0" width="2" height="${height}" fill="${marks.lineStrong}"/><rect x="0" y="160" width="${width}" height="2" fill="${marks.lineStrong}"/><rect x="0" y="1200" width="${width}" height="2" fill="${marks.lineStrong}"/>`
+    }
   }
   const sheet = options.transparent ? '' : `<rect width="${width}" height="${height}" fill="${esc(options.backgroundColor)}"/>`
-  const templateRect = template !== 'blank' ? `<rect width="${width}" height="${height}" fill="url(#template)"/>` : ''
+  const templateRect = template === 'lanes' ? templateMarks : template !== 'blank' ? `<rect width="${width}" height="${height}" fill="url(#template)"/>${templateMarks}` : ''
+  if (options.embeddedFontCss) defs.unshift(`<style>${options.embeddedFontCss}</style>`)
   const defsBlock = defs.length ? `<defs>${defs.join('')}</defs>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${defsBlock}${sheet}${templateRect}${body}</svg>`
 }
@@ -333,6 +469,9 @@ export function getContentBounds(rawItems: CanvasItem[], sheet: { width: number;
       include(box.x + box.width, box.y + box.height, item.strokeWidth)
     } else {
       for (const p of connectorPoints(item)) include(p.x, p.y, item.strokeWidth + 16)
+      const labelLayout = connectorLabelLayout(item, getCachedTextMeasure(connectorLabelFontSize(item), DEFAULT_TEXT_FONT))
+      for (const end of connectorEndLabelLayouts(item, getCachedTextMeasure(connectorEndLabelFontSize(item), DEFAULT_TEXT_FONT))) { include(end.x, end.y, 0); include(end.x + end.width, end.y + end.height, 0) }
+      if (labelLayout) { include(labelLayout.box.x, labelLayout.box.y, 0); include(labelLayout.box.x + labelLayout.box.width, labelLayout.box.y + labelLayout.box.height, 0) }
     }
   }
   if (!Number.isFinite(minX)) return null

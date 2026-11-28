@@ -209,6 +209,8 @@ function layoutBlock(nodes: TidyNode[], edges: TidyEdge[]): Block {
  * New top-left positions for the boxes. Connected boxes form blocks; blocks are packed left to right in rows no wider
  * than the boxes were spread (at least TIDY_MIN_ROW_WIDTH), and the whole result keeps the top-left corner of the boxes.
  */
+const isStraightRouting = (item: { routing?: string }): boolean => item.routing === undefined || item.routing === 'straight'
+
 export function layoutBoxes(nodes: TidyNode[], edges: TidyEdge[]): Map<number, Position> {
   const result = new Map<number, Position>()
   if (nodes.length === 0) return result
@@ -259,7 +261,7 @@ export function layoutBoxes(nodes: TidyNode[], edges: TidyEdge[]): Map<number, P
 
 /** The boxes Tidy arranges: class boxes (typed and ink) and HLD shapes. Plain rectangles may be frames, so they stay put. */
 export function isTidyBox(item: CanvasItem): item is RectangleObject {
-  return item.kind === 'rectangle' && (item.classBox !== undefined || item.inkBox !== undefined)
+  return item.kind === 'rectangle' && item.locked !== true && (item.classBox !== undefined || item.inkBox !== undefined)
 }
 
 /** What the Tidy button would do now: the selected boxes when at least two are selected, otherwise every box. */
@@ -317,7 +319,7 @@ export function tidyItems(items: CanvasItem[], scopeIds: ReadonlySet<number> | n
     const dy = position.y + shiftY - box.y
     if (dx !== 0 || dy !== 0) deltas.set(id, { dx, dy })
   }
-  const needsElbow = items.some((item) => item.kind === 'connector' && item.routing !== 'elbow' && !!item.startAttachment && !!item.endAttachment && inScope.has(item.startAttachment.rectangleId) && inScope.has(item.endAttachment.rectangleId))
+  const needsElbow = items.some((item) => item.kind === 'connector' && isStraightRouting(item) && !!item.startAttachment && !!item.endAttachment && inScope.has(item.startAttachment.rectangleId) && inScope.has(item.endAttachment.rectangleId))
   if (deltas.size === 0 && !needsElbow) return items
 
   const moved = new Map<number, RectangleObject>()
@@ -331,9 +333,13 @@ export function tidyItems(items: CanvasItem[], scopeIds: ReadonlySet<number> | n
   })
   const withConnectors = withBoxes.map((item): CanvasItem => {
     if (item.kind !== 'connector') return item
-    // A connector between two arranged boxes becomes an Elbow line (straight lines look diagonal and crowded after a tidy).
+    // A straight connector between two arranged boxes becomes an Elbow line (straight lines look diagonal and crowded after a tidy).
+    // Curved and elbow connectors keep their routing and bend; a converted one starts with no bend of its own.
     const between = !!item.startAttachment && !!item.endAttachment && inScope.has(item.startAttachment.rectangleId) && inScope.has(item.endAttachment.rectangleId)
-    if (between && item.routing !== 'elbow') item = { ...item, routing: 'elbow' }
+    if (between && isStraightRouting(item)) {
+      const { bend: _bend, routedPath: _path, ...rest } = item
+      item = { ...rest, routing: 'elbow' }
+    }
     const start = item.startAttachment ? moved.get(item.startAttachment.rectangleId) : undefined
     const end = item.endAttachment ? moved.get(item.endAttachment.rectangleId) : undefined
     if (!start && !end) return item

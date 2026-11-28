@@ -11,7 +11,7 @@ const THUMBNAIL_STORE = 'thumbnails'
 const CURRENT_KEY = 'inkpad.currentDocument'
 
 /** `starred` comes from storage that keeps stars with the file (Google Drive); elsewhere stars are a local list (see starred.ts). */
-export type DocumentSummary = { id: string; title: string; updatedAt: string; itemCount: number; folderId: string | null; starred?: boolean; /** Only when the diagram has more than one page. */ pageCount?: number }
+export type DocumentSummary = { id: string; title: string; updatedAt: string; /** When the diagram was first made, if the storage knows (used by the Created sort). */ createdAt?: string; itemCount: number; folderId: string | null; starred?: boolean; /** Only when the diagram has more than one page. */ pageCount?: number }
 export type FolderRecord = { id: string; name: string; parentId: string | null; createdAt: string }
 type PlacementRecord = { docId: string; folderId: string }
 /**
@@ -19,10 +19,10 @@ type PlacementRecord = { docId: string; folderId: string }
  * large nested object (the copy blocks the page, and used to freeze writing on big diagrams). Older records hold the
  * document object itself; both shapes are read.
  */
-export type StoredDocument = { id: string; json?: string; title?: string; updatedAt?: string; itemCount?: number; pageCount?: number; document?: InkPadDocument }
+export type StoredDocument = { id: string; json?: string; title?: string; updatedAt?: string; createdAt?: string; itemCount?: number; pageCount?: number; document?: InkPadDocument }
 
 export function toStoredRecord(id: string, document: InkPadDocument): StoredDocument {
-  return { id, json: stringifyDocument(document), title: document.title, updatedAt: document.updatedAt, itemCount: documentItemCount(document), ...(documentPageCount(document) > 1 ? { pageCount: documentPageCount(document) } : {}) }
+  return { id, json: stringifyDocument(document), title: document.title, updatedAt: document.updatedAt, createdAt: document.createdAt, itemCount: documentItemCount(document), ...(documentPageCount(document) > 1 ? { pageCount: documentPageCount(document) } : {}) }
 }
 
 export function documentFromRecord(record: StoredDocument | undefined): InkPadDocument | null {
@@ -36,9 +36,9 @@ export function documentFromRecord(record: StoredDocument | undefined): InkPadDo
 }
 
 export function summaryFromRecord(record: StoredDocument, folderId: string | null): DocumentSummary {
-  if (record.json !== undefined) return { id: record.id, title: record.title ?? '', updatedAt: record.updatedAt ?? '', itemCount: record.itemCount ?? 0, folderId, ...((record.pageCount ?? 1) > 1 ? { pageCount: record.pageCount } : {}) }
+  if (record.json !== undefined) return { id: record.id, title: record.title ?? '', updatedAt: record.updatedAt ?? '', ...(record.createdAt ? { createdAt: record.createdAt } : {}), itemCount: record.itemCount ?? 0, folderId, ...((record.pageCount ?? 1) > 1 ? { pageCount: record.pageCount } : {}) }
   const document = record.document
-  return { id: record.id, title: document?.title ?? '', updatedAt: document?.updatedAt ?? '', itemCount: document ? documentItemCount(document) : 0, folderId, ...(document && documentPageCount(document) > 1 ? { pageCount: documentPageCount(document) } : {}) }
+  return { id: record.id, title: document?.title ?? '', updatedAt: document?.updatedAt ?? '', ...(document?.createdAt ? { createdAt: document.createdAt } : {}), itemCount: document ? documentItemCount(document) : 0, folderId, ...(document && documentPageCount(document) > 1 ? { pageCount: documentPageCount(document) } : {}) }
 }
 
 function open(): Promise<IDBDatabase> {

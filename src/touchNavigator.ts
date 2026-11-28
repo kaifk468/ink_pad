@@ -1,4 +1,5 @@
 import type { Point } from './canvasModel'
+import { createTapDetector, type TouchTap } from './touchTap'
 import { MAX_ZOOM, MIN_ZOOM, THREE_FINGER_PAN_THRESHOLD, panThreeFingerViewport, zoomTwoFingerViewport, type Viewport } from './viewport'
 
 /** Wait this long after the first finger lands before choosing pan or pinch, so fingers that land a few ms apart are not read as a pinch. */
@@ -43,6 +44,7 @@ export function createTouchNavigator(getSettings: () => NavigationSettings) {
   let penTouching = false
   let mouseTouching = false
   let penNearUntil = 0
+  const tap = createTapDetector()
 
   const reset = () => {
     points.clear()
@@ -59,6 +61,59 @@ export function createTouchNavigator(getSettings: () => NavigationSettings) {
   }
   const penNear = (now: number) => penTouching || now < penNearUntil
 
+  const moveTouch = (id: number, point: Point, now: number, viewport: Viewport): Viewport | null => {
+    if (!points.has(id)) return null
+    points.set(id, point)
+    tap.move(id, point)
+    const list = [...points.values()]
+    const settings = getSettings()
+    if (mode === 'undecided') {
+      if (list.length >= 3) mode = 'pan'
+      else if (now - firstDownAt >= GESTURE_DECIDE_MS) {
+        if (list.length === 2) {
+          if (distanceOf(list) < MIN_PINCH_DISTANCE) return null
+          mode = settings.zoomLocked ? 'blocked' : 'pinch-zoom'
+        } else if (list.length === 1 && settings.oneFingerPan && !penNear(now)) {
+          const start = starts.get(id)!
+          if (Math.hypot(point.x - start.x, point.y - start.y) < ONE_FINGER_PAN_START) return null
+          mode = 'pan'
+        }
+      }
+      if (mode === 'undecided' || mode === 'blocked') return null
+      rebase(viewport)
+      return null
+    }
+    if (mode === 'blocked' && list.length >= 3) {
+      // a pinch that was blocked by the zoom lock becomes a pan when a third finger lands
+      mode = 'pan'
+      rebase(viewport)
+      return null
+    }
+    if (!base) return null
+    if (mode === 'pan') {
+      if (list.length !== base.count) {
+        rebase(viewport)
+        return null
+      }
+      const current = centerOf(list)
+      if (!panStarted && Math.hypot(current.x - base.center.x, current.y - base.center.y) < THREE_FINGER_PAN_THRESHOLD) return null
+      panStarted = true
+      return panThreeFingerViewport(base.viewport, base.center, current)
+    }
+    if (mode === 'pinch-zoom') {
+      if (list.length !== 2 || settings.zoomLocked) return null
+      const distance = distanceOf(list)
+      if (!pinchActive) {
+        if (base.distance <= 0 || Math.abs(distance / base.distance - 1) < PINCH_START_RATIO) return null
+        pinchActive = true
+        base = { ...base, viewport, distance }
+        return null
+      }
+      return zoomTwoFingerViewport(base.viewport, base.center, base.distance, distance, MIN_ZOOM, MAX_ZOOM)
+    }
+    return null
+  }
+
   return {
     mode: (): TouchNavigationMode => mode,
     touchCount: () => points.size,
@@ -66,6 +121,7 @@ export function createTouchNavigator(getSettings: () => NavigationSettings) {
     penNear,
     penDown() {
       penTouching = true
+      tap.taint()
       reset()
     },
     penUp(now: number) {
@@ -75,6 +131,7 @@ export function createTouchNavigator(getSettings: () => NavigationSettings) {
     /** A mouse gesture starts: touches already down are dropped and new ones are ignored until it ends. */
     mouseDown() {
       mouseTouching = true
+      tap.taint()
       reset()
     },
     mouseUp() {
@@ -96,63 +153,25 @@ export function createTouchNavigator(getSettings: () => NavigationSettings) {
       }
       points.set(id, point)
       starts.set(id, point)
+      tap.down(id, point, now, penNear(now))
+    },
+    /** The gesture is no longer a tap (pointer cancel, or the app took the touches for something else). */
+    cancelTap() {
+      tap.taint()
     },
     /** Returns the new viewport when the touches move it, otherwise null. */
     move(id: number, point: Point, now: number, viewport: Viewport): Viewport | null {
-      if (!points.has(id)) return null
-      points.set(id, point)
-      const list = [...points.values()]
-      const settings = getSettings()
-      if (mode === 'undecided') {
-        if (list.length >= 3) mode = 'pan'
-        else if (now - firstDownAt >= GESTURE_DECIDE_MS) {
-          if (list.length === 2) {
-            if (distanceOf(list) < MIN_PINCH_DISTANCE) return null
-            mode = settings.zoomLocked ? 'blocked' : 'pinch-zoom'
-          } else if (list.length === 1 && settings.oneFingerPan && !penNear(now)) {
-            const start = starts.get(id)!
-            if (Math.hypot(point.x - start.x, point.y - start.y) < ONE_FINGER_PAN_START) return null
-            mode = 'pan'
-          }
-        }
-        if (mode === 'undecided' || mode === 'blocked') return null
-        rebase(viewport)
-        return null
-      }
-      if (mode === 'blocked' && list.length >= 3) {
-        // a pinch that was blocked by the zoom lock becomes a pan when a third finger lands
-        mode = 'pan'
-        rebase(viewport)
-        return null
-      }
-      if (!base) return null
-      if (mode === 'pan') {
-        if (list.length !== base.count) {
-          rebase(viewport)
-          return null
-        }
-        const current = centerOf(list)
-        if (!panStarted && Math.hypot(current.x - base.center.x, current.y - base.center.y) < THREE_FINGER_PAN_THRESHOLD) return null
-        panStarted = true
-        return panThreeFingerViewport(base.viewport, base.center, current)
-      }
-      if (mode === 'pinch-zoom') {
-        if (list.length !== 2 || settings.zoomLocked) return null
-        const distance = distanceOf(list)
-        if (!pinchActive) {
-          if (base.distance <= 0 || Math.abs(distance / base.distance - 1) < PINCH_START_RATIO) return null
-          pinchActive = true
-          base = { ...base, viewport, distance }
-          return null
-        }
-        return zoomTwoFingerViewport(base.viewport, base.center, base.distance, distance, MIN_ZOOM, MAX_ZOOM)
-      }
-      return null
+      const next = moveTouch(id, point, now, viewport)
+      if (next) tap.taint() // the viewport really moved: not a tap
+      return next
     },
-    up(id: number) {
+    /** Pass `now` to get a tap result: { fingers } when the last finger lifts after a qualifying two- or three-finger tap. */
+    up(id: number, now?: number): TouchTap | null {
+      const tapped = tap.up(id, now ?? Infinity) // without a time a tap can never qualify
       points.delete(id)
       starts.delete(id)
       if (points.size === 0) reset()
+      return tapped
     },
   }
 }

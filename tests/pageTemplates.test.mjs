@@ -1,17 +1,14 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import ts from 'typescript'
 import { readAppSource } from './helpers/appSource.mjs'
 import { loadModule } from './helpers/loadModule.mjs'
 
 const pageTemplateSource = await readFile(new URL('../src/pageTemplates.ts', import.meta.url), 'utf8')
 const appSource = await readAppSource()
 const stylesSource = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8')
-const output = ts.transpileModule(pageTemplateSource, {
-  compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
-}).outputText
-const templates = await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`)
+// pageTemplates.ts imports canvasLanes and colorUtils (round 12), so it loads through the module helper.
+const templates = await loadModule('pageTemplates.ts')
 const mockStorage = () => {
   const values = new Map()
   return {
@@ -44,15 +41,15 @@ test('page template setting defaults to blank, rejects invalid values, and persi
 test('template selector updates the sheet layer and shares it with the workspace map', () => {
   assert.match(appSource, /aria-label="Page template"/)
   assert.doesNotMatch(appSource, /drawPageTemplate\(/)
-  assert.equal((appSource.match(/benchmarkBackground\?\.template \?\? pageTemplate/g) ?? []).length, 1)
-  assert.equal((appSource.match(/drawPageTemplateOverview\(ctx, pageTemplate,/g) ?? []).length, 1)
+  assert.equal((appSource.match(/benchmarkBackground\?\.template \?\? canvasType/g) ?? []).length, 1)
+  assert.equal((appSource.match(/drawPageTemplateOverview\(ctx, canvasType,/g) ?? []).length, 1)
   assert.match(appSource, /savePageTemplate\(pageTemplate\)/)
 })
 
 test('dotted marks are opaque and remain legible in overview scale', () => {
-  assert.match(pageTemplateSource, /tileContext\.fillStyle = tileContext\.strokeStyle/)
+  assert.match(pageTemplateSource, /c\.fillStyle = marks\.dot/)
   assert.match(pageTemplateSource, /export const PAGE_TEMPLATE_DOT_COLOR = '#788392'/)
-  assert.match(pageTemplateSource, /tileContext\.arc\(center, center, radius/)
+  assert.match(pageTemplateSource, /c\.arc\(x, y, radius/)
   assert.match(pageTemplateSource, /export function drawPageTemplateOverview/)
   assert.match(pageTemplateSource, /const radius = PAGE_TEMPLATE_OVERVIEW_DOT_RADIUS/)
   assert.equal((pageTemplateSource.match(/ctx\.globalAlpha = 1/g) ?? []).length, 1)
@@ -107,7 +104,7 @@ test('sheet layer sits behind a transparent canvas and never receives pointer in
   const sheetIndex = appSource.indexOf('className="sheet-layer"')
   const canvasIndex = appSource.indexOf('className={`drawing-canvas')
   assert.ok(sheetIndex > 0 && sheetIndex < canvasIndex)
-  assert.match(appSource, /className="sheet-layer" aria-hidden="true" style=\{\{ width: SHEET_WIDTH, height: sheetHeight \}\}/)
+  assert.match(appSource, /className="sheet-layer"\s+aria-hidden="true"\s+data-board=\{[^}]*\}\s+style=\{\{ width: SHEET_WIDTH, height: sheetHeight,/)
   const sheetRule = stylesSource.match(/\.sheet-layer \{([^}]*)\}/)?.[1] ?? ''
   assert.match(sheetRule, /pointer-events: none;/)
   assert.match(sheetRule, /transform-origin: 0 0;/)
@@ -167,9 +164,9 @@ test('SVG export uses the chosen spacing', async () => {
   assert.match(svg(undefined), /<pattern id="template" width="32" height="32"/)
 })
 
-test('menu: a Spacing row (Narrow, Standard, Wide) shows under Page for lined and dotted, and is wired through the app and saved files', async () => {
+test('menu: a Spacing row (Narrow, Standard, Wide) shows in the Board section for lined and dotted, and is wired through the app and saved files', async () => {
   const bar = await readFile(new URL('../src/app/TopLeftBar.tsx', import.meta.url), 'utf8')
-  assert.match(bar, /pageTemplate !== 'blank' && <div[^>]*aria-label="Line and dot spacing"/)
+  assert.match(bar, /picker\.showSpacing && <div[^>]*aria-label="Line and dot spacing"/)
   for (const label of ['Narrow', 'Standard', 'Wide']) assert.match(bar, new RegExp(`label: '${label}'`))
   assert.match(appSource, /pageSpacing=\{pageSpacing\}/)
   assert.match(appSource, /savePageSpacing\(pageSpacing\)/)

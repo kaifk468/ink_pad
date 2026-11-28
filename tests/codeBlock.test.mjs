@@ -270,5 +270,5 @@ test('code editor counts as open only while its block exists; App closes an orph
   const { readFile } = await import('node:fs/promises')
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
   assert.match(app, /isInputActive: \(\) => [^\n]*liveCodeEditor\(\)/)
-  assert.match(app, /if \(codeEditor && liveCodeEditor\(\)\) return false/)
+  assert.match(app, /Boolean\(codeEditor && liveCodeEditor\(\)\)/)
 })

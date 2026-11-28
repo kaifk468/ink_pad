@@ -62,10 +62,10 @@ test('deleting a folder removes its subfolders and diagrams; the UI asks first',
   const ui = await read('app/HomeScreen.tsx')
   assert.match(ui, /role="alertdialog"/)
   assert.match(ui, /and everything inside it/)
-  assert.match(ui, /props\.onDeleteFolder\(confirmFolder\.id\)/)
+  assert.match(ui, /props\.onDeleteFolder\(gone\.id, confirmed\)/)
   assert.match(ui, /props\.onDeleteDiagram\(entry\.id\)/)
-  assert.match(ui, /props\.onMoveDiagram\(moveTarget\.id, null\)/)
-  assert.match(ui, /props\.onNewDiagram\(here, preset\.template\)/)
+  assert.match(ui, /props.onMoveDiagram\(entry\.id, folderId\)/)
+  assert.match(ui, /props\.onNewDiagram\(here, options\.template, options\)/)
 })
 
 test('renaming saves with the Save button, Enter, and on any way of closing the panel', async () => {

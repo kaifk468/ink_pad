@@ -85,5 +85,5 @@ test('with the screen locked the pen colours stay; only the avatar and reconnect
   assert.match(account, /\{props\.leading\}/)
   assert.match(account, /!props\.hideAccount && props\.needsReconnect/)
   assert.match(account, /\{!props\.hideAccount && \(\s*<button className=\{`account-button/)
-  assert.match(app, /hideAccount=\{navigationSettings\.zoomLocked\}.*leading=\{penModeActive && inputMode !== 'desktop' \? <PenColors/)
+  assert.match(app, /hideAccount=\{zoomLockActive\}.*leading=\{inputMode === 'desktop' \? <DesktopStatusCluster[^]*?accountLeading\(penModeActive, inputMode, <PenColors/)
 })
