@@ -77,7 +77,7 @@ test('workspace map composites erased item rendering over its own background and
 
   assert.match(navigator, /drawMinimapItems\(inkContext, geometry\)/)
   assert.match(navigator, /getReusableCanvasLayer\(minimapInkLayerRef, pixelWidth, pixelHeight\)/)
-  assert.match(navigator, /ctx\.fillStyle = '#e9ebf0'[\s\S]*?ctx\.fillStyle = PAGE_BACKGROUND_COLORS\[pageBackground\][\s\S]*?drawPageTemplateOverview\(ctx, pageTemplate,[\s\S]*?ctx\.drawImage\(inkLayer, 0, 0\)/)
+  assert.match(navigator, /ctx\.fillStyle = '#e9ebf0'[\s\S]*?ctx\.fillStyle = PAGE_BACKGROUND_COLORS\[pageBackground\][\s\S]*?drawPageTemplateOverview\(ctx, canvasType,[\s\S]*?ctx\.drawImage\(inkLayer, 0, 0\)/)
   assert.match(appSource, /ctx\.globalCompositeOperation = item\.erase \? 'destination-out' : 'source-over'/)
   assert.doesNotMatch(appSource, /renderPageOverview|pageOverviewRef|navigator-page-section|Expand page overview/)
 })

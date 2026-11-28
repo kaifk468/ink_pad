@@ -5,7 +5,8 @@
  */
 
 import { getCanvasSelectionBounds, type CanvasItem, type RectangleBounds, type RectangleResizeHandle } from './canvasModel'
-import { pageSpacingUnits, type PageSpacing, type PageTemplate } from './pageTemplates'
+import type { CanvasType } from './canvasTypes'
+import { isometricRowHeight, pageSpacingUnits, type PageSpacing } from './pageTemplates'
 
 export const GRID_SNAP_KEY = 'inkpad.snapToGrid'
 /** Grid size in world units when the page has no dot grid of its own. */
@@ -29,9 +30,36 @@ export function saveGridSnap(on: boolean, storage?: Pick<Storage, 'setItem'>): v
   }
 }
 
-/** The grid size for a page: the dotted page's own spacing, otherwise 20 units. */
-export function gridSpacingFor(template: PageTemplate, spacing: PageSpacing): number {
-  return template === 'dotted' ? pageSpacingUnits(spacing) : DEFAULT_GRID_SIZE
+/**
+ * The grid size for a page: the dotted, grid and isometric pages' own spacing (for isometric this is the lattice's
+ * horizontal spacing, see snapPointToLattice), otherwise 20 units (blank, lined, Cornell: as before).
+ */
+export function gridSpacingFor(canvas: CanvasType, spacing: PageSpacing): number {
+  return canvas === 'dotted' || canvas === 'grid' || canvas === 'isometric' ? pageSpacingUnits(spacing) : DEFAULT_GRID_SIZE
+}
+
+/** True when snapping goes to the triangular lattice of the isometric canvas instead of a square grid. */
+export function isLatticeCanvas(canvas: CanvasType): boolean {
+  return canvas === 'isometric'
+}
+
+/**
+ * The lattice point nearest to (x, y) on the isometric canvas: rows are `isometricRowHeight(spacing)` apart (spacing * sqrt(3) / 2)
+ * and points in a row are `spacing` apart, every odd row shifted right by half a spacing. Matches the dots the sheet draws.
+ */
+export function snapPointToLattice(x: number, y: number, spacing: number): { x: number; y: number } {
+  if (!(spacing > 0) || !Number.isFinite(x) || !Number.isFinite(y)) return { x, y }
+  const rowHeight = isometricRowHeight(spacing)
+  const rowAt = y / rowHeight
+  let best = { x, y, distance: Infinity }
+  for (const row of [Math.floor(rowAt), Math.ceil(rowAt)]) {
+    const shift = Math.abs(row % 2) === 1 ? spacing / 2 : 0
+    const px = Math.round((x - shift) / spacing) * spacing + shift + 0
+    const py = row * rowHeight + 0
+    const distance = Math.hypot(px - x, py - y)
+    if (distance < best.distance) best = { x: px, y: py, distance }
+  }
+  return { x: best.x, y: best.y }
 }
 
 /** True while a gesture should snap: setting on, Desktop mode, a mouse (never pen or touch). */
@@ -46,20 +74,34 @@ export function snapToGrid(value: number, grid: number): number {
 }
 
 /** The move delta that puts the top-left of `bounds` on a grid point after moving by (dx, dy); every item moves by the same delta. */
-export function snapMoveDelta(bounds: Pick<RectangleBounds, 'x' | 'y'>, dx: number, dy: number, grid: number): { dx: number; dy: number } {
+export function snapMoveDelta(bounds: Pick<RectangleBounds, 'x' | 'y'>, dx: number, dy: number, grid: number, lattice = false): { dx: number; dy: number } {
+  if (lattice) {
+    const target = snapPointToLattice(bounds.x + dx, bounds.y + dy, grid)
+    return { dx: target.x - bounds.x, dy: target.y - bounds.y }
+  }
   return { dx: snapToGrid(bounds.x + dx, grid) - bounds.x, dy: snapToGrid(bounds.y + dy, grid) - bounds.y }
 }
 
-/** A resize result with the moved edge(s) of `handle` on the grid; the opposite edges stay put. An axis whose snap would shrink below the minimum is left as is. */
-export function snapResizeBounds(bounds: RectangleBounds, handle: RectangleResizeHandle, grid: number): RectangleBounds {
+/** One point (a new shape's corner) snapped to the square grid or, with `lattice`, to the isometric lattice. */
+export function snapPoint(point: { x: number; y: number }, grid: number, lattice = false): { x: number; y: number } {
+  return lattice ? snapPointToLattice(point.x, point.y, grid) : { x: snapToGrid(point.x, grid), y: snapToGrid(point.y, grid) }
+}
+
+/**
+ * A resize result with the moved edge(s) of `handle` on the grid; the opposite edges stay put. An axis whose snap would shrink below the minimum is left as is.
+ * With `lattice` (isometric) a vertical edge snaps to half-spacing columns (every lattice column of either row parity) and a horizontal edge to the row height.
+ */
+export function snapResizeBounds(bounds: RectangleBounds, handle: RectangleResizeHandle, grid: number, lattice = false): RectangleBounds {
+  const gridX = lattice ? grid / 2 : grid
+  const gridY = lattice ? isometricRowHeight(grid) : grid
   let left = bounds.x
   let right = bounds.x + bounds.width
   let top = bounds.y
   let bottom = bounds.y + bounds.height
-  if (handle.includes('w')) { const next = snapToGrid(left, grid); if (right - next >= MIN_SNAPPED_SIZE) left = next }
-  if (handle.includes('e')) { const next = snapToGrid(right, grid); if (next - left >= MIN_SNAPPED_SIZE) right = next }
-  if (handle.includes('n')) { const next = snapToGrid(top, grid); if (bottom - next >= MIN_SNAPPED_SIZE) top = next }
-  if (handle.includes('s')) { const next = snapToGrid(bottom, grid); if (next - top >= MIN_SNAPPED_SIZE) bottom = next }
+  if (handle.includes('w')) { const next = snapToGrid(left, gridX); if (right - next >= MIN_SNAPPED_SIZE) left = next }
+  if (handle.includes('e')) { const next = snapToGrid(right, gridX); if (next - left >= MIN_SNAPPED_SIZE) right = next }
+  if (handle.includes('n')) { const next = snapToGrid(top, gridY); if (bottom - next >= MIN_SNAPPED_SIZE) top = next }
+  if (handle.includes('s')) { const next = snapToGrid(bottom, gridY); if (next - top >= MIN_SNAPPED_SIZE) bottom = next }
   return { x: left, y: top, width: right - left, height: bottom - top }
 }
 
@@ -95,8 +137,18 @@ export function unpaddedSelectionBounds(items: CanvasItem[], keys: ReadonlySet<s
  * The arrow-key nudge with Snap to grid on: the direction is the sign of (dx, dy), the distance one grid step (five for a
  * large nudge, |step| above 1), and the top-left of `bounds` ends on a grid line. An off-grid edge first goes to the next line.
  */
-export function gridNudgeDelta(bounds: Pick<RectangleBounds, 'x' | 'y'>, dx: number, dy: number, grid: number): { dx: number; dy: number } {
+export function gridNudgeDelta(bounds: Pick<RectangleBounds, 'x' | 'y'>, dx: number, dy: number, grid: number, lattice = false): { dx: number; dy: number } {
   if (!(grid > 0)) return { dx, dy }
+  if (lattice) {
+    // Isometric: the top-left goes to the nearest lattice point, then one lattice step per press (five with a large nudge):
+    // sideways by a spacing, down by rows (x moves right half a spacing) or up (x moves left half a spacing), so the point stays on the lattice (steps are 1 or 5, both odd).
+    const steps = Math.max(Math.abs(dx), Math.abs(dy)) > 1 ? 5 : 1
+    const rowHeight = isometricRowHeight(grid)
+    let point = snapPointToLattice(bounds.x, bounds.y, grid)
+    if (dx !== 0) point = { x: point.x + Math.sign(dx) * steps * grid, y: point.y }
+    if (dy !== 0) point = snapPointToLattice(point.x + Math.sign(dy) * (grid / 2), point.y + Math.sign(dy) * steps * rowHeight, grid)
+    return { dx: point.x - bounds.x, dy: point.y - bounds.y }
+  }
   const steps = Math.max(Math.abs(dx), Math.abs(dy)) > 1 ? 5 : 1
   const EPS = 1e-6
   const axis = (from: number, delta: number): number => {

@@ -21,7 +21,7 @@ import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeC
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, pasteTranslation, type PasteResult } from './clipboard'
 import { axisLock, isCornerHandle, keepAspect, keepLockedAxis, lockedAxis, sizeReadoutText } from './resizeModifiers'
-import { gridDots, gridSnapApplies, gridSpacingFor, loadGridSnap, saveGridSnap, gridNudgeDelta, snapAngle as snapPointAngle, snapMoveDelta, snapResizeBounds, snapToGrid, unpaddedSelectionBounds } from './gridSnap'
+import { gridDots, gridSnapApplies, gridSpacingFor, isLatticeCanvas, loadGridSnap, saveGridSnap, gridNudgeDelta, snapAngle as snapPointAngle, snapMoveDelta, snapPoint, snapResizeBounds, unpaddedSelectionBounds } from './gridSnap'
 import { cullTargets, loadSnapping, saveSnapping, selectionCanSnap, snapForDrag, snapTargetsFor, type Bounds, type GapMarker, type Guide } from './snapping'
 import { tidyItems, tidyScope } from './tidyLayout'
 import { shapeKeywords } from './shapeSearch'
@@ -38,7 +38,7 @@ import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCH
 import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
 import { boardFieldsFor, type BoardStyleId } from './boardStyle'
-import { canvasFieldsFor, type CanvasType } from './canvasTypes'
+import { canvasFieldsFor, effectiveCanvasType, type CanvasType } from './canvasTypes'
 import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
@@ -437,7 +437,9 @@ function App() {
   }
   // Alt held with a mouse (Desktop) places freely: no grid, smart guides or equal gaps for that pointer move.
   const gridActive = (event: { pointerType: string; altKey?: boolean }): number | null =>
-    !snappingSuspended(event, inputModeRef.current) && gridSnapApplies(gridSnapRef.current, inputModeRef.current, event.pointerType) ? gridSpacingFor(pageTemplateRef.current, pageSpacingRef.current) : null
+    !snappingSuspended(event, inputModeRef.current) && gridSnapApplies(gridSnapRef.current, inputModeRef.current, event.pointerType) ? gridSpacingFor(effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current), pageSpacingRef.current) : null
+  /** True on the isometric canvas: snapping goes to its triangular lattice, not a square grid. */
+  const gridLattice = (): boolean => isLatticeCanvas(effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current))
   const [tapUndo, setTapUndo] = useState(() => loadTapUndo())
   const tapUndoRef = useRef(tapUndo)
   tapUndoRef.current = tapUndo
@@ -490,6 +492,8 @@ function App() {
   const [pageCanvas, setPageCanvas] = useState<string | undefined>(undefined)
   const pageCanvasRef = useRef<string | undefined>(undefined)
   pageCanvasRef.current = pageCanvas
+  /** What the sheet layer, minimap and export draw: a known `canvas` field wins, otherwise the template. */
+  const canvasType = effectiveCanvasType(pageTemplate, pageCanvas)
   const sketchyRef = useRef(false)
   sketchyRef.current = sketchy
   pageSpacingRef.current = pageSpacing
@@ -1534,7 +1538,7 @@ function App() {
     ctx.strokeRect(workspaceX + 0.5, workspaceY + 0.5, workspaceWidth - 1, workspaceHeight - 1)
     ctx.fillStyle = PAGE_BACKGROUND_COLORS[pageBackground]
     ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
-    drawPageTemplateOverview(ctx, pageTemplate, { x: pageX, y: pageY, width: pageWidth, height: pageHeight })
+    drawPageTemplateOverview(ctx, canvasType, { x: pageX, y: pageY, width: pageWidth, height: pageHeight })
     ctx.strokeStyle = '#cfd4df'
     ctx.lineWidth = 1
     ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
@@ -1571,7 +1575,7 @@ function App() {
     ctx.fillRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.strokeRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.restore()
-  }, [drawMinimapItems, getCurrentMinimapBounds, pageBackground, pageTemplate])
+  }, [drawMinimapItems, getCurrentMinimapBounds, canvasType, pageBackground])
 
   // The single selected box (select tool) is kept in a ref for the gesture code; the state copy only lets the toolbar show Delete for it.
   const [hasSelectedRectangle, setHasSelectedRectangle] = useState(false)
@@ -2002,7 +2006,7 @@ function App() {
         snapStateRef.current = gridState
       }
       gridOverlayRef.current = grid
-      return gridState.moving ? snapMoveDelta(gridState.moving, dx, dy, grid) : { dx, dy }
+      return gridState.moving ? snapMoveDelta(gridState.moving, dx, dy, grid, gridLattice()) : { dx, dy }
     }
     if (!snappingRef.current || snappingSuspended(event, inputModeRef.current)) {
       guidesRef.current = []
@@ -2245,7 +2249,7 @@ function App() {
       const connector = gesture.originalItems.find((item): item is ConnectorObject => item.kind === 'connector' && item.id === gesture.id)
       let candidate: { x: number; y: number } = point
       if (event.shiftKey && connector) candidate = snapPointAngle(gesture.which === 'start' ? connector.end : connector.start, point, 15)
-      else if (grid !== null) candidate = { x: snapToGrid(point.x, grid), y: snapToGrid(point.y, grid) }
+      else if (grid !== null) candidate = snapPoint(point, grid, gridLattice())
       if (isPointWithinBounds(candidate as Point, workspaceBoundsRef.current)) freePoint = { ...point, x: candidate.x, y: candidate.y }
     }
     if (!gesture.saved) { saveHistory(); gesture.saved = true }
@@ -2727,7 +2731,7 @@ function App() {
     const sheetLayer = sheetLayerRef.current
     if (sheetLayer) {
       applySheetLayer(sheetLayer, sheetLayerAppliedRef.current, getSheetLayerState(
-        benchmarkBackground?.template ?? pageTemplate,
+        benchmarkBackground?.template ?? canvasType,
         PAGE_BACKGROUND_COLORS[benchmarkBackground ? 'white' : pageBackground],
         viewport,
         pageSpacing,
@@ -3223,7 +3227,7 @@ function App() {
     }
     if (measureFrame) diagnostics?.recordMinimapRender(performance.now() - minimapStartedAt)
     if (measureFrame) diagnostics?.recordRenderComplete(performance.now() - renderStartedAt, performance.now())
-  }, [color, drawConnector, drawItem, drawStroke, pageBackground, pageSpacing, pageTemplate, renderNavigator, selectionMode, lassoMode, strokeDisplayMode, width])
+  }, [color, drawConnector, drawItem, drawStroke, canvasType, pageBackground, pageSpacing, renderNavigator, selectionMode, lassoMode, strokeDisplayMode, width])
   const renderAllRef = useRef(renderAll)
   renderAllRef.current = renderAll
   // Excalifont is a web font: load it at start and repaint (dropping the cached ink layer, which may hold fallback letters) when fonts finish loading.
@@ -4085,8 +4089,9 @@ function App() {
       saveHistory()
       // Snap to grid (Desktop mouse): the new shape starts on a grid point.
       const createGrid = gridActive(event)
-      const startX = createGrid !== null ? snapToGrid(point.x, createGrid) : point.x
-      const startY = createGrid !== null ? snapToGrid(point.y, createGrid) : point.y
+      const startPoint = createGrid !== null ? snapPoint(point, createGrid, gridLattice()) : point
+      const startX = startPoint.x
+      const startY = startPoint.y
       const plainBox = createShapeBox(nextRectangleIdRef.current++, point.x, point.y, 4, 4, color, width, boxShape)
       const gridBox = createGrid !== null ? { ...plainBox, x: startX, y: startY } : plainBox
       const dashedBox = lineDashDefaultRef.current !== 'solid' ? { ...gridBox, dash: lineDashDefaultRef.current } : gridBox
@@ -4118,8 +4123,9 @@ function App() {
       event.currentTarget.setPointerCapture(event.pointerId)
       saveHistory()
       const classGrid = gridActive(event)
-      const boxX = classGrid !== null ? snapToGrid(point.x, classGrid) : point.x
-      const boxY = classGrid !== null ? snapToGrid(point.y, classGrid) : point.y
+      const boxPoint = classGrid !== null ? snapPoint(point, classGrid, gridLattice()) : point
+      const boxX = boxPoint.x
+      const boxY = boxPoint.y
       const newBox = hldShapeTool
         ? styleNewShape(createHldShape(nextRectangleIdRef.current++, boxX, boxY, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, hldShapeTool))
         : createInkClassBox(nextRectangleIdRef.current++, boxX, boxY, INK_BOX_MIN_WIDTH, INK_BOX_MIN_HEIGHT, color, CLASS_BOX_DEFAULT_STROKE_WIDTH)
@@ -4524,7 +4530,7 @@ function App() {
         const raw = activeResize.rectangleId === null && activeResize.selectedKeys ? unpaddedSelectionBounds(routeConnectors(activeResize.originalItems), activeResize.selectedKeys) : null
         const o = activeResize.originalBounds
         const pad = raw ? { l: raw.x - o.x, t: raw.y - o.y, r: o.x + o.width - raw.x - raw.width, b: o.y + o.height - raw.y - raw.height } : { l: 0, t: 0, r: 0, b: 0 }
-        const inner = snapResizeBounds({ x: bounds.x + pad.l, y: bounds.y + pad.t, width: bounds.width - pad.l - pad.r, height: bounds.height - pad.t - pad.b }, activeResize.handle, resizeGrid)
+        const inner = snapResizeBounds({ x: bounds.x + pad.l, y: bounds.y + pad.t, width: bounds.width - pad.l - pad.r, height: bounds.height - pad.t - pad.b }, activeResize.handle, resizeGrid, gridLattice())
         const snapped = { x: inner.x - pad.l, y: inner.y - pad.t, width: inner.width + pad.l + pad.r, height: inner.height + pad.t + pad.b }
         bounds.x = snapped.x; bounds.y = snapped.y; bounds.width = snapped.width; bounds.height = snapped.height
         if (snapStateRef.current?.pointerId !== event.pointerId) snapStateRef.current = { pointerId: event.pointerId, moving: null, targets: [] }
@@ -5416,7 +5422,7 @@ function App() {
     // Snap to grid on (Desktop): one grid step (five with Shift) and the selection's top-left ends on a grid line.
     if (gridSnapApplies(gridSnapRef.current, inputModeRef.current, 'mouse')) {
       const bounds = unpaddedSelectionBounds(routeConnectors(strokesRef.current), keys)
-      if (bounds) ({ dx, dy } = gridNudgeDelta(bounds, dx, dy, gridSpacingFor(pageTemplateRef.current, pageSpacingRef.current)))
+      if (bounds) ({ dx, dy } = gridNudgeDelta(bounds, dx, dy, gridSpacingFor(effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current), pageSpacingRef.current), gridLattice()))
     }
     const next = translateWithinWorkspace(strokesRef.current, keys, dx, dy)
     if (next.every((item, index) => item === strokesRef.current[index])) return true

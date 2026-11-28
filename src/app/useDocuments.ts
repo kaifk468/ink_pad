@@ -14,6 +14,7 @@ import { loadLocalCopyForSearch } from '../librarySearchLoad'
 import { readStoredProfile, writeStoredProfile, type DriveProfile } from '../driveProfile'
 import { REFRESH_WINDOW_MS, driveAuth, driveExportAuth } from '../googleAuth'
 import { uploadDiagramPdf } from '../driveExport'
+import { effectiveCanvasType } from '../canvasTypes'
 import { renderDiagramPdf } from '../notebookExport'
 import { copyAllBetweenBackends, createBrowserBackend, type StorageBackend } from '../storageBackend'
 import type { SaveStatus } from '../FilePanel'
@@ -798,7 +799,7 @@ export function useDocuments(host: DocumentHost) {
     const svg = cropSvg(buildSheetSvg(items, {
       width: SHEET_WIDTH,
       height: sheetHeight,
-      template: page.template,
+      template: effectiveCanvasType(page.template, page.canvas),
       spacing: page.spacing,
       backgroundColor: PAGE_BACKGROUND_COLORS[page.background],
       ...(page.sketchy ? { sketchy: true } : {}),

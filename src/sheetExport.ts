@@ -2,6 +2,7 @@ import { lockedRedrawsAfterEraserRun, connectorDashPattern, connectorPoints, das
 import { routeConnectors } from './connectorRoute'
 import { hldOutlinePath } from './hldShapes'
 import { isSketchyRectangle, plainFillPath, rectangleFill, sketchyConnectorShape, sketchyRectangleShape, sketchyStrokeParts } from './sketchy'
+import type { CanvasType } from './canvasTypes'
 import type { CanvasItem, ConnectorObject, Point, RectangleObject, Stroke, TextObject } from './canvasModel'
 import { getClassBoxGeometry, type ClassBoxCompartment } from './classBoxLayout'
 import { CODE_FONT_FAMILY, codeColors, codeGeometry } from './codeBlock'
@@ -12,7 +13,8 @@ import { connectorLabelFontSize, connectorLabelLayout } from './connectorLabel'
 import { isPlainRectangle, roundedCornerRadius } from './roundedCorners'
 import { connectorEndLabelFontSize, connectorEndLabelLayouts } from './connectorEndLabels'
 
-export type ExportTemplate = 'blank' | 'lined' | 'dotted'
+/** What the sheet is ruled with: blank, lined, dotted (the template) or grid, isometric, cornell (the canvas types). */
+export type ExportTemplate = CanvasType
 export type SheetExportOptions = {
   width: number
   height: number
@@ -35,6 +37,7 @@ let labelBackground = '#ffffff'
 const SPACING = 32
 const LINE_COLOR = '#aebfd8'
 const DOT_COLOR = '#788392'
+const LINE_STRONG_COLOR = '#8197bb'
 const SPACING_FACTOR = { narrow: 0.8, standard: 1, wide: 1.2 }
 
 const n = (value: number) => String(Math.round(value * 100) / 100)
@@ -333,15 +336,35 @@ function buildSheetSvgInner(rawItems: CanvasItem[], options: SheetExportOptions)
   body += pending
 
   const template = options.transparent ? 'blank' : options.template
+  let templateMarks = ''
   if (template !== 'blank') {
     const spacing = Math.round(SPACING * SPACING_FACTOR[options.spacing ?? 'standard'] * 100) / 100
-    const mark = template === 'lined'
-      ? `<path d="M0 ${spacing - 0.5}H${spacing}" stroke="${LINE_COLOR}" stroke-width="1.25" fill="none"/>`
-      : `<circle cx="2" cy="2" r="1.65" fill="${DOT_COLOR}"/>`
-    defs.unshift(`<pattern id="template" width="${spacing}" height="${spacing}" patternUnits="userSpaceOnUse">${mark}</pattern>`)
+    const lined = `<path d="M0 ${spacing - 0.5}H${spacing}" stroke="${LINE_COLOR}" stroke-width="1.25" fill="none"/>`
+    if (template === 'grid') {
+      // Same look as the sheet's CSS: thin lines every spacing, a stronger line every 5th (tile = 5 spacings).
+      const big = Math.round(spacing * 5 * 100) / 100
+      let thin = ''
+      for (let i = 1; i < 5; i++) thin += `M${Math.round((i * spacing + 0.5) * 100) / 100} 0V${big}M0 ${Math.round((i * spacing + 0.5) * 100) / 100}H${big}`
+      const mark = `<path d="${thin}" stroke="${LINE_COLOR}" stroke-width="1" fill="none"/><path d="M0.75 0V${big}M0 0.75H${big}" stroke="${LINE_STRONG_COLOR}" stroke-width="1.5" fill="none"/>`
+      defs.unshift(`<pattern id="template" width="${big}" height="${big}" patternUnits="userSpaceOnUse">${mark}</pattern>`)
+    } else if (template === 'isometric') {
+      // Dots on a triangular lattice: a point at every (k * spacing, row * rowHeight), odd rows shifted by half a spacing.
+      // The tile is spacing wide and two rows tall and starts 2 units up-left so the dot centres are the lattice points.
+      const rowHeight = Math.round(spacing * Math.sqrt(3) / 2 * 1000) / 1000
+      const half = Math.round((spacing / 2 + 2) * 1000) / 1000
+      const mark = `<circle cx="2" cy="2" r="1.65" fill="${DOT_COLOR}"/><circle cx="${half}" cy="${Math.round((rowHeight + 2) * 1000) / 1000}" r="1.65" fill="${DOT_COLOR}"/>`
+      defs.unshift(`<pattern id="template" x="-2" y="-2" width="${spacing}" height="${Math.round(rowHeight * 2 * 1000) / 1000}" patternUnits="userSpaceOnUse">${mark}</pattern>`)
+    } else {
+      const mark = template === 'dotted' ? `<circle cx="2" cy="2" r="1.65" fill="${DOT_COLOR}"/>` : lined
+      defs.unshift(`<pattern id="template" width="${spacing}" height="${spacing}" patternUnits="userSpaceOnUse">${mark}</pattern>`)
+    }
+    if (template === 'cornell') {
+      // Cue column, header band and summary line in sheet units from the top-left (they do not move when the sheet grows).
+      templateMarks = `<rect x="700" y="0" width="2" height="${height}" fill="${LINE_STRONG_COLOR}"/><rect x="0" y="160" width="${width}" height="2" fill="${LINE_STRONG_COLOR}"/><rect x="0" y="1200" width="${width}" height="2" fill="${LINE_STRONG_COLOR}"/>`
+    }
   }
   const sheet = options.transparent ? '' : `<rect width="${width}" height="${height}" fill="${esc(options.backgroundColor)}"/>`
-  const templateRect = template !== 'blank' ? `<rect width="${width}" height="${height}" fill="url(#template)"/>` : ''
+  const templateRect = template !== 'blank' ? `<rect width="${width}" height="${height}" fill="url(#template)"/>${templateMarks}` : ''
   if (options.embeddedFontCss) defs.unshift(`<style>${options.embeddedFontCss}</style>`)
   const defsBlock = defs.length ? `<defs>${defs.join('')}</defs>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${defsBlock}${sheet}${templateRect}${body}</svg>`

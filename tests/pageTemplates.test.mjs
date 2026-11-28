@@ -44,15 +44,15 @@ test('page template setting defaults to blank, rejects invalid values, and persi
 test('template selector updates the sheet layer and shares it with the workspace map', () => {
   assert.match(appSource, /aria-label="Page template"/)
   assert.doesNotMatch(appSource, /drawPageTemplate\(/)
-  assert.equal((appSource.match(/benchmarkBackground\?\.template \?\? pageTemplate/g) ?? []).length, 1)
-  assert.equal((appSource.match(/drawPageTemplateOverview\(ctx, pageTemplate,/g) ?? []).length, 1)
+  assert.equal((appSource.match(/benchmarkBackground\?\.template \?\? canvasType/g) ?? []).length, 1)
+  assert.equal((appSource.match(/drawPageTemplateOverview\(ctx, canvasType,/g) ?? []).length, 1)
   assert.match(appSource, /savePageTemplate\(pageTemplate\)/)
 })
 
 test('dotted marks are opaque and remain legible in overview scale', () => {
-  assert.match(pageTemplateSource, /tileContext\.fillStyle = tileContext\.strokeStyle/)
+  assert.match(pageTemplateSource, /c\.fillStyle = marks\.dot/)
   assert.match(pageTemplateSource, /export const PAGE_TEMPLATE_DOT_COLOR = '#788392'/)
-  assert.match(pageTemplateSource, /tileContext\.arc\(center, center, radius/)
+  assert.match(pageTemplateSource, /c\.arc\(x, y, radius/)
   assert.match(pageTemplateSource, /export function drawPageTemplateOverview/)
   assert.match(pageTemplateSource, /const radius = PAGE_TEMPLATE_OVERVIEW_DOT_RADIUS/)
   assert.equal((pageTemplateSource.match(/ctx\.globalAlpha = 1/g) ?? []).length, 1)
