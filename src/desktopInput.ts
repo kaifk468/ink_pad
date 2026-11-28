@@ -294,6 +294,11 @@ export const NUMBER_TOOL_KEYS: Record<string, KeyTool> = { '1': 'select', '2': '
 const QUICK_CREATE_KEYS: Record<string, 'right' | 'left' | 'up' | 'down'> = { ArrowRight: 'right', ArrowLeft: 'left', ArrowUp: 'up', ArrowDown: 'down' }
 const ARROW_KEYS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
 
+/** Alt held with a mouse in Desktop mode: dragging, resizing and drawing place freely (no grid, smart guides or equal gaps). Read per pointer move, so pressing or releasing Alt mid-drag takes effect on the next move. Pen and touch never suspend. */
+export function snappingSuspended(event: { altKey?: boolean; pointerType?: string }, mode: string): boolean {
+  return mode === 'desktop' && event.pointerType === 'mouse' && event.altKey === true
+}
+
 export type KeyInput = { key: string; /** Physical key (KeyboardEvent.code); Shift+1 and Shift+2 use it because their `key` depends on the layout. */ code?: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; repeat: boolean }
 
 export function keyCommand(event: KeyInput, mode: InputMode): KeyCommand | null {

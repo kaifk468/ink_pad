@@ -38,6 +38,7 @@ export const DESKTOP_SHORTCUTS: readonly ShortcutEntry[] = [
   { group: 'Edit', label: 'Paste', keys: 'Ctrl+V', input: { key: 'v', ...ctrl } },
   { group: 'Edit', label: 'Duplicate', keys: 'Ctrl+D', input: { key: 'd', ...ctrl } },
   { group: 'Edit', label: 'Duplicate while dragging', keys: 'Ctrl + drag' },
+  { group: 'Edit', label: 'Alt while dragging, resizing or drawing: place freely (no snapping, no guides)', keys: 'Alt + drag' },
   { group: 'Edit', label: 'Drop a box on an arrow to insert it (the arrow lights up; one undo step)', keys: 'Drag a free box onto an arrow' },
   { group: 'Edit', label: 'Copy as PNG (selection, or the whole page)', keys: 'Shift+Alt+C', input: { key: 'C', code: 'KeyC', altKey: true, ...shift } },
   { group: 'Edit', label: 'Copy style of the selected item', keys: 'Ctrl+Alt+C', input: { key: 'c', code: 'KeyC', altKey: true, ...ctrl } },

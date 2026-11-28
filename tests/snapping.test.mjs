@@ -159,7 +159,7 @@ test('guides and snap never reach the saved format: snapped positions are plain 
 test('App wiring: the setting gates the snap call, Alt is Desktop mouse only, guides are cleared on every end path and drawn only on the canvas pass', () => {
   assert.match(app, /const \[snapping, setSnapping\] = useState\(\(\) => loadSnapping\(\)\)/)
   assert.match(app, /saveSnapping\(on\)/)
-  assert.match(app, /const altWithMouse = event\.altKey && event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop'\n\s*if \(!snappingRef\.current \|\| altWithMouse\) \{\n\s*guidesRef\.current = \[\]\n\s*return \{ dx, dy \}/)
+  assert.match(app, /if \(!snappingRef\.current \|\| snappingSuspended\(event, inputModeRef\.current\)\) \{\n\s*guidesRef\.current = \[\]\n\s*gridOverlayRef\.current = null\n\s*return \{ dx, dy \}/)
   // both drag paths snap through the same helper, before the workspace clamp
   assert.match(app, /snapDragDelta\(event, lassoBase, lassoKeys, deltaX, deltaY, !!lassoDrag\.duplicate\)/)
   assert.match(app, /snapDragDelta\(event, dragBase, dragKeys, deltaX, deltaY, !!drag\.duplicate\)/)

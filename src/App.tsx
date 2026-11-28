@@ -123,7 +123,7 @@ import { PageOverview } from './app/PageOverview'
 import { PenColors } from './app/PenColors'
 import { createTouchNavigator, type NavigationSettings } from './touchNavigator'
 import { loadNavigationSettings, loadTapUndo, saveNavigationSettings, saveTapUndo } from './navigationSettings'
-import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuMaxHeight, CONTEXT_MENU_TOP_CLEARANCE, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, saveToastText, shouldShowKeepToolTip, KEEP_TOOL_TIP, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
+import { menuBottomClearance, labelEscapeAction, canStartCanvasGesture, canvasCursor, clampMenuPosition, contextMenuHeight, contextMenuMaxHeight, CONTEXT_MENU_TOP_CLEARANCE, contextMenuRows, CONTEXT_MENU_WIDTH, loadLineDashDefault, saveLineDashDefault, clickPairOnDown, clickPairOnEnd, clickPairOnMove, clickPairOnUp, labelDoubleClickDecision, clickItemsUnchanged, type ClickPair, clickSelectTarget, contextMenuEntries, doubleClickTarget, editTargetForSelection, type ContextMenuAction, edgeHoldDecision, edgeBandBox, EDGE_HOLD_MS, escapeAction, alwaysPreventsDefault, snappingSuspended, saveToastText, shouldShowKeepToolTip, KEEP_TOOL_TIP, hitTarget, hoverTarget, rectanglePicked, nudgeStartsNewStep, normalizeSelection, isTypingTarget, exportToastText, keyCommand, loadInputMode, initialSelectionMode, loadToolLock, saveToolLock, marqueeSelection, pointerPressure, rectFromPoints, saveInputMode, shiftClickTarget, spaceIsPanKey, startsMousePan, wheelViewport, type SelectionState, type ClickTool, type HitTarget, type InputMode, type KeyCommand } from './desktopInput'
 
 
 /** How long a toast stays on screen. */
@@ -435,8 +435,9 @@ function App() {
     saveGridSnap(on)
     showToast(on ? 'Snap to grid on' : 'Snap to grid off')
   }
-  const gridActive = (event: { pointerType: string }): number | null =>
-    gridSnapApplies(gridSnapRef.current, inputModeRef.current, event.pointerType) ? gridSpacingFor(pageTemplateRef.current, pageSpacingRef.current) : null
+  // Alt held with a mouse (Desktop) places freely: no grid, smart guides or equal gaps for that pointer move.
+  const gridActive = (event: { pointerType: string; altKey?: boolean }): number | null =>
+    !snappingSuspended(event, inputModeRef.current) && gridSnapApplies(gridSnapRef.current, inputModeRef.current, event.pointerType) ? gridSpacingFor(pageTemplateRef.current, pageSpacingRef.current) : null
   const [tapUndo, setTapUndo] = useState(() => loadTapUndo())
   const tapUndoRef = useRef(tapUndo)
   tapUndoRef.current = tapUndo
@@ -2003,9 +2004,9 @@ function App() {
       gridOverlayRef.current = grid
       return gridState.moving ? snapMoveDelta(gridState.moving, dx, dy, grid) : { dx, dy }
     }
-    const altWithMouse = event.altKey && event.pointerType === 'mouse' && inputModeRef.current === 'desktop'
-    if (!snappingRef.current || altWithMouse) {
+    if (!snappingRef.current || snappingSuspended(event, inputModeRef.current)) {
       guidesRef.current = []
+      gridOverlayRef.current = null
       return { dx, dy }
     }
     let state = snapStateRef.current
@@ -4508,6 +4509,7 @@ function App() {
         bounds.x = kept.x; bounds.y = kept.y; bounds.width = kept.width; bounds.height = kept.height
       }
       const resizeGrid = gridActive(event)
+      if (resizeGrid === null) gridOverlayRef.current = null
       if (resizeGrid !== null && !(activeResize.created && event.shiftKey) && !keepRatio) {
         // The moved edge(s) land on the grid (a new shape's corner too: its press point was snapped when it was made).
         // A group's bounds are padded by stroke width; snap the unpadded edges so boxes (not their outlines) land on the grid.
