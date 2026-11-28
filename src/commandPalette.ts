@@ -1,4 +1,5 @@
 import { DESKTOP_SHORTCUTS, type ShortcutEntry } from './desktopShortcuts'
+import { searchTechLogos, type TechLogo } from './techLogoSearch'
 
 /** One line of the Desktop command palette (Ctrl/Cmd+K). `keys` is the shortcut shown on the right; `keywords` are extra search words; `hint` is extra text shown beside the group (a diagram's folder). */
 export type PaletteEntry = { id: string; label: string; group: string; keys?: string; keywords?: string; hint?: string }
@@ -124,4 +125,34 @@ export function filterCommands<T extends PaletteEntry>(entries: readonly T[], qu
   // Equal scores keep list order, and diagram rows come last in the list, so a command is never pushed below a diagram of the same score.
   ranked.sort((a, b) => a.score - b.score || a.order - b.order)
   return ranked.map((item) => item.entry)
+}
+
+export const LOGO_ENTRY_PREFIX = 'logo-item:'
+/** At most this many "Logo: ..." rows, and none until the query has this many characters. */
+export const MAX_LOGO_ENTRIES = 8
+export const MIN_LOGO_QUERY = 2
+
+/** Slug of the logo a palette row inserts, or null for any other row. */
+export function logoSlugFromEntry(entryId: string): string | null {
+  return entryId.startsWith(LOGO_ENTRY_PREFIX) ? entryId.slice(LOGO_ENTRY_PREFIX.length) : null
+}
+
+/**
+ * "Logo: <Brand>" rows for a query of at least 2 characters, ranked by the logo search and capped at 8 (none while `logos` is not loaded yet).
+ * They are appended after the command matches, so a command never drops below a logo.
+ */
+export function logoPaletteEntries(query: string, logos: readonly TechLogo[] | null): PaletteEntry[] {
+  const text = query.trim()
+  if (!logos || text.length < MIN_LOGO_QUERY) return []
+  return searchTechLogos(text, logos, MAX_LOGO_ENTRIES).map((logo) => ({ id: `${LOGO_ENTRY_PREFIX}${logo.slug}`, label: `Logo: ${logo.title}`, group: 'Logos' }))
+}
+
+/** The Edit palette rows "Larger text" / "Smaller text" duplicate the "Bigger text" / "Smaller text" commands; this keeps the commands only (the shortcut table and help still list them). */
+export function withoutDuplicateTextSizeEntries<T extends PaletteEntry>(entries: readonly T[]): T[] {
+  return entries.filter((entry) => !/^(Larger|Smaller) text \(/.test(entry.label))
+}
+
+/** The key hint of the "Larger text" / "Smaller text" shortcut rows, shown on the single Bigger / Smaller text commands. */
+export function textSizeShortcutKeys(word: 'Larger' | 'Smaller', rows: readonly ShortcutEntry[] = DESKTOP_SHORTCUTS): string | undefined {
+  return rows.find((row) => row.label.startsWith(`${word} text (`))?.keys
 }

@@ -57,13 +57,60 @@ export function logoPlaceholderGeometry(placement: LogoPlacement): { x: number; 
 export function buildLogoItems(logo: Pick<TechLogo, 'slug' | 'title'>, strokeColor: string, showName: boolean, size = LOGO_BOX_SIZE): Array<RectangleObject | TextObject> {
   const box: RectangleObject = { kind: 'rectangle', id: 1, x: 0, y: 0, width: size, height: size, strokeColor, strokeWidth: CLASS_BOX_DEFAULT_STROKE_WIDTH, rounded: true, logo: logo.slug }
   if (!showName) return [box]
-  let made = createTextObject(1, 0, 0, logo.title, strokeColor, LOGO_LABEL_FONT_SIZE)
-  const room = size - 12
-  if (made.width > room) made = createTextObject(1, 0, 0, logo.title, strokeColor, Math.max(12, Math.floor(LOGO_LABEL_FONT_SIZE * room / made.width)))
+  return [box, logoNameLabel(box, logo, 1)]
+}
+
+/**
+ * The brand name label of a logo box, centred in the box's bottom band at the box's current position and size (the same label as at insert).
+ * The text is shrunk to fit the box width; it takes the box's line colour and group.
+ */
+export function logoNameLabel(box: Pick<RectangleObject, 'x' | 'y' | 'width' | 'height' | 'strokeColor' | 'group'>, logo: Pick<TechLogo, 'title'>, id: number): TextObject {
+  let made = createTextObject(id, 0, 0, logo.title, box.strokeColor, LOGO_LABEL_FONT_SIZE)
+  const room = box.width - 12
+  if (made.width > room && room > 0) made = createTextObject(id, 0, 0, logo.title, box.strokeColor, Math.max(12, Math.floor(LOGO_LABEL_FONT_SIZE * room / made.width)))
   const pad = Math.min(box.width, box.height) * 0.12
   const band = Math.min(box.height * 0.22, 40)
-  const label: TextObject = { ...made, align: 'center', x: box.width / 2 - made.width / 2, y: box.height - pad - band / 2 - made.height / 2 }
-  return [box, label]
+  return { ...made, align: 'center', x: box.x + box.width / 2 - made.width / 2, y: box.y + box.height - pad - band / 2 - made.height / 2, ...(box.group !== undefined ? { group: box.group } : {}) }
+}
+
+const sameName = (text: string, logo: Pick<TechLogo, 'title'>): boolean => text.trim().toLowerCase() === logo.title.trim().toLowerCase()
+
+/**
+ * The text items that are the name label of `box`: the text equals the brand name and either its centre lies inside the box
+ * (where insert puts it, in the bottom band) or it shares the box's group. Robust to a box moved, resized or regrouped since insert.
+ */
+export function findLogoNameLabels(items: readonly CanvasItem[], box: Pick<RectangleObject, 'x' | 'y' | 'width' | 'height' | 'group'>, logo: Pick<TechLogo, 'title'>): TextObject[] {
+  return items.filter((item): item is TextObject => {
+    if (item.kind !== 'text' || !sameName(item.text, logo)) return false
+    const cx = item.x + item.width / 2
+    const cy = item.y + item.height / 2
+    const inside = cx >= box.x && cx <= box.x + box.width && cy >= box.y && cy <= box.y + box.height
+    return inside || (box.group !== undefined && item.group === box.group)
+  })
+}
+
+/** The one logo box the panel's Name row applies to: exactly one rectangle is selected, it is an unlocked logo box of a known logo; its own name labels may be selected with it (as a group). */
+export function selectedLogoBox(items: readonly CanvasItem[], keys: ReadonlySet<string>, knownLogo: (slug: string) => Pick<TechLogo, 'title'> | undefined): { box: RectangleObject; logo: Pick<TechLogo, 'title'> } | null {
+  const selected = items.filter((item) => keys.has(canvasItemKey(item)))
+  const rectangles = selected.filter((item): item is RectangleObject => item.kind === 'rectangle')
+  if (rectangles.length !== 1) return null
+  const box = rectangles[0]
+  if (box.logo === undefined || isItemLocked(box)) return null
+  const logo = knownLogo(box.logo)
+  if (!logo) return null
+  const own = new Set(findLogoNameLabels(items, box, logo).map(canvasItemKey))
+  return selected.every((item) => item === box || own.has(canvasItemKey(item))) ? { box, logo } : null
+}
+
+/**
+ * Shows or hides the name label of `box`. Hide removes every label found (so Show and Hide stay a clean pair); Show adds one fresh label with id `textId`
+ * unless one is already there. Returns the same array when nothing changes. Locked labels are left alone (and still count as shown).
+ */
+export function setLogoNameShown(items: CanvasItem[], box: RectangleObject, logo: Pick<TechLogo, 'title'>, show: boolean, textId: number): CanvasItem[] {
+  const labels = findLogoNameLabels(items, box, logo)
+  if (show) return labels.length > 0 ? items : [...items, logoNameLabel(box, logo, textId)]
+  const doomed = new Set(labels.filter((label) => !isItemLocked(label)).map(canvasItemKey))
+  return doomed.size === 0 ? items : items.filter((item) => !doomed.has(canvasItemKey(item)))
 }
 
 /** A cache of one built object per key (used for Path2D, built once per slug and never per frame). `make` is injected so tests can count constructions. */

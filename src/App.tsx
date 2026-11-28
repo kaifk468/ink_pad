@@ -92,13 +92,13 @@ import { moveMenuChips, movedToast, movePaletteEntries, moveRecordUndoable, move
 import { sameSearchFingerprint, searchCanvas, searchFingerprint, type SearchMatch } from './canvasSearch'
 import { buildDiagramOutline, outlineFileName } from './diagramOutline'
 import { downloadBlob } from './documentStore'
-import { diagramIdFromEntry, diagramPaletteEntries, shortcutEntryId, shortcutPaletteEntries, type PaletteEntry } from './commandPalette'
+import { diagramIdFromEntry, diagramPaletteEntries, logoSlugFromEntry, shortcutEntryId, shortcutPaletteEntries, textSizeShortcutKeys, withoutDuplicateTextSizeEntries, type PaletteEntry } from './commandPalette'
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
 import { MermaidDialog } from './app/MermaidDialog'
 import { LogoDialog } from './app/LogoDialog'
-import { buildLogoItems, logoColorChoice, setLogoColor } from './logoLayout'
-import { subscribeTechLogos } from './techLogos'
+import { buildLogoItems, logoColorChoice, findLogoNameLabels, selectedLogoBox, setLogoColor, setLogoNameShown } from './logoLayout'
+import { findTechLogo, subscribeTechLogos } from './techLogos'
 import type { TechLogo } from './techLogoSearch'
 import { buildExcalidrawItems, excalidrawInsertMessage, isExcalidrawText } from './excalidrawImport'
 import type { ExcalidrawResult } from './excalidrawImport'
@@ -1057,6 +1057,22 @@ function App() {
     saveHistory()
     strokesRef.current = next
     historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    scheduleAutosave()
+  }
+
+  // Name: Show / Hide for the one selected logo box: adds or removes its brand name label, one undo step each.
+  const setSelectedLogoName = (show: boolean) => {
+    const target = selectedLogoBox(strokesRef.current, currentSelectionKeys(), findTechLogo)
+    if (!target) return
+    const next = setLogoNameShown(strokesRef.current, target.box, target.logo, show, nextTextIdRef.current)
+    if (next === strokesRef.current) return
+    saveHistory()
+    if (show) nextTextIdRef.current += 1
+    strokesRef.current = next
+    historyCacheRef.current = null
+    reconcileSelectedItems() // Hiding deletes the label, which may have been selected with the box (group)
     renderAll()
     bumpSelectionColor((n) => n + 1)
     scheduleAutosave()
@@ -6043,8 +6059,8 @@ function App() {
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
     ...(inputMode === 'desktop' ? [{ id: 'setting:grid-snap', label: gridSnap ? 'Snap to grid: off' : 'Snap to grid: on', group: 'Settings', keywords: 'snap grid align dots', run: () => updateGridSnap(!gridSnapRef.current) }] : []),
     ...(inputMode === 'desktop' ? [
-      { id: 'edit:text-bigger', label: 'Bigger text', group: 'Edit', keywords: 'font size larger increase label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: 1 }) } },
-      { id: 'edit:text-smaller', label: 'Smaller text', group: 'Edit', keywords: 'font size decrease reduce label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: -1 }) } },
+      { id: 'edit:text-bigger', label: 'Bigger text', group: 'Edit', keys: textSizeShortcutKeys('Larger'), keywords: 'font size larger increase label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: 1 }) } },
+      { id: 'edit:text-smaller', label: 'Smaller text', group: 'Edit', keys: textSizeShortcutKeys('Smaller'), keywords: 'font size decrease reduce label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: -1 }) } },
     ] : []),
     { id: 'setting:snapping', label: 'Toggle snapping', group: 'Settings', keywords: 'snap guides align', run: () => updateSnapping(!snappingRef.current) },
     { id: 'setting:sketchy', label: 'Toggle hand-drawn style', group: 'Settings', keywords: 'sketchy rough', run: toggleSketchy },
@@ -6061,6 +6077,12 @@ function App() {
     if (row) {
       const input = shortcutKeyInput(row)
       if (input) { const command = keyCommand(input, 'desktop'); if (command) keyActionsRef.current(command) }
+      return
+    }
+    const logoSlug = logoSlugFromEntry(id)
+    if (logoSlug !== null) {
+      const logo = findTechLogo(logoSlug)
+      if (logo) insertLogo(logo, true)
       return
     }
     paletteExtras().find((entry) => entry.id === id)?.run()
@@ -6660,6 +6682,7 @@ function App() {
           ? { value: selectionArrowheads(strokesRef.current, currentSelectionKeys()), onChange: changeArrowheads }
           : null}
         newShapeDefault={currentSelectionKeys().size > 0 || newShapeStyle ? { canSet: defaultStyleSource() !== null, isSet: newShapeStyle !== null, onSet: () => { useAsDefaultShapeStyle() }, onReset: () => { resetDefaultShapeStyle() } } : null}
+        logoName={(() => { const target = selectedLogoBox(strokesRef.current, currentSelectionKeys(), findTechLogo); return target === null ? null : { shown: findLogoNameLabels(strokesRef.current, target.box, target.logo).length > 0, onChange: setSelectedLogoName } })()}
         logoColor={(() => { const choice = logoColorChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { brand: choice === 'brand', onChange: setSelectedLogoColor } })()}
         corners={(() => { const choice = cornersChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { rounded: choice === 'sharp', onChange: setSelectedCorners } })()}
         changeShape={(() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })()}
@@ -6729,7 +6752,7 @@ function App() {
       {moveUndoBar !== null && deletedPageNumber === null && <MoveUndoBar message={moveUndoBar.message} onUndo={undoMoveToPage} />}
       {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} replaceOpen={findReplaceOpen} onToggleReplace={() => setFindReplaceOpen((open) => !open)} replacement={findReplacement} onReplacementChange={changeFindReplacement} onReplace={replaceCurrentFind} onReplaceAll={replaceAllFind} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
-      {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
+      {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...withoutDuplicateTextSizeEntries(shortcutPaletteEntries()), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
       <input ref={excalidrawFileRef} type="file" accept=".excalidraw,application/json" hidden onChange={(event) => { openExcalidrawFile(event.target.files?.[0]); event.target.value = '' }} />
       {logoDialogOpen && <LogoDialog onInsert={insertLogo} onClose={() => setLogoDialogOpen(false)} />}
       {mermaidOpen && <MermaidDialog onInsert={importMermaid} onClose={() => setMermaidOpen(false)} />}
