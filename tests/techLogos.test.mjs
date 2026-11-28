@@ -218,7 +218,7 @@ test('trays, panel, palette and credits are wired', async () => {
   assert.match(picker, /aria-label="Search logos"/)
   assert.match(picker, /Show name/)
   assert.match(picker, /aria-label=\{logo\.title\} title=\{logo\.title\}/, 'tooltip is the brand name')
-  assert.match(picker, /Logos: Simple Icons \(CC0\)\. Brand names and logos belong to their owners\./)
+  assert.match(picker, /Logos: Simple Icons \(CC0; a few keep their own Apache-2\.0, MIT or BSD licence\)\. Brand names and logos belong to their owners\./)
   assert.match(help, /LOGO_CREDIT/)
   assert.match(css, /\.logo-picker-touch \.logo-button \{ min-height: 48px/, 'touch buttons are at least 44px')
   assert.match(css, /\.logo-button \{[^}]*min-height: 44px/)

@@ -81,3 +81,17 @@ test('App saves board and canvas with the diagram and loads them back', () => {
   const hook = readFileSync(new URL('../src/app/useDocuments.ts', import.meta.url), 'utf8')
   assert.match(hook, /board: page\.board,\s*canvas: page\.canvas/)
 })
+
+test('canvas marks follow the board in the sheet layer, minimap and SVG export', async () => {
+  const sheet = await loadModule('sheetExport.ts')
+  const svg = sheet.buildSheetSvg([], { width: 200, height: 200, template: 'grid', backgroundColor: '#ffffff', board: 'chalk' })
+  assert.match(svg, new RegExp(board.BOARD_PALETTES.chalk.line))
+  assert.match(svg, new RegExp(board.BOARD_PALETTES.chalk.sheet))
+  const light = sheet.buildSheetSvg([], { width: 200, height: 200, template: 'grid', backgroundColor: '#ffffff' })
+  assert.doesNotMatch(light, new RegExp(board.BOARD_PALETTES.chalk.line))
+  const transparent = sheet.buildSheetSvg([], { width: 200, height: 200, template: 'grid', backgroundColor: '#ffffff', board: 'chalk', transparent: true })
+  assert.doesNotMatch(transparent, /pattern/)
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(app, /pageSpacing,\s*benchmarkBackground \|\| theme === 'light' \? undefined : palette,/)
+  assert.match(app, /drawPageTemplateOverview\(ctx, canvasType, \{[^}]*\}, theme === 'light' \? undefined : palette\)/)
+})

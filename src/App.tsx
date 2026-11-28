@@ -1559,7 +1559,7 @@ function App() {
     ctx.strokeRect(workspaceX + 0.5, workspaceY + 0.5, workspaceWidth - 1, workspaceHeight - 1)
     ctx.fillStyle = sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground])
     ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
-    drawPageTemplateOverview(ctx, canvasType, { x: pageX, y: pageY, width: pageWidth, height: pageHeight })
+    drawPageTemplateOverview(ctx, canvasType, { x: pageX, y: pageY, width: pageWidth, height: pageHeight }, theme === 'light' ? undefined : palette)
     ctx.strokeStyle = '#cfd4df'
     ctx.lineWidth = 1
     ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
@@ -2759,6 +2759,7 @@ function App() {
         benchmarkBackground ? PAGE_BACKGROUND_COLORS.white : sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]),
         viewport,
         pageSpacing,
+        benchmarkBackground || theme === 'light' ? undefined : palette,
       ))
     }
     if (benchmarkBackground) benchmarkBackground.onBackgroundRendered(performance.now() - backgroundStartedAt)

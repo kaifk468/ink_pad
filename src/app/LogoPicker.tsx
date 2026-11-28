@@ -17,7 +17,7 @@ type LogoPickerProps = {
 const EXTERNAL_LIMIT = 12
 
 /** Shown with the logo picker and in the keyboard shortcut dialog. */
-export const LOGO_CREDIT = 'Logos: Simple Icons (CC0). Brand names and logos belong to their owners.'
+export const LOGO_CREDIT = 'Logos: Simple Icons (CC0; a few keep their own Apache-2.0, MIT or BSD licence). Brand names and logos belong to their owners.'
 
 /** Tech logos (Simple Icons, built into the app): a search field, a "Show name" switch and a grid of brand buttons. Shared by the desktop More shapes tray and the tablet Insert tray. */
 export function LogoPicker({ onInsert, externalQuery, autoFocus, touch }: LogoPickerProps) {
