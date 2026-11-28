@@ -688,7 +688,7 @@ Kaif's new focus (2026-11-28): the canvas itself. Board styles first (JojoPen-li
 
 ### Decisions (Kaif can reverse any of these)
 - **Board style is per diagram**, saved as the existing `sketchy` flag plus one new optional page field `board` ('dark' | 'chalk'; missing = light). Clean = plain, Sketch = sketchy, Chalkboard = `board: 'chalk'` (turns sketchy on when picked; it can still be switched off). Clean and Sketch have Light / Dark.
-- **Colour rule**: colours the user picked explicitly stay exactly as stored. Only the default ink (#202124, "Ink black") and the default white fill follow the board style, resolved at draw time; nothing in the file is rewritten when the style changes. Exports with the board background use the board colours; Transparent and NotebookLM exports (white paper) use the stored colours.
+- **Colour rule**: colours the user picked explicitly stay exactly as stored. Only the default inks (#202124 "Ink black", #1e1e1e written by templates and imports, and plain black) and the default white fill follow the board style; text and ink sitting on a light explicit fill (sticky notes, pastel fills) keep the stored ink, resolved at draw time; nothing in the file is rewritten when the style changes. Exports with the board background use the board colours; Transparent and NotebookLM exports (white paper) use the stored colours.
 - **Canvas type is per diagram** (like the template, spacing and sketchy style, and the one-page-size-per-diagram rule): HLD/LLD diagrams are one subject across pages, and per-page types would need per-page settings in the file and in every export. New optional page field `canvas` ('grid' | 'isometric' | 'cornell'), written together with the closest existing template (grid / isometric → dotted, Cornell → lined) so older builds show something similar. Unknown `board` / `canvas` words from a newer InkPad are kept in the file and drawn as the default.
 - Changing board style or canvas type is not an undo step (like the template and the hand-drawn switch today): picking the old one again restores it exactly, and no item changes.
 - Fixed page sizes (A4 / slide) and an infinite canvas are not in this round: the sheet size is tied to workspace bounds, the minimap, page growth and every export (hard rule: keep workspace bounds).
@@ -704,16 +704,16 @@ Kaif's new focus (2026-11-28): the canvas itself. Board styles first (JojoPen-li
 ### Candidates (problem · who/how often · benefit · risk · size · decision)
 | # | Idea | User problem | Who / how often | Benefit | Risk | Size | Decision |
 |---|---|---|---|---|---|---|---|
-| 268 | Board styles Clean / Sketch / Chalkboard (+ Light / Dark) | One look for every board; no dark or chalk board | everyone, every diagram | high | medium (draw-time colour resolution in every renderer and export) | L | picked |
-| 269 | Board-aware pen colours (chalk swatches on dark boards) | Dark inks unreadable on chalkboard | dark-board users, every stroke | high | low | S | picked |
-| 270 | Canvas types Grid, Isometric, Cornell | Only blank / lined / dotted paper | study notes, LLD tables | high | low-medium (CSS layer, export pattern) | M | picked |
-| 271 | Canvas-aware grid snap (graph lines, isometric lattice) | Snapping ignores the paper | desktop, with snap on | medium | low | S | picked |
-| 272 | Board & canvas picker with preview tiles (desktop menu sheet, tablet menu, palette, empty-page hint) | Paper settings hidden as text segments | everyone | high | low | M | picked |
-| 273 | Board background in exports, thumbnails and minimap; Transparent uses stored colours | Exports must look like the board | everyone exporting | high | medium | M | picked |
-| 274 | Tech logo library (~100 Simple Icons, CC0) with search | HLD parts drawn as text boxes | HLD users, every design | high | medium (new optional field, bundle size) | L | picked |
-| 275 | Logo colour: flat (follows board ink) or brand | Dark logos vanish on chalk | logo users | medium | low | S | picked (with 274) |
-| 276 | Alt held while dragging skips guides, equal gaps and grid snap (#266) | Snapping fights fine placement | desktop, sometimes | medium | low | S | picked |
-| 277 | Ctrl+Shift+> / < text size keys (#51) | Text size needs the panel | desktop, often | medium | low | S | picked |
+| 268 | Board styles Clean / Sketch / Chalkboard (+ Light / Dark) | One look for every board; no dark or chalk board | everyone, every diagram | high | medium (draw-time colour resolution in every renderer and export) | L | **done** a8f489d, 409ffe9, e3683f8, c7d87a6 |
+| 269 | Board-aware pen colours (chalk swatches on dark boards) | Dark inks unreadable on chalkboard | dark-board users, every stroke | high | low | S | **done** 409ffe9, b6839c5 |
+| 270 | Canvas types Grid, Isometric, Cornell | Only blank / lined / dotted paper | study notes, LLD tables | high | low-medium (CSS layer, export pattern) | M | **done** 75960f8 |
+| 271 | Canvas-aware grid snap (graph lines, isometric lattice) | Snapping ignores the paper | desktop, with snap on | medium | low | S | **done** 75960f8 |
+| 272 | Board & canvas picker with preview tiles (desktop menu sheet, tablet menu, palette, empty-page hint) | Paper settings hidden as text segments | everyone | high | low | M | **done** 9330381 |
+| 273 | Board background in exports, thumbnails and minimap; Transparent uses stored colours | Exports must look like the board | everyone exporting | high | medium | M | **done** 409ffe9, e3683f8 |
+| 274 | Tech logo library (~100 Simple Icons, CC0) with search | HLD parts drawn as text boxes | HLD users, every design | high | medium (new optional field, bundle size) | L | **done** 1450bf2 |
+| 275 | Logo colour: flat (follows board ink) or brand | Dark logos vanish on chalk | logo users | medium | low | S | **done** 1450bf2, b6839c5 |
+| 276 | Alt held while dragging skips guides, equal gaps and grid snap (#266) | Snapping fights fine placement | desktop, sometimes | medium | low | S | **done** 41e556b |
+| 277 | Ctrl+Shift+> / < text size keys (#51) | Text size needs the panel | desktop, often | medium | low | S | **done** a480a9d |
 | 278 | Fixed page sizes (A4 / A5 / 16:9) | Printable notes | sometimes | medium | high (sheet size is global) | L | idea |
 | 279 | Infinite canvas | Huge boards | sometimes | medium | high (workspace bounds rule) | L | skipped (hard rule) |
 | 280 | Swimlane canvas with lane headers boxes snap into | Sequence / flow lanes | LLD, sometimes | medium-high | medium | M | idea (next canvas round) |
@@ -744,3 +744,17 @@ Kaif's new focus (2026-11-28): the canvas itself. Board styles first (JojoPen-li
 275. **Logo colour**: a selected logo can be switched between Flat (default; follows the board ink or the chosen colour) and Brand colour.
 276. **Alt skips snapping**: on the desktop, holding Alt while dragging or resizing turns off smart guides, equal-gap guides and grid snap for that drag.
 277. **Text size keys**: on the desktop Ctrl+Shift+> / Ctrl+Shift+< make the selected labels (or the text being edited) one step bigger / smaller; one undo step per press; listed in ? help and the palette.
+
+### Round 11 result (2026-11-28)
+All 10 picked items built (#268-#277) by five Sonnet agents in parallel worktrees on top of the shared page-field foundation (a8f489d), cherry-picked with union conflict resolution; Opus wired the board colours into the canvas marks (e3683f8). Independent Opus review: 4 medium, 3 low; 6 fixed in b6839c5 (live-stroke cache freeze, fill swatch storing ink, ink on stickies, dark brand logos, editor colour, lossy flag for dropped fields); per-frame copies of dragged items on dark boards accepted. Walk (desktop 1440x900, tablet 1280x800): template / import ink #1e1e1e stayed black on the chalkboard, fixed in c7d87a6. Screenshots of every style and canvas type: docs/ui-shots/.
+
+Decisions: logos include 134 Simple Icons entries; most are CC0, a few (Kafka, Cassandra, Spark, Airflow, Flink, Hadoop, OpenJDK, …) keep their own Apache-2.0 / MIT / BSD artwork licence (stored in `license`, named in the credit line); CC-BY, CC-BY-SA, NC and custom-licence icons are excluded. To go strictly CC0, set PERMISSIVE to CC0-1.0 in scripts/build-tech-logos.mjs and regenerate. Logo boxes are plain rounded rectangles with a separate name label (not HLD shapes); Change shape is not offered for them. The NotebookLM / Drive PDF stays white with stored colours (there is no other PDF export). Board / canvas changes are not undo steps. The palette has both "Larger text" (older) and "Bigger text" (new) for the same command.
+
+Canvas work status: **in progress** (board styles, canvas types and the logo library are in; next canvas items: swimlane canvas #280, ruled-line helper #282, chalk texture #284, fixed page sizes #278, dark UI chrome #288).
+
+Follow-ups:
+- Tablet: logo grid scrolling, Board tiles and chalk colours need the device; isometric dot crispness at fractional tile heights.
+- "Show name" applies only at insert; a later Name toggle for logo boxes.
+- Some wanted logos are not in Simple Icons 16.38.1 (Twilio, Heroku, Oracle, IBM, gRPC, Memcached, DynamoDB, Slack, OpenAI, Argo CD): use generic HLD icons.
+- Duplicate palette entries for text size (Larger / Bigger).
+- Dragged items on dark boards allocate a resolved copy per frame (cache miss); watch for stutter on big dark pages.
