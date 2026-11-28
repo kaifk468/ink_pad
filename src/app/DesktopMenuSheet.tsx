@@ -3,8 +3,9 @@ import { PAGE_BACKGROUND_COLORS, type PageBackground } from '../pageBackground'
 import type { PageSpacing } from '../pageTemplates'
 import { BOARD_STYLES } from '../boardStyle'
 import { CANVAS_TYPES } from '../canvasTypes'
-import { BOARD_CANVAS_KEYWORDS, BOARD_STYLE_KEYWORDS, BOARD_THEME_KEYWORDS, boardPickerState } from '../boardPicker'
+import { BOARD_CANVAS_KEYWORDS, BOARD_LANES_KEYWORDS, BOARD_MARKS_KEYWORDS, BOARD_STYLE_KEYWORDS, BOARD_THEME_KEYWORDS, boardPickerState } from '../boardPicker'
 import { BoardStylePreview, CanvasPreview, PickerTile } from './BoardPreviews'
+import { LaneControls, MarksControl } from './LaneControls'
 import { filterMenuEntries, firstActionableEntry, type MenuSearchEntry } from './menuSearch'
 import type { TopLeftBarProps } from './TopLeftBar'
 
@@ -62,6 +63,8 @@ export function DesktopMenuSheet(props: TopLeftBarProps & { onClose: (restoreFoc
     { id: 'board-style', section: 'Board', label: 'Style', keywords: BOARD_STYLE_KEYWORDS, actionable: false, icon: null },
     { id: 'board-theme', section: 'Board', label: 'Theme', keywords: BOARD_THEME_KEYWORDS, actionable: false, icon: null },
     { id: 'board-canvas', section: 'Board', label: 'Canvas', keywords: BOARD_CANVAS_KEYWORDS, actionable: false, icon: null },
+    ...(picker.showLanes ? [{ id: 'board-lanes', section: 'Board' as const, label: 'Lanes', keywords: BOARD_LANES_KEYWORDS, actionable: false, icon: null }] : []),
+    ...(picker.canvas !== 'blank' ? [{ id: 'board-marks', section: 'Board' as const, label: 'Marks', keywords: BOARD_MARKS_KEYWORDS, actionable: false, icon: null }] : []),
     ...(picker.showSpacing ? [{ id: 'page-spacing', section: 'Board' as const, label: 'Line and dot spacing', keywords: 'narrow standard wide gap board grid lines dots', actionable: false, icon: null }] : []),
     { id: 'page-colour', section: 'Board', label: 'Sheet colour', keywords: 'background color paper white warm blue yellow green board', actionable: false, icon: null },
     { id: 'desktop', section: 'Preferences', label: 'Desktop mode', desc: 'A mouse draws and edits. The pen and touch stay as they are', keywords: 'mouse tablet input pen touch', actionable: true, checked: true, icon: <><rect x="3" y="4" width="18" height="12" rx="1.5" /><path d="M8 20h8M12 16v4" /></>, run: () => { props.onInputMode('tablet'); onClose(false) } },
@@ -153,6 +156,8 @@ export function DesktopMenuSheet(props: TopLeftBarProps & { onClose: (restoreFoc
                       ))}
                     </div></div>
                 )
+                if (row.id === 'board-lanes') return <LaneControls key={row.id} variant="ms" lanes={props.lanes} onLanes={props.onLanes} />
+                if (row.id === 'board-marks') return <MarksControl key={row.id} variant="ms" marks={props.marks} onMarks={props.onMarks} />
                 if (row.id === 'page-spacing') return (
                   <div key={row.id} className="ms-setting" role="group" aria-label="Line and dot spacing"><span className="ms-setting-label">Line and dot spacing</span>
                     <div className="ms-segments">

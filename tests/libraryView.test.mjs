@@ -68,15 +68,15 @@ test('new diagram presets: dot grid, lined notes, blank; each is a real page sty
   for (const preset of view.NEW_DIAGRAM_PRESETS) assert.ok(['blank', 'lined', 'dotted'].includes(preset.template) && preset.hint.length > 0)
 })
 
-test('choosing a preset starts a blank diagram with that page style in the chosen folder', async () => {
+test('choosing a canvas starts a diagram with that page style in the chosen folder', async () => {
   const { readFile } = await import('node:fs/promises')
   const read = (name) => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')
   const [home, app, hook] = await Promise.all([read('app/HomeScreen.tsx'), read('App.tsx'), read('app/useDocuments.ts')])
-  assert.match(home, /props\.onNewDiagram\(here, preset\.template\)/)
-  assert.match(home, /role="menu" aria-label="New diagram"/)
-  assert.match(home, /if \(newMenuOpenRef\.current\) setNewMenuOpen\(false\)\s+else if [^/]*else closeRef\.current\(\)/)
-  assert.match(app, /onNewDiagram=\{\(folderId, template\) => \{ setLibraryOpen\(false\); void newDiagramIn\(folderId, template\) \}\}/)
-  assert.match(hook, /const newDiagramIn = async \(folderId: string \| null, template\?: DocumentPageTemplate\) => \{\s+await newDiagram\(template\)/)
+  assert.match(home, /props\.onNewDiagram\(here, options\.template, options\)/)
+  assert.match(home, /role="dialog" aria-label="New diagram"/)
+  assert.match(home, /if \(newMenuOpenRef\.current\) \{ setNewMenuOpen\(false\); newButtonRef\.current\?\.focus\(\) \}\s+else if [^/]*else closeRef\.current\(\)/)
+  assert.match(app, /onNewDiagram=\{\(folderId, template, options\) => \{[^}]*void newDiagramIn\(folderId, template, options\)/)
+  assert.match(hook, /const newDiagramIn = async \(folderId: string \| null, template\?: DocumentPageTemplate, options\?: NewDiagramOptions\) => \{\s+await newDiagram\(template, options\)/)
   assert.match(hook, /template: template \?\? page\.template/)
   // the File dialog's New diagram keeps the current page style
   assert.match(app, /onNew=\{\(\) => void newDiagram\(\)\}/)

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { NewDiagramOptions } from '../newDiagramChoice'
 import type { CanvasItem } from '../canvasModel'
-import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, isLossyParse, parseDocument, sameSignature, stringifyDocument, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
+import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, isLossyParse, parseDocument, sameSignature, stringifyDocument, type DocumentLanes, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
 import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadStoredDocument, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
 import { shouldRefreshLibrary } from '../libraryRefresh'
 import { copyStoredDiagram as copyDiagramOnBackend } from '../libraryCopy'
@@ -38,7 +39,7 @@ export type DocumentHost = {
   getPageItems: () => CanvasItem[][]
   /** The name of every page in order ('' = unnamed), same length as getPageItems. */
   getPageNames: () => string[]
-  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; board?: string; canvas?: string }
+  getPage: () => { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; board?: string; canvas?: string; marks?: string; lanes?: DocumentLanes }
   /** The input mode (Desktop pictures embed Excalifont; Tablet ones stay as they were). */
   getInputMode?: () => 'tablet' | 'desktop'
   /** True while a pen/touch stroke or gesture is in progress; autosave waits for it to end. */
@@ -173,6 +174,8 @@ export function useDocuments(host: DocumentHost) {
       sketchy: page.sketchy,
       board: page.board,
       canvas: page.canvas,
+      marks: page.marks,
+      lanes: page.lanes,
       items: hostRef.current.getPageItems()[0] ?? [],
       extraPages: hostRef.current.getPageItems().slice(1),
       pageNames: hostRef.current.getPageNames(),
@@ -188,7 +191,7 @@ export function useDocuments(host: DocumentHost) {
    */
   const currentSignature = (): DocumentSignature => {
     const page = hostRef.current.getPage()
-    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, sketchy: page.sketchy, board: page.board, canvas: page.canvas, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()), pageNames: hostRef.current.getPageNames() }
+    return { title: docMetaRef.current.title, template: page.template, background: page.background, spacing: page.spacing, sheetHeight: page.sheetHeight, sketchy: page.sketchy, board: page.board, canvas: page.canvas, marks: page.marks, lanes: page.lanes, items: (hostRef.current.getPageItems()[0] ?? []).slice(), extraPages: hostRef.current.getPageItems().slice(1).map((items) => items.slice()), pageNames: hostRef.current.getPageNames() }
   }
 
   /**
@@ -441,16 +444,17 @@ export function useDocuments(host: DocumentHost) {
     return true
   }
 
-  const blankDocument = (template?: DocumentPageTemplate) => {
+  const blankDocument = (template?: DocumentPageTemplate, options?: NewDiagramOptions) => {
     const page = hostRef.current.getPage()
-    return createDocument({ template: template ?? page.template, background: page.background, spacing: page.spacing, ...(template === undefined ? { canvas: page.canvas } : {}), items: [] })
+    if (options) return createDocument({ template: options.template, background: page.background, spacing: page.spacing, canvas: options.canvas, board: options.board, sketchy: options.sketchy, items: [] })
+    return createDocument({ template: template ?? page.template, background: page.background, spacing: page.spacing, ...(template === undefined ? { canvas: page.canvas, lanes: page.lanes } : {}), items: [] })
   }
 
-  const newDiagram = async (template?: DocumentPageTemplate) => {
+  const newDiagram = async (template?: DocumentPageTemplate, options?: NewDiagramOptions) => {
     await persistNow()
     await flushCopy()
     setFileNotice(null)
-    applyDocument(null, blankDocument(template))
+    applyDocument(null, blankDocument(template, options))
     void keeper.switchTo(null)
     writeCurrentId(null)
     void refreshLibrary()
@@ -529,8 +533,8 @@ export function useDocuments(host: DocumentHost) {
   }
 
   /** Start a blank diagram that will be saved inside the given folder (null = top level). */
-  const newDiagramIn = async (folderId: string | null, template?: DocumentPageTemplate) => {
-    await newDiagram(template)
+  const newDiagramIn = async (folderId: string | null, template?: DocumentPageTemplate, options?: NewDiagramOptions) => {
+    await newDiagram(template, options)
     pendingFolderRef.current = folderId
   }
 
@@ -806,6 +810,8 @@ export function useDocuments(host: DocumentHost) {
       ...(page.sketchy ? { sketchy: true } : {}),
       // The board follows the page in PNG / SVG / copy / Library pictures (thumbnails use this too); buildSheetSvg ignores it for a transparent export.
       ...(page.board ? { board: page.board } : {}),
+      ...(page.marks ? { marks: page.marks } : {}),
+      ...(page.lanes ? { lanes: page.lanes } : {}),
       ...(options.transparent ? { transparent: true } : {}),
       ...(options.fontCss ? { embeddedFontCss: options.fontCss } : {}),
     }), bounds)

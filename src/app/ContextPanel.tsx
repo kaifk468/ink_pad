@@ -121,6 +121,8 @@ type ContextPanelProps = {
   corners?: { rounded: boolean; onChange: (rounded: boolean) => void } | null
   /** Selected tech logo boxes: Flat (the line colour) / Brand (the logo's own colour). `brand` is true when all selected are brand-coloured. */
   logoColor?: { brand: boolean; onChange: (brand: boolean) => void } | null
+  /** One selected known logo box: its brand name label is shown (a text item under the logo) or hidden. */
+  logoName?: { shown: boolean; onChange: (show: boolean) => void } | null
   /** "Use as default for new shapes" (one shape selected, `canSet`) and "Reset default shape style" (when a default exists). */
   newShapeDefault?: { canSet: boolean; isSet: boolean; onSet: () => void; onReset: () => void } | null
   /** Desktop: the shapes the selected boxes can change to (Change shape). */
@@ -197,7 +199,7 @@ export function ContextPanel(props: ContextPanelProps) {
   const umlOpen = relationship ? (umlChoice?.id === relationship.connectorId ? umlChoice.open : isUmlRelationship(relationship.type)) : false
   const toggleCollapsed = () => { const next = !collapsed; setCollapsed(next); writeOptionsCollapsed(browserStorage(), next) }
   const headerColor = props.showStyle ? props.color : (props.selectionColor ?? 'var(--ip-muted)')
-  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !props.logoColor && !(props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet)) && !props.flip && !props.sameSize && !props.boundaryTools) return null
+  if (!props.showStyle && !props.fill && !props.rotation && !props.showEraser && !props.showSelectionColor && !props.code && !props.showTextSizes && !props.textAlign && !props.connectorLabelSize && !props.textFit && !props.showTextFonts && props.selectedItemCount === 0 && !props.canDelete && !props.canCopy && !props.canPaste && !relationship && !props.selectionWidth && !props.lineStyle && !props.arrowheads && !props.layer && !props.arrange && !props.changeShape && !props.corners && !props.logoColor && !props.logoName && !(props.newShapeDefault && (props.newShapeDefault.canSet || props.newShapeDefault.isSet)) && !props.flip && !props.sameSize && !props.boundaryTools) return null
   const selectionWidthEl = (
     <>
       {props.selectionWidth && <div className="selection-width" role="group" aria-label="Outline width of the selection">
@@ -413,6 +415,13 @@ export function ContextPanel(props: ContextPanelProps) {
         <div className="routing-toggle" role="group" aria-label="Logo colour" title="Flat uses the line colour; Brand uses the logo's own colour">
           <button type="button" className={props.logoColor.brand ? '' : 'active'} aria-pressed={!props.logoColor.brand} onClick={() => props.logoColor?.onChange(false)}>Flat</button>
           <button type="button" className={props.logoColor.brand ? 'active' : ''} aria-pressed={props.logoColor.brand} onClick={() => props.logoColor?.onChange(true)}>Brand</button>
+        </div>
+      </div>}
+      {props.logoName && <div className="corners-controls logo-color-controls logo-name-controls" role="group" aria-label="Logo name">
+        <span className="panel-label">Name</span>
+        <div className="routing-toggle" role="group" aria-label="Logo name" title="Show or hide the brand name under the logo">
+          <button type="button" className={props.logoName.shown ? 'active' : ''} aria-pressed={props.logoName.shown} onClick={() => props.logoName?.onChange(true)}>Show</button>
+          <button type="button" className={props.logoName.shown ? '' : 'active'} aria-pressed={!props.logoName.shown} onClick={() => props.logoName?.onChange(false)}>Hide</button>
         </div>
       </div>}
     </>

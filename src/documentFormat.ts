@@ -23,6 +23,13 @@ export type DocumentPageTemplate = 'blank' | 'lined' | 'dotted'
 export type DocumentPageSpacing = 'narrow' | 'standard' | 'wide'
 export type DocumentPageBackground = 'white' | 'warm' | 'blue' | 'yellow' | 'green'
 
+/**
+ * Swimlane settings (page field `lanes`). Known fields are checked: `dir` a page word ('columns'; anything else draws as rows),
+ * `count` an integer 2..8, `names` at most 8 cleaned names ('' keeps a lane's place), `fit` only `false` (the default, on, is not written).
+ * Unknown keys from a newer InkPad are kept when their value is a short string, a finite number or a boolean.
+ */
+export type DocumentLanes = { dir?: string; count?: number; names?: string[]; fit?: false; [unknownKey: string]: unknown }
+
 export type InkPadDocument = {
   format: typeof DOCUMENT_FORMAT
   version: number
@@ -34,8 +41,10 @@ export type InkPadDocument = {
    * `board` (board style theme: 'dark' or 'chalk'; missing = light) and `canvas` (canvas type beyond the template:
    * 'grid', 'isometric', 'cornell'; missing = the template) are written only when set. Unknown values from a newer
    * InkPad are kept as they are (short identifiers) so a re-save never drops them; this build draws them as the default.
+   * `marks` ('faint' | 'bold'; missing = normal) is the mark strength of dots and lines; `lanes` the swimlane settings of
+   * `canvas: 'lanes'` (see DocumentLanes). Both are written only when set and are additive: the file version is unchanged.
    */
-  page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: true; board?: string; canvas?: string }
+  page: { template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: true; board?: string; canvas?: string; marks?: string; lanes?: DocumentLanes }
   /** Optional page names, one per page ('' = unnamed). Written only when at least one page has a name. */
   pageNames?: string[]
   /** `items` is page 1. Pages 2 and on, only when the diagram has more than one page. */
@@ -58,6 +67,10 @@ export type DocumentInput = {
   board?: string
   /** Canvas type beyond the template ('grid', 'isometric', 'cornell', or an unknown identifier); written only when set. */
   canvas?: string
+  /** Mark strength ('faint', 'bold', or an unknown identifier from a newer InkPad); written only when set. */
+  marks?: string
+  /** Swimlane settings; written only when it holds something. */
+  lanes?: DocumentLanes
   /** Page 1. */
   items: CanvasItem[]
   /** Pages 2 and on. */
@@ -102,10 +115,60 @@ export function cleanPageWord(value: unknown): string | undefined {
 }
 /** Count of present fields the current parse dropped without dropping their item or page (a bad page word, a logo on a shape that cannot carry one). */
 let droppedFieldCount = 0
-function pageWord<K extends 'board' | 'canvas'>(key: K, value: unknown, track = false): { [P in K]?: string } {
+function pageWord<K extends 'board' | 'canvas' | 'marks'>(key: K, value: unknown, track = false): { [P in K]?: string } {
   const word = cleanPageWord(value)
   if (track && value !== undefined && word === undefined) droppedFieldCount += 1
   return (word ? { [key]: word } : {}) as { [P in K]?: string }
+}
+
+const MAX_LANE_NAMES = 8
+const MAX_LANE_UNKNOWN_KEYS = 8
+
+/**
+ * The `lanes` record as stored (see DocumentLanes), or undefined when nothing is left. With `track`, every present value
+ * that had to be dropped (a bad dir / count / names / fit, an unsafe unknown value, extra names) is counted in droppedFieldCount.
+ */
+export function cleanLanes(value: unknown, track = false): DocumentLanes | undefined {
+  if (value === undefined) return undefined
+  const drop = () => { if (track) droppedFieldCount += 1 }
+  if (!isRecord(value)) { drop(); return undefined }
+  const out: DocumentLanes = {}
+  if (value.dir !== undefined) {
+    const dir = cleanPageWord(value.dir)
+    if (dir) out.dir = dir
+    else drop()
+  }
+  if (value.count !== undefined) {
+    if (typeof value.count === 'number' && Number.isInteger(value.count) && value.count >= 2 && value.count <= 8) out.count = value.count
+    else drop()
+  }
+  if (value.names !== undefined) {
+    if (Array.isArray(value.names)) {
+      const names = value.names.slice(0, MAX_LANE_NAMES).map((name) => {
+        if (typeof name !== 'string') drop()
+        return cleanPageName(name)
+      })
+      if (value.names.length > MAX_LANE_NAMES) drop()
+      if (names.some((name) => name !== '')) out.names = names
+    } else drop()
+  }
+  if (value.fit !== undefined) {
+    if (value.fit === false) out.fit = false
+    else if (value.fit !== true) drop() // true is the default and is simply not written
+  }
+  let unknownKept = 0
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === 'dir' || key === 'count' || key === 'names' || key === 'fit') continue
+    const safe = /^[a-zA-Z][a-zA-Z0-9-]{0,23}$/.test(key) && key !== '__proto__' && unknownKept < MAX_LANE_UNKNOWN_KEYS
+      && ((typeof entry === 'string' && entry.length <= 100) || (typeof entry === 'number' && Number.isFinite(entry)) || typeof entry === 'boolean')
+    if (safe) { out[key] = entry; unknownKept += 1 } else drop()
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function laneField(value: unknown, track = false): { lanes?: DocumentLanes } {
+  const lanes = cleanLanes(value, track)
+  return lanes ? { lanes } : {}
 }
 
 /** A page name as stored: control characters removed, spaces collapsed, trimmed, at most 40 characters. Anything that is not text is no name. */
@@ -135,7 +198,7 @@ export function createDocument(input: DocumentInput, now = new Date().toISOStrin
     title: cleanTitle(input.title),
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
-    page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}), ...grownSheetHeight(input.sheetHeight), ...(input.sketchy === true ? { sketchy: true as const } : {}), ...pageWord('board', input.board), ...pageWord('canvas', input.canvas) },
+    page: { template: input.template, background: input.background, ...(input.spacing === 'narrow' || input.spacing === 'wide' ? { spacing: input.spacing } : {}), ...grownSheetHeight(input.sheetHeight), ...(input.sketchy === true ? { sketchy: true as const } : {}), ...pageWord('board', input.board), ...pageWord('canvas', input.canvas), ...pageWord('marks', input.marks), ...laneField(input.lanes) },
     ...(names ? { pageNames: names } : {}),
     items: input.items.map(copy),
     ...(extraPages.length > 0 ? { pages: extraPages.map((items) => ({ items: items.map(copy) })) } : {}),
@@ -177,11 +240,11 @@ export function documentPageCount(document: InkPadDocument): number {
 }
 
 /** An open diagram's content for "did anything change since the last save" checks. */
-export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; board?: string; canvas?: string; items: CanvasItem[]; extraPages?: CanvasItem[][]; pageNames?: string[] }
+export type DocumentSignature = { title: string; template: DocumentPageTemplate; background: DocumentPageBackground; spacing?: DocumentPageSpacing; sheetHeight?: number; sketchy?: boolean; board?: string; canvas?: string; marks?: string; lanes?: DocumentLanes; items: CanvasItem[]; extraPages?: CanvasItem[][]; pageNames?: string[] }
 
 export function sameSignature(a: DocumentSignature | null, b: DocumentSignature | null): boolean {
   if (!a || !b) return false
-  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || (a.sheetHeight ?? 1500) !== (b.sheetHeight ?? 1500) || (a.sketchy === true) !== (b.sketchy === true) || cleanPageWord(a.board) !== cleanPageWord(b.board) || cleanPageWord(a.canvas) !== cleanPageWord(b.canvas) || a.items.length !== b.items.length) return false
+  if (a.title !== b.title || a.template !== b.template || a.background !== b.background || (a.spacing ?? 'standard') !== (b.spacing ?? 'standard') || (a.sheetHeight ?? 1500) !== (b.sheetHeight ?? 1500) || (a.sketchy === true) !== (b.sketchy === true) || cleanPageWord(a.board) !== cleanPageWord(b.board) || cleanPageWord(a.canvas) !== cleanPageWord(b.canvas) || cleanPageWord(a.marks) !== cleanPageWord(b.marks) || JSON.stringify(cleanLanes(a.lanes) ?? null) !== JSON.stringify(cleanLanes(b.lanes) ?? null) || a.items.length !== b.items.length) return false
   for (let index = 0; index < a.items.length; index += 1) if (a.items[index] !== b.items[index]) return false
   const aPages = a.extraPages ?? []
   const bPages = b.extraPages ?? []
@@ -232,7 +295,7 @@ export function documentFileName(title: string): string {
 const migrations: Record<number, (raw: Record<string, unknown>) => Record<string, unknown>> = {}
 
 const KNOWN_DOCUMENT_KEYS = new Set(['format', 'version', 'title', 'createdAt', 'updatedAt', 'page', 'items', 'pages', 'pageNames'])
-const KNOWN_PAGE_KEYS = new Set(['template', 'background', 'spacing', 'sheetHeight', 'sketchy', 'board', 'canvas'])
+const KNOWN_PAGE_KEYS = new Set(['template', 'background', 'spacing', 'sheetHeight', 'sketchy', 'board', 'canvas', 'marks', 'lanes'])
 const lossyParses = new WeakSet<object>()
 
 /** True when the document came from parseDocument and the parse dropped damaged items or fields this version does not know, so saving it again would lose data. */
@@ -293,6 +356,8 @@ export function parseDocument(text: string): ParseResult {
         ...(page.sketchy === true ? { sketchy: true as const } : {}),
         ...pageWord('board', page.board, true),
         ...pageWord('canvas', page.canvas, true),
+        ...pageWord('marks', page.marks, true),
+        ...laneField(page.lanes, true),
       },
       ...(names ? { pageNames: names } : {}),
       items: finalItems,

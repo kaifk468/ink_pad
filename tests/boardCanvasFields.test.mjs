@@ -92,8 +92,9 @@ test('canvas marks follow the board in the sheet layer, minimap and SVG export',
   const transparent = sheet.buildSheetSvg([], { width: 200, height: 200, template: 'grid', backgroundColor: '#ffffff', board: 'chalk', transparent: true })
   assert.doesNotMatch(transparent, /pattern/)
   const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
-  assert.match(app, /pageSpacing,\s*benchmarkBackground \|\| theme === 'light' \? undefined : palette,/)
-  assert.match(app, /drawPageTemplateOverview\(ctx, canvasType, \{[^}]*\}, theme === 'light' \? undefined : palette\)/)
+  // Round 12: the marks pass through effectiveMarks (mark strength), still the board's own palette for non-light boards and none for the benchmark.
+  assert.match(app, /pageSpacing,\s*benchmarkBackground \? undefined : effectiveMarks\(theme === 'light' \? undefined : palette,/)
+  assert.match(app, /drawPageTemplateOverview\(ctx, canvasType, \{[^}]*\}, effectiveMarks\(theme === 'light' \? undefined : palette,/)
 })
 
 test('template and import ink (#1e1e1e) and black follow the board too', async () => {

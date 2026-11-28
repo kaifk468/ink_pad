@@ -66,9 +66,9 @@ test('canvas previews draw each pattern inside the 72x48 tile', () => {
   }
 })
 
-test('palette commands: three boards, one theme toggle for Clean/Sketch, six canvases', () => {
+test('palette commands: three boards, one theme toggle for Clean/Sketch, eight canvases', () => {
   const labels = (style, dark) => picker.boardCommands(style, dark).map((c) => c.label)
-  assert.deepEqual(labels('clean', false), ['Board: Clean', 'Board: Sketch', 'Board: Chalkboard', 'Board: Dark theme', 'Canvas: Blank', 'Canvas: Dots', 'Canvas: Lined', 'Canvas: Grid', 'Canvas: Isometric', 'Canvas: Cornell'])
+  assert.deepEqual(labels('clean', false), ['Board: Clean', 'Board: Sketch', 'Board: Chalkboard', 'Board: Dark theme', 'Canvas: Blank', 'Canvas: Dots', 'Canvas: Lined', 'Canvas: Grid', 'Canvas: Isometric', 'Canvas: Cornell', 'Canvas: Lanes', 'Canvas: Notebook'])
   assert.ok(labels('sketch', true).includes('Board: Light theme'))
   assert.ok(!labels('sketch', true).includes('Board: Dark theme'))
   // The chalkboard is always dark: no theme toggle.

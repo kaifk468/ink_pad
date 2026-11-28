@@ -17,6 +17,8 @@ export type BoardPickerState = {
   canvas: CanvasType
   /** Line and dot spacing only applies to a ruled canvas. */
   showSpacing: boolean
+  /** The lane settings (rows or columns, count, names) show on the Lanes canvas only. */
+  showLanes: boolean
   /** Sheet colour is set by the board while it is dark or chalk. */
   sheetFromBoard: boolean
 }
@@ -28,7 +30,8 @@ export function boardPickerState(board: string | undefined, sketchy: boolean, te
     dark: isDarkBoard(board),
     chalk: boardTheme(board) === 'chalk',
     canvas: effective,
-    showSpacing: effective !== 'blank',
+    showSpacing: effective !== 'blank' && effective !== 'lanes',
+    showLanes: effective === 'lanes',
     sheetFromBoard: boardTheme(board) !== 'light',
   }
 }
@@ -36,11 +39,15 @@ export function boardPickerState(board: string | undefined, sketchy: boolean, te
 /** Words that find the Board rows in the menu search (and the palette entries). */
 export const BOARD_STYLE_KEYWORDS = 'board style theme clean sketch sketchy hand-drawn chalkboard chalk dark light paper'
 export const BOARD_THEME_KEYWORDS = 'board theme dark light night mode chalk'
-export const BOARD_CANVAS_KEYWORDS = 'board canvas type paper page template blank dots dotted lined ruled grid graph isometric cornell notes'
+/** Mark strength row (Faint / Normal / Bold) in the Board section. */
+export const BOARD_MARKS_KEYWORDS = 'board marks dots lines strength faint normal bold projector contrast'
+/** Lane settings row (Rows / Columns, count, names), shown on the Lanes canvas. */
+export const BOARD_LANES_KEYWORDS = 'board lanes swimlane rows columns count names header'
+export const BOARD_CANVAS_KEYWORDS = 'board canvas type paper page template blank dots dotted lined ruled grid graph isometric cornell notes lanes swimlane swimlanes notebook margin'
 
 /** SVG path data for a canvas type drawn in a w x h preview. Dots are zero-length segments (draw with a round cap). */
-export function canvasPreviewMarks(type: CanvasType, w = 72, h = 48): { dots: string; lines: string; strong: string } {
-  const out = { dots: '', lines: '', strong: '' }
+export function canvasPreviewMarks(type: CanvasType, w = 72, h = 48): { dots: string; lines: string; strong: string; margin?: string } {
+  const out: { dots: string; lines: string; strong: string; margin?: string } = { dots: '', lines: '', strong: '' }
   if (type === 'dotted') {
     for (let y = 6; y <= h - 4; y += 8) for (let x = 6; x <= w - 4; x += 8) out.dots += `M${x} ${y}h0`
   } else if (type === 'isometric') {
@@ -53,6 +60,14 @@ export function canvasPreviewMarks(type: CanvasType, w = 72, h = 48): { dots: st
   } else if (type === 'cornell') {
     for (let y = 10; y <= h - 16; y += 8) out.lines += `M0 ${y}H${w}`
     out.strong = `M20 0V${h - 12}M0 ${h - 12}H${w}`
+  } else if (type === 'notebook') {
+    for (let y = 10; y <= h - 4; y += 8) out.lines += `M0 ${y}H${w}`
+    out.margin = `M14 0V${h}`
+    out.strong = `M0 6H${w}`
+  } else if (type === 'lanes') {
+    // Four rows lanes: borders between them and the header column's edge.
+    for (let y = 12; y < h; y += 12) out.lines += `M0 ${y}H${w}`
+    out.strong = `M14 0V${h}`
   }
   return out
 }

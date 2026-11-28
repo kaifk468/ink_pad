@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { diagramIdFromEntry, filterCommands, groupPaletteEntries, splitCommandLabel, type PaletteEntry } from '../commandPalette'
+import { diagramIdFromEntry, filterCommands, groupPaletteEntries, logoPaletteEntries, splitCommandLabel, type PaletteEntry } from '../commandPalette'
+import { loadedTechLogos, loadTechLogos } from '../techLogos'
+import type { TechLogo } from '../techLogoSearch'
 
 type CommandPaletteProps = {
   entries: readonly PaletteEntry[]
@@ -14,9 +16,17 @@ export function CommandPalette({ entries, onRun, onClose }: CommandPaletteProps)
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
   const searching = query.trim() !== ''
+  // The logo table is its own lazy chunk: fetched when the palette opens (offline-safe, built into the app); until it arrives there are simply no logo rows.
+  const [logos, setLogos] = useState<readonly TechLogo[] | null>(() => loadedTechLogos())
+  useEffect(() => {
+    if (logos) return
+    let alive = true
+    loadTechLogos().then((table) => { if (alive) setLogos(table) }).catch(() => undefined)
+    return () => { alive = false }
+  }, [logos])
   const groups = useMemo(() => (searching ? null : groupPaletteEntries(entries)), [entries, searching])
   // Empty query: grouped (each group contiguous, so arrows follow what is drawn). With a query: flat, ranked.
-  const results = useMemo(() => (groups ? groups.flatMap((group) => group.entries) : filterCommands(entries, query)), [groups, entries, query])
+  const results = useMemo(() => (groups ? groups.flatMap((group) => group.entries) : [...filterCommands(entries, query), ...logoPaletteEntries(query, logos)]), [groups, entries, query, logos])
   const indexOf = useMemo(() => new Map(results.map((entry, position) => [entry, position] as const)), [results])
   const current = results.length === 0 ? -1 : Math.min(active, results.length - 1)
 

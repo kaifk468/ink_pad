@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { compactAfterErase } from './app/eraserCompaction'
 import { createEraserStroke, eraserCursorDiameter, getEraserSweepPoints } from './eraserInput'
 import { alignMoves, applyMoves, canAlign, canDistribute, distributeMoves, type AlignOp, type DistributeOp } from './arrange'
-import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, type ConnectorRouting } from './canvasModel'
+import { CONNECTOR_SNAP_TOLERANCE, arrowEndsChoice, setSelectedArrowsTwoWay, restrokeItems, selectionStrokeWidth, selectionHasOutlineWidth, selectionDash, setLineDash, hasLineDash, selectionArrowheads, selectionHasArrowheads, setArrowheads, reorderItems, type LayerMove, type LineDash, type Arrowheads, CanvasSnapshotHistory, itemCenter, angleFromCenter, hitRotateHandle, isRotatable, itemAngle, nearestConnectorAngle, rotateHandle, setItemAngle, snapAngle, createShapeBox, recolorItems, selectionColor, type ShapeKind, allCanvasItemKeys, isItemLocked, setItemsLocked, canvasItemKey, appendedItemsForRendering, canvasItemsForRendering, cloneCanvasItems, createConnector, deleteCanvasItemsByKey, detachConnectorsFromRectangles, getCanvasSelectionBounds, rotatedItemBounds, getRectangleResizeHandles, getResizedRectangleBounds, hitTestRectangleResizeHandle, resizeRectangleItems, resizeSelectedItems, resizeTextItem, reverseConnectorDirection, snapConnectorEndpoint, type SnappedConnectorEndpoint, translateSelectedItems, updateConnectorRelationship, updateConnectorRouting, type ConnectorRouting } from './canvasModel'
 import { QUICK_CONNECT_DOUBLE_CLICK_MS, TABLET_QUICK_CONNECT_TAP_SLOP_PX, hitQuickConnect, quickConnectButtons, quickConnectFits, quickConnectHeadEnds, quickConnectHint, type QuickConnectDirection } from './quickConnect'
 import { CONNECTOR_CLICK_SLOP_PX, connectorHandlePositions, bendForDrag, hitConnectorHandle, hitConnectorLabel, moveConnectorEndpoint, setConnectorBend, snapEndpointTarget, soleSelectedConnector, toggleConnectorRouting, type ConnectorHandleKind } from './connectorHandles'
 import { reattachConnectorSides, routeConnectors } from './connectorRoute'
@@ -17,6 +17,7 @@ import { linkedNeighbour, revealViewport, walkCurrentKey, walkItemBounds, walkSt
 import { addBoundary } from './boundary'
 import { canSelectConnected, connectedKeys, linkedKeys } from './selectConnected'
 import { fadedKeysOf, focusSet, pruneFocus } from './focusMode'
+import { SLIDE_MAX_ZOOM, SLIDE_PADDING, showSlideControl, slideKeyTarget, slideLabel, slideStepEnabled } from './slideNav'
 import { changeSelectedShapes, changeShapeChoices, shapeChoiceLabel, type ShapeChoice } from './changeShape'
 import { groupStyleSource, canGroup, canUngroup, expandToGroups, groupItems, toggleGroupKeys, ungroupItems } from './grouping'
 import { PASTE_OFFSET, copyItems, pasteItems, pasteTranslation, type PasteResult } from './clipboard'
@@ -35,12 +36,16 @@ import { MAX_PREDICTION_DISTANCE_SCREEN_PX, getPointerSamples, getPredictedPoint
 import { shouldAppendStrokeSample } from './strokeSampling'
 import { getLargestMeasuredLatencyStage, PerformanceDiagnostics, type BrowserStallSummary, type StrokeDiagnosticRow } from './performanceDiagnostics'
 import { BENCHMARK_MEASURED_FRAMES, BENCHMARK_SCENE_SIZES, BENCHMARK_SEED, BENCHMARK_WARMUP_FRAMES, CONTROLLED_BENCHMARK_VIEWPORT, createBenchmarkScene, getBenchmarkEnvironment, summarizeBenchmarkSamples, type BenchmarkMode } from './performanceBenchmark'
-import { applySheetLayer, drawPageTemplateOverview, getSheetLayerState, loadPageSpacing, loadPageTemplate, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
+import { applySheetLayer, drawPageTemplateOverview, effectiveMarks, getSheetLayerState, type MarkStrength, loadPageSpacing, loadPageTemplate, pageSpacingUnits, savePageSpacing, savePageTemplate, type PageSpacing, type PageTemplate, type SheetLayerState } from './pageTemplates'
 import { loadPageBackground, PAGE_BACKGROUND_COLORS, savePageBackground, type PageBackground } from './pageBackground'
+import { chalkGrainCssUrl, chalkTextureApplies } from './chalkTexture'
 import { boardFieldsFor, boardPalette, boardStyleOf, isDarkBoard, type BoardStyleId, type BoardTheme } from './boardStyle'
 import { boardCommands } from './boardPicker'
 import { resolveInk, resolveItemForBoard, setBoardFill, setBoardInk, sheetBorderColor, sheetColorForBoard } from './boardColors'
 import { canvasFieldsFor, effectiveCanvasType, type CanvasType } from './canvasTypes'
+import { laneDir, laneFit, laneLabel, laneRects, type LaneSettings } from './canvasLanes'
+import { laneFitDelta } from './laneFit'
+import { ruledBaselineY } from './ruledText'
 import { cleanPageName, getNextIds, normalizePageNames } from './documentFormat'
 import { FilePanel } from './FilePanel'
 import { COLORS, ERASER_SIZES, PERFORMANCE_DIAGNOSTICS_ENABLED, SHAPE_HOLD_JITTER_PX, UML_CONNECTOR_TOOLS, WIDTHS } from './app/appConfig'
@@ -90,13 +95,13 @@ import { moveMenuChips, movedToast, movePaletteEntries, moveRecordUndoable, move
 import { sameSearchFingerprint, searchCanvas, searchFingerprint, type SearchMatch } from './canvasSearch'
 import { buildDiagramOutline, outlineFileName } from './diagramOutline'
 import { downloadBlob } from './documentStore'
-import { diagramIdFromEntry, diagramPaletteEntries, shortcutEntryId, shortcutPaletteEntries, type PaletteEntry } from './commandPalette'
+import { diagramIdFromEntry, diagramPaletteEntries, logoSlugFromEntry, shortcutEntryId, shortcutPaletteEntries, textSizeShortcutKeys, withoutDuplicateTextSizeEntries, type PaletteEntry } from './commandPalette'
 import { DESKTOP_SHORTCUTS, shortcutKeyInput } from './desktopShortcuts'
 import { TemplateChooser } from './app/TemplateChooser'
 import { MermaidDialog } from './app/MermaidDialog'
 import { LogoDialog } from './app/LogoDialog'
-import { buildLogoItems, logoColorChoice, setLogoColor } from './logoLayout'
-import { subscribeTechLogos } from './techLogos'
+import { buildLogoItems, logoColorChoice, findLogoNameLabels, selectedLogoBox, setLogoColor, setLogoNameShown } from './logoLayout'
+import { findTechLogo, subscribeTechLogos } from './techLogos'
 import type { TechLogo } from './techLogoSearch'
 import { buildExcalidrawItems, excalidrawInsertMessage, isExcalidrawText } from './excalidrawImport'
 import type { ExcalidrawResult } from './excalidrawImport'
@@ -120,6 +125,7 @@ import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, keepAlignAnchor
 import { loadTextFont } from './textFonts'
 import type { TextAlign, TextFontId } from './canvasModel'
 import { useDocuments } from './app/useDocuments'
+import { newDiagramUsesHandFont } from './newDiagramChoice'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, fitViewportToBoundsInset, DESKTOP_FIT_INSETS, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
@@ -498,6 +504,13 @@ function App() {
   const [pageCanvas, setPageCanvas] = useState<string | undefined>(undefined)
   const pageCanvasRef = useRef<string | undefined>(undefined)
   pageCanvasRef.current = pageCanvas
+  /** Mark strength ('faint' | 'bold' | unknown from a newer InkPad; undefined = normal) and swimlane settings (round 12). Saved per diagram; not undo steps. */
+  const [pageMarks, setPageMarks] = useState<string | undefined>(undefined)
+  const pageMarksRef = useRef<string | undefined>(undefined)
+  pageMarksRef.current = pageMarks
+  const [pageLanes, setPageLanes] = useState<LaneSettings | undefined>(undefined)
+  const pageLanesRef = useRef<LaneSettings | undefined>(undefined)
+  pageLanesRef.current = pageLanes
   /** What the sheet layer, minimap and export draw: a known `canvas` field wins, otherwise the template. */
   const canvasType = effectiveCanvasType(pageTemplate, pageCanvas)
   const sketchyRef = useRef(false)
@@ -531,7 +544,7 @@ function App() {
     getItems: () => strokesRef.current,
     getPageItems: () => pagesRef.current.map((slot, index) => (index === pageIndexRef.current ? strokesRef.current : slot.items)),
     getPageNames: () => pagesRef.current.map((slot) => slot.name ?? ''),
-    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current, board: boardRef.current, canvas: pageCanvasRef.current }),
+    getPage: () => ({ template: pageTemplateRef.current, background: pageBackgroundRef.current, spacing: pageSpacingRef.current, sheetHeight: sheetHeightRef.current, sketchy: sketchyRef.current, board: boardRef.current, canvas: pageCanvasRef.current, marks: pageMarksRef.current, lanes: pageLanesRef.current }),
     getInputMode: () => inputModeRef.current,
     isInputActive: () => activeStrokeRef.current !== null || activePointerRef.current !== null || liveCodeEditor(),
     loadDocument: (loaded, startPage) => {
@@ -565,6 +578,10 @@ function App() {
       setBoard(loaded.page.board)
       pageCanvasRef.current = loaded.page.canvas
       setPageCanvas(loaded.page.canvas)
+      pageMarksRef.current = loaded.page.marks
+      setPageMarks(loaded.page.marks)
+      pageLanesRef.current = loaded.page.lanes
+      setPageLanes(loaded.page.lanes)
       setPageTemplate(loaded.page.template)
       setPageBackground(loaded.page.background)
       // A saved height, grown if the content reaches past it (never shrunk).
@@ -994,6 +1011,38 @@ function App() {
     renderAll()
   }
 
+  /**
+   * Keep boxes inside lanes (#297): when a move or a new box ends on a Lanes canvas, the boxes among `keys` (the group by its
+   * union bounds) slide into the lane body holding their centre if they fit. Runs once at the end of the gesture, before the
+   * connector side switch, and rides in the same history step (the gesture already saved its snapshot). Desktop Alt, the
+   * "Keep boxes inside lanes" switch and other canvases skip it. Labels and connectors follow like in a normal move.
+   */
+  const fitIntoLanes = (event: { pointerType: string; altKey?: boolean } | null, keys: ReadonlySet<string>): boolean => {
+    if (effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current) !== 'lanes' || !laneFit(pageLanesRef.current)) return false
+    if (event && snappingSuspended(event, inputModeRef.current)) return false
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    const boxKeys = new Set<string>()
+    for (const item of strokesRef.current) {
+      if (item.kind !== 'rectangle' || !keys.has(canvasItemKey(item))) continue
+      const box = rotatedItemBounds(item)
+      minX = Math.min(minX, box.x)
+      minY = Math.min(minY, box.y)
+      maxX = Math.max(maxX, box.x + box.width)
+      maxY = Math.max(maxY, box.y + box.height)
+      boxKeys.add(canvasItemKey(item))
+    }
+    if (boxKeys.size === 0) return false
+    const { dx, dy } = laneFitDelta({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, pageLanesRef.current, sheetHeightRef.current)
+    if (dx === 0 && dy === 0) return false
+    strokesRef.current = translateWithinWorkspace(strokesRef.current, new Set(keys), dx, dy)
+    scheduleAutosave()
+    renderAll()
+    return true
+  }
+
   /** After a drag: connectors attached to the boxes that moved may switch to facing sides when that makes them clearly shorter (same undo step as the drag). */
   const switchConnectorSides = (keys: ReadonlySet<string>) => {
     const movedIds = new Set<number>()
@@ -1043,6 +1092,22 @@ function App() {
     saveHistory()
     strokesRef.current = next
     historyCacheRef.current = null
+    renderAll()
+    bumpSelectionColor((n) => n + 1)
+    scheduleAutosave()
+  }
+
+  // Name: Show / Hide for the one selected logo box: adds or removes its brand name label, one undo step each.
+  const setSelectedLogoName = (show: boolean) => {
+    const target = selectedLogoBox(strokesRef.current, currentSelectionKeys(), findTechLogo)
+    if (!target) return
+    const next = setLogoNameShown(strokesRef.current, target.box, target.logo, show, nextTextIdRef.current)
+    if (next === strokesRef.current) return
+    saveHistory()
+    if (show) nextTextIdRef.current += 1
+    strokesRef.current = next
+    historyCacheRef.current = null
+    reconcileSelectedItems() // Hiding deletes the label, which may have been selected with the box (group)
     renderAll()
     bumpSelectionColor((n) => n + 1)
     scheduleAutosave()
@@ -1139,6 +1204,25 @@ function App() {
     renderAll()
     renderNavigator(true)
     return true
+  }
+  /** Slides: zoom the page on screen to fit its content (the whole sheet when it is empty). The UI is hidden, so the full canvas is used. Respects a locked zoom. */
+  const fitSlideView = () => {
+    if (navigationSettingsRef.current.zoomLocked) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0 || rect.height <= 0) return
+    const bounds = selectionBoundsWithEndLabels(routeConnectors(strokesRef.current), new Set(strokesRef.current.map(canvasItemKey)))
+    if (!bounds) { fitCanvasView(); return }
+    applyViewport(fitViewportToBounds(bounds, rect.width, rect.height, SLIDE_PADDING, MIN_ZOOM, SLIDE_MAX_ZOOM))
+  }
+  /** Slides: show page `target` through the normal page switch (stash, history per page, autosave path), then fit it. */
+  const showSlide = (target: number) => {
+    if (target !== pageIndexRef.current) goToPage(target)
+    if (target === pageIndexRef.current) fitSlideView()
+  }
+  /** Palette "Present pages": hide the toolbars (if shown) and fit the page on screen. */
+  const presentPages = () => {
+    if (!presentModeRef.current) togglePresentMode()
+    fitSlideView()
   }
   const togglePresentMode = () => {
     setOptionsFor(null); setEraserMenuOpen(false)
@@ -1392,7 +1476,8 @@ function App() {
   }
 
   // A new empty label at the point (the Text tool's tap and the Desktop double-click on empty canvas): nothing is made until text is typed.
-  const openNewTextEditorAt = (point: Point) => openTextEditor({ itemId: null, x: point.x, y: point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
+  // With event (the Text tool's tap) on Lined / Notebook / Cornell the first baseline snaps to the nearest ruled line (#299); Alt on a desktop mouse skips it.
+  const openNewTextEditorAt = (point: Point, event?: { pointerType: string; altKey?: boolean }) => openTextEditor({ itemId: null, x: point.x, y: event && !snappingSuspended(event, inputModeRef.current) ? ruledBaselineY(point.y - textSize * 0.65, textSize, pageSpacingUnits(pageSpacingRef.current), effectiveCanvasType(pageTemplateRef.current, pageCanvasRef.current)) : point.y - textSize * 0.65, fontSize: textSize, fontFamily: textFontId, color, initialText: '' })
 
   const editTextItem = (item: TextObject, selectAll = false) => openTextEditor({ ...(selectAll ? { selectAll: true } : {}), itemId: item.id, x: item.x, y: item.y, fontSize: item.fontSize, fontFamily: item.fontFamily, color: item.color, initialText: item.text, ...(item.align ? { align: item.align } : {}), ...(item.align === 'center' ? { centerOn: { x: item.x + item.width / 2, y: item.y + item.height / 2 } } : {}), ...(item.align === 'right' ? { anchorRight: item.x + item.width } : {}) })
 
@@ -1419,7 +1504,9 @@ function App() {
     if (editor.rectangleId === null) {
       if (isEmptyClassBox(clean)) return
       saveHistory()
-      strokesRef.current.push(createClassBox(nextRectangleIdRef.current++, editor.x, editor.y, clean, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, measure))
+      const classBoxId = nextRectangleIdRef.current++
+      strokesRef.current.push(createClassBox(classBoxId, editor.x, editor.y, clean, color, CLASS_BOX_DEFAULT_STROKE_WIDTH, measure))
+      fitIntoLanes(null, new Set([`rectangle:${classBoxId}`]))
       setHasInk(true)
       renderAll()
       return
@@ -1499,6 +1586,7 @@ function App() {
   // Board (round 11): the palette the default ink / white fill resolve to at draw time (light = identity, nothing changes).
   const palette = boardPalette(board)
   const theme = palette.theme
+  const chalkGrain = chalkTextureApplies(board) ? chalkGrainCssUrl() : null
   setConnectorLabelBackground(sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]))
   setBoardFill(palette.fill)
   setBoardInk(theme === 'light' ? null : palette.ink)
@@ -1560,7 +1648,7 @@ function App() {
     ctx.strokeRect(workspaceX + 0.5, workspaceY + 0.5, workspaceWidth - 1, workspaceHeight - 1)
     ctx.fillStyle = sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground])
     ctx.fillRect(pageX, pageY, pageWidth, pageHeight)
-    drawPageTemplateOverview(ctx, canvasType, { x: pageX, y: pageY, width: pageWidth, height: pageHeight }, theme === 'light' ? undefined : palette)
+    drawPageTemplateOverview(ctx, canvasType, { x: pageX, y: pageY, width: pageWidth, height: pageHeight }, effectiveMarks(theme === 'light' ? undefined : palette, pageMarks, sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]), palette.ink), pageLanes)
     ctx.strokeStyle = '#cfd4df'
     ctx.lineWidth = 1
     ctx.strokeRect(pageX + 0.5, pageY + 0.5, pageWidth - 1, pageHeight - 1)
@@ -1597,7 +1685,7 @@ function App() {
     ctx.fillRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.strokeRect(viewX * geometry.scale + geometry.offsetX, viewY * geometry.scale + geometry.offsetY, viewWidth * geometry.scale, viewHeight * geometry.scale)
     ctx.restore()
-  }, [board, drawMinimapItems, getCurrentMinimapBounds, canvasType, pageBackground, palette, theme])
+  }, [board, drawMinimapItems, getCurrentMinimapBounds, canvasType, pageBackground, pageLanes, pageMarks, palette, theme])
 
   // The single selected box (select tool) is kept in a ref for the gesture code; the state copy only lets the toolbar show Delete for it.
   const [hasSelectedRectangle, setHasSelectedRectangle] = useState(false)
@@ -2449,6 +2537,33 @@ function App() {
     setPageTemplate(next.template)
   }
 
+  /** Mark strength picker (Faint / Normal / Bold). Only the colour of dots, lines and lane borders changes; not an undo step. */
+  const chooseMarkStrength = (strength: MarkStrength) => {
+    const next = strength === 'normal' ? undefined : strength
+    pageMarksRef.current = next
+    setPageMarks(next)
+  }
+
+  /**
+   * Lane settings: merges a change into the saved `lanes` (unknown keys from a newer InkPad stay). Rows is the default direction,
+   * so it is stored as no `dir`; all-empty names are not stored; nothing left means no `lanes` field. Not an undo step.
+   */
+  const updateLanes = (patch: LaneSettings) => {
+    const merged: LaneSettings & Record<string, unknown> = { ...(pageLanesRef.current ?? {}), ...patch }
+    if (merged.dir === 'rows') delete merged.dir
+    if (merged.fit !== false) delete merged.fit // on is the default and is not written
+    if (patch.names !== undefined) {
+      const names = patch.names.slice(0, 8).map((name) => cleanPageName(name))
+      while (names.length > 0 && names[names.length - 1] === '') names.pop()
+      if (names.length > 0) merged.names = names
+      else delete merged.names
+    }
+    const next = Object.keys(merged).length > 0 ? merged : undefined
+    if (JSON.stringify(next ?? null) === JSON.stringify(pageLanesRef.current ?? null)) return
+    pageLanesRef.current = next
+    setPageLanes(next)
+  }
+
   const rotatableForPanel = soleRotatable()
   const rotationPanel = rotatableForPanel
     ? { degrees: Math.round((itemAngle(rotatableForPanel) * 180) / Math.PI), onAlign: alignSelectionToLine, onReset: () => setSelectedItemAngle(0) }
@@ -2760,7 +2875,8 @@ function App() {
         benchmarkBackground ? PAGE_BACKGROUND_COLORS.white : sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]),
         viewport,
         pageSpacing,
-        benchmarkBackground || theme === 'light' ? undefined : palette,
+        benchmarkBackground ? undefined : effectiveMarks(theme === 'light' ? undefined : palette, pageMarksRef.current, sheetColorForBoard(board, PAGE_BACKGROUND_COLORS[pageBackground]), palette.ink),
+        benchmarkBackground ? undefined : pageLanesRef.current,
       ))
     }
     if (benchmarkBackground) benchmarkBackground.onBackgroundRendered(performance.now() - backgroundStartedAt)
@@ -3508,6 +3624,12 @@ function App() {
     renderAll()
     scheduleAutosave()
   }, [board, pageCanvas, renderAll])
+
+  // Mark strength and lane settings only change the sheet layer, the minimap and exports: no ink is redrawn and nothing is an undo step.
+  useEffect(() => {
+    renderAll()
+    scheduleAutosave()
+  }, [pageMarks, pageLanes, renderAll])
 
 
   useEffect(() => {
@@ -4710,7 +4832,7 @@ function App() {
       textTapRef.current = null
       const existing = hitTestText(tap.point)
       if (existing) editTextItem(existing)
-      else openNewTextEditorAt(tap.point)
+      else openNewTextEditorAt(tap.point, event)
       return
     }
     if (classTapRef.current?.pointerId === event.pointerId) {
@@ -4783,6 +4905,7 @@ function App() {
             const y = Math.min(finished.originalBounds.y, workspaceBoundsRef.current.y + workspaceBoundsRef.current.height - size.height)
             strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: size.width, height: size.height })
           }
+          fitIntoLanes(event, new Set([`rectangle:${finished.rectangleId}`]))
           if (toolLockRef.current) {
             // Tool lock: the shape tool stays active for the next one and the new shape is not left selected.
             setSelectedRectangle(null)
@@ -4806,6 +4929,7 @@ function App() {
           const y = Math.min(finished.originalBounds.y, workspaceBoundsRef.current.y + workspaceBoundsRef.current.height - size.height)
           strokesRef.current = resizeRectangleItems(strokesRef.current, finished.rectangleId, { x, y, width: size.width, height: size.height })
         }
+        fitIntoLanes(event, new Set([`rectangle:${finished.rectangleId}`]))
         // A new box is empty, so its sections start at the standard 15 / 70 / 15 split of its final size.
         strokesRef.current = strokesRef.current.map((item) => (item.kind === 'rectangle' && item.id === finished.rectangleId && item.inkBox ? { ...item, inkBox: newInkBoxContent(item.y, item.height) } : item))
         // The new box is ready to write in: back to the pen, with the box selected.
@@ -4832,12 +4956,14 @@ function App() {
     if (lassoDragRef.current?.pointerId === event.pointerId) {
       const lassoDrag = lassoDragRef.current
       lassoDragRef.current = null
+      if (lassoDrag.moved) fitIntoLanes(event, lassoDrag.dup ? lassoDrag.dup.copyKeys : withCarriedLabels(event, lassoDrag.originalItems, lassoDrag.keys))
       if (lassoDrag.moved) switchConnectorSides(lassoDrag.dup ? lassoDrag.dup.copyKeys : lassoDrag.keys)
       return
     }
     if (activeDragRef.current?.pointerId === event.pointerId) {
       const drag = activeDragRef.current
       activeDragRef.current = null
+      if (drag.moved) fitIntoLanes(event, drag.dup ? drag.dup.copyKeys : withCarriedLabels(event, drag.originalItems, new Set([drag.itemKey])))
       if (drag.moved) switchConnectorSides(drag.dup ? drag.dup.copyKeys : new Set([drag.itemKey]))
       const dropConnectorId = dropConnectorRef.current
       dropConnectorRef.current = null
@@ -5918,6 +6044,7 @@ function App() {
     ...(selectionKeysWithBox().size > 0 ? [{ id: 'template:save', label: 'Save selection as template…', group: 'Templates', keywords: 'my templates store reuse', run: openSaveTemplate }] : []),
     { id: 'export:png', label: 'Export PNG', group: 'Export', keywords: 'image picture download', run: () => void exportPngFile(2, undefined, true).then((error) => { if (error) showToast(error) }) },
     { id: 'export:svg', label: 'Export SVG', group: 'Export', keywords: 'vector download', run: () => void exportSvgFile().then((error) => { if (error) showToast(error) }) },
+    { id: 'view:presentPages', label: 'Present pages (slides: arrow keys or buttons step pages, each page fitted)', group: 'View', keywords: 'present slides slideshow talk pages fullscreen hide toolbars next previous', run: presentPages },
     { id: 'page:overview', label: 'Page overview', group: 'Pages', keywords: 'pages thumbnails grid reorder move jump', run: () => setPageOverviewOpen(true) },
     { id: 'page:duplicate', label: 'Duplicate page', group: 'Pages', keywords: 'copy page clone', run: duplicatePage },
     ...(currentSelectionKeys().size > 0 ? movePaletteEntries(pagesRef.current.map((slot) => slot.name ?? ''), pageIndexRef.current, canAddPage(pagesRef.current.length)).map((row) => ({ id: row.id, label: row.label, group: 'Pages', keywords: 'move selection send items to page', run: () => { moveSelectionToPageNow(row.target) } })) : []),
@@ -5976,8 +6103,8 @@ function App() {
     { id: 'export:notebooklm', label: 'Export for NotebookLM', group: 'Export', keywords: 'notebook lm google', run: () => void exportToNotebookLm() },
     ...(inputMode === 'desktop' ? [{ id: 'setting:grid-snap', label: gridSnap ? 'Snap to grid: off' : 'Snap to grid: on', group: 'Settings', keywords: 'snap grid align dots', run: () => updateGridSnap(!gridSnapRef.current) }] : []),
     ...(inputMode === 'desktop' ? [
-      { id: 'edit:text-bigger', label: 'Bigger text', group: 'Edit', keywords: 'font size larger increase label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: 1 }) } },
-      { id: 'edit:text-smaller', label: 'Smaller text', group: 'Edit', keywords: 'font size decrease reduce label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: -1 }) } },
+      { id: 'edit:text-bigger', label: 'Bigger text', group: 'Edit', keys: textSizeShortcutKeys('Larger'), keywords: 'font size larger increase label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: 1 }) } },
+      { id: 'edit:text-smaller', label: 'Smaller text', group: 'Edit', keys: textSizeShortcutKeys('Smaller'), keywords: 'font size decrease reduce label text', run: () => { keyActionsRef.current({ kind: 'fontSize', direction: -1 }) } },
     ] : []),
     { id: 'setting:snapping', label: 'Toggle snapping', group: 'Settings', keywords: 'snap guides align', run: () => updateSnapping(!snappingRef.current) },
     { id: 'setting:sketchy', label: 'Toggle hand-drawn style', group: 'Settings', keywords: 'sketchy rough', run: toggleSketchy },
@@ -5985,6 +6112,7 @@ function App() {
       id: `setting:${command.id}`, label: command.label, group: 'Settings', keywords: command.keywords,
       run: command.kind === 'style' ? () => chooseBoardStyle(command.style, command.dark) : () => chooseCanvasType(command.canvas),
     })),
+    ...(['faint', 'normal', 'bold'] as const).map((strength) => ({ id: `setting:marks:${strength}`, label: `Marks: ${strength[0].toUpperCase()}${strength.slice(1)}`, group: 'Settings', keywords: 'marks dots lines strength projector contrast board', run: () => chooseMarkStrength(strength) })),
     // Always last: equal search scores keep list order, so commands stay above diagrams. Opening goes through the Library's own open function (the open diagram is saved first).
     ...diagramPaletteEntries(library, folders, currentDocId).map((entry) => ({ ...entry, run: () => { const id = diagramIdFromEntry(entry.id); if (id) void openStoredDiagram(id) } })),
   ]
@@ -5993,6 +6121,12 @@ function App() {
     if (row) {
       const input = shortcutKeyInput(row)
       if (input) { const command = keyCommand(input, 'desktop'); if (command) keyActionsRef.current(command) }
+      return
+    }
+    const logoSlug = logoSlugFromEntry(id)
+    if (logoSlug !== null) {
+      const logo = findTechLogo(logoSlug)
+      if (logo) insertLogo(logo, true)
       return
     }
     paletteExtras().find((entry) => entry.id === id)?.run()
@@ -6150,6 +6284,8 @@ function App() {
     if (command.kind === 'saveNow') { if (activeStrokeRef.current === null && activePointerRef.current === null) saveNowWithToast(); return true } // saving works under dialogs, the Library and the palette too; never mid-stroke (the autosave follows when the stroke ends)
     // Nothing runs under a panel or dialog, while text is being edited, or in the middle of any canvas gesture.
     if (editingBlocksCanvas()) return false
+    // Present mode: arrow keys step pages (see onKeyDown) and never nudge a selection.
+    if (presentModeRef.current && command.kind === 'nudge') return true
     const gestureActive = canvasGestureActive()
     if (contextMenuRef.current) {
       // While the menu is open Escape closes it and no other shortcut runs.
@@ -6247,6 +6383,25 @@ function App() {
         return true
     }
   }
+  // Slides (present mode): these keys change page. Registered before the shortcut listener and stops it, so the same key never also nudges or pages twice.
+  const slideKeyRef = useRef<(event: KeyboardEvent) => void>(() => undefined)
+  slideKeyRef.current = (event) => {
+    if (!presentModeRef.current) return
+    const target = event.target as HTMLElement | null
+    const tag = (target?.tagName ?? 'BODY').toUpperCase()
+    const slideTarget = slideKeyTarget(event, pageIndexRef.current, pagesRef.current.length)
+    // Not while a field, editor, dialog, menu or canvas gesture has the keyboard; Space on a focused button presses that button.
+    if (slideTarget === null || isTypingTarget(tag, Boolean(target?.isContentEditable)) || (event.key === ' ' && ['BUTTON', 'A', 'SELECT'].includes(tag))) return
+    if (canvasCommandBlocked()) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    showSlide(slideTarget)
+  }
+  useEffect(() => {
+    const onSlideKey = (event: KeyboardEvent) => slideKeyRef.current(event)
+    window.addEventListener('keydown', onSlideKey)
+    return () => window.removeEventListener('keydown', onSlideKey)
+  }, [])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       clickPairRef.current = null
@@ -6270,10 +6425,31 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // Lane names (round 12): plain text children of the sheet layer, sized in sheet units because the layer is scaled by its transform.
+  // They render only when the lane settings, the board or the sheet height change, never per stroke or frame.
+  const laneHeaderLabels = canvasType === 'lanes' ? (() => {
+    const dir = laneDir(pageLanes)
+    return laneRects(pageLanes, SHEET_WIDTH, sheetHeight).map((rect) => {
+      const label = laneLabel(rect, dir)
+      if (!label) return null
+      return (
+        <span key={rect.slot} className="lane-label" style={{ left: label.x, top: label.y, fontSize: label.fontSize, color: palette.ink, transform: `translate(-50%, -50%)${label.rotate ? ` rotate(${label.rotate}deg)` : ''}` }}>{label.text}</span>
+      )
+    })
+  })() : null
+
   return (
     <main className={`app-shell${presentMode ? ' ui-hidden' : ''}`} data-input-mode={inputMode}>
       <section className="canvas-stage" aria-label="Drawing canvas" data-board={theme === 'light' ? undefined : theme}>
-        <div ref={sheetLayerRef} className="sheet-layer" aria-hidden="true" style={{ width: SHEET_WIDTH, height: sheetHeight }} />
+        <div
+          ref={sheetLayerRef}
+          className="sheet-layer"
+          aria-hidden="true"
+          data-board={chalkTextureApplies(board) ? 'chalk' : undefined}
+          style={{ width: SHEET_WIDTH, height: sheetHeight, ...(chalkGrain ? ({ '--chalk-grain': chalkGrain } as CSSProperties) : null) }}
+        >
+          {canvasType === 'lanes' && laneHeaderLabels}
+        </div>
         <div ref={eraserCursorRef} className="eraser-cursor" aria-hidden="true" />
         {laserMode && <canvas ref={laserCanvasRef} className="laser-overlay" aria-hidden="true" />}
         {PEN_BUTTON_DEBUG && <div ref={penButtonReadoutRef} className="pen-button-readout" role="status">pen button: waiting for the pen</div>}
@@ -6494,6 +6670,10 @@ function App() {
           onCanvasType={chooseCanvasType}
           board={board}
           onBoardStyle={chooseBoardStyle}
+          marks={pageMarks}
+          onMarks={chooseMarkStrength}
+          lanes={pageLanes}
+          onLanes={updateLanes}
           menuRequest={menuRequest}
           pageSpacing={pageSpacing}
           onPageSpacing={setPageSpacing}
@@ -6552,6 +6732,7 @@ function App() {
           ? { value: selectionArrowheads(strokesRef.current, currentSelectionKeys()), onChange: changeArrowheads }
           : null}
         newShapeDefault={currentSelectionKeys().size > 0 || newShapeStyle ? { canSet: defaultStyleSource() !== null, isSet: newShapeStyle !== null, onSet: () => { useAsDefaultShapeStyle() }, onReset: () => { resetDefaultShapeStyle() } } : null}
+        logoName={(() => { const target = selectedLogoBox(strokesRef.current, currentSelectionKeys(), findTechLogo); return target === null ? null : { shown: findLogoNameLabels(strokesRef.current, target.box, target.logo).length > 0, onChange: setSelectedLogoName } })()}
         logoColor={(() => { const choice = logoColorChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { brand: choice === 'brand', onChange: setSelectedLogoColor } })()}
         corners={(() => { const choice = cornersChoice(strokesRef.current, currentSelectionKeys()); return choice === null ? null : { rounded: choice === 'sharp', onChange: setSelectedCorners } })()}
         changeShape={(() => { const offered = changeShapeChoices(strokesRef.current, currentSelectionKeys()); return offered ? { choices: offered.choices, onChange: (id) => { changeShapeSelection(id) } } : null })()}
@@ -6621,7 +6802,7 @@ function App() {
       {moveUndoBar !== null && deletedPageNumber === null && <MoveUndoBar message={moveUndoBar.message} onUndo={undoMoveToPage} />}
       {findOpen && <FindBar query={findQuery} onQueryChange={changeFindQuery} count={findCount(findQuery)} index={findIndex} onNext={() => stepFind(1)} onPrevious={() => stepFind(-1)} onClose={closeFind} focusTick={findFocusTick} desktop={inputMode === 'desktop'} replaceOpen={findReplaceOpen} onToggleReplace={() => setFindReplaceOpen((open) => !open)} replacement={findReplacement} onReplacementChange={changeFindReplacement} onReplace={replaceCurrentFind} onReplaceAll={replaceAllFind} />}
       {shortcutHelpOpen && inputMode === 'desktop' && <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} />}
-      {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...shortcutPaletteEntries(), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
+      {paletteOpen && inputMode === 'desktop' && <CommandPalette entries={[...withoutDuplicateTextSizeEntries(shortcutPaletteEntries()), ...paletteExtras()]} onRun={runPaletteEntry} onClose={closePalette} />}
       <input ref={excalidrawFileRef} type="file" accept=".excalidraw,application/json" hidden onChange={(event) => { openExcalidrawFile(event.target.files?.[0]); event.target.value = '' }} />
       {logoDialogOpen && <LogoDialog onInsert={insertLogo} onClose={() => setLogoDialogOpen(false)} />}
       {mermaidOpen && <MermaidDialog onInsert={importMermaid} onClose={() => setMermaidOpen(false)} />}
@@ -6675,6 +6856,13 @@ function App() {
         canDuplicatePage={canAddPage(pageCount)}
       />
       {focusActive && <button className="focus-chip" type="button" title="Exit focus (Esc)" onClick={exitFocus}>Focused · Exit</button>}
+      {showSlideControl(presentMode, pageCount) && (
+        <div className="slide-nav" role="group" aria-label="Slides">
+          <button type="button" aria-label="Previous page" title="Previous page (Left arrow or PageUp)" disabled={!slideStepEnabled(pageIndex, pageCount).previous} onClick={() => showSlide(pageIndexRef.current - 1)}>‹</button>
+          <span className="slide-nav-label" aria-live="polite" aria-label={`Page ${pageIndex + 1} of ${pageCount}`}>{slideLabel(pageIndex, pageCount)}</span>
+          <button type="button" aria-label="Next page" title="Next page (Right arrow, PageDown or Space)" disabled={!slideStepEnabled(pageIndex, pageCount).next} onClick={() => showSlide(pageIndexRef.current + 1)}>›</button>
+        </div>
+      )}
       {presentMode && <button className="show-toolbars-pill" type="button" title="Show the toolbars (Alt+Z or Esc)" onClick={() => setPresentMode(false)}>Show toolbars</button>}
       {classBoxEditor && <ClassBoxDialog
         key={`${classBoxEditor.rectangleId ?? 'new'}:${classBoxEditor.x}:${classBoxEditor.y}`}
@@ -6710,7 +6898,12 @@ function App() {
         showConnectHint={storage.kind === 'browser'}
         onClose={() => setLibraryOpen(false)}
         onOpenDiagram={(id) => { setLibraryOpen(false); void openStoredDiagram(id) }}
-        onNewDiagram={(folderId, template) => { setLibraryOpen(false); void newDiagramIn(folderId, template) }}
+        onNewDiagram={(folderId, template, options) => {
+          setLibraryOpen(false)
+          // Same as picking Sketch or Chalkboard on an open diagram: new text uses the hand-drawn font.
+          if (newDiagramUsesHandFont(options) && textFontId !== 'excalifont') setTextFontId('excalifont')
+          void newDiagramIn(folderId, template, options)
+        }}
         onImportFile={(file) => void importDocumentFile(file)}
         onCreateFolder={(name, parentId) => createFolder(name, parentId)}
         onRenameFolder={(id, name) => renameFolder(id, name)}

@@ -55,6 +55,20 @@ button { font: inherit; }
   box-shadow: 0 0 0 1px rgba(35, 42, 54, .10), 0 2px 12px rgba(35, 42, 54, .30);
 }
 
+/* Lane names (round 12): children of the sheet layer, so their pixels are sheet units. */
+.sheet-layer .lane-label { position: absolute; white-space: nowrap; font-weight: 600; line-height: 1; opacity: .75; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; user-select: none; pointer-events: none; transform-origin: center; }
+/* Chalk texture (round 12): a tiling grain on the Chalkboard sheet only. Screen only (exports stay flat); it is a
+   pseudo-element of the sheet layer, so it never takes pointer input and the drawing canvas is untouched. */
+.sheet-layer[data-board='chalk']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: var(--chalk-grain);
+  background-size: 128px 128px;
+  opacity: .3;
+}
+
 .drawing-canvas {
   position: absolute;
   inset: 0;
@@ -381,6 +395,17 @@ button.menu-row:hover:not(:disabled), button.menu-row.selected { background: #f1
 .menu-color.selected { border: 2px solid #475fdb; box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 4px #d3d7e0; }
 /* Board style and canvas type tiles (app/BoardPreviews.tsx), shared by the tablet menu and the desktop sheet. Tiles are at least 44px tall. */
 .bp-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+
+/* Lane settings and mark strength in the Board section (round 12). Tablet controls are at least 44px; the Desktop sheet keeps its compact size. */
+.menu-segments.lane-touch .menu-segment { height: 44px; }
+.lane-stepper { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 4px; padding: 4px; border-radius: 12px; background: #f1f3f7; }
+.lane-stepper button { height: 44px; border: 0; border-radius: 9px; background: #fff; color: #354fc2; font: inherit; font-size: 22px; font-weight: 700; cursor: pointer; box-shadow: 0 1px 3px rgba(31, 39, 52, .16); }
+.lane-stepper button:disabled { opacity: .4; cursor: default; }
+.lane-stepper output { text-align: center; font-size: 16px; font-weight: 700; color: #1f2430; }
+.lane-names { display: grid; gap: 6px; }
+.lane-name-input { box-sizing: border-box; width: 100%; height: 44px; padding: 0 12px; border: 1px solid #d5d9e2; border-radius: 10px; background: #fff; color: #1f2430; font: inherit; font-size: 15px; }
+.lane-name-input:focus { outline: 2px solid #5574ed; outline-offset: 1px; }
+
 .bp-tile { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0; min-height: 44px; padding: 4px; border: 2px solid transparent; border-radius: 10px; background: transparent; color: #4b505b; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .bp-tile:hover { background: #f1f3f7; }
 .bp-tile.selected { border-color: #475fdb; background: #eef1fd; color: #354fc2; }
@@ -902,6 +927,12 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .app-shell.ui-hidden .page-undo-bar { visibility: hidden; pointer-events: none; }
 .show-toolbars-pill { position: fixed; z-index: 31; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); height: 32px; padding: 0 14px; border: 1px solid rgba(36, 42, 52, .18); border-radius: 16px; background: rgba(255, 255, 255, .92); color: #343944; font-size: 13px; font-weight: 600; box-shadow: 0 2px 8px rgba(31, 39, 52, .16); cursor: pointer; opacity: .6; touch-action: manipulation; }
 .show-toolbars-pill:hover, .show-toolbars-pill:focus-visible { opacity: 1; }
+.slide-nav { position: fixed; z-index: 31; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid rgba(36, 42, 52, .18); border-radius: 24px; background: rgba(255, 255, 255, .86); color: #343944; box-shadow: 0 2px 8px rgba(31, 39, 52, .16); opacity: .6; touch-action: manipulation; user-select: none; }
+.slide-nav:hover, .slide-nav:focus-within { opacity: 1; }
+.slide-nav button { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 22px; background: transparent; color: inherit; font-size: 26px; line-height: 1; cursor: pointer; touch-action: manipulation; }
+.slide-nav button:hover:not(:disabled) { background: rgba(36, 42, 52, .08); }
+.slide-nav button:disabled { opacity: .3; cursor: default; }
+.slide-nav-label { min-width: 48px; text-align: center; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .page-overview { width: min(880px, 100%); max-height: min(640px, calc(100vh - 32px)); display: flex; flex-direction: column; }
 .page-overview-grid { list-style: none; margin: 0; padding: 4px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
 .page-tile { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 2px solid #d9dce2; border-radius: 12px; background: #fff; }
@@ -943,6 +974,20 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .home-folder-hint { align-self: center; font-size: 13px; opacity: .7; }
 .home-nav.dragging { opacity: .5; }
 .home-move-undo { bottom: 20px; }
+
+/* New diagram chooser (round 12): board style tiles, theme switch and canvas tiles in the "+ New diagram" panel */
+.home-new-chooser { gap: 8px; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 96px); overflow-y: auto; padding: 12px; }
+.home-new-chooser .home-new-heading { margin: 4px 0 0; color: var(--home-muted); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.home-new-chooser .home-new-note { margin: 0; color: var(--home-muted); font-size: 13px; }
+.home-new-chooser .home-new-canvases { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.home-new-chooser .bp-tile { display: flex; flex-direction: column; align-items: stretch; justify-items: initial; min-height: 44px; padding: 4px; border: 2px solid transparent; background: transparent; font-size: 13px; }
+.home-new-chooser .bp-tile:hover { background: var(--home-accent-soft); }
+.home-new-chooser .bp-tile.selected { border-color: var(--home-accent); background: var(--home-accent-soft); color: #354fc2; }
+.home-new-chooser .bp-tile:focus-visible, .home-new-theme button:focus-visible { outline: 2px solid var(--home-accent); outline-offset: 2px; }
+.home-new-theme { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border: 1px solid var(--home-line); border-radius: 10px; }
+.home-new-chooser .home-new-theme button { display: block; min-height: 44px; padding: 4px 10px; border: 0; border-radius: 8px; background: transparent; text-align: center; font-size: 14px; }
+.home-new-chooser .home-new-theme button.selected { background: var(--home-accent-soft); color: #354fc2; }
+@media (max-width: 420px) { .home-new-chooser .home-new-canvases { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Desktop navigation sheet (docs/ui-design-brief.md section 8). Tablet keeps the .menu-panel dropdown above. */
 .app-shell[data-input-mode="desktop"] .ms-sheet { position: fixed; z-index: 6; left: 16px; top: 72px; bottom: 90px; display: flex; flex-direction: column; width: 320px; max-width: calc(100vw - 32px); box-sizing: border-box; overflow: hidden; border: 1px solid var(--ip-line); border-radius: var(--ip-radius-sheet); background: var(--ip-surface); color: var(--ip-text); box-shadow: var(--ip-shadow-3); animation: ms-in var(--ip-dur-sheet) var(--ip-ease-out) both; }
@@ -992,3 +1037,9 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .app-shell[data-input-mode="desktop"] .ms-row.danger > svg { stroke: var(--ip-danger); }
 .app-shell[data-input-mode="desktop"] .ms-row.danger .ms-desc { color: var(--ip-danger); opacity: .85; }
 .app-shell[data-input-mode="desktop"] .ms-row.danger:hover:not(:disabled) { background: var(--ip-danger-soft); }
+
+/* Lane settings and mark strength, Desktop compact sizes (the touch sized rules sit with the Board picker rules above). */
+.app-shell[data-input-mode="desktop"] .lane-stepper { grid-template-columns: 30px minmax(0, 1fr) 30px; gap: 2px; padding: 3px; border-radius: var(--ip-radius-control); background: var(--ip-surface-2); }
+.app-shell[data-input-mode="desktop"] .lane-stepper button { height: 30px; border-radius: 8px; background: var(--ip-surface); color: var(--ip-accent); font-size: 18px; box-shadow: var(--ip-shadow-1); }
+.app-shell[data-input-mode="desktop"] .lane-stepper output { font-size: 13px; color: var(--ip-text); }
+.app-shell[data-input-mode="desktop"] .lane-name-input { height: 30px; padding: 0 8px; border: 1px solid var(--ip-line); border-radius: 8px; background: var(--ip-surface); color: inherit; font-size: 13px; }

@@ -151,7 +151,7 @@ test('wiring: the label double-click is Desktop-mouse only, shares the Text tool
   assert.match(handler, /openNewTextEditorAt\(point\)/)
   assert.match(handler, /historyRef\.current\.restore\(before\.history\)/)
   assert.ok(handler.indexOf('openEditTarget(target)') < handler.indexOf('labelDoubleClickDecision'), 'an existing label or class box is edited first')
-  assert.match(app, /else openNewTextEditorAt\(tap\.point\)/)
+  assert.match(app, /else openNewTextEditorAt\(tap\.point, event\)/)
   const down = app.slice(app.indexOf('const onPointerDown = (event: React.PointerEvent'), app.indexOf('const onPointerMove = (event: React.PointerEvent'))
   assert.match(down, /clickPairRef\.current = null/)
   assert.match(down, /event\.pointerType === 'mouse' && inputModeRef\.current === 'desktop' && event\.button === 0 && !event\.shiftKey/)

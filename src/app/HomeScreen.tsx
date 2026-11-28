@@ -7,6 +7,10 @@ import { canDragCards, decideDrop, decideFolderDrop, FOLDER_DRAG_TYPE, hasFinePo
 import { batchDelete, createPendingDeletes, hiddenForDiagram, hiddenForFolder, hidesInFolder, pendingLabel, type PendingDeletes } from '../pendingDelete'
 import { allSelected, deleteConfirmText, effectiveSelection, idsToMove, movedMessage, runMoves, selectAllIds, selectionLabel, toggleSelected } from '../librarySelect'
 import type { PageTemplate } from '../pageTemplates'
+import { BOARD_STYLES, boardFieldsFor } from '../boardStyle'
+import { CANVAS_TYPES } from '../canvasTypes'
+import { loadNewDiagramChoice, newDiagramOptionsFor, saveNewDiagramChoice, type NewDiagramChoice, type NewDiagramOptions } from '../newDiagramChoice'
+import { BoardStylePreview, CanvasPreview, PickerTile } from './BoardPreviews'
 import { createSearchTextIndex, matchContent } from '../librarySearchText'
 
 type HomeScreenProps = {
@@ -28,7 +32,7 @@ type HomeScreenProps = {
   showConnectHint: boolean
   onClose: () => void
   onOpenDiagram: (id: string) => void
-  onNewDiagram: (folderId: string | null, template: PageTemplate) => void
+  onNewDiagram: (folderId: string | null, template: PageTemplate, options?: NewDiagramOptions) => void
   onImportFile: (file: File) => void
   onCreateFolder: (name: string, parentId: string | null) => Promise<boolean> | void
   onRenameFolder: (id: string, name: string) => Promise<boolean> | void
@@ -104,6 +108,8 @@ export function HomeScreen(props: HomeScreenProps) {
   const [movingId, setMovingId] = useState<string | null>(null)
   const [newMenuOpen, setNewMenuOpen] = useState(false)
   const newMenuRef = useRef<HTMLDivElement>(null)
+  const newButtonRef = useRef<HTMLButtonElement>(null)
+  const [newChoice, setNewChoice] = useState<NewDiagramChoice>(() => loadNewDiagramChoice())
   const searchRef = useRef<HTMLInputElement>(null)
   const [renamingDiagramId, setRenamingDiagramId] = useState<string | null>(null)
   const [diagramDraft, setDiagramDraft] = useState('')
@@ -294,7 +300,7 @@ export function HomeScreen(props: HomeScreenProps) {
         return
       }
       if (event.key !== 'Escape') return
-      if (newMenuOpenRef.current) setNewMenuOpen(false)
+      if (newMenuOpenRef.current) { setNewMenuOpen(false); newButtonRef.current?.focus() }
       else if (selectApi.current.active) selectApi.current.exit()
       else if (target === searchRef.current && searchRef.current?.value) { setQuery(''); event.preventDefault() }
       else closeRef.current()
@@ -304,6 +310,7 @@ export function HomeScreen(props: HomeScreenProps) {
   }, [])
   useEffect(() => {
     if (!newMenuOpen) return
+    newMenuRef.current?.querySelector<HTMLElement>('.home-new-canvases .bp-tile.selected')?.focus()
     const onPointerDown = (event: PointerEvent) => {
       if (newMenuRef.current && !newMenuRef.current.contains(event.target as Node)) setNewMenuOpen(false)
     }
@@ -401,14 +408,38 @@ export function HomeScreen(props: HomeScreenProps) {
           </label>
           <button type="button" className="home-secondary" onClick={() => importRef.current?.click()}>Import .inkpad</button>
           <div ref={newMenuRef} className="home-new">
-            <button type="button" className="home-primary" aria-haspopup="menu" aria-expanded={newMenuOpen} onClick={() => setNewMenuOpen((open) => !open)}>+ New diagram</button>
-            {newMenuOpen && <div className="home-new-menu" role="menu" aria-label="New diagram">
-              {NEW_DIAGRAM_PRESETS.map((preset) => (
-                <button key={preset.id} type="button" role="menuitem" onClick={() => { setNewMenuOpen(false); props.onNewDiagram(here, preset.template) }}>
-                  <strong>{preset.label}</strong>
-                  <span>{preset.hint}</span>
-                </button>
-              ))}
+            <button ref={newButtonRef} type="button" className="home-primary" aria-haspopup="dialog" aria-expanded={newMenuOpen} onClick={() => setNewMenuOpen((open) => !open)}>+ New diagram</button>
+            {newMenuOpen && <div className="home-new-menu home-new-chooser" role="dialog" aria-label="New diagram">
+              <p className="home-new-heading">Board</p>
+              <div className="bp-tiles home-new-boards">
+                {BOARD_STYLES.map((style) => (
+                  <PickerTile key={style.id} label={style.label} title={style.description} selected={newChoice.style === style.id} onClick={() => setNewChoice({ ...newChoice, style: style.id })}>
+                    <BoardStylePreview style={style.id} dark={newChoice.dark} />
+                  </PickerTile>
+                ))}
+              </div>
+              {newChoice.style === 'chalk'
+                ? <p className="home-new-note">Chalkboard is always dark.</p>
+                : <div className="home-new-theme" role="group" aria-label="Board theme">
+                  {[false, true].map((dark) => (
+                    <button key={String(dark)} type="button" aria-pressed={newChoice.dark === dark} className={newChoice.dark === dark ? 'selected' : ''} onClick={() => setNewChoice({ ...newChoice, dark })}>{dark ? 'Dark' : 'Light'}</button>
+                  ))}
+                </div>}
+              <p className="home-new-heading">Canvas (tap one to create)</p>
+              <div className="bp-tiles home-new-canvases">
+                {CANVAS_TYPES.map((type) => (
+                  <PickerTile key={type.id} label={type.label} title={`${type.label}: ${type.description}`} selected={newChoice.canvas === type.id} onClick={() => {
+                    const choice = { ...newChoice, canvas: type.id }
+                    saveNewDiagramChoice(choice)
+                    setNewChoice(choice)
+                    setNewMenuOpen(false)
+                    const options = newDiagramOptionsFor(choice)
+                    props.onNewDiagram(here, options.template, options)
+                  }}>
+                    <CanvasPreview type={type.id} board={boardFieldsFor(newChoice.style, newChoice.dark).board} />
+                  </PickerTile>
+                ))}
+              </div>
             </div>}
           </div>
           <input ref={importRef} type="file" accept=".inkpad,application/json" hidden onChange={(event) => {

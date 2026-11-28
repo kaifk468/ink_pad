@@ -69,3 +69,7 @@
 .home-desktop .home-crumb { color: var(--ip-accent); }
 .home-desktop .home-card-actions button, .home-desktop .home-card-rename button { min-height: 36px; font-size: 13px; }
 .home-desktop .home-star { color: var(--ip-muted); }
+.home-desktop .home-new-chooser .bp-tile.selected { border-color: var(--ip-accent); background: var(--ip-accent-soft); color: var(--ip-accent); }
+.home-desktop .home-new-chooser .home-new-theme { border-color: var(--ip-line); border-radius: var(--ip-radius-control); }
+.home-desktop .home-new-chooser .home-new-theme button.selected { background: var(--ip-accent-soft); color: var(--ip-accent); }
+.home-desktop .home-new-chooser .home-new-theme button:hover { background: var(--ip-surface-2); }
