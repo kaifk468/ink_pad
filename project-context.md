@@ -827,3 +827,7 @@ What got there: cached path is the only default (direct limit 0), the whole page
 - Desktop Insert logo dialog: labelled tiles, match count with Enter hint, first match outlined, friendlier empty state, wider dialog. `LogoPicker` gained an optional `labelled` prop used only by `LogoDialog`; tablet tray unchanged.
 - Checks: npm test 1942/1942, build ok, headless capture 1440/1024 with no console errors. Not verified on device.
 - Next: labelled logo results in the desktop More shapes tray; Chalkboard chrome decision; round 6 held-back items.
+
+
+### 2026-11-28 UI round 8 (ui-polish)
+- Desktop empty-state hint turns light on dark/Chalkboard boards (was dark-on-dark). More shapes tray logo grid uses named tiles (4 columns). Tests: tests/desktop-ui-r8.test.mjs. npm test 1944 pass / 0 fail; build passed; headless walk no console errors. Device check still needed. Report: docs/progress/inkpad-ui-round-8-2026-11-28.md.
