@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { NewDiagramOptions } from '../newDiagramChoice'
 import type { CanvasItem } from '../canvasModel'
 import { DEFAULT_DOCUMENT_TITLE, cleanTitle, createDocument, documentFileName, isLossyParse, parseDocument, sameSignature, stringifyDocument, type DocumentLanes, type DocumentPageBackground, type DocumentPageSpacing, type DocumentSignature, type DocumentPageTemplate, type InkPadDocument } from '../documentFormat'
 import { deleteThumbnail, downloadBlob, loadCurrentDocumentId, loadStoredDocument, loadThumbnails, saveCurrentDocumentId, saveThumbnail, type DocumentSummary, type FolderRecord } from '../documentStore'
@@ -443,16 +444,17 @@ export function useDocuments(host: DocumentHost) {
     return true
   }
 
-  const blankDocument = (template?: DocumentPageTemplate) => {
+  const blankDocument = (template?: DocumentPageTemplate, options?: NewDiagramOptions) => {
     const page = hostRef.current.getPage()
+    if (options) return createDocument({ template: options.template, background: page.background, spacing: page.spacing, canvas: options.canvas, board: options.board, sketchy: options.sketchy, items: [] })
     return createDocument({ template: template ?? page.template, background: page.background, spacing: page.spacing, ...(template === undefined ? { canvas: page.canvas, lanes: page.lanes } : {}), items: [] })
   }
 
-  const newDiagram = async (template?: DocumentPageTemplate) => {
+  const newDiagram = async (template?: DocumentPageTemplate, options?: NewDiagramOptions) => {
     await persistNow()
     await flushCopy()
     setFileNotice(null)
-    applyDocument(null, blankDocument(template))
+    applyDocument(null, blankDocument(template, options))
     void keeper.switchTo(null)
     writeCurrentId(null)
     void refreshLibrary()
@@ -531,8 +533,8 @@ export function useDocuments(host: DocumentHost) {
   }
 
   /** Start a blank diagram that will be saved inside the given folder (null = top level). */
-  const newDiagramIn = async (folderId: string | null, template?: DocumentPageTemplate) => {
-    await newDiagram(template)
+  const newDiagramIn = async (folderId: string | null, template?: DocumentPageTemplate, options?: NewDiagramOptions) => {
+    await newDiagram(template, options)
     pendingFolderRef.current = folderId
   }
 

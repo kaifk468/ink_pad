@@ -940,6 +940,20 @@ button:focus-visible { outline: 2px solid #6275e2; outline-offset: 2px; }
 .home-nav.dragging { opacity: .5; }
 .home-move-undo { bottom: 20px; }
 
+/* New diagram chooser (round 12): board style tiles, theme switch and canvas tiles in the "+ New diagram" panel */
+.home-new-chooser { gap: 8px; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 96px); overflow-y: auto; padding: 12px; }
+.home-new-chooser .home-new-heading { margin: 4px 0 0; color: var(--home-muted); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.home-new-chooser .home-new-note { margin: 0; color: var(--home-muted); font-size: 13px; }
+.home-new-chooser .home-new-canvases { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.home-new-chooser .bp-tile { display: flex; flex-direction: column; align-items: stretch; justify-items: initial; min-height: 44px; padding: 4px; border: 2px solid transparent; background: transparent; font-size: 13px; }
+.home-new-chooser .bp-tile:hover { background: var(--home-accent-soft); }
+.home-new-chooser .bp-tile.selected { border-color: var(--home-accent); background: var(--home-accent-soft); color: #354fc2; }
+.home-new-chooser .bp-tile:focus-visible, .home-new-theme button:focus-visible { outline: 2px solid var(--home-accent); outline-offset: 2px; }
+.home-new-theme { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border: 1px solid var(--home-line); border-radius: 10px; }
+.home-new-chooser .home-new-theme button { display: block; min-height: 44px; padding: 4px 10px; border: 0; border-radius: 8px; background: transparent; text-align: center; font-size: 14px; }
+.home-new-chooser .home-new-theme button.selected { background: var(--home-accent-soft); color: #354fc2; }
+@media (max-width: 420px) { .home-new-chooser .home-new-canvases { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* Desktop navigation sheet (docs/ui-design-brief.md section 8). Tablet keeps the .menu-panel dropdown above. */
 .app-shell[data-input-mode="desktop"] .ms-sheet { position: fixed; z-index: 6; left: 16px; top: 72px; bottom: 90px; display: flex; flex-direction: column; width: 320px; max-width: calc(100vw - 32px); box-sizing: border-box; overflow: hidden; border: 1px solid var(--ip-line); border-radius: var(--ip-radius-sheet); background: var(--ip-surface); color: var(--ip-text); box-shadow: var(--ip-shadow-3); animation: ms-in var(--ip-dur-sheet) var(--ip-ease-out) both; }
 @keyframes ms-in { from { opacity: 0; transform: translateX(var(--ip-slide-x, -16px)); } to { opacity: 1; transform: none; } }

@@ -121,6 +121,7 @@ import { TEXT_FONT_SIZES, TEXT_FONT_SIZES_DESKTOP, setTextAlign, keepAlignAnchor
 import { loadTextFont } from './textFonts'
 import type { TextAlign, TextFontId } from './canvasModel'
 import { useDocuments } from './app/useDocuments'
+import { newDiagramUsesHandFont } from './newDiagramChoice'
 import { SHAPE_RECOGNITION_HOLD_MS, recognizeClosedShapeOnHold, recognizeClosedShapeStroke } from './shapeRecognition'
 import { DEFAULT_ZOOM, INITIAL_ZOOM, MAX_ZOOM, MIN_ZOOM, SHEET_MIN_HEIGHT, SHEET_WIDTH, centerViewportOnPoint, nextSheetHeight, normalizeSheetHeight, sheetBoundsFor, workspaceBoundsFor, clampPointToBounds, clampTranslationToBounds, clampViewportToSheet, panViewport, rubberBandViewport, DESK_MARGIN_PX, getCoverScale, getInitialViewport, clipSegmentToBounds, fitViewportToBounds, fitViewportToBoundsInset, DESKTOP_FIT_INSETS, getMinimapGeometry, isPointWithinBounds, minimapToCanvasPoint, type MinimapGeometry, type ViewBounds, type Viewport, screenToCanvasPoint } from './viewport'
 import { itemBottom, sheetHeightForItems } from './sheetGrowth'
@@ -6775,7 +6776,12 @@ function App() {
         showConnectHint={storage.kind === 'browser'}
         onClose={() => setLibraryOpen(false)}
         onOpenDiagram={(id) => { setLibraryOpen(false); void openStoredDiagram(id) }}
-        onNewDiagram={(folderId, template) => { setLibraryOpen(false); void newDiagramIn(folderId, template) }}
+        onNewDiagram={(folderId, template, options) => {
+          setLibraryOpen(false)
+          // Same as picking Sketch or Chalkboard on an open diagram: new text uses the hand-drawn font.
+          if (newDiagramUsesHandFont(options) && textFontId !== 'excalifont') setTextFontId('excalifont')
+          void newDiagramIn(folderId, template, options)
+        }}
         onImportFile={(file) => void importDocumentFile(file)}
         onCreateFolder={(name, parentId) => createFolder(name, parentId)}
         onRenameFolder={(id, name) => renameFolder(id, name)}
